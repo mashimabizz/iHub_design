@@ -419,6 +419,72 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション40：画面インベントリ作成（USER_PLAYBOOK タスク2）
+
+### 背景
+
+USER_PLAYBOOK タスク2。
+データモデル（05）と状態遷移（09）の整備が一段落したので、次は「**画面のマップ**」を作る。
+- 「どの画面はどの JSX ファイル？」「いつの iter で更新された？」「関連 docs はどれ？」を一発で引けるように
+- mermaid フロー図でユーザー動線を可視化
+- 廃止画面も削除せず履歴として保持
+
+### 変更内容
+
+#### `notes/11_screen_inventory.md`（新規作成）
+
+iHub/*.html の `<DCArtboard>` を全スキャン、iHub/*.jsx の `function` 定義をクロスリファレンス。
+
+**収録**：
+- 最新画面 **89件**（5カテゴリ：認証/オンボ・主要フロー・ハブ・サポート設定・図鑑）
+- 廃止画面 **12件**（J. セクションに保持）
+
+**画面ID命名規約**：
+- 3-4文字 prefix ＋ kebab-case 名（`AUTH-welcome`, `C0-mine-perfect`, `D-5a` 等）
+- 実装でも同じ識別子を使うため、命名で揺れない
+
+**マトリクスの列**：画面ID / 名称 / 関連JSX関数 / 関連iter / 関連docs
+
+**収録した mermaid フロー図 4種**：
+1. **F. メイン動線フロー図** — ユーザー全体ジャーニー（auth → onb → home → 各タブ → C-flow → C-3 → 図鑑）
+2. **G. 取引フロー詳細図** — C-0 → C-1 → C-1.5 → 合意 → C-2 → C-3 の細かい状態遷移付き
+3. **H. Dispute フロー詳細図** — D-flow（D-1〜D-6d、再審査含む）
+4. **I. 認証・オンボフロー図** — Welcome → Sign-up/Login → Email認証 → オンボ5段階 → Home
+
+### 影響範囲
+
+- 設計ドキュメント全体（5種類が揃った：00-04 戦略・要件 / 05 データ / 09 状態 / 10 用語 / **11 画面**）
+- 実装着手の準備（per-screen spec 作成のための土台）
+
+### Phase 2 進捗
+
+USER_PLAYBOOK タスク：
+- 🥇 タスク1（05 最新化） ✅ iter38
+- 🎯 5論点擦り合わせ ✅ iter39
+- 🥈 **タスク2（11 画面マトリクス） ✅ iter40 ← 今回**
+- 🥈 タスク3（12_screens/ per-screen spec）→ 次
+- 🥉 タスク4（13 API spec）
+- 🥉 タスク5（14 実装フェーズ分割）
+
+### 確認方法
+
+- `notes/11_screen_inventory.md`
+- mermaid 図は GitHub 上で自動レンダリング：https://github.com/mashimabizz/iHub_design/blob/main/notes/11_screen_inventory.md
+
+### 関連ファイル
+
+- `notes/11_screen_inventory.md`（新規）
+
+### 次フェーズへの示唆
+
+`12_screens/` 着手時：
+- まず重要画面（C-0 / C-1 / C-1.5 / C-2 / C-3）から per-screen spec を作る
+- 各画面ファイル名は `notes/12_screens/[画面ID].md`（例：`C0-mine-perfect.md`）
+- 各 spec は state / props / 入出力 / バリデーション / エラー / 関連API / 関連docs を網羅
+- 89画面全部書くのは重いので、**重要15-20画面に絞ってから**残りは実装着手と並行で
+
+---
+
 ## イテレーション39：データモデル擦り合わせ・5論点確定
 
 ### 背景
