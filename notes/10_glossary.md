@@ -158,6 +158,52 @@
 | `keep` | 自分用キープ | Item |
 | `traded` | 譲り済 | Item |
 
+### Dispute resolution（iter39 確定）
+
+| 値 | カテゴリ | 意味 |
+|---|---|---|
+| `sender_fault` | decision | 提案者側に非 |
+| `receiver_fault` | decision | 受諾者側に非 |
+| `mutual_fault` | decision | 双方に非 |
+| `no_fault` | decision | 双方に非なし（コミュニケーション不足等） |
+| `cant_determine` | decision | 判定不可（証拠不十分） |
+| `none` | penalty | ペナルティなし |
+| `warning` | penalty | 警告（マイページに記録、累積で次段階へ） |
+| `temp_suspend` | penalty | 一時停止（30日アカウント停止等） |
+| `permanent_suspend` | penalty | 永久停止 |
+
+### Message types（iter34 / iter39 確定）
+
+| 値 | 意味 | 備考 |
+|---|---|---|
+| `text` | テキストメッセージ | 通常会話 |
+| `image` | 画像 | 任意の画像添付 |
+| `outfit_photo` | 服装写真 | iter34、合流支援用。参考用途、本体は `deal_outfit_photos` |
+| `location_share` | 現在地共有 | iter34、`metadata.lat/lng` 必須 |
+| `system` | システムメッセージ | 「@xxx が到着しました」等。`metadata.event_type` で種別管理 |
+
+### Item kind（iter19.5 確定）
+
+| 値 | 意味 |
+|---|---|
+| `for_trade` | 譲る候補（公開・打診対象） |
+| `keep` | 自分用キープ（譲らない宣言。`status=in_negotiation`/`in_deal` には**ならない**、iter39） |
+
+### Match types（iter28 確定）
+
+| 値 | 意味 |
+|---|---|
+| `perfect` | 完全マッチ（双方の譲・求が両方向で一致） |
+| `forward` | 私が欲しい譲を持つ人（trigger=相手の譲） |
+| `backward` | 私の譲が欲しい人（trigger=私の譲） |
+
+### Meetup type（iter33 確定）
+
+| 値 | 意味 |
+|---|---|
+| `now` | 即時モード（5/10/15/30分以内に合流） |
+| `scheduled` | 日時指定モード（事前に時間決め、AWまたはカスタム日時） |
+
 ## I. ルール・SLA
 
 | ルール | 値 | 適用範囲 | 出処 |

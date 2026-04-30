@@ -419,6 +419,71 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション39：データモデル擦り合わせ・5論点確定
+
+### 背景
+
+iter38 で `05_data_model.md` を v2 化し、未確定項目30件を整理した。
+そのうち**実装着手前に最重要の5項目**を擦り合わせる必要があり、ユーザーと対話で決定。
+
+### 確定内容
+
+| # | 論点 | 確定 |
+|---|---|---|
+| 1 | Item の `kind=keep` は `in_negotiation` になりうるか | **🅰️ 完全分離**：ならない。譲りたくなったら `kind` を `for_trade` に変更してから |
+| 2 | `meetup_scheduled_custom` を JSONB か別テーブルか | **🅰️ JSONB**（MVP段階）。将来検索性が必要なら別テーブル `proposal_meetups` に切り出し可 |
+| 3 | `outfit_photo` を messages 内 vs 専用テーブル | **🅲️ 両方**：`deal_outfit_photos` で最新版管理＋`messages.message_type='system'` で「共有しました」を流す |
+| 4 | 到着検知の仕組み | **🅰️ 手動のみ（MVP）**：「会場到着」ボタン。QR連動・GPS自動は Post-MVP |
+| 5 | `disputes.resolution.decision` 値リスト | **推奨全部**：5値（sender_fault/receiver_fault/mutual_fault/no_fault/cant_determine）+ penalty 4段階（none/warning/temp_suspend/permanent_suspend）+ reason/next_steps |
+
+### 変更ファイル
+
+#### `notes/05_data_model.md`
+- 5論点それぞれの該当セクションに `🔒 確定（iter39）` ブロック追加
+- `user_haves` セクション：kind と status の組合せ制約を明示（`keep` × `in_negotiation` 禁止）
+- `proposals.meetup_scheduled_custom`：JSONB 確定の注釈
+- `deal_outfit_photos`：2層構成の運用説明（専用テーブル＋system message）
+- `deal_arrivals`：MVPは `manual` のみ、Post-MVP で QR/GPS 検討
+- `disputes.resolution`：JSONB 構造を完全定義（5+4 値表＋テンプレ）
+- 末尾「⚠️ 未確定項目」表：5件を「✅ iter39 で確定済」に分離
+
+#### `notes/09_state_machines.md`
+- 末尾「未確定・要確認項目」表：該当する5件を「✅ iter39 で確定済」セクションへ移動
+
+#### `notes/10_glossary.md`
+- セクション H（ステータス・状態）に enum 値の正式リスト追加：
+  - **Dispute resolution**：decision 5値、penalty 4値（iter39 確定）
+  - **Message types**：text / image / outfit_photo / location_share / system
+  - **Item kind**：for_trade / keep（制約付き）
+  - **Match types**：perfect / forward / backward
+  - **Meetup type**：now / scheduled
+
+### 影響範囲
+
+- データモデル全体（5箇所の確定 → 実装ブレ防止）
+- 用語集（enum 値が辞書化され、実装で勝手に値追加するのを防止）
+
+### 確認方法
+
+- `notes/05_data_model.md` の 🔒 ブロックを検索
+- `notes/10_glossary.md` セクション H の追加部分を確認
+
+### 関連ファイル
+
+- `notes/05_data_model.md`
+- `notes/09_state_machines.md`
+- `notes/10_glossary.md`
+
+### 残未確定項目
+
+25件。次フェーズ（USER_PLAYBOOK タスク2-7）で詳細化される過程で順次解決される予定。
+特にPhase 2 タスク3（per-screen spec）でいくつか自然に決まる：
+- `proposal_revisions` の履歴粒度（実装してみると粒度が見える）
+- system message の `event_type` 値リスト（メッセージ画面の実装で確定）
+- `cancelled_reason` の値リスト（C-2 キャンセルUI設計で確定）
+
+---
+
 ## イテレーション38：データモデル v2 — iter24/29/33/34 反映
 
 ### 背景・問題意識
