@@ -419,6 +419,108 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション41：per-screen spec（USER_PLAYBOOK タスク3）— 主要5画面
+
+### 背景
+
+USER_PLAYBOOK タスク3。
+画面インベントリ（11）で全89画面を一覧化したので、次は **重要画面の詳細仕様**を per-screen で書く。
+- 「この画面はどう作る？」「state/props/振る舞い/エラーは？」が一発で引ける一次資料
+- JSX コードに暗黙的になっていた仕様を文章化
+- 未確定項目は「⚠️ 要確認」マークで保留
+
+### 変更内容
+
+#### `notes/12_screens/` ディレクトリ新規作成
+
+##### `notes/12_screens/README.md`
+- ディレクトリの位置付け・命名規約・章立てテンプレ
+- 各 spec 共通の章立て：画面の目的／入力データ／表示要素／アクション／バリデーション・エラー／エッジケース／関連API（仮）／関連docs／未確定項目
+
+##### `notes/12_screens/C-0_propose_select.md`
+- 6 variant（mine/theirs perfect、forward、backward、meetup-scheduled/now）を1ファイルでカバー
+- 3タブ構造（mine / theirs / meetup）の詳細
+- meetup タブの2モード（即時・日時指定）
+- ステッパー UI（iter29 の数量管理）
+- canProceed の判定ロジック
+- 関連API：proposals 作成・送信、AW交差判定 等
+- 未確定項目：5件（draft 保存タイミング、既存ネゴある相手への新規打診の振る舞い 等）
+
+##### `notes/12_screens/C-1_receive.md`
+- 受信側の画面（`C1ReceiveScreen`）
+- Sender card / 提案内容カード / メッセージ / 自動添付情報 / 3択CTA
+- 承諾モーダル流用 vs 専用化の議論（⚠️）
+- 期限切れ・撤回・重複表示・dispute中 のエッジケース
+- 未確定項目：5件
+
+##### `notes/12_screens/C-1.5_nego_chat.md`
+- 5シナリオ + 3モーダル/画面（合意確認・取引成立・相手の譲）を1ファイル
+- 「現在の提案」pin card の構造
+- リマインダーバナー（normal/r3/r6/expired/mine-agreed）
+- システムメッセージの種別と event_type 値リスト（⚠️）
+- API：messages 取得・送信、提案修正、合意送信、期限延長 等
+- 未確定項目：7件（提案修正で last_action_at リセット、双方同時合意のレースコンディション 等）
+
+##### `notes/12_screens/C-2_trade_chat.md`
+- iter34 の最新仕様（場所・時間調整UI削除、当日ライブ運用集約）
+- Pin card / 服装写真CTA / 4種メッセージタイプ / クイックアクション3種 / 到着ステータス
+- 服装写真アップロードのバリデーション（顔ブラー等は要確認 ⚠️）
+- 現在地共有の OS 権限ハンドリング
+- 30分遅刻時のキャンセル権 UI（⚠️）
+- 未確定項目：8件
+
+##### `notes/12_screens/C-3_complete.md`
+- 3ステップ：CaptureStep / ApproveStep / RateStep
+- iter4 の「左=相手 / 右=自分」固定設計
+- 撮影 → 評価まで連続した状態遷移
+- 細分化評価（時間厳守・実物状態・メッセージ対応）の MVP 採用可否（⚠️）
+- 内容相違時の D-flow への遷移
+- 未確定項目：8件
+
+### 影響範囲
+
+- 設計ドキュメント全体（00-11 の構造化が更にレベルアップ）
+- 実装着手の準備（API spec / 実装フェーズ分割の前提が整う）
+
+### Phase 2 進捗
+
+USER_PLAYBOOK タスク：
+- 🥇 タスク1（05 最新化） ✅ iter38
+- 🎯 5論点擦り合わせ ✅ iter39
+- 🥈 タスク2（11 画面マトリクス） ✅ iter40
+- 🥈 **タスク3（12_screens/ per-screen spec） ✅ iter41 ← 今回（主要5画面）**
+- 🥉 タスク4（13 API spec） → 次
+- 🥉 タスク5（14 実装フェーズ分割）
+
+### 確認方法
+
+- `notes/12_screens/README.md` から各 spec へリンク
+- GitHub: https://github.com/mashimabizz/iHub_design/tree/main/notes/12_screens
+
+### 関連ファイル
+
+- `notes/12_screens/README.md`（新規）
+- `notes/12_screens/C-0_propose_select.md`（新規）
+- `notes/12_screens/C-1_receive.md`（新規）
+- `notes/12_screens/C-1.5_nego_chat.md`（新規）
+- `notes/12_screens/C-2_trade_chat.md`（新規）
+- `notes/12_screens/C-3_complete.md`（新規）
+
+### 次フェーズへの示唆
+
+タスク4（API spec）は、これら spec の「関連 API（仮）」セクションを集約してREST設計に落とす作業。
+未確定項目の多くは API spec 側で確定する：
+- proposal 作成タイミング（C-0）
+- 承諾確認モーダルの仕様（C-1）
+- system message event_type 値リスト（C-1.5）
+- 服装写真・現在地アップロードの API 形状（C-2）
+- 評価の細分化採用可否（C-3）
+
+**残りの主要画面** spec は次フェーズで追加（ホーム、AW、在庫、ウィッシュ、認証/オンボ、D-flow、検索）。
+ただし API spec 完成のためには現状5画面で十分。
+
+---
+
 ## イテレーション40：画面インベントリ作成（USER_PLAYBOOK タスク2）
 
 ### 背景
