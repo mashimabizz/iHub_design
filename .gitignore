@@ -11,8 +11,12 @@
 *.swo
 *~
 
-# Claude Code（ローカル設定はリポジトリに含めない）
-.claude/
+# Claude Code
+# - settings.local.json: ユーザーごとのローカル設定（除外）
+# - cache/: 一時キャッシュ（除外）
+# - commands/, skills/, agents/: プロジェクト共通の設定（含める）
+.claude/settings.local.json
+.claude/cache/
 
 # Logs
 *.log

@@ -1,7 +1,20 @@
 # CLAUDE.md — Claude セッション Bootstrap
 
-> このファイルは **Claude が新規セッションでこのリポジトリに入った時、最初に読むべきファイル**。
-> 環境が変わっても再現できることを目的に、最低限のコンテキストを集約しています。
+> **このファイルは、Claudeがこのリポジトリに入った時に最初に読むべきファイル。**
+> PC（Claude Code）でも スマホ（claude.ai mobile / GitHub連携）でも、ここに書かれたルールに従って動作してください。
+>
+> このファイルだけで、新規環境でも作業を再現できることを目的としています。
+
+---
+
+## ⚠️ Claude が動作する前に必ずすること
+
+1. **このファイル全文を読む**
+2. **`notes/10_glossary.md` を最低でも目次までスキャン**（「AW」「wish」等の用語を誤解しないため）
+3. **`notes/09_state_machines.md` の目次を確認**（状態名を間違えないため）
+4. **`notes/08_design_iterations.md` の最新 iter を 1〜2件読む**（直近のコンテキスト）
+
+これらを読まずに作業を始めない。
 
 ---
 
@@ -14,18 +27,25 @@
 
 ---
 
-## 作業を始める前に必読のドキュメント（優先順）
+## 🤖 環境ごとの動作差分（重要）
 
-1. 🥇 **`notes/10_glossary.md`** — 用語の定義。「AW って何？」「wish と 求 は同じ？」を解決
-2. 🥇 **`notes/09_state_machines.md`** — 全エンティティの状態遷移（mermaid）
-3. 🥈 **`notes/08_design_iterations.md`** — 設計判断の履歴。最新 iteration（番号大きい方）から見ると効率的
-4. 🥈 **`notes/07_mvp_handoff.md`** — MVP引き継ぎ全体像
-5. 🥉 **`notes/02_system_requirements.md`** — 機能要件（やや古い、iter 24-34 未反映の可能性）
-6. 🥉 **`notes/05_data_model.md`** — データモデル（同上、要更新）
+| 動作 | PC（Claude Code） | スマホ（claude.ai） |
+|---|---|---|
+| ファイル読み書き | ⭕ | ⭕ |
+| git commit/push | ⭕ | ⭕（GitHub API経由） |
+| Bash 実行 | ⭕ | ❌ |
+| `python3 -m http.server` でプレビュー | ⭕ | ❌ |
+| ブラウザでスクリーンショット | ⭕ | ❌ |
+| スラッシュコマンド `/iter` 等 | ⭕ | ❌（CLAUDE.md の指示に従う） |
+
+**スマホ Claude の場合**：
+- localhost プレビューはできない → JSX のコードを読んで判断する
+- スクショは取れない → 必要なら GitHub Pages のURL（[こちら](#-github-pages)）を案内する
+- スラッシュコマンドは効かない → CLAUDE.md のワークフローセクションを読んで手動で同じ手順を踏む
 
 ---
 
-## ファイル構造マップ
+## 📁 ファイル構造マップ
 
 ### `iHub/`（mockup）
 
@@ -55,40 +75,116 @@
 
 ### `notes/`（ドキュメント）
 
-| ファイル | 内容 |
+| ファイル | 内容 | 更新頻度 |
+|---|---|---|
+| `00_persona.md` | ペルソナ（ハナ＋サブ3名） | 低 |
+| `01_user_needs.md` | ユーザーニーズ | 低 |
+| `02_system_requirements.md` | 機能要件 | 中（要更新） |
+| `03_strategy.md` | 戦略 | 低 |
+| `04_prototype_status.md` | 既存システム状況 | 低 |
+| `05_data_model.md` | データモデル | 中（要更新） |
+| `06_extended_needs.md` | 拡張要件 | 低 |
+| `07_mvp_handoff.md` | MVP引き継ぎ | 低 |
+| `08_design_iterations.md` | **設計判断の履歴** | **高（変更のたび）** |
+| `09_state_machines.md` | **状態遷移図（mermaid）** | 中（状態追加・変更時） |
+| `10_glossary.md` | **用語集＋廃止用語** | 中（用語追加時） |
+
+### `.claude/`（Claude設定）
+
+| ファイル | 用途 |
 |---|---|
-| `00_persona.md` | ペルソナ（ハナ＋サブ3名） |
-| `01_user_needs.md` | ユーザーニーズ |
-| `02_system_requirements.md` | 機能要件 |
-| `03_strategy.md` | 戦略 |
-| `04_prototype_status.md` | 既存システム状況 |
-| `05_data_model.md` | データモデル |
-| `06_extended_needs.md` | 拡張要件 |
-| `07_mvp_handoff.md` | MVP引き継ぎ |
-| `08_design_iterations.md` | **設計判断の履歴（iter 35 件）** |
-| `09_state_machines.md` | **状態遷移図（mermaid）** |
-| `10_glossary.md` | **用語集＋廃止用語** |
+| `commands/iter.md` | `/iter` スラッシュコマンド（PC版Claude用） |
+| `settings.local.json` | ユーザー個人設定（gitignore） |
 
 ---
 
-## 動作確認
+## ✅ ワークフロー（厳守）
 
-```bash
-# プロジェクトルートで
-python3 -m http.server 8000
+### A. 設計・実装変更時のチェックリスト
 
-# ブラウザで http://localhost:8000/iHub%20{Flow}.html を開く
+**何かしらの設計判断や実装変更をしたら、必ず以下の順で実行する：**
+
+```
+□ 1. 変更内容を実装（JSX編集等）
+□ 2. notes/08_design_iterations.md に新しい iteration エントリを追加
+□ 3. 状態遷移に影響あるか？ → あれば notes/09_state_machines.md を更新
+□ 4. 新用語・廃止用語があるか？ → あれば notes/10_glossary.md を更新
+□ 5. データモデルに影響あるか？ → あれば notes/05_data_model.md にメモ追加
+□ 6. commit メッセージは [iter◯◯] [タイトル] 形式で
+□ 7. push
 ```
 
-主な確認URL：
-- `http://localhost:8000/iHub%20MVP%20v1.html` — 全画面統合
-- `http://localhost:8000/iHub%20Nego%20Flow.html` — ネゴフロー（最近最も触った）
-- `http://localhost:8000/iHub%20C%20Flow.html` — C-1〜C-3
-- `http://localhost:8000/iHub%20Propose%20Select.html` — C-0
+**省略禁止**：チェックリストの 2-5 を飛ばすと、別環境の Claude が同じ判断を再現できなくなる。
+
+### B. iteration エントリの形式
+
+`notes/08_design_iterations.md` への追記は、最新が**上**に来る形式：
+
+```markdown
+## イテレーション◯◯：[簡潔なタイトル]
+
+### 背景・問題意識
+[なぜこの変更が必要か。ユーザーからの指摘ならその引用も]
+
+### 変更内容
+[何を変えたか。bullet で具体的に]
+
+#### `path/to/file1.jsx`
+- 変更点1
+- 変更点2
+
+#### `path/to/file2.jsx`
+- 変更点
+
+### 影響範囲
+[どの画面・どのフローに影響するか]
+
+### 確認方法
+- http://localhost:8000/iHub%20XXX.html
+
+### 関連ファイル
+- `iHub/xxx.jsx`
+- `iHub/iHub XXX.html`
+```
+
+### C. 用語追加時
+
+`notes/10_glossary.md` の正しいカテゴリ（A〜I）に追加。同義語・別名も併記。
+
+### D. 廃止用語
+
+**削除しない**。`notes/10_glossary.md` の `J. 廃止用語` セクションに移動し、後継用語と廃止理由を明記。
+
+### E. commit メッセージのテンプレ
+
+```
+[iter◯◯] [タイトル30文字以内]
+
+[変更概要を1-3行]
+
+[詳細を bullet で]
+- 変更点1
+- 変更点2
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+例：
+```
+[iter34] C-2取引チャットを当日ライブ運用へ集約
+
+合意前に待ち合わせfixしたので、C-2の場所/時間UIは不要になった。
+代わりに服装写真CTA・現在地共有・到着ステータスを実装。
+
+- 場所提案カード・時刻チップを削除
+- 服装写真CTA をプロミネント配置
+- 現在地共有メッセージ（mini map）追加
+- ヘッダーに到着ステータス表示
+```
 
 ---
 
-## デザイン規約
+## 🎨 デザイン規約
 
 ### ブランドカラー
 
@@ -116,21 +212,47 @@ python3 -m http.server 8000
 
 `notes/09_state_machines.md` の `snake_case` を実装でも使う（例：`negotiating`, `agreed`, `for_trade`）。
 
----
+### スタイリング
 
-## 開発・更新ルール（厳守）
-
-1. **デザイン変更**したら必ず `notes/08_design_iterations.md` に新しい iteration として記録
-   - 形式: `## イテレーション◯◯：[タイトル]`
-   - 背景／変更内容／確認方法／関連ファイルを書く
-2. **状態の追加・削除・名称変更**があったら `notes/09_state_machines.md` を更新
-3. **新用語**は `notes/10_glossary.md` に追加
-4. **廃止用語**は `10_glossary.md` の J. 廃止用語 へ移動（**削除しない**）
-5. **未確定項目**は `09_state_machines.md` 末尾の「未確定・要確認項目」表に追加
+- インライン CSS-in-JS（外部 CSS ファイル不使用）
+- カラーは tweaks 経由（ハードコード禁止、`c.lavender` 等を使う）
+- アイコンは SVG インライン（外部画像不使用、`Ic.*` ヘルパー or インライン）
 
 ---
 
-## 直近の主要設計判断（iter 30〜35）
+## 🔍 動作確認
+
+### PC（Claude Code）
+
+```bash
+# プロジェクトルートで
+python3 -m http.server 8000
+
+# 主要URL
+# http://localhost:8000/iHub%20MVP%20v1.html       — 全画面統合
+# http://localhost:8000/iHub%20Nego%20Flow.html    — ネゴ
+# http://localhost:8000/iHub%20C%20Flow.html       — C-1〜C-3
+# http://localhost:8000/iHub%20Propose%20Select.html — C-0
+# http://localhost:8000/iHub%20Hub%20Screens.html  — ホーム/プロフ/ウィッシュ
+# http://localhost:8000/iHub%20B%20Inventory.html  — 在庫
+# http://localhost:8000/iHub%20Auth%20Onboarding.html — 認証＋オンボ
+```
+
+### 🌐 GitHub Pages
+
+スマホ・他環境からプレビューしたい時：
+
+```
+https://mashimabizz.github.io/iHub_design/iHub/[ファイル名].html
+```
+
+例：
+- `https://mashimabizz.github.io/iHub_design/iHub/iHub%20MVP%20v1.html`
+- `https://mashimabizz.github.io/iHub_design/iHub/iHub%20Nego%20Flow.html`
+
+---
+
+## 📜 直近の主要設計判断（iter 30〜35）
 
 実装着手前に必ず把握しておく：
 
@@ -144,17 +266,20 @@ python3 -m http.server 8000
 | 34 | **C-2 取引チャット再定義**（当日ライブ運用へ集約・服装写真CTA強調・現在地共有） | C-2 |
 | 35 | **state machines + glossary 整備**（再現可能性確保） | docs |
 
+最新の iter は `notes/08_design_iterations.md` の冒頭を参照。
+
 ---
 
-## ステータス・次フェーズ
+## 🚧 ステータス・次フェーズ
 
 ### ✅ 完了
 
 - 80画面以上の mockup
 - 主要設計ドキュメント（要件・状態遷移・用語集）
 - ブランドカラー・命名規約
+- GitHub 移行＋ Pages 有効化（iter36）
 
-### 🚧 これから（Phase 2）
+### 🎯 これから（Phase 2）
 
 優先順：
 1. `05_data_model.md` 最新化（iter 24-34 反映）
@@ -163,7 +288,7 @@ python3 -m http.server 8000
 4. `13_api_spec.md` 新規
 5. `14_implementation_phases.md` 新規（フェーズ分割）
 
-### 🚧 検討中
+### 🤔 検討中
 
 - 実装の技術スタック（React Native? Flutter? PWA?）
 - BFF / バックエンド設計
@@ -171,10 +296,55 @@ python3 -m http.server 8000
 
 ---
 
-## Claude へのお願い
+## 📲 iPhone ワークフロー
 
-1. **新規作業時はまず `notes/08, 09, 10` をスキャン**してコンテキストを掴む
-2. **デザイン変更時は更新ルール（上記）を守る**
-3. **暗黙的な仮定に気付いたら即 `09` の「未確定項目」に追加**
-4. **新用語・廃止用語は `10` を都度更新**
-5. **「これって何？」と思ったら `10_glossary.md` を最初に検索**
+スマホからの典型的な使い方：
+
+1. **claude.ai モバイルアプリ**を開く
+2. iHub_design リポジトリへの GitHub 連携が有効になっている前提
+3. 「**iHub_design リポを見て、〇〇画面の××を△△に変えて**」と依頼
+4. Claude が以下を実行：
+   - CLAUDE.md を読む（このファイル）
+   - 関連 JSX を読む
+   - 必要な変更を判断
+   - **A. 設計・実装変更時のチェックリスト** を必ず実行
+   - commit & push
+5. 必要なら GitHub Pages の URL でスマホブラウザから確認
+
+**iPhone Claude が困りそうな時の対処**：
+- 「localhost プレビューしたい」 → GitHub Pages の URL を案内
+- 「スクショ取りたい」 → スマホブラウザで GitHub Pages を開いてスクショを取ってもらう
+- 「シェル使いたい」 → PC作業を案内
+
+---
+
+## 🛠 PC で便利なスラッシュコマンド
+
+PC で Claude Code を使う場合、以下のスラッシュコマンドが使える：
+
+| コマンド | 用途 |
+|---|---|
+| `/iter` | 設計変更を 08 に記録 + 09/10 の更新診断 |
+
+スマホ Claude では効かないので、CLAUDE.md の **A. 設計・実装変更時のチェックリスト** を手動で実行する。
+
+---
+
+## ❓ Claude が判断に迷ったら
+
+1. **用語が分からない** → `notes/10_glossary.md` を最初に検索
+2. **状態が分からない** → `notes/09_state_machines.md` を確認
+3. **過去の設計判断を知りたい** → `notes/08_design_iterations.md` を時系列で読む
+4. **「これって意図的？」と思った** → 安易に変えず、ユーザーに確認 or 関連 iter を読む
+5. **暗黙的な仮定に気付いた** → `notes/09_state_machines.md` 末尾の「未確定・要確認項目」表に追加して、ユーザーに知らせる
+
+---
+
+## 🤝 Claude へのお願い（まとめ）
+
+1. このCLAUDE.md と `notes/08, 09, 10` を**最初に読む**
+2. **A. 設計・実装変更時のチェックリスト**を厳守
+3. **新用語・廃止用語**は `10` を都度更新
+4. **暗黙的な仮定**に気付いたら `09` の「未確定項目」に追加
+5. **「これって何？」**と思ったら `10_glossary.md` を最初に検索
+6. **commit メッセージ**は `[iter◯◯] [タイトル]` 形式で
