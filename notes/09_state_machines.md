@@ -488,12 +488,39 @@ graph LR
 
 ## 未確定・要確認項目
 
+実装着手前にユーザーと擦り合わせる項目。`05_data_model.md` の末尾「⚠️ 未確定項目」とも連携。
+
+### 状態遷移ルール関連
+
 | # | 項目 | 状況 |
 |---|---|---|
 | 1 | ネゴ中の提案修正で 7日カウントはリセットされるか？ | **要確認**（現状は継続前提で記述） |
-| 2 | AW のアーカイブまでの猶予時間（24h？） | **要確認** |
+| 2 | AW の `ended` から `archived` への自動遷移時間（24h？） | **要確認** |
 | 3 | dispute の反論機会期間が 24h or 4h はカテゴリで変わるか？ | **要確認** |
 | 4 | アカウント削除30日猶予の起点は申請時刻 or 日付ベース？ | **要確認** |
 | 5 | Wish の `matched` 状態は1回通知するだけか、継続的に？ | **要確認** |
+| 6 | Proposal の `cancelled` 状態を追加するか（送信前取消・送信後 sender 取消等）？ | **要確認**（iter38で追加検討） |
+| 7 | `agreement_one_side` 中の提案修正で `agreed_by_*` を reset するか？ | **要確認**（iter38で追加検討） |
+| 8 | `disputed` 解決時に `rated` に戻るか別の終了状態（例：`disputed_resolved`）か？ | **要確認**（iter38で追加検討） |
+| 9 | Item の `kind=keep` は `status=in_negotiation` に遷移しうるか？（自分用なら他人に出さない） | **要確認**（iter38で追加検討） |
+| 10 | Item の `traded` 後に `kind` を保持か reset か？ | **要確認**（iter38で追加検討） |
+| 11 | `auto_from_proposal` で作られた AW は、対応する deal が cancel/dispute になった時に削除？保持？ | **要確認**（iter38で追加検討） |
 
-これらは実装着手前にユーザーと擦り合わせる項目。
+### 検知・トリガー関連
+
+| # | 項目 | 状況 |
+|---|---|---|
+| 12 | 到着検知の仕組み（手動報告 / GPS自動 / QRスキャン時自動 / 全部？） | **要確認**（iter38で追加検討） |
+| 13 | マッチング計算のバッチ頻度（毎日 / 6h / 1h） | **要確認**（iter38で追加検討） |
+| 14 | リアルタイム通知のスロットル（同じユーザー間で1日N回まで等） | **要確認**（iter38で追加検討） |
+
+### データ構造関連
+
+| # | 項目 | 状況 |
+|---|---|---|
+| 15 | `meetup_scheduled_custom` を proposals の JSONB カラムか、別テーブル `proposal_meetups` か | **要確認**（iter38で追加検討） |
+| 16 | `outfit_photo` を `messages.message_type='outfit_photo'` か、専用テーブル `deal_outfit_photos` か | **要確認**（iter38で追加検討） |
+| 17 | `proposal_revisions` の履歴保存粒度（毎修正全部 vs 直近N件） | **要確認**（iter38で追加検討） |
+| 18 | system message の `event_type` 値リスト確定（'arrival', 'agreement_one_side' 等） | **要確認**（iter38で追加検討） |
+
+これらは実装着手前にユーザーと擦り合わせる項目。詳細は `05_data_model.md` の「⚠️ 未確定項目」表を参照。

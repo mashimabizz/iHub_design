@@ -1,232 +1,548 @@
-# データモデル設計（議論中）
+# データモデル設計
 
-（2026-04-27 ターン6時点）
+> **目的**：iHub の全エンティティのDBスキーマ設計と、状態・マッチング・取引のデータフロー定義。
+> 実装の正解集。`09_state_machines.md` と完全に整合させ、`10_glossary.md` の用語を使う。
 
-## 既存スキーマ（変更なしで活用）
+最終更新: 2026-05-01
+ステータス: Draft v2.0（iter24/29/33/34 反映済）
 
-- `user_haves`（=「棚」）：詳細は [04_prototype_status.md](04_prototype_status.md)
-- `user_have_images`：将来の複数画像対応予備
-- `user_wants`（=「鏡」）：flexibility / priority カラム含む
+## 最新化履歴
 
-## 既存スキーマで MVP までに変更が必要な点
+| Rev | 日付 | 変更 |
+|---|---|---|
+| v1.0 | 2026-04-27 | 初版（マスタ階層、availability_windows、proposals 等） |
+| **v2.0** | **2026-05-01** | **iter24/29/33/34 反映（meetup, outfit, location_share, 状態名統一、deals リネーム）** |
 
-### ① マスタ参照の強化（キャラ運営マスタ化）
+## このドキュメントの位置付け
 
-**現状の問題**：
-- `genre_name`（text 必須）と `genre_tag_id`（uuid 任意）の二重管理
-- マッチングは `genre_name` 完全一致に依存 → 表記揺れ（「呪術廻戦」「呪術」「JJK」）で取りこぼし
-
-**提案**：
-- `genre_tag_id` を **必須** に格上げ（運営マスタ参照を強制）
-- `character_name` を `character_id`（マスタ参照）化
-- `goods_type` を `goods_type_id`（マスタ参照）化
-- `genre_name` / `character_name` は **表示用キャッシュ**として残すか、JOINで取得
-
-**マスタ階層**：
-
-```
-genres_master         # ジャンル：KPOP / 邦アイ / 2.5次元 / etc
-  ├ id
-  ├ name
-  └ kind              # idol / anime / game / etc
-
-groups_master         # グループ：BTS / TWICE / etc（KPOP限定で開始）
-  ├ id
-  ├ genre_id          # → genres_master
-  ├ name
-  └ aliases[]         # ["방탄소년단", "防弾少年団"]
-
-characters_master     # メンバー／キャラ
-  ├ id
-  ├ group_id          # → groups_master（KPOPはグループ参照）
-  ├ genre_id          # → genres_master（グループに属さないジャンル用）
-  ├ name
-  └ aliases[]
-
-goods_types_master    # 缶バッジ／トレカ／生写真／アクスタ／etc
-  ├ id
-  ├ name
-  └ category
-```
-
-### ② 場所粒度の整理
-
-**現状**：`hand_prefecture`（都道府県レベル "東京都"）
-
-**問題**：iHubの現地交換は「会場周辺」「駅エリア」「半径500m」など細かい粒度が必要
-
-**提案**：
-- `user_haves.hand_prefecture` は **削除 or プロフへ格下げ**
-- ユーザープロフに `primary_area`（"東京都"レベル、粗い検索用）を追加
-- 具体的な合流情報は **新テーブル `availability_windows`** で持つ
-
-### ③ 「携帯グッズ」状態
-
-**提案（推奨：案A）**：
-- `user_haves` に追加カラム：
-  - `is_carrying` boolean（default false）
-  - `carry_event_id` uuid nullable（→ `events`）
-
-代替（案B）：別テーブル `carry_sessions`（履歴管理に強いがMVPには重い）
-
-### ④ 数量（×N）の扱い
-
-**提案（推奨）**：1行 = 1個 を維持。UI で「×N」を受け取って **N行 INSERT**。
-
-理由：
-- 既存 status 管理（active/reserved/traded）と完全整合
-- 「3個中2個 reserved、1個 active」が自然に表現
-- スキーマ変更ゼロ
-
-代替：`quantity` 列追加 → `reserved_count` / `traded_count` も必要になり複雑化
-
-### ⑤ `exchange_method` の "郵送" 値
-
-**提案**：データ型はそのまま、MVPでは登録UIで「郵送」を**非表示・選択不可**に。実質「手渡し」固定。後フェーズで活用余地。
+- **状態識別子（status等）は `09_state_machines.md` と完全一致**
+- **用語は `10_glossary.md` と完全一致**（`deal` を使う、`exchange` は旧）
+- **「⚠️ 要確認」は実装着手前に擦り合わせる項目**
+- 表記揺れに気づいたら `10_glossary.md` に追加・更新
 
 ---
 
-## 新規追加が必要なテーブル
+## 目次
 
-### `availability_windows`（時間範囲＋場所）
+1. [マスタテーブル](#1-マスタテーブル)
+2. [ユーザー・アカウント](#2-ユーザーアカウント)
+3. [在庫・ウィッシュ](#3-在庫ウィッシュ)
+4. [活動予定（AW）・イベント](#4-活動予定awイベント)
+5. [打診（Proposal）・ネゴ・メッセージ](#5-打診proposalネゴメッセージ)
+6. [取引（Deal）・到着・服装・位置共有](#6-取引deal到着服装位置共有)
+7. [評価・通報・断った記録](#7-評価通報断った記録)
+8. [Dispute（異議申し立て）](#8-dispute異議申し立て)
+9. [マッチング計算ロジック](#9-マッチング計算ロジック)
+10. [⚠️ 未確定項目](#10-未確定項目)
 
-```
-id                uuid
-user_id           uuid → users
-start_at          timestamptz
-end_at            timestamptz
-lat               double precision
-lng               double precision
-radius_m          integer (default 500)
-event_id          uuid nullable → events
-note              text
-created_at        timestamptz
-updated_at        timestamptz
-```
+---
+
+## 1. マスタテーブル
+
+iter24 で「推し2階層」（グループ/作品 → メンバー/キャラ）を UI で明示化。データモデル側は既存設計を維持。
+
+### `genres_master`
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `name` | text | "K-POP" / "邦アイ" / "2.5次元" / "アニメ" / "ゲーム" 等 |
+| `kind` | text | 'idol' / 'anime' / 'game' / 'other' |
+| `display_order` | int | 表示順 |
+| `created_at` | timestamptz | |
+
+### `groups_master`
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `genre_id` | uuid | → genres_master |
+| `name` | text | "BTS" / "TWICE" / "呪術廻戦" 等 |
+| `aliases` | text[] | ["방탄소년단", "防弾少年団"] 等の表記揺れ |
+| `kind` | text | 'group' / 'work' / 'solo'（iter24対応：ソロアーティストの取扱い、⚠️要確認） |
+| `display_order` | int | |
+| `created_at` | timestamptz | |
+
+### `characters_master`
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `group_id` | uuid nullable | → groups_master（グループ所属の場合） |
+| `genre_id` | uuid | → genres_master（グループ非所属でも参照） |
+| `name` | text | "ジョングク" / "虎杖悠仁" 等 |
+| `aliases` | text[] | |
+| `display_order` | int | |
+| `created_at` | timestamptz | |
+
+### `goods_types_master`
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `name` | text | "トレカ" / "生写真" / "缶バッジ" / "アクスタ" 等 |
+| `category` | text | 'card' / 'photo' / 'pin' / 'figure' / 'other' |
+| `display_order` | int | |
+| `created_at` | timestamptz | |
+
+---
+
+## 2. ユーザー・アカウント
+
+### `users`
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `email` | text unique | |
+| `password_hash` | text nullable | OAuth のみの場合は NULL |
+| `oauth_provider` | text nullable | 'google' / 'apple' 等 |
+| `oauth_subject` | text nullable | OAuth の sub |
+| `handle` | text unique | @hana_lumi 等 |
+| `display_name` | text | |
+| `avatar_url` | text nullable | |
+| `gender` | text nullable | 任意（オンボで聞く） |
+| `primary_area` | text nullable | "東京都" 等の粗い検索用エリア |
+| `account_status` | text | `registered` / `verified` / `onboarding` / `active` / `suspended` / `deletion_requested` / `deleted` (09と一致) |
+| `email_verified_at` | timestamptz nullable | |
+| `deletion_requested_at` | timestamptz nullable | 30日猶予の起点 |
+| `last_login_at` | timestamptz nullable | |
+| `created_at` / `updated_at` | timestamptz | |
+
+⚠️ 要確認：
+- パスワード以外の auth method（passkey, magic link）対応するか
+- `gender` を必須にするか任意にするか（マッチング条件に使う？）
+
+### `user_oshi`（推し登録）
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | → users |
+| `group_id` | uuid nullable | → groups_master（L1） |
+| `character_id` | uuid nullable | → characters_master（L2） |
+| `kind` | text | 'box'（箱推し）/ 'specific'（特定メンバー）/ 'multi'（複数メンバー） |
+| `priority` | int | 1=メイン推し、2以降=サブ |
+| `created_at` | timestamptz | |
+
+⚠️ 要確認：
+- 1ユーザーが複数推し（DD）登録できる前提でOKか
+- L1のみ・L2のみ・両方の組み合わせ可否
+
+---
+
+## 3. 在庫・ウィッシュ
+
+### `user_haves`（=「棚」=在庫）
+
+iter29 で 1行=1個 の方針確定。UI で集約表示し、選択時は N 行を押さえる。
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | → users |
+| `genre_tag_id` | uuid | → genres_master（**必須**、iter24） |
+| `character_id` | uuid nullable | → characters_master（iter24、新マスタ参照、表記揺れ排除） |
+| `goods_type_id` | uuid | → goods_types_master（**必須**、iter24） |
+| `title` | text | 旧 `genre_name`/`character_name` 由来の表示名 |
+| `description` | text nullable | |
+| `condition_tags` | text[] | 美品 / コーティング有 / シリアル付き 等 |
+| `exchange_method` | text | 'hand'（手渡し）/ 'mail'（郵送、MVPでは UI 非表示） |
+| `kind` | text | `for_trade`（譲る候補）/ `keep`（自分用キープ） |
+| `status` | text | `available` / `in_negotiation` / `in_deal` / `traded`（09 Item Lifecycleと整合） |
+| `is_carrying` | boolean | 「今日持参する」フラグ（F2 携帯モード） |
+| `carry_event_id` | uuid nullable | → events |
+| `created_at` / `updated_at` | timestamptz | |
+
+⚠️ 要確認：
+- `kind=keep` のアイテムは `status=in_negotiation` になり得るか（自分用なら他人に出さないので無し？）
+- `traded` のアイテムは `kind` を保つか reset するか
+- 旧 `hand_prefecture` カラムは廃止して `users.primary_area` に統合してOKか
+
+### `user_have_images`
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_have_id` | uuid | → user_haves |
+| `image_url` | text | 400×400 JPEG (F1) |
+| `order` | int | 表示順 |
+| `created_at` | timestamptz | |
+
+### `user_wants`（=「鏡」=ウィッシュ）
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | → users |
+| `genre_tag_id` | uuid | → genres_master（**必須**） |
+| `character_id` | uuid nullable | → characters_master（任意、flexibility 考慮） |
+| `goods_type_id` | uuid nullable | → goods_types_master（任意、flexibility 考慮） |
+| `title` | text | |
+| `description` | text nullable | |
+| `flexibility` | int | 1（厳格）〜 5（緩い）。character/goods_type の照合スキップ条件 |
+| `priority` | int | 1（高）〜 5（低）。マッチング表示順に使用 |
+| `status` | text | `active`（探し中）/ `matched`（マッチあり）/ `in_negotiation`（打診中）/ `achieved`（達成）（09 Wish Lifecycleと整合） |
+| `created_at` / `updated_at` | timestamptz | |
+
+⚠️ 要確認：
+- `flexibility` の具体的な意味（1=完全一致のみ、5=ジャンル一致だけでOK 等）の定義
+- `matched` 状態の継続性（09 未確定項目#5 と紐付け）
+
+---
+
+## 4. 活動予定（AW）・イベント
+
+### `availability_windows`（=AW）
+
+iter33 で AW自動登録機能追加（C-0 待ち合わせタブから）。
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | → users |
+| `start_at` / `end_at` | timestamptz | 時間範囲 |
+| `lat` / `lng` | double precision | 中心点 |
+| `radius_m` | int | デフォルト 500m |
+| `place_name` | text nullable | "ナゴヤドーム前矢田駅" 等の表示用 |
+| `event_id` | uuid nullable | → events |
+| `note` | text nullable | |
+| `status` | text | `draft` / `active` / `paused` / `ended` / `archived`（09 AW Lifecycleと一致） |
+| `created_via` | text | `manual`（AW画面で作成）/ `auto_from_proposal`（iter33、C-0で「AWに自動登録」チェック） |
+| `created_from_proposal_id` | uuid nullable | → proposals（auto_from_proposalの場合） |
+| `created_at` / `updated_at` | timestamptz | |
+
+⚠️ 要確認：
+- `ended` から `archived` への自動遷移時間（09 未確定項目#2）
+- `auto_from_proposal` で作られた AW は、対応する取引が cancel/dispute になったら削除？保持？
 
 ### `events`（公演／物販イベントタグ）
 
-```
-id                uuid
-name              text                   # "BOYS GROUP A 東京ドーム公演"
-start_at          timestamptz
-end_at            timestamptz
-lat               double precision
-lng               double precision
-venue_name        text                   # "東京ドーム"
-genre_id          uuid → genres_master
-group_id          uuid nullable → groups_master
-created_by        uuid → users           # ユーザー作成タグ
-created_at        timestamptz
-```
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `name` | text | "TWICE 名古屋ドーム公演" 等 |
+| `start_at` / `end_at` | timestamptz | |
+| `lat` / `lng` | double precision | |
+| `venue_name` | text | "ナゴヤドーム" |
+| `genre_id` | uuid | → genres_master |
+| `group_id` | uuid nullable | → groups_master |
+| `created_by` | uuid | → users（ユーザー作成タグ） |
+| `is_verified` | boolean | 運営承認済か（重複名寄せ後） |
+| `created_at` | timestamptz | |
 
-タグはユーザー作成可能。サジェスト・名寄せロジックで重複防止。
+⚠️ 要確認：
+- ユーザー作成タグの即公開 vs 運営承認後公開
+- 重複検出（同名・同会場・同時間）の自動マージ運用
+
+---
+
+## 5. 打診（Proposal）・ネゴ・メッセージ
 
 ### `proposals`（打診）
 
-```
-id                uuid
-sender_id         uuid → users
-receiver_id       uuid → users
-match_type        text                   # 'perfect' / 'half_a' / 'half_b'
-sender_have_ids   uuid[]                 # 私が出すグッズ
-receiver_have_ids uuid[]                 # 相手が出すグッズ
-message           text
-status            text                   # 'sent' / 'accepted' / 'rejected' / 'cancelled'
-rejected_template text nullable          # 定型文選択肢
-created_at        timestamptz
-updated_at        timestamptz
-```
+iter28（match_type）/ iter29（数量）/ iter30（7日期限）/ iter32（合意状態）/ iter33（meetup）反映。
 
-### `messages`（取引チャット）
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `sender_id` | uuid | → users（打診送信者） |
+| `receiver_id` | uuid | → users（受信者） |
+| `match_type` | text | `perfect`（完全マッチ）/ `forward`（私が欲しい譲を持つ人）/ `backward`（私の譲が欲しい人）（iter28） |
+| `sender_have_ids` | uuid[] | 送信者が出す `user_haves` IDs |
+| `sender_have_qtys` | int[] | 各 IDの選択数（iter29、長さは sender_have_ids と一致） |
+| `receiver_have_ids` | uuid[] | 受信者が出す `user_haves` IDs |
+| `receiver_have_qtys` | int[] | 各 IDの選択数 |
+| `message` | text | |
+| `status` | text | `draft` / `sent` / `negotiating` / `agreement_one_side` / `agreed` / `rejected` / `expired`（09と一致） |
+| `agreed_by_sender` | boolean default false | iter32、agreement_one_side 判定用 |
+| `agreed_by_receiver` | boolean default false | iter32 |
+| `last_action_at` | timestamptz | iter30、7日カウント起点 |
+| `expires_at` | timestamptz | iter30、自動計算（last_action_at + 7days） |
+| `extension_count` | int default 0 | iter30、+7日延長回数 |
+| `rejected_template` | text nullable | 旧定型文選択 |
+| `meetup_type` | text | iter33、`now` / `scheduled`（必須） |
+| `meetup_now_minutes` | int nullable | iter33、5/10/15/30 (`meetup_type='now'`時のみ) |
+| `meetup_scheduled_aw_id` | uuid nullable | → availability_windows（AWから選択した場合） |
+| `meetup_scheduled_custom` | jsonb nullable | iter33、`{date, time, lat, lng, place_name, register_as_aw: bool}`（カスタム日時の場合） |
+| `created_at` / `updated_at` | timestamptz | |
 
-```
-id                uuid
-proposal_id       uuid → proposals
-sender_id         uuid → users
-body              text
-attachment_url    text nullable
-created_at        timestamptz
-```
+⚠️ 要確認：
+- ネゴ中の提案修正で `last_action_at` リセットするか（09 未確定項目#1）
+- `cancelled` 状態を追加するか（送信前に取消・送信後に sender が取消等）
+- `meetup_scheduled_custom` を JSONB か別テーブル `proposal_meetups` か（クエリ性能・正規化バランス）
+- `agreement_one_side` 中の提案修正で双方の `agreed_by_*` を false にリセットするルール
 
-### `exchanges`（成立した取引）
+### `proposal_revisions`（提案修正履歴）— 新規（iter30）
 
-```
-id                uuid
-proposal_id       uuid → proposals
-participants      uuid[]                 # 参加者（MVPは2名）
-evidence_image_url text                  # 両者の交換物を1枚に収めた写真
-sender_approved   boolean default false
-receiver_approved boolean default false
-completed_at      timestamptz nullable
-location_lat      double precision nullable
-location_lng      double precision nullable
-created_at        timestamptz
-```
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `proposal_id` | uuid | → proposals |
+| `revised_by` | uuid | → users |
+| `snapshot` | jsonb | 修正時点のスナップショット（sender_have_ids, receiver_have_ids, meetup_*, message） |
+| `revised_at` | timestamptz | |
 
-両者承認で `completed_at` がセットされ、関連 `user_haves.status` を `traded` に。
+⚠️ 要確認：
+- 履歴保存の粒度（毎修正 全部 vs 直近N件のみ）
+- 表示用 vs 法的記録 vs ヒストリ機能のどれが目的か
+
+### `messages`（取引チャット・ネゴチャット）
+
+iter34 で `message_type` 拡張。
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `proposal_id` | uuid | → proposals（合意後も同じ ID で継続） |
+| `sender_id` | uuid | → users |
+| `message_type` | text | `text` / `image` / `outfit_photo` / `location_share` / `system`（iter34） |
+| `body` | text nullable | text/system 用 |
+| `attachment_url` | text nullable | image / outfit_photo 用 |
+| `metadata` | jsonb nullable | location_share: `{lat, lng, accuracy_m, captured_at}`／system: `{event_type, payload}` |
+| `created_at` | timestamptz | |
+
+⚠️ 要確認：
+- `outfit_photo` を `messages` に格納するか専用テーブル `deal_outfit_photos` にするか
+- system message の `event_type` の値リスト確定（'arrival', 'agreement_one_side', 'evidence_captured' 等）
+
+---
+
+## 6. 取引（Deal）・到着・服装・位置共有
+
+### `deals`（旧 `exchanges` をリネーム、用語集と一致）
+
+iter34 で到着ステータス・サブステート追加。
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `proposal_id` | uuid | → proposals（agreed 状態の Proposal から1:1で生成） |
+| `participants` | uuid[] | 参加者（MVPは2名、user_id配列） |
+| `status` | text | `agreed` / `on_the_way` / `arrived_one` / `arrived_both` / `evidence_captured` / `approved` / `rated` / `disputed` / `cancelled`（09 Deal Lifecycleと一致） |
+| `evidence_image_url` | text nullable | 証跡撮影画像（C-3①、左=相手 / 右=自分 固定） |
+| `sender_approved` | boolean default false | C-3②両者承認 |
+| `receiver_approved` | boolean default false | |
+| `actual_meet_lat` | double precision nullable | 実際の合流位置（提案時meetupと異なる場合あり） |
+| `actual_meet_lng` | double precision nullable | |
+| `cancelled_reason` | text nullable | キャンセル理由（'late_30min', 'mutual', 'system' 等） |
+| `cancelled_by` | uuid nullable | → users（キャンセル発動者） |
+| `completed_at` | timestamptz nullable | rated に到達した時刻 |
+| `created_at` / `updated_at` | timestamptz | |
+
+両者承認で `evidence_captured` → `approved`、両者評価で `approved` → `rated`、`completed_at` セット、関連 `user_haves.status` を `traded` に更新。
+
+⚠️ 要確認：
+- `cancelled_reason` の値リスト確定
+- `disputed` 解決時に `rated` に戻るか、別の終了状態にするか
+
+### `deal_arrivals`（到着ステータス追跡）— 新規（iter34）
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `deal_id` | uuid | → deals |
+| `user_id` | uuid | → users |
+| `arrived_at` | timestamptz | |
+| `arrival_lat` / `arrival_lng` | double precision nullable | GPS 取得した到着位置（任意） |
+| `detection_method` | text | `manual`（ユーザー報告）/ `gps_auto`（位置自動検知）/ `qr_scan`（本人確認時自動） |
+| `created_at` | timestamptz | |
+
+⚠️ 要確認：
+- 到着検知の仕組み（手動報告 / GPS自動 / 両方？プライバシー観点）
+- 1 deal × 1 user で1レコード前提か、再到着（一度退場→戻る）も記録するか
+
+### `deal_outfit_photos`（服装写真）— 新規（iter34、専用化案）
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `deal_id` | uuid | → deals |
+| `user_id` | uuid | → users |
+| `image_url` | text | |
+| `shared_at` | timestamptz | |
+| `created_at` | timestamptz | |
+
+または `messages.message_type='outfit_photo'` で代替（要確認）。
+
+⚠️ 要確認：
+- 専用テーブル化 vs `messages` 内格納のどちらにするか
+  - 専用化のメリット：一覧取得が楽、合流支援機能が拡張しやすい
+  - messages 内格納のメリット：時系列タイムライン1本化、テーブル数少ない
+
+---
+
+## 7. 評価・通報・断った記録
 
 ### `user_evaluations`（評価）
 
-```
-id                uuid
-exchange_id       uuid → exchanges
-evaluator_id      uuid → users           # 評価者
-evaluated_id      uuid → users           # 被評価者
-rating            integer (1-5)
-comment           text nullable
-created_at        timestamptz
-```
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `deal_id` | uuid | → deals（旧 `exchange_id`） |
+| `evaluator_id` | uuid | → users |
+| `evaluated_id` | uuid | → users |
+| `rating` | int | 1-5 |
+| `comment` | text nullable | |
+| `punctuality_rating` | int nullable | 1-5（時間厳守度、⚠️要確認） |
+| `item_condition_rating` | int nullable | 1-5（実物状態の一致度、⚠️要確認） |
+| `communication_rating` | int nullable | 1-5（メッセージ対応、⚠️要確認） |
+| `created_at` | timestamptz | |
 
 集計はビューで：合計★平均、取引回数、無断キャンセル数。
 
+⚠️ 要確認：
+- 細分化評価（punctuality/item_condition/communication）を MVPで採用するか後フェーズか
+
 ### `rejected_partners`（断った記録）
 
-```
-id                uuid
-user_id           uuid → users           # 自分
-partner_id        uuid → users           # 相手
-proposal_id       uuid → proposals
-created_at        timestamptz
-```
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | → users（自分） |
+| `partner_id` | uuid | → users（相手） |
+| `proposal_id` | uuid | → proposals |
+| `created_at` | timestamptz | |
 
 片方向記憶。重複打診の自動フィルタに使用。
 
-### `genres_master` / `groups_master` / `characters_master` / `goods_types_master`
+### `reports`（通報）— 新規
 
-上記参照。MVPは KPOP からスタート。
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `reporter_id` | uuid | → users |
+| `target_user_id` | uuid nullable | → users |
+| `target_proposal_id` | uuid nullable | → proposals |
+| `target_message_id` | uuid nullable | → messages |
+| `category` | text | 'spam', 'harassment', 'fake_item', 'no_show', 'other' |
+| `description` | text | |
+| `evidence_urls` | text[] | スクショ等 |
+| `status` | text | 'open', 'reviewing', 'resolved', 'dismissed' |
+| `resolved_at` | timestamptz nullable | |
+| `created_at` | timestamptz | |
 
 ---
 
-## マッチング計算ロジック（更新）
+## 8. Dispute（異議申し立て）
+
+### `disputes`
+
+iter12-18 の D-flow に対応するスキーマ（旧版未定義だったので新規追加）。
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `deal_id` | uuid | → deals |
+| `filed_by` | uuid | → users |
+| `category` | text | `no_show` / `late` / `mismatch` / `damage` / `other`（iter12 の5種） |
+| `description` | text | |
+| `evidence_urls` | text[] | |
+| `status` | text | `filed` / `submitted` / `reply_window` / `reply_received` / `arbitration` / `resolved` / `withdrawn`（09と一致） |
+| `ticket_number` | text unique | iter16、受付番号（"D-2026-0001" 等） |
+| `reply_deadline_at` | timestamptz | iter15、反論機会期限（24h） |
+| `arbitration_deadline_at` | timestamptz | iter13、SLA（同日4h／それ以外24h、カテゴリ依存） |
+| `resolution` | jsonb nullable | 仲裁結果（{decision, reason, refund_amount?}等） |
+| `resolved_at` | timestamptz nullable | |
+| `created_at` / `updated_at` | timestamptz | |
+
+⚠️ 要確認：
+- 反論機会期限が 24h or 4h はカテゴリで変わるか（09 未確定項目#3）
+- 仲裁SLA超過時のエスカレーションフロー
+- `resolution.decision` の値リスト（'sender_fault', 'receiver_fault', 'mutual', 'no_action' 等）
+
+### `dispute_replies`（反論）
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `dispute_id` | uuid | → disputes |
+| `replied_by` | uuid | → users |
+| `message` | text | |
+| `evidence_urls` | text[] | |
+| `created_at` | timestamptz | |
+
+---
+
+## 9. マッチング計算ロジック
 
 ### 既存ロジック（user_haves × user_wants）
 
-- `genre_name`（→ `genre_id`）完全一致
-- `character_name`（→ `character_id`）照合（want側 NULL なら無視）
-- `goods_type`（→ `goods_type_id`）照合（want側 NULL なら無視）
-- `exchange_method` && 重複
+- `genre_tag_id` 完全一致（必須）
+- `character_id` 照合（want側 NULL or flexibility 高 ならスキップ）
+- `goods_type_id` 照合（want側 NULL or flexibility 高 ならスキップ）
 
-### 追加ロジック（新要件）
+### 追加ロジック（iter後）
 
-- **場所・時間**：`availability_windows` の時空交差
-- **携帯グッズ絞り込み**：完全マッチタブでは `is_carrying = true` のみ対象
-- **片方向マッチ**：完全マッチで除外された候補を「片方向」タブに振り分け
+- **完全マッチ**：双方の haves と wants が両方向で一致 → `match_type='perfect'`
+- **forward マッチ**：私の wants と相手の haves のみ一致（私の haves は不問）→ `match_type='forward'`
+- **backward マッチ**：相手の wants と私の haves のみ一致（相手の haves は不問）→ `match_type='backward'`
+- **AW交差**：`availability_windows` の時空交差（lat/lng/start_at/end_at）で重み加算
+- **携帯グッズ**：`is_carrying=true` のみを完全マッチタブで対象（`carry_event_id` で絞り込み可）
 - **「断った」フィルタ**：`rejected_partners` 既登録ペアを除外
-- **flexibility**：want側の flexibility に応じて character_id / goods_type_id 照合をスキップ
+- **flexibility**：want側の flexibility に応じて character_id / goods_type_id の照合をスキップ
 
 ### 計算タイミング
 
-- バッチ：定期計算（夜間など、低頻度）
-- オンデマンド：ユーザーがタブを開いたときに最新計算
-- リアルタイム：完全マッチ発見時のみ即時通知（MVPではここのみ通知）
+- **バッチ**：定期計算（夜間など、低頻度）
+- **オンデマンド**：ユーザーがタブを開いたときに最新計算
+- **リアルタイム**：完全マッチ発見時のみ即時通知（MVPではここのみ通知）
+
+⚠️ 要確認：
+- バッチ頻度（毎日 / 6h おき / 1h おき）
+- リアルタイム通知のスロットル（同じユーザーから1日N回まで等）
 
 ---
 
-## 残っている確認事項
+## 10. ⚠️ 未確定項目
 
-1. **数量の扱い**：1行＝1個＋N行INSERT 案でOKか
-2. **`hand_prefecture` の格下げ**：ユーザープロフ`primary_area`へ移管、Availability Window と併用
-3. **`exchange_method` の "郵送" 非表示**：MVPでは非表示でOKか
-4. **`is_carrying` カラム追加（案A）**：`user_haves` に直接追加でOKか
-5. **KPOP 初期スコープ**：BTS／TWICE／NewJeans／IVE／Stray Kids 等のスター級5〜10グループから着手で進めるか
+実装着手前にユーザーと擦り合わせる項目。`09_state_machines.md` の「未確定・要確認項目」表とも連携。
+
+| # | カテゴリ | 項目 | 影響範囲 |
+|---|---|---|---|
+| 1 | proposals | ネゴ中の提案修正で `last_action_at` リセットするか | 7日期限のUX |
+| 2 | proposals | `cancelled` 状態の追加可否（送信前取消等） | 状態数 |
+| 3 | proposals | `meetup_scheduled_custom` を JSONB か別テーブルか | クエリ性能 |
+| 4 | proposals | `agreement_one_side` 中の提案修正で `agreed_by_*` を reset するか | UX設計 |
+| 5 | user_haves | `kind=keep` のアイテムは `status=in_negotiation` になり得るか | 状態定義の整合 |
+| 6 | user_haves | `traded` のアイテムは `kind` を保持か reset するか | 履歴の見え方 |
+| 7 | user_haves | 旧 `hand_prefecture` を `users.primary_area` に統合してOKか | スキーマ移行 |
+| 8 | users | `gender` を必須にするか任意にするか | オンボUX |
+| 9 | user_oshi | DD（複数推し）登録の上限・組み合わせルール | UI設計 |
+| 10 | user_wants | `flexibility` の具体的意味の定義 | マッチング精度 |
+| 11 | user_wants | `matched` 状態の継続性（一度マッチ通知したら戻らない？） | 通知頻度 |
+| 12 | aw | `ended` から `archived` への自動遷移時間 | 09 未確定項目#2 と同じ |
+| 13 | aw | `auto_from_proposal` AW は取引cancel時に削除？保持？ | データ整合 |
+| 14 | events | ユーザー作成タグの即公開 vs 運営承認 | 運用負荷 |
+| 15 | events | 重複検出・自動マージのルール | データ品質 |
+| 16 | proposal_revisions | 履歴保存の粒度（毎修正全部 vs N件のみ） | ストレージ |
+| 17 | messages | `outfit_photo` を専用テーブルか messages か | 構造設計 |
+| 18 | messages | system message の `event_type` 値リスト確定 | 実装明確化 |
+| 19 | deals | `cancelled_reason` の値リスト | UI構築 |
+| 20 | deals | `disputed` 解決時に `rated` に戻るか別終了状態か | フロー設計 |
+| 21 | deal_arrivals | 到着検知の仕組み（手動／GPS自動／QR） | プライバシー考慮 |
+| 22 | deal_arrivals | 1 deal × 1 user で1レコードか、再到着も記録か | データ設計 |
+| 23 | user_evaluations | 細分化評価（punctuality/item_condition/communication）を MVPで採用するか | UX複雑度 |
+| 24 | disputes | 反論機会期限が 24h / 4h はカテゴリで変わるか | 09 未確定項目#3 と同じ |
+| 25 | disputes | 仲裁SLA超過時のエスカレーション | 運用フロー |
+| 26 | disputes | `resolution.decision` 値リスト | 仲裁ルール |
+| 27 | matching | バッチ計算頻度 | 性能設計 |
+| 28 | matching | リアルタイム通知のスロットル | 通知頻度 |
+| 29 | users | パスワード以外の auth method（passkey 等） | スコープ |
+| 30 | groups_master | グループ非所属のジャンル（ソロアーティスト・声優）の `kind` 設計 | iter24 の派生 |
+
+---
+
+## 付録：状態名の対応表（09との整合確認用）
+
+| エンティティ | 09 の状態名 | このDoc の status カラム値 |
+|---|---|---|
+| Proposal | `draft` `sent` `negotiating` `agreement_one_side` `agreed` `rejected` `expired` | `proposals.status` |
+| Deal | `agreed` `on_the_way` `arrived_one` `arrived_both` `evidence_captured` `approved` `rated` `disputed` `cancelled` | `deals.status` |
+| Dispute | `filed` `submitted` `reply_window` `reply_received` `arbitration` `resolved` `withdrawn` | `disputes.status` |
+| AW | `draft` `active` `paused` `ended` `archived` | `availability_windows.status` |
+| Item | `available` `in_negotiation` `in_deal` `traded` | `user_haves.status` |
+| Wish | `active` `matched` `in_negotiation` `achieved` | `user_wants.status` |
+| Account | `registered` `verified` `onboarding` `active` `suspended` `deletion_requested` `deleted` | `users.account_status` |
+
+> **注意**：実装で状態名を勝手に変えると 09 と不整合になる。命名変更が必要なら必ず両方を同時に更新する。

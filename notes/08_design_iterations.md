@@ -419,6 +419,117 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション38：データモデル v2 — iter24/29/33/34 反映
+
+### 背景・問題意識
+
+`notes/05_data_model.md` は v1（2026-04-27時点）のままで、**iter24（推し2階層）/ iter29（数量管理）/ iter33（meetup）/ iter34（服装写真・現在地）の更新が一切反映されていなかった**。
+
+USER_PLAYBOOK のタスク1。実装着手の最終整備として、最新仕様をDBスキーマレベルに落とし込む。
+
+### 変更内容
+
+#### `notes/05_data_model.md` — 全面書き直し（v2.0）
+
+旧版（232行）→ 新版（複数セクション、テーブル定義15+、未確定項目30件）
+
+主な変更：
+
+1. **状態名を 09_state_machines.md と完全整合**
+   - 旧 `proposals.status: 'sent' / 'accepted' / 'rejected' / 'cancelled'`
+   - 新 `proposals.status: 'draft' / 'sent' / 'negotiating' / 'agreement_one_side' / 'agreed' / 'rejected' / 'expired'`
+   - 旧 `user_haves.status: 'active' / 'reserved' / 'traded'`
+   - 新 `user_haves.status: 'available' / 'in_negotiation' / 'in_deal' / 'traded'` ＋ `kind: 'for_trade' / 'keep'` 分離（iter19.5）
+
+2. **テーブル名を 10_glossary.md と整合**
+   - 旧 `exchanges` → 新 `deals`（用語集が `deal` 推奨）
+
+3. **iter28（match_type）対応**
+   - `proposals.match_type: 'perfect' / 'forward' / 'backward'`
+
+4. **iter29（数量管理）反映**
+   - `proposals.sender_have_qtys: int[]` / `receiver_have_qtys: int[]` を追加
+   - 1行=1個 の方針を本文で明示、UI集約と数量選択の関係を整理
+
+5. **iter30（7日期限）反映**
+   - `proposals.last_action_at` / `expires_at` / `extension_count` カラム追加
+   - `proposal_revisions` テーブル新規（提案修正履歴）
+
+6. **iter32（合意フロー）反映**
+   - `proposals.agreed_by_sender` / `agreed_by_receiver` カラム追加（agreement_one_side 判定用）
+
+7. **iter33（meetup）反映 — 最大の変更**
+   - `proposals.meetup_type`（`now` / `scheduled`）必須化
+   - `proposals.meetup_now_minutes`（5/10/15/30）
+   - `proposals.meetup_scheduled_aw_id` → `availability_windows`
+   - `proposals.meetup_scheduled_custom` JSONB（カスタム日時の date/time/lat/lng/place_name/register_as_aw）
+   - `availability_windows.created_via`（`manual` / `auto_from_proposal`）
+   - `availability_windows.created_from_proposal_id`（auto AW のトレース）
+
+8. **iter34（C-2 ライブ運用）反映**
+   - `messages.message_type` 拡張（`text` / `image` / `outfit_photo` / `location_share` / `system`）
+   - `messages.metadata` JSONB（位置情報・systemイベント等）
+   - `deals.status` 細分化（`agreed` / `on_the_way` / `arrived_one` / `arrived_both` / `evidence_captured` / `approved` / `rated` / `disputed` / `cancelled`）
+   - `deal_arrivals` テーブル新規（到着ステータス追跡）
+   - `deal_outfit_photos` テーブル新規（服装写真、専用化案）
+
+9. **iter24（推し2階層）反映**
+   - `user_oshi` テーブル新規（DD/箱推し対応）
+   - `groups_master.kind`（'group' / 'work' / 'solo'、ソロアーティスト対応）
+
+10. **D-flow（iter12-18）対応**
+    - `disputes` テーブル新規（旧版未定義だった）
+    - `dispute_replies` テーブル新規
+    - `reports` テーブル新規（通報用）
+
+11. **users 拡張**
+    - `account_status`（09 Account Lifecycle と一致）
+    - OAuth対応カラム（oauth_provider/subject）
+    - `deletion_requested_at`（30日猶予の起点）
+
+12. **付録：状態名の対応表**
+    - 09 のすべての状態名と、05 のどのカラム値に対応するかをテーブルで明示
+    - 命名変更時の同期忘れ防止
+
+#### `notes/09_state_machines.md` — 未確定項目を拡張
+
+5項目 → 18項目に拡張。3カテゴリに分類：
+- 状態遷移ルール関連（11項目）
+- 検知・トリガー関連（3項目）
+- データ構造関連（4項目）
+
+これらは `05_data_model.md` の30項目「⚠️ 未確定項目」とクロスリファレンス。
+
+### 影響範囲
+
+- データモデル全体（テーブル定義15+件、未確定項目30件）
+- 状態名の整合性（09 ↔ 05）
+- 用語整合性（10 ↔ 05、`deal` / `exchange` 問題）
+
+### 確認方法
+
+- `notes/05_data_model.md` を読む
+- `notes/09_state_machines.md` 末尾の未確定項目表を確認
+- 付録「状態名の対応表」で 09 と 05 の整合確認
+
+### 関連ファイル
+
+- `notes/05_data_model.md`（全面書き直し）
+- `notes/09_state_machines.md`（未確定項目拡張）
+
+### 次フェーズへの示唆（実装着手前の擦り合わせ項目）
+
+特に重要な擦り合わせポイント：
+1. **Item の `kind` と `status` の関係**（keep が in_negotiation になりうるか）
+2. **proposals.meetup_scheduled_custom** を JSONB か別テーブルか（性能と正規化のバランス）
+3. **outfit_photo を messages 内 vs 専用テーブル** どちらが運用しやすいか
+4. **到着検知の仕組み**（プライバシー観点で慎重判断）
+5. **disputes の resolution.decision 値リスト** 確定（仲裁ルール）
+
+これら30項目を整理した次のタスクとして「USER_PLAYBOOK タスク2: 11_screen_inventory.md」 → タスク3: per-screen spec を進めれば、未確定項目が画面別に分解されてさらに具体化される。
+
+---
+
 ## イテレーション37：USER_PLAYBOOK 作成（オーナー向け作業手順書）
 
 ### 背景・問題意識
