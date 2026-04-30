@@ -419,6 +419,70 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション37：USER_PLAYBOOK 作成（オーナー向け作業手順書）
+
+### 背景・問題意識
+
+iter36 でGitHub移行・スマホClaude ワークフロー基盤が整ったが、ユーザーから：
+- **「Phase 2 の準備を進めるなら、スマホから何を指示して何をチェックすればいい？」**
+
+という実務的な疑問。CLAUDE.md は Claude 向け、README.md は一般向け、で「**オーナーが次に何をすべきか分かるドキュメント**」が無かった。
+
+### 変更内容
+
+#### `notes/USER_PLAYBOOK.md` 新規作成
+- Phase 2 タスク一覧（優先順 + 依存関係）
+- 各タスクのスマホ指示テンプレート（コピペ可）
+- 各タスクのチェックポイント
+- 共通チェックポイント（用語整合・状態整合・⚠️要確認の正直さ・iter記録）
+- スマホ vs PC 使い分けガイド
+- スマホ指示のコツ（3原則、良い例・悪い例）
+- トラブルシューティング
+- 次にやること判断フロー
+
+タスクは7件：
+1. 🥇 05_data_model.md 最新化（iter24-34反映）
+2. 🥈 11_screen_inventory.md 新規（画面マトリクス）
+3. 🥈 12_screens/ 新規（per-screen spec、主要5画面から）
+4. 🥉 13_api_spec.md 新規（API仕様）
+5. 🥉 14_implementation_phases.md 新規（フェーズ分割）
+6. 🟡 15_non_functional.md 新規（非機能要件）
+7. 🟡 02_system_requirements.md 更新（iter24-34反映）
+
+#### `CLAUDE.md` 更新
+- 「⚠️ Claude が動作する前に必ずすること」に **5. オーナーがタスク的指示をした場合は USER_PLAYBOOK.md を確認**を追加
+- ファイル構造マップに `USER_PLAYBOOK.md` を追加
+
+#### `index.html` 更新
+- ヘッダー導線に「📘 USER PLAYBOOK」ボタン追加
+- 設計ドキュメントセクションに USER_PLAYBOOK.md カード追加
+
+### 影響範囲
+
+- ドキュメンテーション体系（用途別の3層化が完成）
+  - `README.md`：一般来訪者向け
+  - `CLAUDE.md`：Claudeセッション向け
+  - `USER_PLAYBOOK.md`：オーナー向け
+- スマホからの作業効率（テンプレ化で立ち上がりが早い）
+
+### 確認方法
+
+- リポジトリ：https://github.com/mashimabizz/iHub_design/blob/main/notes/USER_PLAYBOOK.md
+- ランディングページからもアクセス可：https://mashimabizz.github.io/iHub_design/
+
+### 関連ファイル
+
+- `notes/USER_PLAYBOOK.md`（新規）
+- `CLAUDE.md`
+- `index.html`
+
+### 次の Claude セッションへの示唆
+
+- オーナーから「タスク◯◯を進めて」と言われたら、**USER_PLAYBOOK.md の該当セクションをまず読む**
+- そこに書かれた指示テンプレ・チェックポイントに従って動作すれば品質が安定する
+
+---
+
 ## イテレーション36：GitHub移行・CLAUDE.md強化・スマホ Claude ワークフロー整備
 
 ### 背景・問題意識

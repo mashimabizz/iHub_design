@@ -13,6 +13,7 @@
 2. **`notes/10_glossary.md` を最低でも目次までスキャン**（「AW」「wish」等の用語を誤解しないため）
 3. **`notes/09_state_machines.md` の目次を確認**（状態名を間違えないため）
 4. **`notes/08_design_iterations.md` の最新 iter を 1〜2件読む**（直近のコンテキスト）
+5. **オーナーがタスク的な指示をした場合は `notes/USER_PLAYBOOK.md` を確認**（Phase 2 タスク・指示テンプレ・チェックポイントが集約されている）
 
 これらを読まずに作業を始めない。
 
@@ -88,6 +89,7 @@
 | `08_design_iterations.md` | **設計判断の履歴** | **高（変更のたび）** |
 | `09_state_machines.md` | **状態遷移図（mermaid）** | 中（状態追加・変更時） |
 | `10_glossary.md` | **用語集＋廃止用語** | 中（用語追加時） |
+| `USER_PLAYBOOK.md` | **オーナー向け作業手順書（Phase 2タスク・指示テンプレ・チェックポイント）** | 中（フェーズ進行時） |
 
 ### `.claude/`（Claude設定）
 
