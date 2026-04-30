@@ -1,0 +1,1242 @@
+# 13. API仕様（REST API Spec）
+
+> **目的**：iHub のバックエンドAPI（REST）の draft 仕様。実装着手時の正解集。
+> 全エンドポイントを `[METHOD /path]` の形式で網羅し、各々で入力・出力・認証要否・状態遷移・備考を定義。
+
+最終更新: 2026-05-01（iter42）
+ステータス: Draft v1.0
+
+---
+
+## このドキュメントの位置付け
+
+- `notes/05_data_model.md` のテーブル設計に対応する CRUD 操作
+- `notes/09_state_machines.md` の状態遷移をトリガーするエンドポイント
+- `notes/10_glossary.md` の用語と完全整合
+- `notes/12_screens/` の各画面の「関連 API」セクションで参照される
+
+## 更新ルール
+
+- データモデル（05）変更時は対応エンドポイントも更新
+- 状態遷移（09）変更時は遷移トリガーするエンドポイント仕様を見直し
+- 「⚠️ 要確認」は実装着手で詰めて消していく
+- 新規エンドポイント追加時は「目次」と該当セクションに同時追加
+
+## 目次
+
+1. [共通仕様](#1-共通仕様)
+2. [Auth（認証）](#2-auth認証)
+3. [Accounts（自分のアカウント）](#3-accounts自分のアカウント)
+4. [Users（他ユーザー参照）](#4-users他ユーザー参照)
+5. [Masters（マスタデータ）](#5-mastersマスタデータ)
+6. [AWs（活動予定）](#6-aws活動予定)
+7. [Items（在庫）](#7-items在庫)
+8. [Wishes（ウィッシュ）](#8-wishesウィッシュ)
+9. [Matches（マッチング）](#9-matchesマッチング)
+10. [Proposals（打診・ネゴ）](#10-proposals打診ネゴ)
+11. [Messages（メッセージ）](#11-messagesメッセージ)
+12. [Deals（取引）](#12-deals取引)
+13. [Disputes（異議申し立て）](#13-disputes異議申し立て)
+14. [Reports（通報）](#14-reports通報)
+15. [Misc（通知・WebSocket）](#15-misc通知websocket)
+16. [⚠️ 未確定項目](#16-未確定項目)
+
+---
+
+## 1. 共通仕様
+
+### ベースURL
+
+```
+https://api.ihub.example.com/v1
+```
+
+⚠️ 要確認：本番ドメイン、staging との分離。
+
+### 認証スキーム
+
+⚠️ 要確認：候補は **JWT Bearer**（推奨）または **Session Cookie**。
+
+仮で JWT Bearer を採用：
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+JWT には `user_id` と `account_status`、`exp`（24h 有効）等を含む。
+
+### リクエスト形式
+
+- Content-Type: `application/json`（一部マルチパート例外あり）
+- ID 形式: UUID v4
+- 日時形式: ISO 8601 UTC（`2026-05-03T14:00:00Z`）
+- 文字エンコーディング: UTF-8
+
+### レスポンス形式
+
+成功時：
+
+```json
+{
+  "data": { ... },
+  "meta": {
+    "request_id": "abc123",
+    "timestamp": "2026-05-01T..."
+  }
+}
+```
+
+エラー時：
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "ユーザー向けメッセージ",
+    "details": [
+      { "field": "email", "reason": "duplicate" }
+    ]
+  },
+  "meta": { ... }
+}
+```
+
+### ステータスコード
+
+| コード | 意味 |
+|---|---|
+| 200 | OK（GET/PUT/PATCH 成功） |
+| 201 | Created（POST 成功） |
+| 204 | No Content（DELETE 成功） |
+| 400 | Bad Request（リクエスト形式不正） |
+| 401 | Unauthorized（認証無効・期限切れ） |
+| 403 | Forbidden（権限なし） |
+| 404 | Not Found |
+| 409 | Conflict（重複・状態不整合） |
+| 422 | Unprocessable Entity（バリデーション失敗） |
+| 429 | Too Many Requests（rate limit） |
+| 500 | Internal Server Error |
+
+### エラーコード（ビジネスレイヤー）
+
+| code | 意味 |
+|---|---|
+| `VALIDATION_ERROR` | 入力バリデーション失敗 |
+| `AUTH_REQUIRED` | 認証必要 |
+| `AUTH_EXPIRED` | トークン期限切れ |
+| `PERMISSION_DENIED` | 権限なし |
+| `RESOURCE_NOT_FOUND` | リソース未存在 |
+| `STATE_CONFLICT` | 状態遷移不整合（例：rejected な Proposal に agree しようとした） |
+| `DUPLICATE` | 重複（email、handle、評価等） |
+| `RATE_LIMITED` | 一定期間内のリクエスト数超過 |
+| `EXTERNAL_SERVICE_ERROR` | 外部サービス（OAuth、メール等）失敗 |
+
+### ページネーション
+
+カーソルベース（チャットや時系列向き）：
+
+```
+GET /api/v1/messages?proposal_id=X&cursor=<base64>&limit=50
+```
+
+レスポンス：
+```json
+{
+  "data": [...],
+  "meta": {
+    "next_cursor": "...",
+    "has_more": true
+  }
+}
+```
+
+オフセットベース（リスト系）：
+
+```
+GET /api/v1/items?page=2&per_page=20
+```
+
+### Rate Limiting
+
+⚠️ 要確認：基本方針：
+
+- 認証なし：60 req/min/IP
+- 認証あり：300 req/min/user
+- アップロード系：10 req/min/user
+
+### ファイルアップロード
+
+⚠️ 要確認：方針候補：
+
+- **A. 直接 multipart/form-data**：実装シンプル、サーバ負荷高
+- **B. 署名付きURL（S3互換）**：パフォーマンス良、実装複雑
+
+MVP は A、Post-MVP で B に移行。
+
+---
+
+## 2. Auth（認証）
+
+`notes/09_state_machines.md` §7 Account Lifecycle に対応。
+
+### POST /api/v1/auth/register
+
+新規登録（メアド経路）。
+
+- **Auth**: 不要
+- **Request**: `{ email, password, handle, accepted_terms: true }`
+- **Response 201**: `{ user_id, email, handle, account_status: "registered" }`
+- **Errors**: 409（email/handle 重複）, 422（バリデーション）
+- **Side effects**: 確認メール送信（24h 有効リンク）
+- **State**: → `registered`
+- **Screen**: `AUTH-signup`
+
+### POST /api/v1/auth/verify-email
+
+メール認証完了。
+
+- **Auth**: 不要（リンクの token で検証）
+- **Request**: `{ token }`
+- **Response 200**: `{ user_id, account_status: "verified" }`
+- **Errors**: 400（token 無効）, 404（token 期限切れ）
+- **State**: `registered → verified`
+- **Screen**: `AUTH-email-confirmed`
+
+### POST /api/v1/auth/resend-verification
+
+確認メール再送（60秒制限）。
+
+- **Auth**: 不要（email 経由）
+- **Request**: `{ email }`
+- **Response 202**: `{ throttle_reset_at: "..." }`
+- **Errors**: 429（60秒以内に再送）
+- **Screen**: `AUTH-email-sent`
+
+### POST /api/v1/auth/login
+
+ログイン。
+
+- **Auth**: 不要
+- **Request**: `{ email, password }`
+- **Response 200**: `{ token, user_id, account_status, expires_at }`
+- **Errors**: 401（認証失敗）, 403（`suspended` / `deleted`）
+- **State**: `account_status` 維持（変化なし）
+- **Screen**: `AUTH-login`
+
+### POST /api/v1/auth/oauth/google
+
+Google OAuth経由ログイン or 新規登録。
+
+- **Auth**: 不要
+- **Request**: `{ id_token, accepted_terms?, handle? }`（新規時に handle と terms 必要）
+- **Response 200/201**: `{ token, user_id, account_status, is_new_user }`
+- **State**: 新規時 → `verified`（メール認証スキップ）
+- **Screen**: `AUTH-google-consent`
+- **備考**: ⚠️ 要確認 — OAuth subject の信頼境界、Google Workspace 限定するか
+
+### POST /api/v1/auth/forgot-password
+
+パスワードリセットメール送信。
+
+- **Auth**: 不要
+- **Request**: `{ email }`
+- **Response 202**: `{}`（成否を問わず一定挙動でenum攻撃防止）
+- **Side effects**: リセットメール送信
+- **Screen**: `AUTH-pwd-reset`
+
+### POST /api/v1/auth/reset-password
+
+パスワードリセット実行。
+
+- **Auth**: 不要（リンクの token で検証）
+- **Request**: `{ token, new_password }`
+- **Response 200**: `{ user_id }`
+- **Errors**: 400（token 無効）, 422（パスワード強度不足）
+
+### POST /api/v1/auth/logout
+
+ログアウト。
+
+- **Auth**: 必須
+- **Request**: `{}`
+- **Response 204**: なし
+- **Side effects**: トークン無効化（サーバ側ブラックリスト or 短命トークン）
+
+### POST /api/v1/auth/refresh
+
+トークンリフレッシュ。
+
+- **Auth**: refresh token（別 cookie or body）
+- **Request**: `{ refresh_token }`
+- **Response 200**: `{ token, expires_at }`
+- **備考**: ⚠️ 要確認 — refresh token の保存方法（HttpOnly cookie 推奨）
+
+---
+
+## 3. Accounts（自分のアカウント）
+
+### GET /api/v1/accounts/me
+
+自分のアカウント情報取得。
+
+- **Auth**: 必須
+- **Response 200**: 全プロフィール（users + user_oshi）
+- **Screen**: `PRO-hub`, `PRO-edit`
+
+### PATCH /api/v1/accounts/me
+
+プロフィール更新。
+
+- **Auth**: 必須
+- **Request**: `{ display_name?, avatar_url?, gender?, primary_area?, ... }`
+- **Response 200**: 更新後プロフィール
+- **Screen**: `PRO-edit`
+
+### PUT /api/v1/accounts/me/oshi
+
+推し設定の置き換え（複数推し対応、iter24）。
+
+- **Auth**: 必須
+- **Request**: `[{ group_id?, character_id?, kind: "box"|"specific"|"multi", priority }]`
+- **Response 200**: 更新後の推しリスト
+- **Screen**: `PRO-oshi-edit`、`ONB-group`/`ONB-member`
+
+### POST /api/v1/accounts/me/onboarding
+
+オンボーディング進捗保存。
+
+- **Auth**: 必須
+- **Request**: `{ step: "gender"|"group"|"member"|"aw"|"complete", data: {...} }`
+- **Response 200**: `{ next_step, account_status }`
+- **State**: 全 step 完了で `verified → active`
+- **Screen**: `ONB-*` 全5画面
+
+### POST /api/v1/accounts/me/delete-request
+
+アカウント削除申請（30日猶予）。
+
+- **Auth**: 必須
+- **Request**: `{ reasons?: string[] }`（任意・複数選択）
+- **Response 200**: `{ deletion_scheduled_at: "..." }`（30日後）
+- **State**: → `deletion_requested`
+- **Screen**: `AUTH-delete`
+
+### DELETE /api/v1/accounts/me/delete-request
+
+削除申請キャンセル（猶予期間中）。
+
+- **Auth**: 必須
+- **Response 200**: `{ account_status: "active" }`
+- **State**: `deletion_requested → active`
+
+### GET /api/v1/accounts/me/blocks
+
+ブロック中のユーザー一覧。
+
+- **Auth**: 必須
+- **Response 200**: `[{ user_id, blocked_at }]`
+- **Screen**: `PRO-block-list`
+
+### POST /api/v1/accounts/me/blocks
+
+ユーザーをブロック。
+
+- **Auth**: 必須
+- **Request**: `{ user_id }`
+- **Response 201**: `{ user_id, blocked_at }`
+
+### DELETE /api/v1/accounts/me/blocks/:user_id
+
+ブロック解除。
+
+- **Auth**: 必須
+- **Response 204**: なし
+
+---
+
+## 4. Users（他ユーザー参照）
+
+### GET /api/v1/users/:id
+
+他ユーザーの公開プロフィール取得。
+
+- **Auth**: 必須（認証済ユーザーのみアクセス可）
+- **Response 200**: `{ id, handle, display_name, avatar_url, oshi: [...], rating_summary: {...}, trades_count, recent_disputes_count, ... }`
+- **Errors**: 404（存在しない）、403（ブロック中）
+- **Screen**: `PRO-other`
+
+### GET /api/v1/users/:id/items
+
+他ユーザーの譲一覧（公開モデル）。
+
+- **Auth**: 必須
+- **Query**: `?kind=for_trade`（`keep` は他人からは見えない）
+- **Response 200**: `{ data: [items], meta: {...} }`
+- **Screen**: `C15-modal-partner-inv`、マッチング詳細
+
+### GET /api/v1/users/:id/aws
+
+他ユーザーのAW（active のみ）。
+
+- **Auth**: 必須
+- **Response 200**: `{ data: [aws], meta: {...} }`
+- **Screen**: `AW-other`
+
+### GET /api/v1/users/:id/qr
+
+他ユーザーのQRコード（合流時の本人確認用）。
+
+- **Auth**: 必須（同 deal の参加者のみ）
+- **Response 200**: `{ qr_data, expires_at }`（短命の検証トークン）
+- **備考**: ⚠️ 要確認 — QR の中身（user_id だけ？署名付き？）
+
+---
+
+## 5. Masters（マスタデータ）
+
+iter24 で `genres_master` / `groups_master` / `characters_master` / `goods_types_master` を運営マスタ化。
+
+### GET /api/v1/masters/genres
+
+ジャンル一覧。
+
+- **Auth**: 不要（公開）
+- **Response 200**: `[{ id, name, kind, display_order }]`
+
+### GET /api/v1/masters/groups
+
+グループ／作品一覧。
+
+- **Auth**: 不要
+- **Query**: `?genre_id=...&search=...`
+- **Response 200**: `[{ id, name, aliases, kind, genre_id }]`
+- **Screen**: `ONB-group`、`SCH-filter`
+
+### GET /api/v1/masters/characters
+
+メンバー／キャラ一覧。
+
+- **Auth**: 不要
+- **Query**: `?group_id=...&genre_id=...&search=...`
+- **Response 200**: `[{ id, name, aliases, group_id, genre_id }]`
+- **Screen**: `ONB-member`、`SCH-filter`
+
+### GET /api/v1/masters/goods-types
+
+グッズ種別一覧。
+
+- **Auth**: 不要
+- **Response 200**: `[{ id, name, category }]`
+
+### GET /api/v1/masters/events
+
+イベントタグ一覧（AW・proposals.meetup の `event_id` 用）。
+
+- **Auth**: 必須
+- **Query**: `?genre_id=...&group_id=...&from=...&to=...`
+- **Response 200**: `[{ id, name, start_at, end_at, lat, lng, venue_name, is_verified }]`
+
+### POST /api/v1/masters/events
+
+イベントタグの新規作成（ユーザー作成）。
+
+- **Auth**: 必須
+- **Request**: `{ name, start_at, end_at, lat, lng, venue_name, genre_id, group_id? }`
+- **Response 201**: `{ id, ..., is_verified: false }`
+- **備考**: ⚠️ 要確認 — 即公開 vs 運営承認後（05 §10 未確定#14）
+
+---
+
+## 6. AWs（活動予定）
+
+`notes/09_state_machines.md` §4 AW Lifecycle。
+
+### GET /api/v1/aws
+
+自分のAW一覧。
+
+- **Auth**: 必須
+- **Query**: `?status=active|paused|archived&from=...&to=...`
+- **Response 200**: `{ data: [aws], meta: {...} }`
+- **Screen**: `AW-list`、`SET-aw`
+
+### POST /api/v1/aws
+
+AW 新規作成。
+
+- **Auth**: 必須
+- **Request**: `{ start_at, end_at, lat, lng, radius_m?, place_name?, event_id?, note? }`
+- **Response 201**: `{ id, status: "active", created_via: "manual", ... }`
+- **State**: → `active`
+- **Screen**: `AW-edit-event`、`AW-edit-location`
+
+### GET /api/v1/aws/:id
+
+AW詳細取得。
+
+- **Auth**: 必須（自分のAW or 検索でヒット）
+- **Response 200**: AW詳細
+
+### PATCH /api/v1/aws/:id
+
+AW更新。
+
+- **Auth**: 必須（自分のAWのみ）
+- **Request**: 部分更新
+- **Response 200**: 更新後
+
+### POST /api/v1/aws/:id/pause
+
+一時無効化。
+
+- **Auth**: 必須（自分のAWのみ）
+- **State**: `active → paused`
+
+### POST /api/v1/aws/:id/resume
+
+再開。
+
+- **Auth**: 必須
+- **State**: `paused → active`
+
+### DELETE /api/v1/aws/:id
+
+AW削除。
+
+- **Auth**: 必須（自分のAWのみ、active/paused状態でのみ）
+- **Response 204**: なし
+
+### GET /api/v1/aws/intersect
+
+他ユーザーとのAW交差判定（マッチングUI用）。
+
+- **Auth**: 必須
+- **Query**: `?other_user_id=...`
+- **Response 200**: `[{ my_aw_id, their_aw_id, overlap_start, overlap_end }]`
+- **Screen**: `C0-meetup-scheduled`（「★ 相手と一致」バッジ判定）
+
+---
+
+## 7. Items（在庫）
+
+`notes/05_data_model.md` §3 user_haves。
+
+### GET /api/v1/items
+
+自分の在庫一覧。
+
+- **Auth**: 必須
+- **Query**: `?kind=for_trade|keep&status=available|in_negotiation|in_deal|traded&page=...`
+- **Response 200**: `{ data: [items], meta: {...} }`
+- **Screen**: `INV-grid`、`C0-mine-perfect`
+
+### POST /api/v1/items
+
+在庫新規登録。
+
+- **Auth**: 必須
+- **Request**: `{ genre_tag_id, character_id, goods_type_id, title, description?, condition_tags?, kind, is_carrying?, carry_event_id? }`
+- **Response 201**: `{ id, status: "available", ... }`
+- **備考**: 数量×N の場合は N 件 INSERT（iter29、1行=1個）
+- **Screen**: `INV-meta`（B-2③）
+
+### POST /api/v1/items/bulk
+
+複数件まとめて登録（数量管理用）。
+
+- **Auth**: 必須
+- **Request**: `{ items: [{...}, {...}, ...] }`
+- **Response 201**: `{ data: [items], count }`
+
+### GET /api/v1/items/:id
+
+在庫詳細。
+
+- **Auth**: 必須（自分の在庫 or 公開モデルで他人の `for_trade`）
+- **Response 200**: 詳細
+
+### PATCH /api/v1/items/:id
+
+在庫更新。
+
+- **Auth**: 必須（自分のもののみ）
+- **Request**: 部分更新
+- **Response 200**: 更新後
+- **State**: `kind` 変更可（ただし `keep → for_trade` は OK、`status='in_negotiation'/'in_deal'` 中は `kind` 変更不可）
+
+### DELETE /api/v1/items/:id
+
+在庫削除。
+
+- **Auth**: 必須（自分のもののみ、`status='available'` のみ）
+- **Errors**: 409（提案中・取引中のため削除不可）
+
+### POST /api/v1/items/:id/images
+
+画像アップロード（複数可）。
+
+- **Auth**: 必須
+- **Request**: `multipart/form-data`、フィールド `images[]`
+- **Response 201**: `[{ id, url, order }]`
+- **備考**: 400×400 JPEG リサイズ、最大3枚 ⚠️
+
+### POST /api/v1/items/upload-from-photo
+
+複数アイテム一括登録（B-2 撮影フロー用）。
+
+- **Auth**: 必須
+- **Request**: `multipart/form-data`、`{ raw_image, crops: [{x,y,w,h, character_id, goods_type_id}, ...] }`
+- **Response 201**: `[{ id, ... }, ...]`
+- **Screen**: `INV-shoot` → `INV-crop` → `INV-meta`
+
+### POST /api/v1/items/:id/toggle-carrying
+
+携帯モード切替。
+
+- **Auth**: 必須
+- **Request**: `{ is_carrying: true/false, carry_event_id? }`
+- **Response 200**: 更新後
+
+---
+
+## 8. Wishes（ウィッシュ）
+
+`notes/05_data_model.md` §3 user_wants。
+
+### GET /api/v1/wishes
+
+自分のウィッシュ一覧。
+
+- **Auth**: 必須
+- **Query**: `?status=active|matched|in_negotiation|achieved&priority=...`
+- **Response 200**: `{ data: [wishes], meta: {...} }`
+- **Screen**: `WSH-list`
+
+### POST /api/v1/wishes
+
+ウィッシュ新規登録。
+
+- **Auth**: 必須
+- **Request**: `{ genre_tag_id, character_id?, goods_type_id?, title, description?, flexibility, priority }`
+- **Response 201**: `{ id, status: "active", ... }`
+- **Screen**: `WSH-edit`
+
+### GET /api/v1/wishes/:id
+
+詳細。
+
+- **Auth**: 必須
+
+### PATCH /api/v1/wishes/:id
+
+更新。
+
+- **Auth**: 必須
+
+### DELETE /api/v1/wishes/:id
+
+削除。
+
+- **Auth**: 必須
+
+### GET /api/v1/wishes/:id/matches
+
+このウィッシュと一致する譲（他人の haves）。
+
+- **Auth**: 必須
+- **Response 200**: `[{ user_id, item, score, distance_m? }]`
+- **備考**: マッチングロジック（05 §9）
+
+---
+
+## 9. Matches（マッチング）
+
+ホーム画面のマッチ提案表示用。
+
+### GET /api/v1/matches
+
+自分宛のマッチ候補一覧（4タブ）。
+
+- **Auth**: 必須
+- **Query**: `?type=perfect|forward|backward|explore&page=...`
+  - `perfect`: 完全マッチ
+  - `forward`: 私が欲しい譲を持つ人
+  - `backward`: 私の譲が欲しい人
+  - `explore`: 探索（緩いマッチ）
+- **Response 200**: `[{ user, items, match_type, score, last_active_at, distance_m, aw_overlap?, ... }]`
+- **Screen**: `HOM-main`（4タブ）
+
+### GET /api/v1/matches/feed
+
+時間順フィード（タイムプレッシャー対応、AW進行中の人優先）。
+
+- **Auth**: 必須
+- **Query**: `?cursor=...`
+- **Response 200**: cursor pagination
+- **Screen**: `HOM-main`（探索タブ）
+
+### POST /api/v1/matches/saved-searches
+
+保存検索作成。
+
+- **Auth**: 必須
+- **Request**: `{ name, filters: {...}, notification_enabled }`
+- **Response 201**: `{ id, ... }`
+- **Screen**: `SCH-filter`、`SCH-saved`
+
+### GET /api/v1/matches/saved-searches
+
+保存検索一覧。
+
+- **Auth**: 必須
+- **Response 200**: `[{ id, name, filters, count, last_run_at }]`
+
+### POST /api/v1/matches/saved-searches/:id/run
+
+保存検索を実行（最新マッチ取得）。
+
+- **Auth**: 必須
+- **Response 200**: マッチ一覧
+
+### DELETE /api/v1/matches/saved-searches/:id
+
+削除。
+
+---
+
+## 10. Proposals（打診・ネゴ）
+
+`notes/09_state_machines.md` §1 Proposal Lifecycle。最大ボリューム。
+
+### POST /api/v1/proposals
+
+新規打診作成（draft）。
+
+- **Auth**: 必須
+- **Request**:
+  ```json
+  {
+    "receiver_id": "uuid",
+    "match_type": "perfect|forward|backward",
+    "sender_have_ids": ["uuid", ...],
+    "sender_have_qtys": [2, 1],
+    "receiver_have_ids": ["uuid", ...],
+    "receiver_have_qtys": [3],
+    "message": "string",
+    "meetup_type": "now|scheduled",
+    "meetup_now_minutes": 15 | null,
+    "meetup_scheduled_aw_id": "uuid" | null,
+    "meetup_scheduled_custom": { "date": "5/3 (土)", "time": "14:00", "lat": ..., "lng": ..., "place_name": "...", "register_as_aw": true } | null
+  }
+  ```
+- **Response 201**: `{ id, status: "draft", ... }`
+- **State**: → `draft`
+- **備考**: ⚠️ draft 保存タイミング（C-0 完了時 or 送信時）。`register_as_aw=true` で AW 自動作成。
+- **Screen**: `C0-*`
+
+### POST /api/v1/proposals/:id/send
+
+打診を送信（draft → sent）。
+
+- **Auth**: 必須（sender のみ）
+- **Response 200**: `{ id, status: "sent", expires_at }`
+- **State**: `draft → sent`
+- **Side effects**: 受信者にプッシュ通知
+
+### GET /api/v1/proposals/:id
+
+打診詳細取得。
+
+- **Auth**: 必須（sender or receiver のみ）
+- **Response 200**: 全フィールド + sender/receiver 情報 + meetup 詳細展開
+- **Screen**: `C1-receive`、`C15-*`
+
+### POST /api/v1/proposals/:id/agree
+
+合意送信（一方）。
+
+- **Auth**: 必須（sender or receiver）
+- **Response 200**: `{ status: "agreement_one_side"|"agreed", agreed_by_sender, agreed_by_receiver, deal_id? }`
+- **State**: 
+  - 自分が合意 → 相手未合意なら `agreement_one_side`
+  - 双方合意完了 → `agreed`、`deals` を1件作成して `deal_id` 返却
+- **Side effects**: 相手にプッシュ通知、`agreed` 到達時は `deals` レコード生成
+- **Errors**: 409（`expired`、`rejected` 状態では実行不可）
+- **Screen**: `C1-receive`（直接承諾）、`C15-modal-agreement`
+
+### POST /api/v1/proposals/:id/reject
+
+拒否。
+
+- **Auth**: 必須（sender or receiver、ただし sender は draft/sent 時のみ）
+- **Request**: `{ template?: string }`（拒否定型文）
+- **Response 200**: `{ status: "rejected" }`
+- **State**: `* → rejected`
+- **Side effects**: 相手にプッシュ通知、`rejected_partners` に登録（受信者→送信者のみ）
+
+### POST /api/v1/proposals/:id/counter
+
+反対提案（C-1 受信から C-1.5 へ）。
+
+- **Auth**: 必須（receiver のみ、sent 状態のみ）
+- **Response 200**: `{ status: "negotiating" }`
+- **State**: `sent → negotiating`
+
+### POST /api/v1/proposals/:id/revise
+
+提案修正（C-1.5 中）。
+
+- **Auth**: 必須（sender or receiver、`negotiating`/`agreement_one_side` 中）
+- **Request**: 全部または部分（sender_have_ids/qtys, receiver_have_ids/qtys, meetup_*, message）
+- **Response 200**: 更新後
+- **State**: 
+  - `negotiating` 維持
+  - `agreement_one_side` の場合 → ⚠️ 要確認（`agreed_by_*` リセット？）
+- **Side effects**:
+  - `proposal_revisions` にスナップショット保存
+  - `messages` に system message `event_type='proposal_revised'` 追加
+  - `last_action_at` 更新（⚠️ 要確認：7日カウントリセットするか）
+
+### POST /api/v1/proposals/:id/extend
+
+期限延長（+7日）。
+
+- **Auth**: 必須（sender or receiver、`negotiating` 中のみ）
+- **Response 200**: `{ extension_count, expires_at }`
+- **State**: 状態維持、`extension_count++`、`expires_at = expires_at + 7d`
+- **Side effects**: `messages` に system message `event_type='extended'`
+
+### POST /api/v1/proposals/:id/share-inventory
+
+相手の譲一覧をネゴチャットで共有（ボタン押下時）。
+
+- **Auth**: 必須
+- **Response 200**: `{ shared_at }`
+- **Side effects**: `messages` に system message `event_type='inventory_shared'` 追加
+- **Screen**: `C15-normal`
+
+### GET /api/v1/proposals
+
+自分が関与する打診一覧（取引タブ "打診中"）。
+
+- **Auth**: 必須
+- **Query**: `?status=sent|negotiating|agreement_one_side&role=sender|receiver`
+- **Response 200**: `{ data: [proposals], meta: {...} }`
+- **Screen**: `TRD-pending`
+
+### GET /api/v1/proposals/:id/revisions
+
+提案修正履歴。
+
+- **Auth**: 必須（参加者のみ）
+- **Response 200**: `[{ revision_id, revised_by, snapshot, revised_at }]`
+- **備考**: ⚠️ 要確認 — 履歴保存粒度
+
+---
+
+## 11. Messages（メッセージ）
+
+`notes/05_data_model.md` §5 messages（拡張）。
+
+### GET /api/v1/proposals/:id/messages
+
+メッセージ一覧（チャット履歴）。
+
+- **Auth**: 必須（参加者のみ）
+- **Query**: `?cursor=...&limit=50`
+- **Response 200**: cursor pagination
+- **Screen**: `C15-*`、`C2-chat`
+
+### POST /api/v1/proposals/:id/messages
+
+メッセージ送信。
+
+- **Auth**: 必須（参加者のみ）
+- **Request**:
+  ```json
+  {
+    "message_type": "text|image|outfit_photo|location_share",
+    "body": "string?",          // text 必須
+    "attachment_url": "string?", // image/outfit_photo 用
+    "metadata": {                // location_share 必須
+      "lat": 35.18, "lng": 136.97, "accuracy_m": 10
+    }
+  }
+  ```
+- **Response 201**: 作成された message
+- **備考**: `system` message はクライアント送信不可（サーバ側のみ生成）
+
+### POST /api/v1/proposals/:id/messages/upload
+
+画像付きメッセージ用のアップロード（multipart）。
+
+- **Auth**: 必須
+- **Request**: `multipart/form-data`、`{ image, message_type: "image"|"outfit_photo" }`
+- **Response 201**: 作成された message（attachment_url 設定済）
+- **Screen**: `C15-*`、`C2-chat`
+
+---
+
+## 12. Deals（取引）
+
+`notes/09_state_machines.md` §2 Deal Lifecycle。
+
+### GET /api/v1/deals/:id
+
+取引詳細。
+
+- **Auth**: 必須（参加者のみ）
+- **Response 200**: 全フィールド + proposal 詳細展開
+- **Screen**: `C2-chat`、`C3-*`、`TRD-active`
+
+### GET /api/v1/deals
+
+自分が関与する取引一覧。
+
+- **Auth**: 必須
+- **Query**: `?status=agreed|on_the_way|...|rated|cancelled|disputed&role=sender|receiver`
+- **Response 200**: `{ data: [deals], meta: {...} }`
+- **Screen**: `TRD-active`、`TRD-past`
+
+### POST /api/v1/deals/:id/arrivals
+
+到着報告（手動）。
+
+- **Auth**: 必須（参加者のみ）
+- **Request**: `{ arrival_lat?, arrival_lng?, detection_method: "manual" }`
+- **Response 201**: `{ arrival_id, deal_status }`
+- **State**: 自分のみ到着で `agreed → arrived_one`、双方到着で `arrived_one → arrived_both`
+- **Side effects**: `messages` に system message `event_type='arrival'`
+- **Screen**: `C2-chat`
+
+### POST /api/v1/deals/:id/outfit-photos
+
+服装写真アップロード。
+
+- **Auth**: 必須（参加者のみ）
+- **Request**: `multipart/form-data`、`{ image }`
+- **Response 201**: `{ id, image_url, shared_at }`
+- **Side effects**:
+  - `deal_outfit_photos` に新レコード INSERT
+  - `messages` に system message `event_type='outfit_shared'`
+  - `deal.status` のサブステート更新（`outfit_shared_self/partner/both`）
+- **Screen**: `C2-chat`
+
+### GET /api/v1/deals/:id/outfit-photos/latest
+
+最新の服装写真（自分・相手それぞれ）。
+
+- **Auth**: 必須
+- **Response 200**: `{ self?: { url, shared_at }, partner?: { url, shared_at } }`
+- **Screen**: `C2-chat`（ヘッダーのステータス表示）
+
+### POST /api/v1/deals/:id/evidence
+
+証跡撮影アップロード。
+
+- **Auth**: 必須（参加者のみ、`arrived_both` 状態）
+- **Request**: `multipart/form-data`、`{ image }`
+- **Response 201**: `{ image_url, deal_status: "evidence_captured" }`
+- **State**: `arrived_both → evidence_captured`
+- **Screen**: `C3-capture`
+
+### POST /api/v1/deals/:id/approve
+
+承認。
+
+- **Auth**: 必須（参加者のみ、`evidence_captured` 状態）
+- **Request**: `{}`
+- **Response 200**: `{ sender_approved, receiver_approved, deal_status }`
+- **State**: 双方承認で `evidence_captured → approved`
+- **Side effects**: 関連 `user_haves.status = 'traded'`（双方承認時）
+- **Screen**: `C3-approve`
+
+### POST /api/v1/deals/:id/dispute
+
+異議申告（C-3② or 評価で「相違あり」）。
+
+- **Auth**: 必須（参加者のみ）
+- **Request**: `{ category, description, evidence_urls? }`（D-flow 開始）
+- **Response 201**: `{ dispute_id, ticket_number, status: "filed" }` → D-1 で詳細記入
+- **State**: `deals.status = 'disputed'`
+- **Screen**: `C3-approve`、`C3-rate` から → `D-1`
+
+### POST /api/v1/deals/:id/rate
+
+評価送信。
+
+- **Auth**: 必須（参加者のみ、`approved` 以降）
+- **Request**:
+  ```json
+  {
+    "rating": 1-5,
+    "comment": "string?",
+    "punctuality_rating": 1-5 | null,
+    "item_condition_rating": 1-5 | null,
+    "communication_rating": 1-5 | null
+  }
+  ```
+- **Response 201**: `{ evaluation_id, deal_status }`
+- **State**: 双方評価完了で `approved → rated`、`completed_at` セット
+- **Side effects**:
+  - `user_evaluations` INSERT
+  - 関連 `user_wants` のうち wishマッチしたものを `achieved` に
+  - 相手にプッシュ通知
+- **Screen**: `C3-rate`
+
+### POST /api/v1/deals/:id/cancel
+
+取引キャンセル。
+
+- **Auth**: 必須（参加者のみ、`agreed`〜`arrived_one` まで）
+- **Request**: `{ reason: "mutual"|"late_30min"|"system"|"other", note? }`
+- **Response 200**: `{ deal_status: "cancelled" }`
+- **State**: `* → cancelled`
+- **備考**: `late_30min` は 30分超過で発動条件成立時のみ ⚠️
+- **Screen**: `D-cancel`
+
+---
+
+## 13. Disputes（異議申し立て）
+
+`notes/09_state_machines.md` §3 Dispute Lifecycle、`notes/05_data_model.md` §8 disputes。
+
+### POST /api/v1/disputes
+
+dispute 申告（D-1〜D-3）。
+
+- **Auth**: 必須（deal 参加者のみ）
+- **Request**:
+  ```json
+  {
+    "deal_id": "uuid",
+    "category": "no_show|late|mismatch|damage|other",
+    "description": "string",
+    "evidence_urls": ["string", ...]
+  }
+  ```
+- **Response 201**: `{ id, ticket_number, status: "submitted", reply_deadline_at, arbitration_deadline_at }`
+- **State**: → `submitted`
+- **Side effects**:
+  - 相手にプッシュ通知
+  - 両者の新規打診凍結（受信者→送信者を `rejected_partners` 相互登録？⚠️）
+- **Screen**: `D-1` → `D-2` → `D-3`
+
+### GET /api/v1/disputes/:id
+
+dispute 詳細。
+
+- **Auth**: 必須（参加者または運営）
+- **Response 200**: 全フィールド + replies
+- **Screen**: `D-4`、`D-5*`、`D-6*`
+
+### POST /api/v1/disputes/:id/reply
+
+反論。
+
+- **Auth**: 必須（filed_by 以外の deal 参加者）
+- **Request**: `{ message, evidence_urls? }`
+- **Response 201**: reply
+- **State**: `submitted/reply_window → reply_received`
+- **Screen**: `D-4`
+
+### POST /api/v1/disputes/:id/withdraw
+
+申告取り下げ。
+
+- **Auth**: 必須（filed_by のみ、`submitted` のみ可）
+- **Response 200**: `{ status: "withdrawn" }`
+- **State**: `submitted → withdrawn`
+
+### POST /api/v1/disputes/:id/admin-question
+
+運営からの追加質問（D-5d）。
+
+- **Auth**: 運営のみ
+- **Request**: `{ question, target_user_id }`
+- **Response 200**: 質問送信成功
+- **備考**: ⚠️ 要確認 — 運営UI仕様
+
+### POST /api/v1/disputes/:id/resolve
+
+仲裁決定（運営）。
+
+- **Auth**: 運営のみ
+- **Request**:
+  ```json
+  {
+    "decision": "sender_fault|receiver_fault|mutual_fault|no_fault|cant_determine",
+    "reason": "string",
+    "penalty_for_sender": "none|warning|temp_suspend|permanent_suspend",
+    "penalty_for_receiver": "none|warning|temp_suspend|permanent_suspend",
+    "next_steps": "string"
+  }
+  ```
+- **Response 200**: `{ status: "resolved", resolution }`
+- **State**: → `resolved`、関連 `deals.status = 'rated'` または別の終了状態 ⚠️
+- **Side effects**: 当事者にプッシュ通知
+
+### POST /api/v1/disputes/:id/reappeal
+
+再審査申立て（D-6c）。
+
+- **Auth**: 必須（参加者のみ、結果通知から7日以内、1取引1回のみ）
+- **Request**: `{ message, evidence_urls? }`
+- **Response 201**: `{ reappeal_id }`
+- **備考**: ⚠️ 要確認 — 再審査の状態管理（disputes に新status追加？別テーブル？）
+
+---
+
+## 14. Reports（通報）
+
+`notes/05_data_model.md` §7 reports。
+
+### POST /api/v1/reports
+
+通報送信。
+
+- **Auth**: 必須
+- **Request**:
+  ```json
+  {
+    "target_user_id": "uuid?",
+    "target_proposal_id": "uuid?",
+    "target_message_id": "uuid?",
+    "category": "spam|harassment|fake_item|no_show|other",
+    "description": "string",
+    "evidence_urls": ["string"]
+  }
+  ```
+- **Response 201**: `{ id, status: "open" }`
+- **Screen**: `RPT-form`、`RPT-complete`
+
+### GET /api/v1/reports
+
+自分が出した通報一覧。
+
+- **Auth**: 必須
+- **Response 200**: `{ data: [reports], meta: {...} }`
+
+---
+
+## 15. Misc（通知・WebSocket）
+
+### POST /api/v1/notifications/devices
+
+プッシュ通知デバイス登録。
+
+- **Auth**: 必須
+- **Request**: `{ platform: "ios|android|web", token }`
+- **Response 201**: `{ device_id }`
+
+### DELETE /api/v1/notifications/devices/:id
+
+デバイス削除（ログアウト時）。
+
+- **Auth**: 必須
+- **Response 204**
+
+### GET /api/v1/notifications/settings
+
+通知設定取得。
+
+- **Auth**: 必須
+- **Response 200**: `{ topics: { match_found, message_received, agreement_reached, dispute_filed, ... }, quiet_hours }`
+- **Screen**: `SET-notif`
+
+### PATCH /api/v1/notifications/settings
+
+通知設定更新。
+
+- **Auth**: 必須
+- **Request**: 部分更新
+
+### WS /api/v1/ws
+
+WebSocket でリアルタイム更新。
+
+- **Auth**: 必須（接続時に JWT 検証）
+- **Events**:
+  - `message.created`: 新メッセージ
+  - `proposal.updated`: 提案修正・状態変化
+  - `deal.updated`: deal状態変化
+  - `arrival.recorded`: 到着検知
+- **備考**: ⚠️ 要確認 — MVP は polling で済ませるか WebSocket 採用するか
+
+---
+
+## 16. ⚠️ 未確定項目
+
+各エンドポイントの「⚠️ 要確認」を集約。
+
+### 認証・基盤
+
+| # | 項目 | 解決時期 |
+|---|---|---|
+| 1 | JWT vs Session Cookie | 実装着手 |
+| 2 | refresh token の保存方法（HttpOnly cookie 等） | 実装着手 |
+| 3 | OAuth subject の検証境界 | 実装着手 |
+| 4 | Rate limit の具体数値 | 実装着手 |
+| 5 | API バージョニング戦略（v1 固定？v2 移行時の運用） | Post-MVP |
+
+### Proposal・ネゴ
+
+| # | 項目 | 解決時期 |
+|---|---|---|
+| 6 | proposals 作成タイミング（C-0 完了時 or 送信時） | 設計詰め |
+| 7 | ネゴ中の提案修正で `last_action_at` リセットするか | 設計詰め |
+| 8 | `agreement_one_side` 中の提案修正で `agreed_by_*` を reset するか | 設計詰め |
+| 9 | proposals に `cancelled` 状態を追加するか | 設計詰め |
+| 10 | proposal_revisions の保存粒度（毎修正全部 vs N件） | 設計詰め |
+| 11 | system message の `event_type` 値リスト確定 | 実装着手 |
+
+### Deal・dispute
+
+| # | 項目 | 解決時期 |
+|---|---|---|
+| 12 | 到着検知の追加実装（QR / GPS）の Post-MVP 着手時期 | Post-MVP |
+| 13 | 服装写真の顔ブラー処理 | 実装着手 |
+| 14 | 細分化評価（punctuality 等）を MVP で採用するか | 設計詰め |
+| 15 | dispute reply 期限 24h or 4h カテゴリ依存ルール | 設計詰め |
+| 16 | dispute resolved 後の deals.status（rated に戻るか別ステート？） | 設計詰め |
+| 17 | 再審査申立てのデータ構造（disputes に status 追加 vs 別テーブル） | 設計詰め |
+| 18 | 30分遅刻時のキャンセル権発動条件（自動 vs 手動） | 設計詰め |
+| 19 | dispute中のチャット凍結ルール（メッセージ送信不可？） | 設計詰め |
+
+### マスタ・周辺
+
+| # | 項目 | 解決時期 |
+|---|---|---|
+| 20 | events のユーザー作成タグの即公開 vs 運営承認 | 設計詰め |
+| 21 | events の重複検出・自動マージルール | 実装着手 |
+| 22 | QRコードの中身（user_id だけ？署名付き？） | 設計詰め |
+| 23 | マッチング計算のバッチ頻度（毎日/6h/1h） | 実装着手 |
+| 24 | リアルタイム通知のスロットル | 実装着手 |
+| 25 | WebSocket 採用 vs polling（MVP） | 設計詰め |
+
+### 画像・ストレージ
+
+| # | 項目 | 解決時期 |
+|---|---|---|
+| 26 | 直接アップロード vs 署名付きURL（S3互換） | 実装着手 |
+| 27 | 画像サイズ・形式の上限 | 実装着手 |
+| 28 | 画像の保管期間・自動削除（証跡画像は何年保持？） | 設計詰め |
+
+### 通報・運営
+
+| # | 項目 | 解決時期 |
+|---|---|---|
+| 29 | 運営UIの仕様（dispute resolve、admin-question 等） | 別フェーズ |
+| 30 | 通報後の自動処理ロジック（即ブロック？運営確認後？） | 設計詰め |
+
+---
+
+## 関連 docs
+
+- [`notes/05_data_model.md`](05_data_model.md) — テーブル定義
+- [`notes/09_state_machines.md`](09_state_machines.md) — 状態遷移
+- [`notes/10_glossary.md`](10_glossary.md) — 用語・enum 値
+- [`notes/11_screen_inventory.md`](11_screen_inventory.md) — 画面マトリクス
+- [`notes/12_screens/`](12_screens/) — 各画面の詳細仕様
+
+各 `12_screens/*.md` の「関連 API」セクションに、ここで定義したエンドポイントへの参照あり。

@@ -419,6 +419,109 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション42：API仕様 v1 draft（USER_PLAYBOOK タスク4）
+
+### 背景
+
+USER_PLAYBOOK タスク4。
+12_screens/ の per-screen spec で各画面の「関連 API（仮）」を明記したので、それらを集約して REST API 形式に落とす。
+- 実装着手前の最後の壁
+- 33件の未確定項目の半分くらいはここで解決の道筋がつく
+- バックエンド・フロントエンド双方の正解集
+
+### 変更内容
+
+#### `notes/13_api_spec.md`（新規作成、約 800行）
+
+**14 リソースグループ・約 70 エンドポイント**：
+
+1. **Auth（認証）**：register / verify-email / login / OAuth / forgot-password / reset-password / logout / refresh — 9件
+2. **Accounts（自分のアカウント）**：me / oshi / onboarding / delete-request / blocks — 9件
+3. **Users（他ユーザー）**：参照系のみ — 4件
+4. **Masters（マスタデータ）**：genres / groups / characters / goods-types / events — 6件
+5. **AWs（活動予定）**：CRUD + pause/resume + intersect — 8件
+6. **Items（在庫）**：CRUD + bulk + image upload + carrying toggle — 9件
+7. **Wishes（ウィッシュ）**：CRUD + matches — 6件
+8. **Matches（マッチング）**：4タブ + feed + saved searches — 6件
+9. **Proposals（打診・ネゴ）**：CRUD + send/agree/reject/counter/revise/extend/share-inventory + revisions — 11件（最大ボリューム）
+10. **Messages（メッセージ）**：取得・送信・画像アップロード — 3件
+11. **Deals（取引）**：CRUD + arrivals + outfit-photos + evidence + approve + dispute + rate + cancel — 10件
+12. **Disputes（異議申し立て）**：CRUD + reply + withdraw + admin-question + resolve + reappeal — 7件
+13. **Reports（通報）**：通報作成・自分の通報一覧 — 2件
+14. **Misc**：通知デバイス・通知設定・WebSocket — 5件
+
+**共通仕様セクション**：
+- 認証スキーム（JWT Bearer 推奨、⚠️ 要確認）
+- ベースURL `/v1`（API バージョニング）
+- リクエスト/レスポンス形式（JSON、ISO 8601、UUID v4）
+- ステータスコード一覧
+- エラーコード（VALIDATION_ERROR / STATE_CONFLICT 等）
+- ページネーション（カーソル方式 + オフセット方式）
+- Rate limiting（⚠️ 要確認の数値）
+- ファイルアップロード（直接 vs 署名付きURL、MVP は直接）
+
+**各エンドポイントの記述形式**：
+```
+### POST /api/v1/...
+- **Auth**: 必須/不要
+- **Request**: { ... }
+- **Response 201**: { ... }
+- **Errors**: 4xx 一覧
+- **Side effects**: メール送信・DB変更・通知等
+- **State**: 状態遷移 (09 と一致)
+- **Screen**: 関連画面 (11/12 と一致)
+- **備考**: ⚠️ 要確認 含む
+```
+
+**未確定項目セクション**：30件を5カテゴリで整理：
+- 認証・基盤（5件）
+- Proposal・ネゴ（6件）
+- Deal・dispute（8件）
+- マスタ・周辺（6件）
+- 画像・ストレージ（3件）
+- 通報・運営（2件）
+
+### 影響範囲
+
+- 実装着手の準備が完了レベルに到達
+- バックエンドとフロントエンドの実装契約として機能
+- 12_screens の各画面と完全クロスリファレンス
+
+### Phase 2 進捗
+
+USER_PLAYBOOK タスク：
+- 🥇 タスク1（05 最新化） ✅ iter38
+- 🎯 5論点擦り合わせ ✅ iter39
+- 🥈 タスク2（11 画面マトリクス） ✅ iter40
+- 🥈 タスク3（12_screens/ per-screen spec） ✅ iter41
+- 🥉 **タスク4（13 API spec） ✅ iter42 ← 今回**
+- 🥉 タスク5（14 実装フェーズ分割） → 次（残り最後の主要タスク）
+- 🟡 タスク6（15 非機能要件）
+- 🟡 タスク7（02 機能要件 更新）
+
+Phase 2 の主要4タスク完了。**実装フェーズへ移行する準備の 90% が整った状態**。
+
+### 確認方法
+
+- `notes/13_api_spec.md`
+- GitHub: https://github.com/mashimabizz/iHub_design/blob/main/notes/13_api_spec.md
+
+### 関連ファイル
+
+- `notes/13_api_spec.md`（新規）
+
+### 次フェーズへの示唆
+
+タスク5（実装フェーズ分割）：
+- 13_api_spec の各エンドポイントを Phase 0〜6 に振り分け
+- 11_screen_inventory の各画面を Phase に紐付け
+- 依存関係を明確化（Auth が一番先、disputes が一番後 等）
+- 各 Phase の完了基準・概算工数
+
+これで iHub の実装ロードマップが完成し、エンジニア募集・着手の準備が整う。
+
+---
+
 ## イテレーション41：per-screen spec（USER_PLAYBOOK タスク3）— 主要5画面
 
 ### 背景
