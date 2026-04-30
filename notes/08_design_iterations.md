@@ -419,6 +419,78 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション36：GitHub移行・CLAUDE.md強化・スマホ Claude ワークフロー整備
+
+### 背景・問題意識
+
+iPhoneからもClaudeに指示出ししたい、というユーザー要望。
+当初は GitHub Issue 経由のワークフローを想定したが、claude.ai mobile が GitHub 直結できることが判明。
+→ ワークフローの重心を「スマホ Claude が CLAUDE.md だけ読んで動ける」状態にシフト。
+
+### 変更内容
+
+#### GitHub 移行
+- `mashimabizz/iHub_design` リポジトリ新設（既存の `iHub_renewal` とは分離）
+- ローカル git 初期化、初期コミット 56ファイル push
+- `gh` CLI を `~/.local/bin/gh` に直接インストール（Homebrew不要）
+- `gh auth login` で認証完了
+- credential helper 設定で次回以降の push 自動化
+
+#### `CLAUDE.md` 強化（workflow-rich 化）
+- **環境差分セクション**新設：PC（Claude Code）vs スマホ（claude.ai）でできること・できないことを明示
+- **A. 設計・実装変更時のチェックリスト**を厳守事項として追加（07ステップ）
+- **B. iteration エントリの形式**テンプレ追加
+- **C-E. 用語追加・廃止・commit形式**のテンプレ追加
+- **GitHub Pages URL** をスマホプレビュー用として記載
+- **PC で便利なスラッシュコマンド**セクション追加
+
+#### `/iter` スラッシュコマンド新設（PC専用）
+- `.claude/commands/iter.md` 作成
+- 設計変更を `notes/08` に記録 + `09`/`10` 更新診断 + commit までを自動化
+- スマホ Claude では効かないので、CLAUDE.md のチェックリストを手動で踏む前提
+
+#### `.gitignore` 修正
+- 旧：`.claude/` 全体を ignore
+- 新：`.claude/settings.local.json` と `.claude/cache/` のみ ignore
+- → `commands/` `skills/` `agents/` は今後も含めて track できるように
+
+#### PATH 設定
+- `~/.zshrc` に `export PATH="$HOME/.local/bin:$PATH"` 追加
+- 次回ターミナル起動から `gh` をフルパス指定不要
+
+#### GitHub Pages 有効化
+- `gh api repos/mashimabizz/iHub_design/pages -X POST` で API 経由有効化
+- URL: `https://mashimabizz.github.io/iHub_design/`
+- スマホ・他環境からプレビュー可能に
+
+### 影響範囲
+
+- リポジトリ全体（git管理化）
+- 全 Claude セッション（PC/スマホ問わず CLAUDE.md を参照）
+- ドキュメンテーション規律（チェックリスト厳守）
+
+### 確認方法
+
+- リポジトリ: https://github.com/mashimabizz/iHub_design
+- GitHub Pages: https://mashimabizz.github.io/iHub_design/iHub/iHub%20MVP%20v1.html （ビルド完了まで数分かかる）
+- ローカル: `python3 -m http.server 8000`
+
+### 関連ファイル
+
+- `CLAUDE.md`
+- `README.md`
+- `.gitignore`
+- `.claude/commands/iter.md`
+- `~/.zshrc`（ローカル、track外）
+
+### 次フェーズへの示唆
+
+- Phase 2 の `05_data_model.md` 更新を、スマホからでも Claude に依頼できるようになった
+- 重要な workflow rule は CLAUDE.md にあるので、別環境でも同じ規律で動作する
+- スマホで作業した内容も `[iter◯◯]` 形式で commit すれば履歴一元化される
+
+---
+
 ## イテレーション35：再現可能性のための設計ドキュメント整備（state machines ＋ glossary）
 
 ### 背景・問題意識
