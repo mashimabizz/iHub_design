@@ -74,3 +74,38 @@ export async function saveOshi(
 
   redirect("/onboarding/members");
 }
+
+// ----------------------------------------------------------------------
+// saveOshiRequest: マスタに無い推しの追加リクエストを送信
+// ----------------------------------------------------------------------
+export async function saveOshiRequest(input: {
+  name: string;
+  genreId?: string;
+  kind?: "group" | "work" | "solo";
+  note?: string;
+}): Promise<ActionResult> {
+  const name = input.name.trim();
+  if (!name || name.length > 100) {
+    return { error: "推しの名前は 1〜100 文字で入力してください" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.from("oshi_requests").insert({
+    user_id: user.id,
+    requested_name: name,
+    requested_genre_id: input.genreId || null,
+    requested_kind: input.kind || null,
+    note: input.note?.trim() || null,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  redirect("/onboarding/oshi");
+}

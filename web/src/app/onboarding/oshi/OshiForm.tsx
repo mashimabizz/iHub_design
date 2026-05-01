@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { saveOshi } from "@/app/onboarding/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
@@ -19,6 +20,13 @@ export type GenreOption = {
   id: string;
   name: string;
   kind: "idol" | "anime" | "game" | "other";
+};
+
+export type PendingRequest = {
+  id: string;
+  name: string;
+  kind: "group" | "work" | "solo" | null;
+  genre_name: string | null;
 };
 
 // 「人気」バッジを付ける group の上位件数（display_order 小 = 人気）
@@ -44,10 +52,12 @@ export function OshiForm({
   oshiOptions,
   genreOptions,
   initialSelected,
+  pendingRequests,
 }: {
   oshiOptions: OshiOption[];
   genreOptions: GenreOption[];
   initialSelected: string[];
+  pendingRequests: PendingRequest[];
 }) {
   const [selected, setSelected] = useState<string[]>(initialSelected);
   const [filterGenreId, setFilterGenreId] = useState<string | "all">("all");
@@ -240,10 +250,52 @@ export function OshiForm({
           })
         )}
 
-        {/* 追加リクエスト枠 */}
-        <div className="rounded-xl border border-dashed border-[#3a324a14] py-3 text-center text-xs text-gray-500">
+        {/* 自分の審査中リクエスト */}
+        {pendingRequests.length > 0 && (
+          <>
+            <div className="mt-3 mb-1 text-[11px] font-bold text-gray-500">
+              審査中（運営確認待ち）
+            </div>
+            {pendingRequests.map((r) => {
+              const subParts: string[] = [];
+              if (r.genre_name) subParts.push(r.genre_name);
+              if (r.kind === "group") subParts.push("グループ");
+              else if (r.kind === "work") subParts.push("作品");
+              else if (r.kind === "solo") subParts.push("ソロ");
+              return (
+                <div
+                  key={r.id}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-[#3a324a26] bg-white px-4 py-3.5"
+                >
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#3a324a08] text-sm font-extrabold text-gray-500">
+                    🕐
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold text-gray-700">
+                      {r.name}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-gray-500">
+                      {subParts.length > 0
+                        ? subParts.join("・")
+                        : "ジャンル指定なし"}
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-[#a695d822] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
+                    審査中
+                  </span>
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        {/* 追加リクエスト枠 → /onboarding/oshi/request へ遷移 */}
+        <Link
+          href="/onboarding/oshi/request"
+          className="mt-3 block rounded-xl border border-dashed border-[#a695d855] bg-white py-3 text-center text-xs font-medium text-[#a695d8] transition-colors hover:border-[#a695d8] hover:bg-[#a695d808]"
+        >
           + 見つからない場合は運営に追加リクエスト
-        </div>
+        </Link>
       </div>
 
       {error && <p className="mt-3 text-xs text-red-600">{error}</p>}

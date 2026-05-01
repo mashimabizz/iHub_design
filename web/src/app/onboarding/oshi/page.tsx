@@ -48,6 +48,26 @@ export default async function OshiPage() {
       ?.filter((o): o is { group_id: string; priority: number } => !!o.group_id)
       .map((o) => o.group_id) ?? [];
 
+  // 自分の pending な追加リクエスト（「審査中」表示用）
+  const { data: pendingRequestsRaw } = await supabase
+    .from("oshi_requests")
+    .select(
+      "id, requested_name, requested_kind, status, created_at, genre:genres_master(id, name)",
+    )
+    .eq("user_id", user.id)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+
+  const pendingRequests = (pendingRequestsRaw ?? []).map((r) => {
+    const genre = Array.isArray(r.genre) ? r.genre[0] : r.genre;
+    return {
+      id: r.id,
+      name: r.requested_name,
+      kind: r.requested_kind as "group" | "work" | "solo" | null,
+      genre_name: genre?.name ?? null,
+    };
+  });
+
   // OshiOption に変換
   const oshiOptions: OshiOption[] = (groups ?? [])
     .filter((g): g is typeof g & { genre: NonNullable<typeof g.genre> } =>
@@ -93,6 +113,7 @@ export default async function OshiPage() {
           oshiOptions={oshiOptions}
           genreOptions={genreOptions}
           initialSelected={initialSelected}
+          pendingRequests={pendingRequests}
         />
       </div>
     </main>
