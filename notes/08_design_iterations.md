@@ -419,6 +419,109 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション47：ドメイン・メール構造確定 + 弁護士OK 判明
+
+### 背景
+
+ユーザー報告：
+1. **ドメイン取得完了**：`ihub.tokyo`（お名前.com）
+2. **弁護士レビュー結果：「このまま OK」**（規約原典 docx を改訂不要）
+3. **メール構造**：support@（メイン）、info@（通知）、privacy@（個人情報）の3つで運用
+4. **legal-pages.jsx の方針**：「モックアップなので、実装でちゃんと反映してくれるように」
+
+### 重要な判明事項
+
+#### 弁護士判断「このまま OK」の意味
+
+iter46 で「規約改訂が必要」と判断したが、弁護士は：
+- 規約原典 docx を **そのまま運用 OK** と判断
+- iHub MVP は規約の **SUBSET として実装**（MyLog・郵送 は実装しないが、契約上は許可されている）
+- これは法的に正常（契約 SUPERSET、実装 SUBSET）
+
+つまり：
+- ✅ docx 改訂不要（弁護士費 $500 は使わずに済んだ）
+- ✅ 将来 MyLog や 郵送 を追加する際も追加レビュー不要
+- ⚠️ `legal-pages.jsx` は実装時に docx を完全反映する必要あり
+
+iter46 で書いた「弁護士再依頼」プランは **不要**になった。
+
+#### legal-pages.jsx の位置づけ確定
+
+`legal-pages.jsx` は **画面UI のモックアップ**であり、実装時には docx を完全反映する：
+- 利用規約：572 行 → そのまま反映
+- プライバシーポリシー：218 行 → そのまま反映
+- 特商法：70 行 → そのまま反映 + 価格 ¥500 等を確定値で埋める
+
+これは `notes/17_legal_alignment.md` に「実装フェーズの TODO」として明記。
+
+### 確定事項
+
+#### ドメイン・URL
+
+| 項目 | 値 |
+|---|---|
+| ドメイン | **`ihub.tokyo`** |
+| API 本番 | `https://api.ihub.tokyo/v1` |
+| API staging | `https://api-staging.ihub.tokyo/v1`（暫定） |
+| GitHub Pages | `https://mashimabizz.github.io/iHub_design`（プレビュー用） |
+
+#### メール構造
+
+| メール | 用途 |
+|---|---|
+| **`support@ihub.tokyo`** | メイン連絡先（新規登録・問い合わせ・サポート） |
+| **`info@ihub.tokyo`** | お知らせ・通知系（一斉送信） |
+| **`privacy@ihub.tokyo`** | 個人情報保護関係 |
+
+### 変更内容
+
+- `iHub/legal-pages.jsx`：
+  - `hello@ihub.example.com` → `support@ihub.tokyo`
+  - `privacy@ihub.example.com` → `privacy@ihub.tokyo`
+  - `株式会社iHub` → `iHub 運営者`（4箇所、規約原典の表現に合わせる）
+
+- `notes/15_non_functional.md`：3 メールアドレス構造を反映
+
+- `notes/13_api_spec.md`：ベースURL に `ihub.tokyo` 反映
+
+- `notes/16_monetization.md`：3 メールアドレス構造を反映
+
+- `notes/17_legal_alignment.md`：
+  - 「弁護士 OK = docx 改訂不要」方針に大幅書き換え
+  - 「実装フェーズの TODO」セクション追加（legal-pages.jsx を docx で完全置き換え）
+
+### Phase 進捗
+
+設計フェーズの最終整備が完了：
+- ドメイン取得 ✅
+- 弁護士レビュー ✅（このまま OK）
+- メール構造確定 ✅
+- legal-pages.jsx 実装方針確定 ✅
+
+### 次のステップ
+
+**実装フェーズ着手の準備完了。**
+
+残タスク：
+1. ハンドル名確認（`@ihub_jp` か `@ihub_tokyo` か）
+2. お名前.com でメール転送設定（support@・info@・privacy@ を Gmail に）
+3. **Phase 0a 着手**：
+   - Supabase アカウント作成（ユーザー）
+   - Supabase プロジェクト作成（一緒に）
+   - Vercel 連携（一緒に）
+   - Next.js プロジェクト初期化
+   - 「Hello iHub」が表示されるところまで
+
+### 関連ファイル
+
+- `iHub/legal-pages.jsx`
+- `notes/13_api_spec.md`
+- `notes/15_non_functional.md`
+- `notes/16_monetization.md`
+- `notes/17_legal_alignment.md`
+
+---
+
 ## イテレーション46：規約原典との整合・用語統一・運営者情報修正
 
 ### 背景

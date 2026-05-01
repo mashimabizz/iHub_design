@@ -111,7 +111,7 @@ function TermsOfService({ tweaks }) {
       <LPHeader colors={c} title="利用規約" sub="最終更新日：2026年4月30日" />
       <div style={{ padding: '20px 22px 0' }}>
         <LPInfoBox colors={c}>
-          この利用規約（以下「本規約」）は、株式会社iHub（以下「当社」）が提供するグッズ交換プラットフォーム「iHub」（以下「本サービス」）の利用条件を定めるものです。本サービスをご利用の方（以下「利用者」）は、本規約に同意したうえでご利用ください。
+          この利用規約（以下「本規約」）は、iHub 運営者（以下「当社」）が提供するグッズ交換プラットフォーム「iHub」（以下「本サービス」）の利用条件を定めるものです。本サービスをご利用の方（以下「利用者」）は、本規約に同意したうえでご利用ください。
         </LPInfoBox>
 
         <LPArticle num="第1条" title="本規約の適用" colors={c}>
@@ -194,7 +194,7 @@ function TermsOfService({ tweaks }) {
           borderTop: `0.5px solid ${c.divide}`,
         }}>
           附則：本規約は 2026年4月30日 から施行します。<br/>
-          株式会社iHub
+          iHub 運営者
         </div>
       </div>
     </div>
@@ -216,7 +216,7 @@ function PrivacyPolicy({ tweaks }) {
       <LPHeader colors={c} title="プライバシーポリシー" sub="最終更新日:2026年4月30日" />
       <div style={{ padding: '20px 22px 0' }}>
         <LPInfoBox colors={c}>
-          株式会社iHub（以下「当社」）は、利用者の個人情報を尊重し、適切に取り扱うことを社会的責務と認識し、関連法令を遵守するとともに、本プライバシーポリシーに従って個人情報を取り扱います。
+          iHub 運営者（以下「当社」）は、利用者の個人情報を尊重し、適切に取り扱うことを社会的責務と認識し、関連法令を遵守するとともに、本プライバシーポリシーに従って個人情報を取り扱います。
         </LPInfoBox>
 
         <LPArticle num="1" title="取得する個人情報" colors={c}>
@@ -270,8 +270,8 @@ function PrivacyPolicy({ tweaks }) {
         <LPArticle num="8" title="お問い合わせ窓口" colors={c}>
           個人情報の取り扱いに関するお問い合わせは、以下の窓口までご連絡ください。<br/>
           <br/>
-          <b style={{ color: c.ink }}>株式会社iHub 個人情報保護管理者</b><br/>
-          メール：privacy@ihub.example.com<br/>
+          <b style={{ color: c.ink }}>iHub 個人情報保護管理者</b><br/>
+          メール：privacy@ihub.tokyo<br/>
           受付時間：平日 10:00〜18:00（土日祝・年末年始を除く）
         </LPArticle>
 
@@ -285,7 +285,7 @@ function PrivacyPolicy({ tweaks }) {
           borderTop: `0.5px solid ${c.divide}`,
         }}>
           制定：2026年4月30日<br/>
-          株式会社iHub
+          iHub 運営者
         </div>
       </div>
     </div>
@@ -324,7 +324,7 @@ function LegalNotice({ tweaks }) {
           <LPDataRow colors={c} label="電話番号" value={
             <>非公表<br/><span style={{ fontSize: 11, color: c.mute }}>※同上、お問い合わせは原則メールで承ります</span></>
           } />
-          <LPDataRow colors={c} label="メールアドレス" value="hello@ihub.example.com" />
+          <LPDataRow colors={c} label="メールアドレス" value="support@ihub.tokyo" />
           <LPDataRow colors={c} label="受付時間" value="平日 10:00〜18:00（土日祝・年末年始を除く）" last />
         </div>
 

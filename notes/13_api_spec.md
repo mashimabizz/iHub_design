@@ -51,10 +51,11 @@
 ### ベースURL
 
 ```
-https://api.ihub.example.com/v1
+本番:    https://api.ihub.tokyo/v1
+staging: https://api-staging.ihub.tokyo/v1（or staging.ihub.tokyo）⚠️ 検討
 ```
 
-⚠️ 要確認：本番ドメイン、staging との分離。
+ドメイン: `ihub.tokyo`（お名前.com で取得済、iter47）
 
 ### 認証スキーム
 
