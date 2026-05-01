@@ -176,6 +176,35 @@ export async function logout(): Promise<void> {
 }
 
 // ----------------------------------------------------------------------
+// signInWithGoogle: Google OAuth でログイン or 新規登録
+// ----------------------------------------------------------------------
+export async function signInWithGoogle(): Promise<AuthResult> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${getBaseUrl()}/auth/callback`,
+      queryParams: {
+        access_type: "offline",
+        prompt: "consent",
+      },
+    },
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  // signInWithOAuth は url を返す → そこに redirect
+  if (data?.url) {
+    redirect(data.url);
+  }
+
+  return {};
+}
+
+// ----------------------------------------------------------------------
 // passwordReset: パスワードリセット用メールを送信
 // ----------------------------------------------------------------------
 export async function passwordReset(formData: FormData): Promise<AuthResult> {

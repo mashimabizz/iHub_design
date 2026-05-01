@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/auth/actions";
 import { IHubLogo } from "@/components/auth/IHubLogo";
 import { PrimaryLinkButton } from "@/components/auth/PrimaryButton";
+import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
 
 type Props = {
   searchParams: Promise<{
@@ -81,15 +82,9 @@ function WelcomeView() {
           <PrimaryLinkButton href="/signup">
             メールアドレスで新規登録
           </PrimaryLinkButton>
-          <button
-            type="button"
-            disabled
-            title="準備中"
-            className="relative mt-2.5 flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-[14px] border-[1.5px] border-solid border-[#a695d855] bg-white px-4 py-[13px] text-sm font-bold text-gray-900 transition-all duration-150 hover:bg-[#a695d80d] hover:border-[#a695d899] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <GoogleIcon />
-            Googleで新規登録
-          </button>
+          <div className="mt-2.5">
+            <GoogleAuthButton label="Googleで新規登録" />
+          </div>
           <div className="mt-5 text-center text-[13px] text-gray-500">
             すでにアカウントをお持ちの方は{" "}
             <Link
