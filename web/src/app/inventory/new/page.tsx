@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { InventoryNewForm } from "./InventoryNewForm";
+import { CaptureFlow } from "./CaptureFlow";
 import { HeaderBack } from "@/components/auth/HeaderBack";
 
 export const metadata = {
@@ -8,11 +8,12 @@ export const metadata = {
 };
 
 /**
- * 在庫追加画面（最小実装）
+ * グッズ登録フロー（撮影 → 切り抜き → ラベリング）
  *
- * - ユーザーの user_oshi に登録されている group/character のみ選択可
- * - グッズ種別は goods_types_master 全件
- * - 写真は後の iter で Supabase Storage 対応
+ * - Step 1: 共通選択（グループ + グッズ種別）
+ * - Step 2: 撮影 / 写真選択 → Supabase Storage にアップロード
+ * - Step 3: 切り抜き（次の iter で実装）
+ * - Step 4: ラベリング（キャラ・タイトル等を個別設定 / 一括登録）
  */
 export default async function InventoryNewPage() {
   const supabase = await createClient();
@@ -21,21 +22,13 @@ export default async function InventoryNewPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 並列取得：自分の推し（user_oshi）+ それに紐づくキャラ + グッズ種別
-  const [
-    { data: userOshi },
-    { data: characters },
-    { data: goodsTypes },
-  ] = await Promise.all([
+  // 並列取得
+  const [{ data: userOshi }, { data: goodsTypes }] = await Promise.all([
     supabase
       .from("user_oshi")
       .select("group_id, group:groups_master(id, name)")
       .eq("user_id", user.id)
       .not("group_id", "is", null),
-    supabase
-      .from("characters_master")
-      .select("id, name, group_id")
-      .order("display_order", { ascending: true }),
     supabase
       .from("goods_types_master")
       .select("id, name")
@@ -53,25 +46,14 @@ export default async function InventoryNewPage() {
   }
   const groups = Array.from(groupMap.values());
 
-  // 自分の推しグループに紐づくキャラのみ
-  const groupIds = new Set(groups.map((g) => g.id));
-  const filteredCharacters = (characters ?? [])
-    .filter((c) => c.group_id && groupIds.has(c.group_id))
-    .map((c) => ({ id: c.id, name: c.name, group_id: c.group_id! }));
-
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="グッズを登録" backHref="/inventory" />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-8 pt-6">
-        <p className="mb-5 text-xs leading-relaxed text-gray-500">
-          譲るグッズを登録します。求めるグッズ（wish）は{" "}
-          <span className="font-bold text-[#a695d8]">wish タブ</span>{" "}
-          から登録してください（次の機能で実装）。
-        </p>
-        <InventoryNewForm
+        <CaptureFlow
           groups={groups}
-          characters={filteredCharacters}
           goodsTypes={goodsTypes ?? []}
+          userId={user.id}
         />
       </div>
     </main>
