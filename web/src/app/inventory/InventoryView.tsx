@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   toggleCarryingAll,
@@ -47,6 +47,8 @@ const TYPE_FILTERS = [
   "スロガン",
 ];
 
+const SUB_IDS: SubTab[] = ["active", "keep", "traded"];
+
 export function InventoryView({
   items,
   carrying: initialCarrying,
@@ -58,6 +60,7 @@ export function InventoryView({
   const [sub, setSub] = useState<SubTab>("active");
   const [carrying, setCarrying] = useState(initialCarrying);
   const [pending, startTransition] = useTransition();
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const counts = useMemo(
     () => ({
@@ -67,10 +70,50 @@ export function InventoryView({
     }),
     [items],
   );
-  const filtered = items.filter((i) => i.status === sub);
+  const itemsBySub = useMemo(
+    () => ({
+      active: items.filter((i) => i.status === "active"),
+      keep: items.filter((i) => i.status === "keep"),
+      traded: items.filter((i) => i.status === "traded"),
+    }),
+    [items],
+  );
   const carryCount = items.filter(
     (i) => i.status === "active" && i.carrying,
   ).length;
+
+  // スワイプ位置からタブを更新（debounce 付き）
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    let frame: number | null = null;
+    function onScroll() {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (!container) return;
+        const idx = Math.round(container.scrollLeft / container.clientWidth);
+        const next = SUB_IDS[idx];
+        if (next && next !== sub) setSub(next);
+      });
+    }
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [sub]);
+
+  // タブクリック時にスムーズスクロール
+  function selectSub(target: SubTab) {
+    setSub(target);
+    const container = scrollRef.current;
+    if (!container) return;
+    const idx = SUB_IDS.indexOf(target);
+    container.scrollTo({
+      left: idx * container.clientWidth,
+      behavior: "smooth",
+    });
+  }
 
   function handleToggleCarrying() {
     const next = !carrying;
@@ -179,7 +222,7 @@ export function InventoryView({
         </div>
       </div>
 
-      {/* サブタブ（active/keep/traded） */}
+      {/* サブタブ（active/keep/traded）- タップ + スワイプ対応 */}
       <div className="mx-auto w-full max-w-md px-4 pt-3">
         <div className="flex gap-1">
           {SUB_TABS.map((s) => {
@@ -188,7 +231,7 @@ export function InventoryView({
               <button
                 key={s.id}
                 type="button"
-                onClick={() => setSub(s.id)}
+                onClick={() => selectSub(s.id)}
                 className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-xl py-2.5 transition-all ${
                   active
                     ? "border-[1.5px] border-solid bg-white"
@@ -224,50 +267,20 @@ export function InventoryView({
         <FilterRow label="種別" items={TYPE_FILTERS} />
       </div>
 
-      {/* サブビュー説明バナー */}
-      {sub === "keep" && (
-        <div className="mx-auto mx-4 mt-1 mb-2 w-[calc(100%-32px)] max-w-[calc(28rem-32px)] flex items-start gap-2 rounded-xl border-[0.5px] border-[#f3c5d455] bg-[#f3c5d41a] px-3 py-2.5 text-[11.5px] leading-snug text-gray-900">
-          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-[#f3c5d4] text-[10px]">
-            🔒
-          </span>
-          <div>
-            <b>自分用キープ</b>
-            <span className="text-gray-500">
-              {" "}
-              — マッチング・打診の対象外。コレクションには反映されます
-            </span>
-          </div>
-        </div>
-      )}
-      {sub === "traded" && (
-        <div className="mx-auto mx-4 mt-1 mb-2 w-[calc(100%-32px)] max-w-[calc(28rem-32px)] flex items-start gap-2 rounded-xl bg-[#3a324a08] px-3 py-2.5 text-[11.5px] leading-snug text-gray-500">
-          <span className="flex-shrink-0">📦</span>
-          <div>
-            過去に譲ったアイテムの履歴。コレクションには「取得経験あり」として残ります
-          </div>
-        </div>
-      )}
-
-      {/* グリッド */}
-      <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-4 pt-2">
-        <div className="grid grid-cols-3 gap-2.5">
-          {sub === "active" && <AddCard href="/inventory/new" />}
-          {filtered.length === 0 && sub !== "active" && (
-            <div className="col-span-3 rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
-              {sub === "keep"
-                ? "自分用キープのアイテムはまだありません"
-                : "譲ったアイテムはまだありません"}
-            </div>
-          )}
-          {filtered.map((item) => (
-            <ItemCardWrapper
-              key={item.id}
-              item={item}
-              currentSub={sub}
-              router={router}
-            />
-          ))}
-        </div>
+      {/* スワイプコンテナ（横スクロール + scroll snap） */}
+      <div
+        ref={scrollRef}
+        className="flex flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {SUB_IDS.map((subId) => (
+          <SubPanel
+            key={subId}
+            subId={subId}
+            items={itemsBySub[subId]}
+            router={router}
+          />
+        ))}
       </div>
 
       {/* Sticky CTA */}
@@ -309,6 +322,64 @@ export function InventoryView({
         </div>
       </div>
     </main>
+  );
+}
+
+function SubPanel({
+  subId,
+  items,
+  router,
+}: {
+  subId: SubTab;
+  items: InventoryItemFull[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  return (
+    <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pb-4 pt-2">
+      {/* 説明バナー（keep / traded のみ） */}
+      {subId === "keep" && (
+        <div className="mb-2 flex items-start gap-2 rounded-xl border-[0.5px] border-[#f3c5d455] bg-[#f3c5d41a] px-3 py-2.5 text-[11.5px] leading-snug text-gray-900">
+          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-[#f3c5d4] text-[10px]">
+            🔒
+          </span>
+          <div>
+            <b>自分用キープ</b>
+            <span className="text-gray-500">
+              {" "}
+              — マッチング・打診の対象外。コレクションには反映されます
+            </span>
+          </div>
+        </div>
+      )}
+      {subId === "traded" && (
+        <div className="mb-2 flex items-start gap-2 rounded-xl bg-[#3a324a08] px-3 py-2.5 text-[11.5px] leading-snug text-gray-500">
+          <span className="flex-shrink-0">📦</span>
+          <div>
+            過去に譲ったアイテムの履歴。コレクションには「取得経験あり」として残ります
+          </div>
+        </div>
+      )}
+
+      {/* グリッド */}
+      <div className="grid grid-cols-3 gap-2.5">
+        {subId === "active" && <AddCard href="/inventory/new" />}
+        {items.length === 0 && subId !== "active" && (
+          <div className="col-span-3 rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
+            {subId === "keep"
+              ? "自分用キープのアイテムはまだありません"
+              : "譲ったアイテムはまだありません"}
+          </div>
+        )}
+        {items.map((item) => (
+          <ItemCardWrapper
+            key={item.id}
+            item={item}
+            currentSub={subId}
+            router={router}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
