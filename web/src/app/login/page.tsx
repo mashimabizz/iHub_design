@@ -18,7 +18,7 @@ export default async function LoginPage() {
   if (user) redirect("/");
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fafafa]">
+    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="ログイン" backHref="/" />
       <div className="mx-auto w-full max-w-md flex-1 px-5 pb-8 pt-8">
         {/* iHub ロゴ + おかえりなさい */}

@@ -16,7 +16,7 @@ export default async function VerifyEmailPage({ searchParams }: Props) {
   const wasResent = params.resent === "1";
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fafafa]">
+    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="メール認証" backHref="/signup" />
       <div className="mx-auto w-full max-w-md flex-1 px-7 pb-8 pt-10 text-center">
         {/* 中央アイコン（モックアップ：紫＆水色のグラデ丸 + メールアイコン） */}

@@ -61,7 +61,7 @@ export default async function Home({ searchParams }: Props) {
 // ──────────────────────────────────────────────
 function WelcomeView() {
   return (
-    <main className="flex flex-1 flex-col bg-gradient-to-b from-purple-100/50 via-sky-50/30 to-white px-7 pb-8 pt-20">
+    <main className="flex flex-1 flex-col bg-[linear-gradient(180deg,#a695d822_0%,#a8d4e614_45%,#ffffff_100%)] px-7 pb-8 pt-20">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
         {/* 中央：ロゴ + タイトル + キャッチコピー */}
         <div className="flex flex-1 flex-col items-center justify-center text-center">

@@ -21,7 +21,7 @@ export default async function PasswordResetPage() {
   if (user) redirect("/");
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fafafa]">
+    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="パスワードリセット" backHref="/login" />
       <div className="mx-auto w-full max-w-md flex-1 px-5 pb-8 pt-8">
         <h2 className="mb-2.5 text-xl font-extrabold text-gray-900">

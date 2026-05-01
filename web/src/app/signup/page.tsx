@@ -16,7 +16,7 @@ export default async function SignUpPage() {
   if (user) redirect("/");
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fafafa]">
+    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="新規登録" backHref="/" />
       <div className="mx-auto w-full max-w-md flex-1 px-5 pb-8 pt-6">
         <h2 className="text-[22px] font-extrabold leading-tight text-gray-900">
