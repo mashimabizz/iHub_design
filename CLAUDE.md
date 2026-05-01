@@ -71,6 +71,39 @@
 
 ## 📁 ファイル構造マップ
 
+### `web/`（実装本体・Phase 0a〜）
+
+**Next.js 16.2.4 + React 19.2.4 + TypeScript + Tailwind CSS + App Router**
+
+⚠️ **重要**：Next.js 16 + React 19 は破壊的変更を含む新版。
+作業前に **`web/AGENTS.md` と `web/node_modules/next/dist/docs/` を確認**すること（特にApp Router系の API変更）。
+
+| パス | 内容 |
+|---|---|
+| `web/src/app/` | App Router 配下（page.tsx / layout.tsx 等） |
+| `web/src/app/page.tsx` | トップページ（Hello iHub） |
+| `web/src/app/layout.tsx` | ルートレイアウト（Noto Sans JP フォント設定） |
+| `web/src/app/globals.css` | Tailwind 設定 |
+| `web/next.config.ts` | Next.js 設定（turbopack.root 固定済） |
+| `web/.env.local.example` | Supabase 接続情報のテンプレート |
+| `web/.env.local` | 実環境変数（gitignore） |
+| `web/AGENTS.md` | Claude 向け Next.js 16 注意事項 |
+| `vercel.json` | Vercel デプロイ設定（web/ をビルドルート） |
+
+実装着手中の動作確認：
+
+```bash
+cd web
+npm run dev      # 開発サーバ http://localhost:3000
+npm run build    # 本番ビルド
+npm run start    # 本番サーバ
+npm run lint     # ESLint
+```
+
+### `supabase/`（DB マイグレーション・将来追加）
+
+Phase 0a 完了後、Supabase CLI で初期化予定。
+
 ### `iHub/`（mockup）
 
 | ファイル | 担当範囲 |

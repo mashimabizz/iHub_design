@@ -419,6 +419,115 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション49：Phase 0a 着手 — Next.js 16 プロジェクト初期化
+
+### 背景
+
+設計フェーズ完了後、いよいよ実装着手。
+ユーザー方針：
+- リポは `iHub_design` をそのまま monorepo 化（新規リポ作成しない）
+- 既存 Supabase / Vercel `ihub` プロジェクトは削除して再作成（クリーンスタート）
+- ドメイン `ihub.tokyo` は新 Vercel プロジェクトに繋ぎ直し
+
+### 変更内容
+
+#### `web/` ディレクトリ新規作成
+
+```bash
+npx create-next-app@latest web \
+  --typescript --tailwind --eslint \
+  --app --src-dir --import-alias "@/*" --no-turbopack
+```
+
+導入バージョン：
+- **Next.js 16.2.4**（破壊的変更あり、要 docs 確認）
+- **React 19.2.4**
+- TypeScript / Tailwind CSS / ESLint / App Router / src/ 構成
+
+ビルド確認済（`npm run build` 成功）。
+
+#### `web/src/app/layout.tsx` カスタマイズ
+- Geist フォント → **Noto Sans JP**（日本語向け）
+- title / description を iHub 用に
+- lang="ja"
+
+#### `web/src/app/page.tsx` カスタマイズ
+- 「Hello iHub」ランディング
+- iHub ブランドカラー（紫→ピンク gradient）
+- Phase 0a / Stack 情報カード
+- 設計 iter数を表示
+
+#### `web/next.config.ts` 設定
+- `turbopack.root` を明示的に `web/` に固定（lockfile 検出警告の抑制）
+
+#### `web/.env.local.example` 作成
+- Supabase 接続情報のテンプレート（NEXT_PUBLIC_SUPABASE_URL, anon key, service_role key）
+
+#### `vercel.json` 作成（リポ root）
+- buildCommand: `cd web && npm run build`
+- outputDirectory: `web/.next`
+- installCommand: `cd web && npm install`
+- framework: nextjs
+
+これで Vercel が `web/` サブディレクトリを Next.js プロジェクトとして認識・ビルド・デプロイ。
+
+#### `CLAUDE.md` 更新
+- `web/` ディレクトリ構造を追記
+- Next.js 16 注意事項（破壊的変更、AGENTS.md / docs 確認）
+- 動作確認コマンド一覧
+
+### Phase 0a 進捗
+
+```
+✅ Step 1: web/ ディレクトリ作成 + Next.js 初期化
+✅ Step 2: 「Hello iHub」ページ表示確認（npm run build 成功）
+✅ Step 3: vercel.json 設定
+✅ Step 4: .gitignore 確認（既存で十分カバー）
+✅ Step 5: CLAUDE.md 更新
+
+📋 残タスク（ユーザー対応 + 私の作業）:
+[ ] ユーザー: 既存 Supabase ihub プロジェクト削除
+[ ] ユーザー: 既存 Vercel ihub プロジェクト削除
+[ ] ユーザー: Supabase 新規 ihub プロジェクト作成（Region: Tokyo）
+[ ] ユーザー: Supabase API URL + anon key + service_role key を共有
+[ ] 私: web/.env.local 設定 + Supabase クライアント初期化
+[ ] ユーザー: Vercel 新規 ihub プロジェクト作成（GitHub iHub_design 連携）
+[ ] ユーザー: Vercel に環境変数登録（Supabase keys）
+[ ] ユーザー: Vercel カスタムドメインに ihub.tokyo 設定
+[ ] ユーザー: お名前.com で DNS 確認/更新
+[ ] 私: デプロイ確認、https://ihub.tokyo で「Hello iHub」表示
+```
+
+### 確認方法
+
+ローカル：
+```bash
+cd web && npm run dev
+# http://localhost:3000 で「Hello iHub」表示
+```
+
+GitHub：
+```
+https://github.com/mashimabizz/iHub_design/tree/main/web
+```
+
+### 関連ファイル
+
+新規:
+- `web/`（Next.js 16 プロジェクト一式、約 360 packages）
+- `web/.env.local.example`
+- `vercel.json`
+
+更新:
+- `CLAUDE.md`（web/ 構造追記）
+
+### 次のステップ
+
+ユーザーがクラウド側を削除→再作成 → 私が Supabase クライアント・初期マイグレーションを設定。
+1〜2 セッションで「https://ihub.tokyo で Hello iHub」状態に到達予定。
+
+---
+
 ## イテレーション48：メール構造を2つに簡素化 + ハンドル概念整理 + Supabase/Vercel 既設
 
 ### 背景
