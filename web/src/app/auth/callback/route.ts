@@ -16,9 +16,22 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { error, data } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
+      // メール認証完了 → account_status を 'registered' → 'verified' に同期
+      // 既に onboarding/active のユーザーの再ログイン時は触らない
+      if (data?.user) {
+        await supabase
+          .from("users")
+          .update({
+            account_status: "verified",
+            email_verified_at: new Date().toISOString(),
+          })
+          .eq("id", data.user.id)
+          .eq("account_status", "registered");
+      }
+
       // 認証成功 → 元の遷移先 or ホームへ
       const forwardedHost = request.headers.get("x-forwarded-host");
       const isLocalEnv = process.env.NODE_ENV === "development";
