@@ -41,7 +41,9 @@ export default async function MembersPage() {
       .order("display_order", { ascending: true }),
     supabase
       .from("character_requests")
-      .select("id, group_id, requested_name, user_id, created_at")
+      .select(
+        "id, group_id, oshi_request_id, requested_name, user_id, created_at",
+      )
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
   ]);
@@ -59,6 +61,7 @@ export default async function MembersPage() {
     {
       oshiId: string; // 代表の user_oshi.id（最小 priority）
       groupId: string | null;
+      oshiRequestId: string | null;
       groupName: string;
       isPendingRequest: boolean;
       memberIds: string[]; // 既選択 characters_master.id
@@ -89,6 +92,7 @@ export default async function MembersPage() {
       sectionMap.set(key, {
         oshiId: o.id,
         groupId: o.group_id,
+        oshiRequestId: o.oshi_request_id,
         groupName: groupRel?.name ?? reqRel?.requested_name ?? "(不明)",
         isPendingRequest: !!o.oshi_request_id,
         memberIds: o.character_id ? [o.character_id] : [],
@@ -108,18 +112,25 @@ export default async function MembersPage() {
     charsByGroup.set(c.group_id, arr);
   }
 
-  // 審査中メンバー（character_requests）を group_id ごとにマップ化
+  // 審査中メンバー（character_requests）を 親キー（group_id or oshi_request_id）ごとにマップ化
   type PendingMember = { id: string; name: string; isMine: boolean };
   const pendingByGroup = new Map<string, PendingMember[]>();
+  const pendingByOshiRequest = new Map<string, PendingMember[]>();
   for (const r of pendingCharacterRequests ?? []) {
-    if (!r.group_id) continue;
-    const arr = pendingByGroup.get(r.group_id) ?? [];
-    arr.push({
+    const item: PendingMember = {
       id: r.id,
       name: r.requested_name,
       isMine: r.user_id === user.id,
-    });
-    pendingByGroup.set(r.group_id, arr);
+    };
+    if (r.group_id) {
+      const arr = pendingByGroup.get(r.group_id) ?? [];
+      arr.push(item);
+      pendingByGroup.set(r.group_id, arr);
+    } else if (r.oshi_request_id) {
+      const arr = pendingByOshiRequest.get(r.oshi_request_id) ?? [];
+      arr.push(item);
+      pendingByOshiRequest.set(r.oshi_request_id, arr);
+    }
   }
 
   // section 構築（minPriority 順）
@@ -128,10 +139,15 @@ export default async function MembersPage() {
     .map((s) => ({
       oshiId: s.oshiId,
       groupId: s.groupId,
+      oshiRequestId: s.oshiRequestId,
       groupName: s.groupName,
       isPendingRequest: s.isPendingRequest,
       members: s.groupId ? (charsByGroup.get(s.groupId) ?? []) : [],
-      pendingMembers: s.groupId ? (pendingByGroup.get(s.groupId) ?? []) : [],
+      pendingMembers: s.groupId
+        ? (pendingByGroup.get(s.groupId) ?? [])
+        : s.oshiRequestId
+          ? (pendingByOshiRequest.get(s.oshiRequestId) ?? [])
+          : [],
     }));
 
   // 既存選択の初期値構築

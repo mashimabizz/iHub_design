@@ -7,10 +7,14 @@ import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
 export function RequestForm({
   groupId,
-  groupName,
+  oshiRequestId,
+  parentName,
+  isPendingParent,
 }: {
-  groupId: string;
-  groupName: string;
+  groupId?: string;
+  oshiRequestId?: string;
+  parentName: string;
+  isPendingParent: boolean;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -32,6 +36,7 @@ export function RequestForm({
     setError(null);
     const result = await saveCharacterRequest({
       groupId,
+      oshiRequestId,
       name: trimmed,
       note: note.trim() || undefined,
     });
@@ -45,10 +50,15 @@ export function RequestForm({
 
   return (
     <div className="mt-6 space-y-4">
-      {/* グループ名表示 */}
+      {/* 親グループ表示 */}
       <div className="rounded-xl bg-[#a695d810] px-4 py-3 text-[12px] text-gray-700">
         <span className="font-bold">追加先のグループ:</span>{" "}
-        <span className="font-bold text-gray-900">{groupName}</span>
+        <span className="font-bold text-gray-900">{parentName}</span>
+        {isPendingParent && (
+          <span className="ml-2 rounded-full bg-[#a695d822] px-1.5 py-0.5 text-[9px] font-bold text-[#a695d8]">
+            審査中
+          </span>
+        )}
       </div>
 
       {/* メンバー名 */}
@@ -100,8 +110,8 @@ export function RequestForm({
       <div className="rounded-xl bg-[#a695d810] px-4 py-3 text-[11px] leading-relaxed text-gray-700">
         <span className="font-bold">📝 リクエスト後の流れ</span>
         <br />
-        運営が確認後、既存のメンバーと一致した場合は自動で紐付け、新規の場合はマスタに追加されます。
-        承認されるまで「審査中」表示になり、他のユーザーも同じメンバーを選択できます。
+        運営が確認後、既存メンバーと一致した場合は自動で紐付け、新規の場合はマスタに追加されます。
+        審査中のグループに紐づくメンバーは、グループ承認時に正式マスタへ自動移行します。
       </div>
 
       {error && <p className="text-xs text-red-600">{error}</p>}

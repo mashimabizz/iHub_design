@@ -9,6 +9,7 @@ import { PrimaryButton } from "@/components/auth/PrimaryButton";
 export type Section = {
   oshiId: string; // user_oshi.id
   groupId: string | null;
+  oshiRequestId: string | null; // 審査中グループの場合
   groupName: string;
   isPendingRequest: boolean; // 審査中の推しか
   members: { id: string; name: string }[];
@@ -133,9 +134,94 @@ export function MembersForm({
               </div>
 
               {section.isPendingRequest ? (
-                <div className="rounded-xl border border-dashed border-[#3a324a14] px-4 py-3 text-[11px] text-gray-500">
-                  承認後にメンバー選択ができるようになります
-                </div>
+                // 審査中グループ: メンバーマスタは無いが、character_requests で
+                // メンバーをリクエスト可。他人のリクエストも選択可。
+                <>
+                  <div className="mb-2 rounded-xl bg-[#a695d810] px-3.5 py-2 text-[11px] leading-relaxed text-gray-700">
+                    審査中グループのため、新規メンバーは
+                    <strong>追加リクエスト</strong>でしか登録できません。
+                    グループ承認時に正式マスタへ自動移行します。
+                  </div>
+
+                  {/* 箱推しチップ */}
+                  <button
+                    type="button"
+                    onClick={() => setBox(section.oshiId)}
+                    className={`mb-2 flex w-full items-center justify-center gap-2 rounded-xl border-[1.5px] border-solid px-3 py-2.5 text-[12px] font-bold transition-all duration-150 active:scale-[0.98] ${
+                      sel.isBox
+                        ? "border-[#a695d8] bg-[#a695d814] text-gray-900"
+                        : "border-[#3a324a14] bg-white text-gray-700 hover:border-[#3a324a26]"
+                    }`}
+                  >
+                    {sel.isBox && (
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 11 11"
+                        fill="none"
+                        stroke="#a695d8"
+                        strokeWidth="2"
+                      >
+                        <path d="M2 5.5l2.5 2.5L9 3" strokeLinecap="round" />
+                      </svg>
+                    )}
+                    箱推し（メンバー全員）
+                  </button>
+
+                  {/* 審査中メンバーチップのみ */}
+                  {section.pendingMembers.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-[#3a324a14] px-4 py-3 text-[11px] text-gray-500">
+                      まだメンバーリクエストはありません。下から追加できます。
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {section.pendingMembers.map((m) => {
+                        const active = sel.requestIds.includes(m.id);
+                        const memLatin = isLatin(m.name);
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() =>
+                              toggleRequest(section.oshiId, m.id)
+                            }
+                            title={
+                              m.isMine
+                                ? "あなたが申請・審査中"
+                                : "他のユーザーが申請・審査中"
+                            }
+                            className={`rounded-full border-[1.5px] border-dashed px-3.5 py-1.5 text-[12px] transition-all duration-150 active:scale-[0.97] ${
+                              active
+                                ? "border-[#a695d8] bg-[#a695d814] font-bold text-[#a695d8]"
+                                : "border-[#a695d855] bg-white font-medium text-gray-700 hover:border-[#a695d8]"
+                            }`}
+                            style={
+                              memLatin
+                                ? {
+                                    fontFamily:
+                                      "var(--font-inter-tight), system-ui",
+                                    letterSpacing: "0.2px",
+                                  }
+                                : undefined
+                            }
+                          >
+                            🕐 {m.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* メンバー追加リクエストリンク */}
+                  {section.oshiRequestId && (
+                    <Link
+                      href={`/onboarding/members/request?oshiRequestId=${section.oshiRequestId}`}
+                      className="mt-2 inline-block text-[11px] font-medium text-[#a695d8] hover:text-[#8b78c4]"
+                    >
+                      + メンバー追加リクエスト
+                    </Link>
+                  )}
+                </>
               ) : (
                 <>
                   {/* 箱推しチップ */}

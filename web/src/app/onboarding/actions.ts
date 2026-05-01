@@ -132,9 +132,11 @@ export async function saveOshiRequest(input: {
 
 // ----------------------------------------------------------------------
 // saveCharacterRequest: メンバー追加リクエストを送信
+// 親グループは既存マスタ（groupId）または審査中（oshiRequestId）のどちらか
 // ----------------------------------------------------------------------
 export async function saveCharacterRequest(input: {
-  groupId: string;
+  groupId?: string;
+  oshiRequestId?: string;
   name: string;
   note?: string;
 }): Promise<ActionResult> {
@@ -142,8 +144,8 @@ export async function saveCharacterRequest(input: {
   if (!name || name.length > 100) {
     return { error: "メンバー名は 1〜100 文字で入力してください" };
   }
-  if (!input.groupId) {
-    return { error: "グループの指定が不正です" };
+  if (!input.groupId && !input.oshiRequestId) {
+    return { error: "親グループの指定が不正です" };
   }
 
   const supabase = await createClient();
@@ -154,7 +156,8 @@ export async function saveCharacterRequest(input: {
 
   const { error } = await supabase.from("character_requests").insert({
     user_id: user.id,
-    group_id: input.groupId,
+    group_id: input.groupId ?? null,
+    oshi_request_id: input.oshiRequestId ?? null,
     requested_name: name,
     note: input.note?.trim() || null,
   });

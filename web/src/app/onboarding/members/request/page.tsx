@@ -8,20 +8,20 @@ export const metadata = {
 };
 
 type Props = {
-  searchParams: Promise<{ groupId?: string }>;
+  searchParams: Promise<{ groupId?: string; oshiRequestId?: string }>;
 };
 
 /**
  * メンバー追加リクエスト画面
  *
- * - クエリパラメータ groupId で対象グループを指定
+ * - クエリパラメータ: groupId（既存マスタ）または oshiRequestId（審査中）
  * - 名前 / メモ を入力 → character_requests に挿入
  * - 送信後 /onboarding/members に戻る
  */
 export default async function CharacterRequestPage({ searchParams }: Props) {
   const params = await searchParams;
-  const groupId = params.groupId;
-  if (!groupId) redirect("/onboarding/members");
+  const { groupId, oshiRequestId } = params;
+  if (!groupId && !oshiRequestId) redirect("/onboarding/members");
 
   const supabase = await createClient();
   const {
@@ -29,14 +29,30 @@ export default async function CharacterRequestPage({ searchParams }: Props) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // グループ情報を取得
-  const { data: group } = await supabase
-    .from("groups_master")
-    .select("id, name")
-    .eq("id", groupId)
-    .maybeSingle();
+  // 親グループ情報を取得（groups_master か oshi_requests のどちらか）
+  let parentName: string | null = null;
+  let isPendingParent = false;
 
-  if (!group) redirect("/onboarding/members");
+  if (groupId) {
+    const { data: group } = await supabase
+      .from("groups_master")
+      .select("id, name")
+      .eq("id", groupId)
+      .maybeSingle();
+    parentName = group?.name ?? null;
+  } else if (oshiRequestId) {
+    const { data: req } = await supabase
+      .from("oshi_requests")
+      .select("id, requested_name, status")
+      .eq("id", oshiRequestId)
+      .maybeSingle();
+    if (req && req.status === "pending") {
+      parentName = req.requested_name;
+      isPendingParent = true;
+    }
+  }
+
+  if (!parentName) redirect("/onboarding/members");
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
@@ -53,7 +69,12 @@ export default async function CharacterRequestPage({ searchParams }: Props) {
           <br />
           審査の上、マスタに登録されます。
         </p>
-        <RequestForm groupId={group.id} groupName={group.name} />
+        <RequestForm
+          groupId={groupId}
+          oshiRequestId={oshiRequestId}
+          parentName={parentName}
+          isPendingParent={isPendingParent}
+        />
       </div>
     </main>
   );
