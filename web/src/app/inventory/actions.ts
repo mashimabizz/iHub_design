@@ -92,6 +92,28 @@ export async function updateInventoryStatus(
   return undefined;
 }
 
+// 個別アイテムの carrying トグル
+export async function toggleItemCarrying(
+  id: string,
+  carrying: boolean,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("goods_inventory")
+    .update({ carrying })
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return { error: error.message };
+  revalidatePath("/inventory");
+  return undefined;
+}
+
 // 携帯モード一斉切替（active な for_trade 全アイテムの carrying を変更）
 export async function toggleCarryingAll(
   carrying: boolean,
@@ -111,6 +133,27 @@ export async function toggleCarryingAll(
 
   if (error) return { error: error.message };
   revalidatePath("/inventory");
+  return undefined;
+}
+
+// 外出モード切替（users.is_going_out）
+export async function toggleGoingOut(
+  isGoingOut: boolean,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("users")
+    .update({ is_going_out: isGoingOut })
+    .eq("id", user.id);
+
+  if (error) return { error: error.message };
+  revalidatePath("/inventory");
+  revalidatePath("/", "layout");
   return undefined;
 }
 

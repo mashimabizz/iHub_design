@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { InventoryView, type InventoryItemFull } from "./InventoryView";
-import { BottomNav } from "@/components/home/BottomNav";
+import {
+  InventoryFooter,
+  InventoryView,
+  type InventoryItemFull,
+} from "./InventoryView";
 
 export const metadata = {
   title: "マイ在庫 — iHub",
@@ -43,16 +46,23 @@ export default async function InventoryPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 譲（for_trade）のみ取得・archived は除く（モックアップ B-Inventory は譲タブ）
-  const { data: rows } = await supabase
-    .from("goods_inventory")
-    .select(
-      "id, kind, title, series, quantity, status, carrying, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
-    )
-    .eq("user_id", user.id)
-    .eq("kind", "for_trade")
-    .neq("status", "archived")
-    .order("created_at", { ascending: false });
+  // 並列取得：譲在庫 + 自分の users.is_going_out
+  const [{ data: rows }, { data: profile }] = await Promise.all([
+    supabase
+      .from("goods_inventory")
+      .select(
+        "id, kind, title, series, quantity, status, carrying, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      )
+      .eq("user_id", user.id)
+      .eq("kind", "for_trade")
+      .neq("status", "archived")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("users")
+      .select("is_going_out")
+      .eq("id", user.id)
+      .maybeSingle(),
+  ]);
 
   const items: InventoryItemFull[] = ((rows as InventoryRow[]) ?? []).map(
     (r) => {
@@ -74,15 +84,13 @@ export default async function InventoryPage() {
     },
   );
 
-  // 携帯モード：active な for_trade で 1 つでも carrying=true なら on
-  const carrying = items.some(
-    (i) => i.status === "active" && i.carrying,
-  );
-
   return (
     <>
-      <InventoryView items={items} carrying={carrying} />
-      <BottomNav />
+      <InventoryView
+        items={items}
+        isGoingOut={profile?.is_going_out ?? false}
+      />
+      <InventoryFooter />
     </>
   );
 }

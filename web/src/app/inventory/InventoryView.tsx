@@ -5,9 +5,12 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   toggleCarryingAll,
+  toggleGoingOut,
+  toggleItemCarrying,
   updateInventoryStatus,
 } from "./actions";
 import { AddCard, ItemCard, type ItemCardData } from "./ItemCard";
+import { BottomNav } from "@/components/home/BottomNav";
 
 export type InventoryItemFull = ItemCardData & {
   status: "active" | "keep" | "traded" | "reserved" | "archived";
@@ -16,25 +19,10 @@ export type InventoryItemFull = ItemCardData & {
 
 type SubTab = "active" | "keep" | "traded";
 
-const SUB_TABS: { id: SubTab; label: string; sub: string; color: string }[] = [
-  {
-    id: "active",
-    label: "譲る候補",
-    sub: "マッチ対象",
-    color: "#a695d8",
-  },
-  {
-    id: "keep",
-    label: "自分用キープ",
-    sub: "マッチ対象外",
-    color: "#f3c5d4",
-  },
-  {
-    id: "traded",
-    label: "過去に譲った",
-    sub: "履歴",
-    color: "#9aa3b0",
-  },
+const SUB_TABS: { id: SubTab; label: string; color: string }[] = [
+  { id: "active", label: "譲る候補", color: "#a695d8" },
+  { id: "keep", label: "自分用キープ", color: "#f3c5d4" },
+  { id: "traded", label: "過去に譲った", color: "#9aa3b0" },
 ];
 
 const PUSHI_FILTERS = ["すべて", "LUMENA", "スア", "ヒナ", "+ 他"];
@@ -51,14 +39,15 @@ const SUB_IDS: SubTab[] = ["active", "keep", "traded"];
 
 export function InventoryView({
   items,
-  carrying: initialCarrying,
+  isGoingOut: initialIsGoingOut,
 }: {
   items: InventoryItemFull[];
-  carrying: boolean;
+  isGoingOut: boolean;
 }) {
   const router = useRouter();
   const [sub, setSub] = useState<SubTab>("active");
-  const [carrying, setCarrying] = useState(initialCarrying);
+  const [isGoingOut, setIsGoingOut] = useState(initialIsGoingOut);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [pending, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -115,9 +104,24 @@ export function InventoryView({
     });
   }
 
-  function handleToggleCarrying() {
-    const next = !carrying;
-    setCarrying(next);
+  function handleToggleGoingOut() {
+    const next = !isGoingOut;
+    setIsGoingOut(next);
+    startTransition(async () => {
+      await toggleGoingOut(next);
+      router.refresh();
+    });
+  }
+
+  function handleCarryingToggleItem(id: string, next: boolean) {
+    startTransition(async () => {
+      await toggleItemCarrying(id, next);
+      router.refresh();
+    });
+  }
+
+  function handleAllCarrying(next: boolean) {
+    setShowMoreMenu(false);
     startTransition(async () => {
       await toggleCarryingAll(next);
       router.refresh();
@@ -125,14 +129,14 @@ export function InventoryView({
   }
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[120px]">
+    <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[140px]">
       {/* ヘッダー */}
       <div className="border-b border-[#3a324a14] bg-white px-[18px] pb-2 pt-12">
         <div className="mx-auto flex max-w-md items-center justify-between">
           <h1 className="text-[19px] font-extrabold tracking-wide text-gray-900">
             マイ在庫
           </h1>
-          <div className="flex gap-1.5">
+          <div className="relative flex gap-1.5">
             <IconButton ariaLabel="フィルタ">
               <svg
                 width="14"
@@ -160,70 +164,103 @@ export function InventoryView({
                 <path d="M9.5 9.5L12 12" />
               </svg>
             </IconButton>
+            <IconButton
+              ariaLabel="その他"
+              onClick={() => setShowMoreMenu((v) => !v)}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="#3a324a"
+              >
+                <circle cx="3" cy="7" r="1.4" />
+                <circle cx="7" cy="7" r="1.4" />
+                <circle cx="11" cy="7" r="1.4" />
+              </svg>
+            </IconButton>
+            {showMoreMenu && (
+              <div className="absolute right-0 top-10 z-20 w-48 rounded-xl border border-[#3a324a14] bg-white p-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => handleAllCarrying(true)}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] hover:bg-[#a695d810]"
+                >
+                  🎒 譲る候補を全部持参
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAllCarrying(false)}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] hover:bg-[#a695d810]"
+                >
+                  🏠 全部置いていく
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* 携帯モードトグル */}
-        <div
-          className={`mx-auto mt-2.5 flex max-w-md items-center gap-2.5 rounded-2xl border px-3 py-2.5 ${
-            carrying
+        {/* 外出モードバナー */}
+        <button
+          type="button"
+          onClick={handleToggleGoingOut}
+          disabled={pending}
+          className={`mx-auto mt-2.5 flex w-full max-w-md items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all duration-200 active:scale-[0.99] disabled:opacity-50 ${
+            isGoingOut
               ? "border-[#a695d855] bg-[linear-gradient(120deg,#a695d826,#f3c5d426)]"
-              : "border-[#3a324a0f] bg-[#3a324a06]"
+              : "border-[#3a324a14] bg-[#3a324a06]"
           }`}
         >
+          {/* アイコン */}
           <div
-            className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] border-[0.5px] ${
-              carrying
-                ? "border-transparent bg-[linear-gradient(135deg,#a695d8,#f3c5d4)] shadow-[0_4px_10px_rgba(166,149,216,0.4)]"
-                : "border-[#3a324a14] bg-white"
+            className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px] text-xl transition-all ${
+              isGoingOut
+                ? "bg-[linear-gradient(135deg,#a695d8,#f3c5d4)] shadow-[0_4px_10px_rgba(166,149,216,0.4)]"
+                : "bg-white border border-[#3a324a14]"
             }`}
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              fill="none"
-              stroke={carrying ? "#fff" : "#6b6478"}
-              strokeWidth="1.5"
-            >
-              <rect x="3" y="5" width="12" height="10" rx="2" />
-              <path d="M6 5V3.5C6 2.5 7 2 9 2s3 .5 3 1.5V5" />
-            </svg>
+            {isGoingOut ? "🚶‍♀️" : "🏠"}
           </div>
+
+          {/* テキスト */}
           <div className="min-w-0 flex-1">
             <div
-              className={`text-[13.5px] font-bold ${
-                carrying ? "text-gray-900" : "text-gray-500"
+              className={`text-[14px] font-extrabold ${
+                isGoingOut ? "text-gray-900" : "text-gray-500"
               }`}
             >
-              {carrying ? "【携帯中】今日持参中" : "【自宅】保管中"}
+              {isGoingOut ? "外出中" : "自宅"}
             </div>
-            <div className="mt-0.5 text-[10.5px] tabular-nums text-gray-500">
-              {carrying
-                ? `${carryCount} 点を会場で交換可能`
-                : "タップで携帯モードに切替"}
+            <div className="mt-0.5 text-[11px] leading-snug text-gray-500">
+              {isGoingOut ? (
+                <>
+                  持参中の{" "}
+                  <b className="text-[#a695d8] tabular-nums">{carryCount}</b>{" "}
+                  点を交換対象
+                </>
+              ) : (
+                <>マッチング対象外（タップで外出中に切替）</>
+              )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleToggleCarrying}
-            disabled={pending}
-            className="relative h-7 w-12 flex-shrink-0 rounded-full transition-colors disabled:opacity-50"
+
+          {/* スイッチ視覚 */}
+          <div
+            className="relative h-7 w-12 flex-shrink-0 rounded-full transition-colors"
             style={{
-              background: carrying ? "#a695d8" : "#3a324a14",
+              background: isGoingOut ? "#a695d8" : "#3a324a14",
             }}
-            aria-label="携帯モードを切替"
           >
             <div
               className="absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.15)] transition-all"
-              style={{ left: carrying ? "22px" : "2px" }}
+              style={{ left: isGoingOut ? "22px" : "2px" }}
             />
-          </button>
-        </div>
+          </div>
+        </button>
       </div>
 
       {/* サブタブ（active/keep/traded）- タップ + スワイプ対応 */}
-      <div className="mx-auto w-full max-w-md px-4 pt-3">
+      <div className="mx-auto w-full max-w-md px-4 pt-2.5">
         <div className="flex gap-1">
           {SUB_TABS.map((s) => {
             const active = sub === s.id;
@@ -232,7 +269,7 @@ export function InventoryView({
                 key={s.id}
                 type="button"
                 onClick={() => selectSub(s.id)}
-                className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-xl py-2.5 transition-all ${
+                className={`relative flex flex-1 items-center justify-center gap-1 rounded-xl py-2 transition-all ${
                   active
                     ? "border-[1.5px] border-solid bg-white"
                     : "border-[0.5px] border-solid border-[#3a324a14] bg-[#3a324a08]"
@@ -241,20 +278,21 @@ export function InventoryView({
                   borderColor: active ? s.color : undefined,
                 }}
               >
-                <div
+                <span
                   className={`text-[12px] ${
-                    active ? "font-extrabold text-gray-900" : "font-semibold text-gray-500"
+                    active
+                      ? "font-extrabold text-gray-900"
+                      : "font-semibold text-gray-500"
                   }`}
                 >
                   {s.label}
-                  <span
-                    className="ml-1 text-[10px] font-bold tabular-nums"
-                    style={{ color: active ? s.color : "#6b6478" }}
-                  >
-                    {counts[s.id]}
-                  </span>
-                </div>
-                <div className="text-[9px] text-gray-500">{s.sub}</div>
+                </span>
+                <span
+                  className="text-[10px] font-bold tabular-nums"
+                  style={{ color: active ? s.color : "#6b6478" }}
+                >
+                  {counts[s.id]}
+                </span>
               </button>
             );
           })}
@@ -279,13 +317,26 @@ export function InventoryView({
             subId={subId}
             items={itemsBySub[subId]}
             router={router}
+            onCarryingToggle={handleCarryingToggleItem}
           />
         ))}
       </div>
 
-      {/* Sticky CTA */}
-      <div className="fixed bottom-[88px] left-0 right-0 z-20 border-t border-[#a695d822] bg-white/92 px-[18px] pb-3 pt-3 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-md gap-2">
+    </main>
+  );
+}
+
+/**
+ * 在庫専用フッター（CTA + BottomNav を一体化したブロック）
+ * inventory/page.tsx で <BottomNav /> の代わりに使う。
+ * CTA と BottomNav が背景連続でぴったりくっつく。
+ */
+export function InventoryFooter() {
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#a695d822] bg-white/95 backdrop-blur-xl">
+      {/* CTA バー */}
+      <div className="mx-auto max-w-md px-[18px] pb-2 pt-3">
+        <div className="flex gap-2">
           <button
             type="button"
             className="flex h-12 items-center gap-1.5 rounded-2xl border border-[#3a324a14] bg-white px-4 text-[13px] font-semibold text-gray-900"
@@ -321,7 +372,14 @@ export function InventoryView({
           </Link>
         </div>
       </div>
-    </main>
+
+      {/* BottomNav（背景は共有・border のみで区切る） */}
+      <div className="border-t border-gray-200/50">
+        <div className="mx-auto flex max-w-md items-stretch px-1 pb-[env(safe-area-inset-bottom)]">
+          <BottomNav inline />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -329,10 +387,12 @@ function SubPanel({
   subId,
   items,
   router,
+  onCarryingToggle,
 }: {
   subId: SubTab;
   items: InventoryItemFull[];
   router: ReturnType<typeof useRouter>;
+  onCarryingToggle: (id: string, next: boolean) => void;
 }) {
   return (
     <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pb-4 pt-2">
@@ -376,6 +436,7 @@ function SubPanel({
             item={item}
             currentSub={subId}
             router={router}
+            onCarryingToggle={onCarryingToggle}
           />
         ))}
       </div>
@@ -386,14 +447,17 @@ function SubPanel({
 function IconButton({
   children,
   ariaLabel,
+  onClick,
 }: {
   children: React.ReactNode;
   ariaLabel: string;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       aria-label={ariaLabel}
+      onClick={onClick}
       className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-[#3a324a14] bg-white"
     >
       {children}
@@ -436,10 +500,12 @@ function ItemCardWrapper({
   item,
   currentSub,
   router,
+  onCarryingToggle,
 }: {
   item: InventoryItemFull;
   currentSub: SubTab;
   router: ReturnType<typeof useRouter>;
+  onCarryingToggle: (id: string, next: boolean) => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
 
@@ -462,7 +528,7 @@ function ItemCardWrapper({
         onClick={() => setShowMenu(!showMenu)}
         className="block w-full"
       >
-        <ItemCard item={item} />
+        <ItemCard item={item} onCarryingToggle={onCarryingToggle} />
       </button>
       {showMenu && (
         <div className="absolute inset-0 z-10 flex flex-col items-stretch justify-center gap-1.5 rounded-xl bg-black/70 p-2">

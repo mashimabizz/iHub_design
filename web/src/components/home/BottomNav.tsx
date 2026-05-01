@@ -7,8 +7,11 @@ import { usePathname } from "next/navigation";
  * ボトムナビ（モックアップ home-v2.jsx の BottomNavV2 準拠）
  *
  * MVP の主要タブ: ホーム / 取引 / 在庫 / wish / プロフ
+ *
+ * inline=true の時は fixed コンテナを描画せずリンク行のみ返す
+ * （InventoryFooter のように親が一体化フッターを持つ場合に使う）
  */
-export function BottomNav() {
+export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
   const pathname = usePathname();
 
   const items = [
@@ -19,27 +22,31 @@ export function BottomNav() {
     { href: "/profile", label: "プロフ", icon: "profile" as const },
   ];
 
+  const links = items.map((it) => {
+    const active =
+      it.href === "/" ? pathname === "/" : pathname.startsWith(it.href);
+    return (
+      <Link
+        key={it.href}
+        href={it.href}
+        className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] transition-colors ${
+          active ? "font-bold text-[#a695d8]" : "font-medium text-gray-500"
+        }`}
+      >
+        <NavIcon name={it.icon} active={active} />
+        <span>{it.label}</span>
+      </Link>
+    );
+  });
+
+  if (inline) {
+    return <>{links}</>;
+  }
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#3a324a14] bg-white/95 backdrop-blur-xl">
       <div className="mx-auto flex max-w-md items-stretch px-1 pb-[env(safe-area-inset-bottom)]">
-        {items.map((it) => {
-          const active =
-            it.href === "/" ? pathname === "/" : pathname.startsWith(it.href);
-          return (
-            <Link
-              key={it.href}
-              href={it.href}
-              className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] transition-colors ${
-                active
-                  ? "font-bold text-[#a695d8]"
-                  : "font-medium text-gray-500"
-              }`}
-            >
-              <NavIcon name={it.icon} active={active} />
-              <span>{it.label}</span>
-            </Link>
-          );
-        })}
+        {links}
       </div>
     </nav>
   );

@@ -18,7 +18,13 @@ export type ItemCardData = {
   carrying: boolean;
 };
 
-export function ItemCard({ item }: { item: ItemCardData }) {
+export function ItemCard({
+  item,
+  onCarryingToggle,
+}: {
+  item: ItemCardData;
+  onCarryingToggle?: (id: string, next: boolean) => void;
+}) {
   const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 82%) 6px 11px)`;
   const memberLabelColor = `hsl(${item.hue}, 35%, 28%)`;
   const initialShadow = `0 2px 6px hsla(${item.hue}, 30%, 30%, 0.4)`;
@@ -28,20 +34,44 @@ export function ItemCard({ item }: { item: ItemCardData }) {
       className="relative overflow-hidden rounded-xl border border-[#3a324a14] shadow-[0_2px_6px_rgba(58,50,74,0.08)]"
       style={{ aspectRatio: "3 / 4", background: stripeBg }}
     >
-      {/* メンバー名プレート + carrying ドット */}
-      <div className="absolute left-1.5 right-1.5 top-1.5 flex items-center justify-between">
+      {/* メンバー名プレート */}
+      <div className="absolute left-1.5 top-1.5">
         <div
           className="rounded-md bg-white/85 px-1.5 py-0.5 text-[9px] font-bold"
           style={{ color: memberLabelColor }}
         >
           {item.memberName}
         </div>
-        {item.carrying && (
-          <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.12)]">
-            <div className="h-2 w-2 rounded-full bg-[#f3c5d4]" />
-          </div>
-        )}
       </div>
+
+      {/* carrying トグルボタン（タップ領域大きめ） */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onCarryingToggle?.(item.id, !item.carrying);
+        }}
+        className="absolute right-0 top-0 flex h-9 w-9 items-center justify-center"
+        aria-label={
+          item.carrying ? "持参中をやめる" : "持参中にする"
+        }
+      >
+        <div
+          className={`flex h-[22px] w-[22px] items-center justify-center rounded-full transition-all ${
+            item.carrying
+              ? "bg-white shadow-[0_2px_6px_rgba(243,197,212,0.7)]"
+              : "bg-white/70 shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
+          }`}
+        >
+          <div
+            className={`h-2.5 w-2.5 rounded-full transition-all ${
+              item.carrying
+                ? "bg-[#f3c5d4]"
+                : "border-[1.5px] border-[#3a324a30] bg-transparent"
+            }`}
+          />
+        </div>
+      </button>
 
       {/* メンバーのイニシャル（中央・大） */}
       <div
