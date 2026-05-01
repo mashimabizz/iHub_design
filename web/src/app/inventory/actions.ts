@@ -6,11 +6,13 @@ import { createClient } from "@/lib/supabase/server";
 
 type ActionResult = { error?: string } | undefined;
 
-const VALID_KINDS = ["for_trade", "wanted"] as const;
 const VALID_CONDITIONS = ["sealed", "mint", "good", "fair", "poor"] as const;
 
+/**
+ * 譲るグッズを登録（kind='for_trade' 固定）
+ * 求める（wish）は別画面 /wishes/new で別 action として扱う
+ */
 export async function saveInventoryItem(input: {
-  kind: "for_trade" | "wanted";
   groupId?: string;
   characterId?: string;
   goodsTypeId: string;
@@ -20,10 +22,8 @@ export async function saveInventoryItem(input: {
   condition?: "sealed" | "mint" | "good" | "fair" | "poor";
   quantity: number;
   hue?: number;
+  startCarrying?: boolean;
 }): Promise<ActionResult> {
-  if (!VALID_KINDS.includes(input.kind)) {
-    return { error: "種別が不正です" };
-  }
   const title = input.title.trim();
   if (!title || title.length > 100) {
     return { error: "タイトルは 1〜100 文字で入力してください" };
@@ -32,7 +32,7 @@ export async function saveInventoryItem(input: {
     return { error: "グッズ種別を選択してください" };
   }
   if (!input.groupId && !input.characterId) {
-    return { error: "グループまたはメンバーを選択してください" };
+    return { error: "推しのグループまたはメンバーを選択してください" };
   }
   if (input.condition && !VALID_CONDITIONS.includes(input.condition)) {
     return { error: "コンディション値が不正です" };
@@ -49,17 +49,18 @@ export async function saveInventoryItem(input: {
 
   const { error } = await supabase.from("goods_inventory").insert({
     user_id: user.id,
-    kind: input.kind,
+    kind: "for_trade",
     group_id: input.groupId ?? null,
     character_id: input.characterId ?? null,
     goods_type_id: input.goodsTypeId,
     title,
     series: input.series?.trim() || null,
     description: input.description?.trim() || null,
-    condition: input.kind === "for_trade" ? input.condition ?? null : null,
+    condition: input.condition ?? null,
     quantity: input.quantity,
     hue: input.hue ?? null,
     photo_urls: [],
+    carrying: input.startCarrying ?? false,
   });
 
   if (error) {

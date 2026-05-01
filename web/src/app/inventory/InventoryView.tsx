@@ -336,41 +336,23 @@ export function InventoryFooter() {
     <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#a695d822] bg-white/95 backdrop-blur-xl">
       {/* CTA バー */}
       <div className="mx-auto max-w-md px-[18px] pb-2 pt-3">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="flex h-12 items-center gap-1.5 rounded-2xl border border-[#3a324a14] bg-white px-4 text-[13px] font-semibold text-gray-900"
+        <Link
+          href="/inventory/new"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#a695d8,#f3c5d4)] text-[14.5px] font-bold tracking-wider text-white shadow-[0_6px_16px_rgba(166,149,216,0.4)] transition-all duration-150 active:scale-[0.97]"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            stroke="#fff"
+            strokeWidth="2"
+            strokeLinecap="round"
           >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 13 13"
-              fill="none"
-              stroke="#3a324a"
-              strokeWidth="1.4"
-            >
-              <path d="M2 5l4-3 4 3v6H2zM5 11V8h2v3" />
-            </svg>
-            セット
-          </button>
-          <Link
-            href="/inventory/new"
-            className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#a695d8,#f3c5d4)] text-[14.5px] font-bold tracking-wider text-white shadow-[0_6px_16px_rgba(166,149,216,0.4)] transition-all duration-150 active:scale-[0.97]"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 14 14"
-              fill="none"
-              stroke="#fff"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
-              <path d="M7 1v12M1 7h12" />
-            </svg>
-            譲るものを追加
-          </Link>
-        </div>
+            <path d="M7 1v12M1 7h12" />
+          </svg>
+          グッズを登録
+        </Link>
       </div>
 
       {/* BottomNav（背景は共有・border のみで区切る） */}

@@ -4,7 +4,7 @@ import { InventoryNewForm } from "./InventoryNewForm";
 import { HeaderBack } from "@/components/auth/HeaderBack";
 
 export const metadata = {
-  title: "在庫を追加 — iHub",
+  title: "グッズを登録 — iHub",
 };
 
 /**
@@ -61,12 +61,12 @@ export default async function InventoryNewPage() {
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
-      <HeaderBack title="在庫を追加" backHref="/inventory" />
+      <HeaderBack title="グッズを登録" backHref="/inventory" />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-8 pt-6">
         <p className="mb-5 text-xs leading-relaxed text-gray-500">
-          譲るグッズ・求めるグッズを登録します。
-          <br />
-          推し（グループ・メンバー）を選択して登録してください。
+          譲るグッズを登録します。求めるグッズ（wish）は{" "}
+          <span className="font-bold text-[#a695d8]">wish タブ</span>{" "}
+          から登録してください（次の機能で実装）。
         </p>
         <InventoryNewForm
           groups={groups}
