@@ -419,6 +419,78 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション52：Phase 0b-1 — Supabase CLI セットアップ + 初回マイグレーション
+
+### 達成事項
+
+リモート Supabase プロジェクトに **DB スキーマ + マスタデータ**を投入。
+Phase 0 範囲（基盤・認証・マスタ）の DB 側準備完了。
+
+### 作業内容
+
+#### Supabase CLI セットアップ
+- `~/.local/bin/supabase` v2.95.4 をバイナリで配置（Homebrew 不要）
+- Personal Access Token（`sbp_xxx`）でログイン
+- リポルートで `supabase init` → `supabase/` ディレクトリ作成
+- `supabase link --project-ref kwpnlcojzseicqbxefih` でリモート接続
+
+#### 初回マイグレーション作成・適用
+- `supabase/migrations/20260501025213_initial_schema.sql`（253 行）
+- 以下を作成：
+  - **マスタ4つ**: `genres_master` / `groups_master` / `characters_master` / `goods_types_master`
+  - **ユーザー拡張**: `public.users`（auth.users と 1:1、ハンドル・推し情報・状態管理）
+  - **推し登録**: `user_oshi`（DD/箱推し対応、kind='box'/'specific'/'multi'）
+  - **トリガー**:
+    - `set_updated_at()`：updated_at 自動更新
+    - `handle_new_user()`：auth.users INSERT 時に public.users 自動作成
+  - **RLS（Row Level Security）**：全テーブル有効化、適切なポリシー設定
+- **シードデータ**：
+  - ジャンル 5（K-POP / 邦アイ / 2.5次元 / アニメ / ゲーム）
+  - グッズ種別 11（トレカ / 生写真 / 缶バッジ / アクスタ / ペンライト 等）
+  - K-POP 主要 10グループ（BTS / TWICE / NewJeans / IVE / Stray Kids / SEVENTEEN / aespa / LE SSERAFIM / ENHYPEN / TXT、aliases 込み）
+
+#### 適用結果
+```
+$ supabase db push --include-all
+Applying migration 20260501025213_initial_schema.sql...
+Finished supabase db push.
+
+$ supabase migration list
+Local: 20260501025213 | Remote: 20260501025213 ✓ 一致
+```
+
+REST API 経由でシードデータも確認済：
+- `GET /rest/v1/genres_master` → 5件取得
+- `GET /rest/v1/groups_master` → 10件取得（aliases 含む）
+
+### 09_state_machines / 10_glossary との整合
+
+`account_status` の値リストは 09 §7 Account Lifecycle と完全一致：
+- registered / verified / onboarding / active / suspended / deletion_requested / deleted
+
+`user_oshi.kind` の値リストは 10 §B 推し関連と一致：
+- box / specific / multi
+
+### 関連ファイル
+
+新規:
+- `supabase/config.toml`（Supabase CLI 設定）
+- `supabase/.gitignore`（ローカル一時ファイル除外）
+- `supabase/migrations/20260501025213_initial_schema.sql`（253行）
+
+### 次のステップ
+
+**Phase 0b-2: Auth フロー実装（UI）**
+- `/signup` ページ（メアド + パスワード + ハンドル）
+- `/login` ページ
+- `/logout` API
+- /auth/callback（メール認証クリック後の遷移先）
+- 認証後のセッション維持確認（既存 proxy.ts）
+
+実装後、ブラウザで実際にユーザー登録 → ログイン → Supabase Studio で確認 → セッション維持確認 までを通す。
+
+---
+
 ## イテレーション51：Phase 0a 完了 — https://ihub.tokyo で本番公開 🎉
 
 ### 達成事項
