@@ -13,44 +13,23 @@ import { useRipple } from "./useRipple";
 /**
  * モックアップ AOPrimaryButton 完全準拠：
  * - linear-gradient(135deg, #a695d8, #a8d4e6, #f3c5d4) = lavender→sky→pink
- *   ※ bg-gradient-to-br は要素の対角線方向で角度がズレるので arbitrary で固定
  * - 影：rgba(166,149,216,0.33) で柔らかいパープル
- * - rounded-2xl（borderRadius 14 相当）
- * - hover で軽く明るく（brightness-105）
- * - active で 0.97 縮小
+ * - rounded-[14px] / fontSize 14px / padding 14px 16px
+ *
+ * Tailwind v4 のスキャナが確実に検出するよう 1 行の string literal で定義。
  */
-const baseClass = `
-  relative block w-full overflow-hidden rounded-[14px]
-  bg-[linear-gradient(135deg,#a695d8,#a8d4e6,#f3c5d4)]
-  px-4 py-[14px] text-center text-sm font-bold text-white
-  shadow-[0_8px_22px_rgba(166,149,216,0.33)]
-  transition-all duration-150
-  hover:brightness-105
-  active:scale-[0.97]
-  disabled:cursor-not-allowed disabled:opacity-50
-`;
+const baseClass =
+  "relative block w-full overflow-hidden rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6,#f3c5d4)] px-4 py-[14px] text-center text-sm font-bold text-white shadow-[0_8px_22px_rgba(166,149,216,0.33)] transition-all duration-150 hover:brightness-105 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * モックアップ AOSecondaryButton 完全準拠：
- * - 白背景
- * - 1.5px の紫透明枠（#a695d8 33%透明 = #a695d859）
- *   ※ 確実な arbitrary value で固定
- * - 黒テキスト（ink 色）
- * - rounded-2xl
- * - hover でうっすら紫に
- * - active で 0.97 縮小
+ * - 白背景 + 1.5px 紫透明枠（#a695d855 = lavender 33%）+ 黒テキスト
+ * - rounded-[14px] / fontSize 14px / padding 13px 16px / gap 10
  *
- * 用途: Google ログイン、再送信ボタン、サブアクション等
+ * 用途: Google ログイン、再送信ボタン等
  */
-export const secondaryBaseClass = `
-  relative flex w-full items-center justify-center gap-2.5 overflow-hidden
-  rounded-[14px] border-[1.5px] border-solid border-[#a695d855] bg-white
-  px-4 py-[13px] text-sm font-bold text-gray-900
-  transition-all duration-150
-  hover:bg-[#a695d80d] hover:border-[#a695d899]
-  active:scale-[0.97]
-  disabled:cursor-not-allowed disabled:opacity-50
-`;
+export const secondaryBaseClass =
+  "relative flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-[14px] border-[1.5px] border-solid border-[#a695d855] bg-white px-4 py-[13px] text-sm font-bold text-gray-900 transition-all duration-150 hover:bg-[#a695d80d] hover:border-[#a695d899] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   pending?: boolean;
