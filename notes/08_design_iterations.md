@@ -419,6 +419,144 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション56：認証系 UI をモックアップ忠実化 + 構造バグ対応
+
+### 達成事項
+
+iter53-55 で動作する認証フローはあったが、UI が `auth-onboarding.jsx` のモックアップと乖離していた。本 iter で **AO* 全画面をモックアップ忠実に再実装**。並行して、iter53 で発覚した「未認証ユーザーが残ってハンドル占有 → 再登録不可」のデッドロック問題を解消。
+
+### 背景・問題意識
+
+iter55 完了時点での課題：
+1. UI は最低限動くがモックアップとは見た目が違う（`bg-gradient-to-b from-purple-50 via-white to-pink-50` 一様、ヘッダーも仮）
+2. signup 試行を繰り返すと `auth.users` に未認証レコードが残り、同じハンドル/メアドで再登録不可
+3. 認証メールリンクが期限切れすると詰む（resend ボタンはあるが UI が貧弱）
+4. パスワードリセット画面が未実装
+
+### 変更内容
+
+#### 共通コンポーネント（新規）
+
+**`web/src/components/auth/HeaderBack.tsx`**
+- モックアップ AOHeaderBack 準拠：sticky ヘッダー + 戻るアイコン + タイトル + サブ + 進捗
+- 半透明 + backdrop-blur
+
+**`web/src/components/auth/IHubLogo.tsx`**
+- モックアップ AOLogo 準拠：紫→水色→ピンクのグラデ円 + 星アイコン
+- size プロパティで大小切り替え可
+
+#### 画面実装（モックアップ忠実）
+
+**`web/src/app/page.tsx`** — Welcome（AOWelcome）
+- 未ログイン時：iHub ロゴ大（88px）+ 「iHub」+ 「グッズ交換を、現地で、もっと簡単に。」+ CTA 2 つ
+- ログイン時：暫定ホーム（既存表示・Phase 1 で本実装予定）
+- 「メールアドレスで新規登録」+ 「Googleで新規登録」（disabled）+ 「すでにアカウントをお持ちの方は ログイン」
+
+**`web/src/app/signup/SignUpForm.tsx`** — Signup（AOSignup）
+- 表示名フィールド削除（display_name は handle で初期化）
+- ハンドル名（@プレフィックス + 「後から変更可能」ヒント）
+- パスワード強度メーター（4本バー + ラベル「弱い/普通/強い/最強」）
+- パスワード確認（リアルタイム一致チェック、ボーダー赤化）
+- 利用規約・プライバシーポリシーチェックボックス
+- 「次へ」ボタン
+
+**`web/src/app/auth/verify-email/page.tsx`** — VerifyEmail（AOEmailSent）
+- ヘッダー：「メール認証」、戻る先 `/signup`
+- 紫＆水色グラデの丸 + メールアイコン
+- 「確認メールを送りました」（過去形・モックアップ準拠）
+- メアド表示（白枠で囲む）
+- ピンク背景の注意書き「📧 メールが届かない場合 / 迷惑メールフォルダ・再送・別メアドを試す」
+- 60秒クールダウン付き再送ボタン（`ResendButton` で initialCooldown 受け取り）
+- 「メールアドレスを変更する」リンク
+- `?resent=1` クエリで「✓ 確認メールを再送しました」表示
+
+**`web/src/app/auth/email-confirmed/page.tsx`**（新規） — EmailConfirmed（AOEmailConfirmed）
+- 中央：紫→水色グラデの円（96px）+ 大きいチェックマーク + 影
+- 「認証完了！」
+- 「プロフィール設定へ進む」 → `/onboarding/gender`（iter57 で実装）
+- onboarding 完了済（gender 設定済）ユーザーが来たら `/` へ自動転送
+
+**`web/src/app/login/page.tsx` + `LoginForm.tsx`** — Login（AOLogin）
+- ヘッダー：「ログイン」
+- iHub ロゴ小（60px）+ 「おかえりなさい」
+- メアド + パスワード入力
+- 「パスワードを忘れた方」リンク（右寄せ・小）
+- 「ログイン」ボタン
+- 「または」divider + 「Googleでログイン」（disabled）
+- 「アカウントをお持ちでない方は 新規登録」
+
+**`web/src/app/password-reset/page.tsx` + `ResetForm.tsx`**（新規） — PasswordReset（AOPasswordReset）
+- ヘッダー：「パスワードリセット」、戻る先 `/login`
+- 「パスワードを再設定します」+ 説明
+- メアド入力 → `resetPasswordForEmail` → `/auth/verify-email?purpose=reset`
+
+#### 構造バグ対応：actions.ts
+
+**signup の既存メアド + 未認証ユーザーへの対応**：
+```
+signup() で signUp が "already registered" エラー
+  ↓
+resend({type: "signup"}) を試行
+  ├ 成功 = 未認証 → /auth/verify-email?resent=1 へ転送
+  └ 失敗 = 認証済 → 「既に登録済み、ログインしてください」エラー
+```
+
+これで iter53 のデッドロック（同じメアド/ハンドルで再 signup できない）を解消。
+
+**`passwordReset` 関数追加**：
+- `resetPasswordForEmail` を呼んで `/auth/verify-email?purpose=reset` に遷移
+- rate limit エラーの日本語化
+
+#### callback route.ts
+
+- `next` パラメータのデフォルトを `/` から `/auth/email-confirmed` に変更
+- 認証直後は EmailConfirmed → Onboarding 入口、onboarding 済なら自動的に `/` へ
+
+### 影響範囲
+
+- 既存 signup フォームと挙動が変わる：display_name フィールド消滅、パスワード確認必須
+- 既存 login フォーム見た目が変わる
+- メール認証完了時の遷移先：`/` → `/auth/email-confirmed`（新中継ページ）
+- 暫定ホーム画面はログイン時のみ表示
+
+### 確認方法
+
+1. シークレットウィンドウで https://ihub.tokyo/ → Welcome 表示
+2. https://ihub.tokyo/signup → ハンドル + パス強度メーター + パス確認 動作確認
+3. https://ihub.tokyo/login → 「パスワードを忘れた方」リンク存在確認
+4. https://ihub.tokyo/password-reset → 「パスワードを再設定します」表示
+5. signup 試行を 2回（同じメアドで）→ 2回目は「✓ 確認メールを再送しました」で verify-email に着地
+
+### 関連ファイル
+
+新規:
+- `web/src/components/auth/HeaderBack.tsx`
+- `web/src/components/auth/IHubLogo.tsx`
+- `web/src/app/auth/email-confirmed/page.tsx`
+- `web/src/app/password-reset/page.tsx`
+- `web/src/app/password-reset/ResetForm.tsx`
+
+改修:
+- `web/src/app/page.tsx`（Welcome ビュー追加）
+- `web/src/app/signup/page.tsx`
+- `web/src/app/signup/SignUpForm.tsx`
+- `web/src/app/login/page.tsx`
+- `web/src/app/login/LoginForm.tsx`
+- `web/src/app/auth/verify-email/page.tsx`
+- `web/src/app/auth/verify-email/ResendButton.tsx`
+- `web/src/app/auth/callback/route.ts`
+- `web/src/app/auth/actions.ts`
+
+### 次の課題（iter57）
+
+- Onboarding 5画面実装（Gender / Oshi / Member / Area / Done）
+- proxy で onboarding 未完了 → 強制リダイレクト
+- account_status sync DB trigger（confirm で verified、profile 完成で onboarded）
+- パスワードリセット完了画面（/auth/password-reset-confirm）
+- Google OAuth 接続（後回し）
+
+---
+
 ## イテレーション55：Brevo SMTP セットアップ完了 + Phase 0b-2 認証フロー全動作確認
 
 ### 達成事項
