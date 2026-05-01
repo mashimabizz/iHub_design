@@ -419,6 +419,240 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション57：Phase 0b-3 — Onboarding 5 画面 + 推し/メンバー追加リクエスト共有 + 速度最適化
+
+### 達成事項
+
+iter56 で認証系 UI を仕上げた直後、Onboarding（プロフィール設定）の 5 画面を一気に実装。同時に「マスタに無い推し / メンバーをユーザーが追加リクエストできる」仕組みを構築し、**運営承認時には全選択ユーザーに自動反映される設計**を採用。並行して Vercel リージョン変更・Server Action 高速化・ブランドカラー Tailwind 統合などの基盤強化も実施。**Phase 0b 完全完了**。
+
+### サブセクション
+
+#### A. UI / UX 補完（iter56 の延長）
+
+1. **ボタン挙動 4 種統合**（PrimaryButton, secondaryBaseClass）
+   - active:scale-[0.97]（押下時にキュッと縮小）
+   - Ripple エフェクト（クリック位置から白い円が広がる）
+   - pending 中スピナー（テキスト横で animate-spin）
+   - hover:brightness-105 / disabled:opacity-50
+2. **ブランドカラーを Tailwind theme に統合**
+   - `globals.css` の `@theme`（inline でない）に `--color-ihub-lavender/sky/pink/warn/ok` を追加
+   - 全コンポーネントで `bg-ihub-lavender` 等が使えるように
+   - opacity 修飾子（`/35` 等）も `color-mix()` で動作
+3. **ボタン色合い・サイズをモックアップ完全一致**
+   - 旧：`bg-gradient-to-r from-purple-400 to-pink-300`（2色 90deg） → 誤
+   - 新：`bg-[linear-gradient(135deg,#a695d8,#a8d4e6)]`（2色 135deg）← モックアップ AOPrimaryButton 準拠
+   - rounded-[14px] / py-[14px] / text-sm / shadow-[0_4px_14px_rgba(166,149,216,0.33)]
+4. **IHubLogo（モックアップ AOLogo 準拠）**
+   - 角丸正方形（borderRadius: size×0.32）
+   - 「iH」テキスト + Inter Tight 800
+   - 2色グラデ（lavender → sky）
+   - boxShadow: `0 8px 24px rgba(166,149,216,0.25)`
+5. **全画面の背景グラデを再現**
+   - Welcome / EmailConfirmed: `linear-gradient(180deg, #a695d822 0%, #a8d4e614 45%, #ffffff 100%)`
+   - Signup / Login / VerifyEmail / PasswordReset: `#fbf9fc` 単色
+6. **未認証ユーザーの再 signup 対応（iter56 続き）**
+   - signup actions で「既存メアド + 未認証」の場合 admin API で削除 → 再登録可
+
+#### B. 速度最適化
+
+1. **Vercel region: `iad1` → `hnd1`（東京）**
+   - vercel.json に `"regions": ["hnd1"]`
+   - Supabase（東京）との RTT が 200-300ms → 5-10ms に
+   - Server Action 全体が大幅高速化
+2. **Server Action から redirect を排除**
+   - 旧：`redirect("/onboarding/oshi")` → サーバーで次画面 full render してから返す（重い）
+   - 新：`return undefined` だけ → Client 側で `router.push()` + `router.prefetch()`
+   - 体感 1〜2 秒 → 200〜400ms
+3. **revalidatePath で server invalidate**
+   - 各 action 末尾で `revalidatePath("/path")`
+   - `router.refresh()` 不要に
+4. **DB クエリの並列化（Promise.all）**
+   - `/onboarding/oshi`、`/onboarding/members`、`/onboarding/done` で 3〜4 クエリを並列実行
+   - 4×RTT → 1×RTT
+
+#### C. Onboarding 5 画面（モックアップ AOOnboard\*）
+
+1. **`/onboarding/gender`** （1/4 性別選択）
+   - 4 選択肢：女性 / 男性 / その他 / 回答しない
+   - users.gender 更新 + account_status='onboarding' に遷移
+2. **`/onboarding/oshi`** （2/4 推し選択）
+   - groups_master + genres_master をジャンル横断で取得
+   - ジャンルチップ（すべて / K-POP / 邦アイ / 2.5次元 / アニメ / ゲーム）
+   - 検索（name + aliases）
+   - 複数選択可
+   - 「人気」バッジ（各ジャンル display_order 上位5件）
+3. **`/onboarding/members`** （3/4 メンバー選択）
+   - ユーザーの推しグループごとにセクション
+   - 「箱推し」chip + 個別メンバー chip（複数選択可）
+   - 既存 user_oshi の kind / character_id から initialSelections を構築
+4. **`/onboarding/area`** （4/4 活動エリア）
+   - 8 エリアチップ（東京/神奈川/千葉/埼玉/大阪/愛知/福岡/その他）複数選択可
+   - 「あとで設定する」スキップ可
+   - account_status='active' に遷移（onboarding 完了）
+5. **`/onboarding/done`** （完了サマリー）
+   - グラデ背景 + ✨ + 「iHub へようこそ！」+ @handle
+   - 推し最大 3 件のサマリー + エリア表示
+   - 「次は何をする？」3 カード（マッチ / 在庫 / wish）
+   - 「ホームに進む」
+
+#### D. 推し追加リクエスト機能（共有可）
+
+1. **oshi_requests テーブル新規**（migration `20260501100000_add_oshi_requests.sql`）
+   - 主要カラム: requested_name, requested_genre_id, requested_kind, note
+   - status: `pending` / `merged`（既存master統合）/ `approved`（新規追加）/ `rejected`
+   - approved_group_id（承認時の紐付け先 master）
+2. **`/onboarding/oshi/request`** 画面（名前 / ジャンル / 種類 / メモ）
+3. **RLS 緩和**（migration `20260501110000_share_oshi_requests.sql`）
+   - 「自分のだけ」→「誰でも全ステータス読める」
+   - user_oshi に `oshi_request_id` カラム追加（nullable, FK）
+   - check 制約: group_id / character_id / oshi_request_id のいずれか必須
+4. **共有**：推し選択画面で全ユーザーの pending を「審査中」chip 表示・selectable
+5. **承認トリガー** `handle_oshi_request_approval`
+   - status pending → merged/approved 遷移時、approved_group_id がセット済なら：
+     - リンクされている全 user_oshi の group_id を一括 UPDATE
+     - 紐づく character_requests も同様に更新（後述 E.6）
+   - rejected 時：リンクされた user_oshi を全削除
+
+#### E. メンバー追加リクエスト機能（共有可）
+
+1. **character_requests テーブル新規**（migration `20260501130000_add_character_requests.sql`）
+   - group_id（必須・どのグループのメンバーか）, requested_name, note
+   - status: `pending` / `merged` / `approved` / `rejected`
+   - approved_character_id（承認時の紐付け先）
+2. **`/onboarding/members/request`** 画面（クエリ groupId or oshiRequestId 必須）
+3. **user_oshi に `character_request_id` カラム追加**
+   - check 制約: group_id / character_id / oshi_request_id / character_request_id のいずれか必須
+4. **共有**：メンバー選択画面で全ユーザーの pending を「🕐」chip 表示・selectable
+5. **承認トリガー** `handle_character_request_approval`
+   - 承認時：リンクされている全 user_oshi の character_id を一括 UPDATE
+   - 却下時：リンクされた user_oshi を全削除
+6. **連鎖対応**（migration `20260501140000_link_character_requests_to_oshi_requests.sql`）
+   - character_requests に oshi_request_id 追加（審査中グループへのメンバーリクエスト対応）
+   - check 制約: group_id か oshi_request_id のいずれか必須
+   - oshi_request 承認時、紐づく character_requests も group_id に書き換え（連鎖変換）
+
+#### F. データ seed
+
+1. **K-POP 主要 5 グループ × 31 メンバー**（migration `20260501120000_seed_characters.sql`）
+   - BTS（7）/ TWICE（9）/ NewJeans（5）/ IVE（6）/ aespa（4）
+   - aliases に韓国語表記・英字・別名を含める
+
+#### G. account_status 自動同期
+
+1. **`/auth/callback` で email 認証完了時**
+   - `exchangeCodeForSession` 成功後、`account_status='registered'` の場合に `'verified'` に UPDATE
+   - `email_verified_at` に現在時刻
+2. **遷移ロジック完成**
+   ```
+   registered（signup 直後）
+     ↓ メール認証
+   verified
+     ↓ saveGender
+   onboarding
+     ↓ saveArea（or スキップ）
+   active
+   ```
+
+#### H. パスワードリセット完了画面
+
+1. **`/auth/password-reset-confirm`** 新規
+   - searchParams.code を `exchangeCodeForSession` で session 化
+   - 新パスワード入力フォーム（強度メーター + 確認）
+   - 完了後 `/login?password_reset=success`
+2. **`setNewPassword` action**：`updateUser({ password })`
+3. **`/login`** で `?password_reset=success` バッジ表示
+
+#### I. Google OAuth 接続（コードのみ・要 Cloud Console 設定）
+
+1. **trigger 改修**（migration `20260501150000_oauth_handle_generation.sql`）
+   - handle が無い場合 `user_xxxxxxxx` 形式でランダム生成（衝突回避ループ）
+   - display_name は Google プロフィール（full_name / name）→ handle の順 fallback
+   - email_confirmed_at がある（OAuth）なら account_status='verified'
+2. **`signInWithGoogle` action**：`signInWithOAuth({ provider: 'google' })`
+3. **`GoogleAuthButton`** 共通コンポーネント（Welcome / Login で再利用）
+4. **未完了**：Google Cloud Console プロジェクト作成と Supabase Dashboard での Provider 有効化（ユーザー作業）
+
+#### J. Email Templates 日本語化（手動設定）
+
+1. **`notes/19_email_templates.md`** に整備
+2. Confirm signup / Reset password の HTML テンプレ全文（iHub ブランド準拠）
+3. 設定済（ユーザーが Supabase Dashboard でコピペ完了）
+
+### 設計判断・トレードオフ
+
+1. **handle 自動生成 vs 入力必須**
+   - iter56 では signup 時に handle 入力必須にした（モックアップ準拠）
+   - Google OAuth では handle が取れないので、trigger で `user_xxxxxxxx` 自動生成
+   - 後で Phase 1 にハンドル変更画面を追加する前提
+2. **追加リクエストの公開範囲**
+   - 自分の申請のみ表示 vs 全ユーザー pending 表示
+   - 後者を採用：同じ推しを複数人がリクエストする無駄を避け、「審査中」共有でコミュニティ感を出す
+3. **メンバーリクエストの親グループ**
+   - 既存 master のみ vs 審査中グループも対応
+   - 後者を採用：「LUMENA」未承認時もそのメンバー「スア」をリクエスト可能、連鎖変換で承認時一括反映
+4. **proxy での onboarding 未完了強制リダイレクト**
+   - 今は実装しない：保護対象ページ（/home, /inventory）が未実装のため
+   - Phase 1 で実装
+
+### 関連ファイル
+
+**新規 migration**:
+- `supabase/migrations/20260501100000_add_oshi_requests.sql`
+- `supabase/migrations/20260501110000_share_oshi_requests.sql`
+- `supabase/migrations/20260501120000_seed_characters.sql`
+- `supabase/migrations/20260501130000_add_character_requests.sql`
+- `supabase/migrations/20260501140000_link_character_requests_to_oshi_requests.sql`
+- `supabase/migrations/20260501150000_oauth_handle_generation.sql`
+
+**新規ページ**:
+- `web/src/app/onboarding/{gender,oshi,members,area,done}/`
+- `web/src/app/onboarding/{oshi,members}/request/`
+- `web/src/app/auth/password-reset-confirm/`
+
+**新規コンポーネント**:
+- `web/src/components/auth/PrimaryButton.tsx`（PrimaryButton + PrimaryLinkButton + secondaryBaseClass）
+- `web/src/components/auth/Spinner.tsx`
+- `web/src/components/auth/useRipple.tsx`
+- `web/src/components/auth/ProgressDots.tsx`
+- `web/src/components/auth/GoogleAuthButton.tsx`
+
+**新規 actions**:
+- `web/src/app/onboarding/actions.ts`（saveGender / saveOshi / saveOshiRequest / saveMembers / saveCharacterRequest / saveArea）
+- `web/src/app/auth/actions.ts` に `signInWithGoogle` / `setNewPassword` 追加
+
+**改修**:
+- `web/src/app/page.tsx`（Welcome ビューを root に統合 + GoogleAuthButton）
+- `web/src/app/login/`（モックアップ準拠 + Google ボタン）
+- `web/src/app/auth/callback/route.ts`（account_status sync）
+- `web/src/app/globals.css`（Tailwind theme + Ripple keyframe）
+- `web/vercel.json`（regions hnd1）
+- `web/src/app/layout.tsx`（Inter Tight フォント追加）
+
+**ドキュメント**:
+- `notes/19_email_templates.md`
+
+### Phase 0b 完了報告
+
+```
+✅ Phase 0a:    Vercel + Supabase 接続（iter49-51）
+✅ Phase 0b-1:  DB マイグレーション（iter52）
+✅ Phase 0b-2:  Auth 実装 + メール送信基盤（iter53-55）
+✅ Phase 0b-3:  認証 UI 完成 + Onboarding 5画面 + 共有リクエスト（iter56-57）
+🔵 Phase 0c:    実機能（ホーム / 在庫管理 / wish / 打診 / 取引チャット）← 次
+```
+
+### 次の課題
+
+- **Phase 0c 開始**：iter58 以降で実機能の実装
+- ハンドル変更画面（OAuth ユーザー向け）
+- Google OAuth の最終接続（ユーザー側で Cloud Console + Supabase 設定）
+- proxy で onboarding 未完了強制リダイレクト（保護対象ができてから）
+- データモデル変更を `notes/05_data_model.md` に反映
+- 用語 `notes/10_glossary.md` に追加：「追加リクエスト」「審査中」「マージ」「連鎖変換」等
+- 状態遷移 `notes/09_state_machines.md` に追加：oshi_requests / character_requests のステート
+
+---
+
 ## イテレーション56：認証系 UI をモックアップ忠実化 + 構造バグ対応
 
 ### 達成事項
