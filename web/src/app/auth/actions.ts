@@ -78,8 +78,34 @@ export async function signup(formData: FormData): Promise<AuthResult> {
   });
 
   if (error) {
-    if (error.message.includes("already registered")) {
-      return { fieldErrors: { email: "このメールアドレスは既に登録されています" } };
+    // 既存メアド：認証済 or 未認証の判定 → 未認証なら resend に自動誘導
+    if (
+      error.message.includes("already registered") ||
+      error.message.toLowerCase().includes("user already")
+    ) {
+      // 認証メールを再送してみる（未認証なら成功 / 認証済なら失敗）
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: {
+          emailRedirectTo: `${getBaseUrl()}/auth/callback`,
+        },
+      });
+
+      if (resendError) {
+        // resend 失敗 = 既に認証済み（or 別問題）
+        return {
+          fieldErrors: {
+            email:
+              "このメールアドレスは既に登録されています。ログインしてください",
+          },
+        };
+      }
+
+      // resend 成功 = 未認証ユーザーに再送できた
+      redirect(
+        `/auth/verify-email?email=${encodeURIComponent(email)}&resent=1`,
+      );
     }
     return { error: error.message };
   }
