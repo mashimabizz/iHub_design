@@ -22,26 +22,36 @@ export default async function OshiPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // ジャンル一覧
-  const { data: genres } = await supabase
-    .from("genres_master")
-    .select("id, name, kind, display_order")
-    .order("display_order", { ascending: true });
-
-  // グループ + ジャンル情報
-  const { data: groups } = await supabase
-    .from("groups_master")
-    .select(
-      "id, name, aliases, kind, display_order, genre:genres_master(id, name, kind)",
-    )
-    .order("display_order", { ascending: true });
-
-  // 既存の user_oshi（再訪時の初期選択）
-  const { data: existingOshi } = await supabase
-    .from("user_oshi")
-    .select("group_id, oshi_request_id, priority")
-    .eq("user_id", user.id)
-    .order("priority", { ascending: true });
+  // 4 つの DB クエリを並列実行（順次待つと 4×RTT、並列なら 1×RTT）
+  const [
+    { data: genres },
+    { data: groups },
+    { data: existingOshi },
+    { data: pendingRequestsRaw },
+  ] = await Promise.all([
+    supabase
+      .from("genres_master")
+      .select("id, name, kind, display_order")
+      .order("display_order", { ascending: true }),
+    supabase
+      .from("groups_master")
+      .select(
+        "id, name, aliases, kind, display_order, genre:genres_master(id, name, kind)",
+      )
+      .order("display_order", { ascending: true }),
+    supabase
+      .from("user_oshi")
+      .select("group_id, oshi_request_id, priority")
+      .eq("user_id", user.id)
+      .order("priority", { ascending: true }),
+    supabase
+      .from("oshi_requests")
+      .select(
+        "id, requested_name, requested_kind, status, user_id, created_at, genre:genres_master(id, name)",
+      )
+      .eq("status", "pending")
+      .order("created_at", { ascending: false }),
+  ]);
 
   const initialSelectedGroupIds: string[] = (existingOshi ?? [])
     .filter((o): o is { group_id: string; oshi_request_id: null; priority: number } =>
@@ -55,15 +65,6 @@ export default async function OshiPage() {
         !!o.oshi_request_id,
     )
     .map((o) => o.oshi_request_id);
-
-  // 全ユーザーの pending な追加リクエスト（共有可・誰でも選択可）
-  const { data: pendingRequestsRaw } = await supabase
-    .from("oshi_requests")
-    .select(
-      "id, requested_name, requested_kind, status, user_id, created_at, genre:genres_master(id, name)",
-    )
-    .eq("status", "pending")
-    .order("created_at", { ascending: false });
 
   const pendingRequests = (pendingRequestsRaw ?? []).map((r) => {
     const genre = Array.isArray(r.genre) ? r.genre[0] : r.genre;

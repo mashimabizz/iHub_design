@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -34,6 +35,7 @@ export async function saveGender(gender: string): Promise<ActionResult> {
     return { error: error.message };
   }
 
+  revalidatePath("/onboarding/oshi");
   return undefined;
 }
 
@@ -87,6 +89,7 @@ export async function saveOshi(input: {
     return { error: insertError.message };
   }
 
+  revalidatePath("/onboarding/members");
   return undefined;
 }
 
@@ -122,5 +125,7 @@ export async function saveOshiRequest(input: {
     return { error: error.message };
   }
 
+  // 推し選択画面のキャッシュを無効化（戻った時に新しい審査中アイテムが見える）
+  revalidatePath("/onboarding/oshi");
   return undefined;
 }

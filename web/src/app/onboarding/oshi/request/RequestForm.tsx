@@ -48,8 +48,8 @@ export function RequestForm({
       setError(result.error);
       return;
     }
+    // Server Action 内で revalidatePath 済みなので push のみで OK
     router.push("/onboarding/oshi");
-    router.refresh(); // 「審査中」アイテムを再取得するために revalidate
   }
 
   return (
