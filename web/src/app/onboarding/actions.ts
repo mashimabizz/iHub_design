@@ -129,3 +129,90 @@ export async function saveOshiRequest(input: {
   revalidatePath("/onboarding/oshi");
   return undefined;
 }
+
+// ----------------------------------------------------------------------
+// saveMembers: 各推しごとにメンバー選択（箱推し or 特定メンバー）を保存
+// ----------------------------------------------------------------------
+export async function saveMembers(
+  selections: Record<string, { isBox: boolean; memberIds: string[] }>,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // 既存の user_oshi を全て取得（priority 順）
+  const { data: existing } = await supabase
+    .from("user_oshi")
+    .select("id, group_id, oshi_request_id, priority")
+    .eq("user_id", user.id)
+    .order("priority", { ascending: true });
+
+  if (!existing || existing.length === 0) {
+    return { error: "推し情報が見つかりません。再度推し選択からお進みください" };
+  }
+
+  // 既存を全削除
+  const { error: deleteError } = await supabase
+    .from("user_oshi")
+    .delete()
+    .eq("user_id", user.id);
+  if (deleteError) {
+    return { error: deleteError.message };
+  }
+
+  // 新しい行を構築（priority は 1 から再採番）
+  type NewRow = {
+    user_id: string;
+    group_id: string | null;
+    oshi_request_id: string | null;
+    character_id?: string;
+    kind: "box" | "specific" | "multi";
+    priority: number;
+  };
+  const newRows: NewRow[] = [];
+  let p = 1;
+
+  for (const oshi of existing) {
+    const sel = selections[oshi.id];
+    // 審査中（oshi_request_id 経由）はメンバー選択不可なので常に box 扱い
+    const isPendingRequest = !!oshi.oshi_request_id;
+    if (
+      isPendingRequest ||
+      !sel ||
+      sel.isBox ||
+      sel.memberIds.length === 0
+    ) {
+      newRows.push({
+        user_id: user.id,
+        group_id: oshi.group_id,
+        oshi_request_id: oshi.oshi_request_id,
+        kind: "box",
+        priority: p++,
+      });
+    } else {
+      const kind = sel.memberIds.length > 1 ? "multi" : "specific";
+      for (const cid of sel.memberIds) {
+        newRows.push({
+          user_id: user.id,
+          group_id: oshi.group_id,
+          oshi_request_id: oshi.oshi_request_id,
+          character_id: cid,
+          kind,
+          priority: p++,
+        });
+      }
+    }
+  }
+
+  const { error: insertError } = await supabase
+    .from("user_oshi")
+    .insert(newRows);
+  if (insertError) {
+    return { error: insertError.message };
+  }
+
+  revalidatePath("/onboarding/area");
+  return undefined;
+}
