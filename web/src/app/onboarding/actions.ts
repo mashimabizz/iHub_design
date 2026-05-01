@@ -38,12 +38,14 @@ export async function saveGender(gender: string): Promise<ActionResult> {
 }
 
 // ----------------------------------------------------------------------
-// saveOshi: 推し（グループ）を保存して /onboarding/members へ
+// saveOshi: 推し（既存グループ + 審査中リクエスト）を保存
 // ----------------------------------------------------------------------
-export async function saveOshi(
-  groupIds: string[],
-): Promise<ActionResult> {
-  if (!Array.isArray(groupIds) || groupIds.length === 0) {
+export async function saveOshi(input: {
+  groupIds: string[];
+  requestIds: string[];
+}): Promise<ActionResult> {
+  const total = input.groupIds.length + input.requestIds.length;
+  if (total === 0) {
     return { error: "推しを 1 つ以上選択してください" };
   }
 
@@ -62,13 +64,21 @@ export async function saveOshi(
     return { error: deleteError.message };
   }
 
-  // 選択順に priority を 1, 2, 3... で挿入（kind='box' = 箱推し、後でメンバー選択時に specific/multi に変更）
-  const rows = groupIds.map((group_id, idx) => ({
-    user_id: user.id,
-    group_id,
-    kind: "box" as const,
-    priority: idx + 1,
-  }));
+  // 選択順に priority を振る（既存グループ → 審査中リクエストの順）
+  const rows = [
+    ...input.groupIds.map((group_id, idx) => ({
+      user_id: user.id,
+      group_id,
+      kind: "box" as const,
+      priority: idx + 1,
+    })),
+    ...input.requestIds.map((oshi_request_id, idx) => ({
+      user_id: user.id,
+      oshi_request_id,
+      kind: "box" as const,
+      priority: input.groupIds.length + idx + 1,
+    })),
+  ];
 
   const { error: insertError } = await supabase
     .from("user_oshi")

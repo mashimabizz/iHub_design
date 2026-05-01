@@ -27,7 +27,9 @@ export type PendingRequest = {
   id: string;
   name: string;
   kind: "group" | "work" | "solo" | null;
+  genre_id: string | null;
   genre_name: string | null;
+  isMine: boolean;
 };
 
 // 「人気」バッジを付ける group の上位件数（display_order 小 = 人気）
@@ -52,20 +54,30 @@ function isLatin(name: string): boolean {
 export function OshiForm({
   oshiOptions,
   genreOptions,
-  initialSelected,
+  initialSelectedGroupIds,
+  initialSelectedRequestIds,
   pendingRequests,
 }: {
   oshiOptions: OshiOption[];
   genreOptions: GenreOption[];
-  initialSelected: string[];
+  initialSelectedGroupIds: string[];
+  initialSelectedRequestIds: string[];
   pendingRequests: PendingRequest[];
 }) {
   const router = useRouter();
-  const [selected, setSelected] = useState<string[]>(initialSelected);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(
+    initialSelectedGroupIds,
+  );
+  const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>(
+    initialSelectedRequestIds,
+  );
   const [filterGenreId, setFilterGenreId] = useState<string | "all">("all");
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const totalSelected =
+    selectedGroupIds.length + selectedRequestIds.length;
 
   // 次画面を事前ロード
   useEffect(() => {
@@ -89,7 +101,7 @@ export function OshiForm({
     return set;
   }, [oshiOptions]);
 
-  // フィルタリング
+  // フィルタリング（既存マスタ）
   const filtered = useMemo(() => {
     return oshiOptions.filter((o) => {
       if (filterGenreId !== "all" && o.genre_id !== filterGenreId)
@@ -106,20 +118,42 @@ export function OshiForm({
     });
   }, [oshiOptions, filterGenreId, search]);
 
-  function toggle(id: string) {
-    setSelected((prev) =>
+  // 審査中アイテムも同じフィルタ条件で絞る（誰でも選択可）
+  const filteredPendingRequests = useMemo(() => {
+    return pendingRequests.filter((r) => {
+      if (filterGenreId !== "all" && r.genre_id !== filterGenreId)
+        return false;
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        if (!r.name.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [pendingRequests, filterGenreId, search]);
+
+  function toggleGroup(id: string) {
+    setSelectedGroupIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  function toggleRequest(id: string) {
+    setSelectedRequestIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   }
 
   async function handleSubmit() {
-    if (selected.length === 0) {
+    if (totalSelected === 0) {
       setError("推しを 1 つ以上選択してください");
       return;
     }
     setPending(true);
     setError(null);
-    const result = await saveOshi(selected);
+    const result = await saveOshi({
+      groupIds: selectedGroupIds,
+      requestIds: selectedRequestIds,
+    });
     if (result?.error) {
       setPending(false);
       setError(result.error);
@@ -177,14 +211,14 @@ export function OshiForm({
           </div>
         ) : (
           filtered.map((o) => {
-            const active = selected.includes(o.id);
+            const active = selectedGroupIds.includes(o.id);
             const popular = popularSet.has(o.id);
             const latin = isLatin(o.name);
             return (
               <button
                 key={o.id}
                 type="button"
-                onClick={() => toggle(o.id)}
+                onClick={() => toggleGroup(o.id)}
                 className={`flex w-full items-center gap-3 rounded-2xl border-[1.5px] border-solid px-4 py-3.5 text-left transition-all duration-150 active:scale-[0.99] ${
                   active
                     ? "border-[#a695d8] bg-[#a695d814]"
@@ -260,29 +294,72 @@ export function OshiForm({
           })
         )}
 
-        {/* 自分の審査中リクエスト */}
-        {pendingRequests.length > 0 && (
+        {/* 審査中の推し（共有・誰でも選択可） */}
+        {filteredPendingRequests.length > 0 && (
           <>
-            <div className="mt-3 mb-1 text-[11px] font-bold text-gray-500">
-              審査中（運営確認待ち）
+            <div className="mt-4 mb-1 text-[11px] font-bold text-gray-500">
+              審査中の推し（運営確認待ち・選択可）
             </div>
-            {pendingRequests.map((r) => {
+            {filteredPendingRequests.map((r) => {
+              const active = selectedRequestIds.includes(r.id);
+              const latin = isLatin(r.name);
               const subParts: string[] = [];
               if (r.genre_name) subParts.push(r.genre_name);
               if (r.kind === "group") subParts.push("グループ");
               else if (r.kind === "work") subParts.push("作品");
               else if (r.kind === "solo") subParts.push("ソロ");
               return (
-                <div
+                <button
                   key={r.id}
-                  className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-[#3a324a26] bg-white px-4 py-3.5"
+                  type="button"
+                  onClick={() => toggleRequest(r.id)}
+                  className={`flex w-full items-center gap-3 rounded-2xl border-[1.5px] border-dashed px-4 py-3.5 text-left transition-all duration-150 active:scale-[0.99] ${
+                    active
+                      ? "border-[#a695d8] bg-[#a695d814]"
+                      : "border-[#3a324a26] bg-white hover:border-[#3a324a40]"
+                  }`}
                 >
-                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#3a324a08] text-sm font-extrabold text-gray-500">
-                    🕐
+                  {/* アイコン円 */}
+                  <div
+                    className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] text-sm font-extrabold ${
+                      active
+                        ? "bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] text-white"
+                        : "bg-[#a695d822] text-[#a695d8]"
+                    }`}
+                    style={
+                      latin
+                        ? {
+                            fontFamily: "var(--font-inter-tight), system-ui",
+                          }
+                        : undefined
+                    }
+                  >
+                    {r.name[0]}
                   </div>
+
+                  {/* 名前 + サブ + バッジ */}
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-gray-700">
+                    <div
+                      className="text-sm font-bold text-gray-900"
+                      style={
+                        latin
+                          ? {
+                              fontFamily:
+                                "var(--font-inter-tight), system-ui",
+                              letterSpacing: "0.3px",
+                            }
+                          : undefined
+                      }
+                    >
                       {r.name}
+                      <span className="ml-2 rounded-full bg-[#a695d822] px-1.5 py-0.5 text-[9px] font-bold text-[#a695d8]">
+                        審査中
+                      </span>
+                      {r.isMine && (
+                        <span className="ml-1 text-[9px] font-bold text-[#d4866b]">
+                          あなたが申請
+                        </span>
+                      )}
                     </div>
                     <div className="mt-0.5 text-[11px] text-gray-500">
                       {subParts.length > 0
@@ -290,10 +367,28 @@ export function OshiForm({
                         : "ジャンル指定なし"}
                     </div>
                   </div>
-                  <span className="rounded-full bg-[#a695d822] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
-                    審査中
-                  </span>
-                </div>
+
+                  {/* チェック円 */}
+                  <div
+                    className={`flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full border-[1.8px] border-solid ${
+                      active
+                        ? "border-[#a695d8] bg-[#a695d8]"
+                        : "border-[#3a324a14] bg-white"
+                    }`}
+                  >
+                    {active && (
+                      <svg width="11" height="11" viewBox="0 0 11 11">
+                        <path
+                          d="M2 5.5l2.5 2.5L9 3"
+                          stroke="#fff"
+                          strokeWidth="1.8"
+                          fill="none"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                </button>
               );
             })}
           </>
@@ -314,11 +409,11 @@ export function OshiForm({
         <PrimaryButton
           type="button"
           onClick={handleSubmit}
-          disabled={selected.length === 0}
+          disabled={totalSelected === 0}
           pending={pending}
           pendingLabel="保存中..."
         >
-          次へ（{selected.length}件選択中）
+          次へ（{totalSelected}件選択中）
         </PrimaryButton>
       </div>
     </div>

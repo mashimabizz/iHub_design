@@ -39,22 +39,29 @@ export default async function OshiPage() {
   // 既存の user_oshi（再訪時の初期選択）
   const { data: existingOshi } = await supabase
     .from("user_oshi")
-    .select("group_id, priority")
+    .select("group_id, oshi_request_id, priority")
     .eq("user_id", user.id)
     .order("priority", { ascending: true });
 
-  const initialSelected: string[] =
-    existingOshi
-      ?.filter((o): o is { group_id: string; priority: number } => !!o.group_id)
-      .map((o) => o.group_id) ?? [];
+  const initialSelectedGroupIds: string[] = (existingOshi ?? [])
+    .filter((o): o is { group_id: string; oshi_request_id: null; priority: number } =>
+      !!o.group_id,
+    )
+    .map((o) => o.group_id);
 
-  // 自分の pending な追加リクエスト（「審査中」表示用）
+  const initialSelectedRequestIds: string[] = (existingOshi ?? [])
+    .filter(
+      (o): o is { group_id: null; oshi_request_id: string; priority: number } =>
+        !!o.oshi_request_id,
+    )
+    .map((o) => o.oshi_request_id);
+
+  // 全ユーザーの pending な追加リクエスト（共有可・誰でも選択可）
   const { data: pendingRequestsRaw } = await supabase
     .from("oshi_requests")
     .select(
-      "id, requested_name, requested_kind, status, created_at, genre:genres_master(id, name)",
+      "id, requested_name, requested_kind, status, user_id, created_at, genre:genres_master(id, name)",
     )
-    .eq("user_id", user.id)
     .eq("status", "pending")
     .order("created_at", { ascending: false });
 
@@ -64,7 +71,9 @@ export default async function OshiPage() {
       id: r.id,
       name: r.requested_name,
       kind: r.requested_kind as "group" | "work" | "solo" | null,
+      genre_id: genre?.id ?? null,
       genre_name: genre?.name ?? null,
+      isMine: r.user_id === user.id,
     };
   });
 
@@ -112,7 +121,8 @@ export default async function OshiPage() {
         <OshiForm
           oshiOptions={oshiOptions}
           genreOptions={genreOptions}
-          initialSelected={initialSelected}
+          initialSelectedGroupIds={initialSelectedGroupIds}
+          initialSelectedRequestIds={initialSelectedRequestIds}
           pendingRequests={pendingRequests}
         />
       </div>
