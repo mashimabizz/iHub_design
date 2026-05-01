@@ -31,6 +31,7 @@ export function InventoryNewForm({
   const [characterId, setCharacterId] = useState<string>("");
   const [goodsTypeId, setGoodsTypeId] = useState<string>("");
   const [title, setTitle] = useState("");
+  const [series, setSeries] = useState("");
   const [description, setDescription] = useState("");
   const [condition, setCondition] = useState<
     "sealed" | "mint" | "good" | "fair" | "poor" | ""
@@ -76,6 +77,7 @@ export function InventoryNewForm({
       characterId: characterId || undefined,
       goodsTypeId,
       title: title.trim(),
+      series: series.trim() || undefined,
       description: description.trim() || undefined,
       condition: kind === "for_trade" && condition ? condition : undefined,
       quantity,
@@ -207,6 +209,22 @@ export function InventoryNewForm({
           onChange={(e) => setTitle(e.target.value)}
           placeholder="例: スア トレカ（カムバ盤）"
           maxLength={100}
+          className="mt-2 block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
+        />
+      </div>
+
+      {/* シリーズ・弾名 */}
+      <div>
+        <label htmlFor="series" className="block text-sm font-bold text-gray-900">
+          シリーズ・弾名 <span className="text-gray-500">（任意）</span>
+        </label>
+        <input
+          id="series"
+          type="text"
+          value={series}
+          onChange={(e) => setSeries(e.target.value)}
+          placeholder="例: WORLD TOUR / 5th Mini / 公式"
+          maxLength={80}
           className="mt-2 block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
         />
       </div>

@@ -1,21 +1,21 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { InventoryListView, type InventoryItem } from "./InventoryListView";
+import { InventoryView, type InventoryItemFull } from "./InventoryView";
 import { BottomNav } from "@/components/home/BottomNav";
 
 export const metadata = {
-  title: "在庫 — iHub",
+  title: "マイ在庫 — iHub",
 };
 
 type InventoryRow = {
   id: string;
   kind: "for_trade" | "wanted";
   title: string;
-  description: string | null;
-  condition: string | null;
+  series: string | null;
   quantity: number;
-  status: string;
-  created_at: string;
+  status: "active" | "keep" | "traded" | "reserved" | "archived";
+  carrying: boolean;
+  hue: number | null;
   group: { name: string } | { name: string }[] | null;
   character: { name: string } | { name: string }[] | null;
   goods_type: { name: string } | { name: string }[] | null;
@@ -26,6 +26,16 @@ function pickOne<T>(v: T | T[] | null): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v;
 }
 
+// メンバー名 → hue（0〜360）の単純ハッシュ
+function nameToHue(name: string): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
 export default async function InventoryPage() {
   const supabase = await createClient();
   const {
@@ -33,37 +43,45 @@ export default async function InventoryPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // 譲（for_trade）のみ取得・archived は除く（モックアップ B-Inventory は譲タブ）
   const { data: rows } = await supabase
     .from("goods_inventory")
     .select(
-      "id, kind, title, description, condition, quantity, status, created_at, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      "id, kind, title, series, quantity, status, carrying, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
     )
     .eq("user_id", user.id)
+    .eq("kind", "for_trade")
     .neq("status", "archived")
     .order("created_at", { ascending: false });
 
-  const items: InventoryItem[] = ((rows as InventoryRow[]) ?? []).map((r) => {
-    const grp = pickOne(r.group);
-    const ch = pickOne(r.character);
-    const gt = pickOne(r.goods_type);
-    return {
-      id: r.id,
-      kind: r.kind,
-      title: r.title,
-      description: r.description,
-      condition: r.condition,
-      quantity: r.quantity,
-      groupName: grp?.name ?? null,
-      characterName: ch?.name ?? null,
-      goodsTypeName: gt?.name ?? "?",
-      status: r.status,
-      created_at: r.created_at,
-    };
-  });
+  const items: InventoryItemFull[] = ((rows as InventoryRow[]) ?? []).map(
+    (r) => {
+      const grp = pickOne(r.group);
+      const ch = pickOne(r.character);
+      const gt = pickOne(r.goods_type);
+      const memberName = ch?.name ?? grp?.name ?? "?";
+      return {
+        id: r.id,
+        memberName,
+        groupName: grp?.name ?? null,
+        goodsType: gt?.name ?? "?",
+        series: r.series,
+        qty: r.quantity,
+        hue: r.hue ?? nameToHue(memberName),
+        carrying: r.carrying,
+        status: r.status,
+      };
+    },
+  );
+
+  // 携帯モード：active な for_trade で 1 つでも carrying=true なら on
+  const carrying = items.some(
+    (i) => i.status === "active" && i.carrying,
+  );
 
   return (
     <>
-      <InventoryListView items={items} />
+      <InventoryView items={items} carrying={carrying} />
       <BottomNav />
     </>
   );

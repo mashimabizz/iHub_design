@@ -15,9 +15,11 @@ export async function saveInventoryItem(input: {
   characterId?: string;
   goodsTypeId: string;
   title: string;
+  series?: string;
   description?: string;
   condition?: "sealed" | "mint" | "good" | "fair" | "poor";
   quantity: number;
+  hue?: number;
 }): Promise<ActionResult> {
   if (!VALID_KINDS.includes(input.kind)) {
     return { error: "種別が不正です" };
@@ -52,16 +54,62 @@ export async function saveInventoryItem(input: {
     character_id: input.characterId ?? null,
     goods_type_id: input.goodsTypeId,
     title,
+    series: input.series?.trim() || null,
     description: input.description?.trim() || null,
     condition: input.kind === "for_trade" ? input.condition ?? null : null,
     quantity: input.quantity,
-    photo_urls: [], // Phase 0c-2 で Supabase Storage 対応
+    hue: input.hue ?? null,
+    photo_urls: [],
   });
 
   if (error) {
     return { error: error.message };
   }
 
+  revalidatePath("/inventory");
+  return undefined;
+}
+
+// active / keep / traded / archived のステータス変更
+export async function updateInventoryStatus(
+  id: string,
+  status: "active" | "keep" | "traded" | "archived",
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("goods_inventory")
+    .update({ status })
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return { error: error.message };
+  revalidatePath("/inventory");
+  return undefined;
+}
+
+// 携帯モード一斉切替（active な for_trade 全アイテムの carrying を変更）
+export async function toggleCarryingAll(
+  carrying: boolean,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("goods_inventory")
+    .update({ carrying })
+    .eq("user_id", user.id)
+    .eq("kind", "for_trade")
+    .eq("status", "active");
+
+  if (error) return { error: error.message };
   revalidatePath("/inventory");
   return undefined;
 }
