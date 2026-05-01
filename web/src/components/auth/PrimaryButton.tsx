@@ -12,14 +12,13 @@ import { useRipple } from "./useRipple";
 
 /**
  * モックアップ AOPrimaryButton 完全準拠：
- * - linear-gradient(135deg, #a695d8, #a8d4e6, #f3c5d4) = lavender→sky→pink
- * - 影：rgba(166,149,216,0.33) で柔らかいパープル
- * - rounded-[14px] / fontSize 14px / padding 14px 16px
- *
- * Tailwind v4 のスキャナが確実に検出するよう 1 行の string literal で定義。
+ * - linear-gradient(135deg, #a695d8, #a8d4e6) = lavender→sky の 2色グラデ
+ *   ※ ピンクは入らない（cool-tone 寄り）
+ * - 影：0 4px 14px rgba(166,149,216,0.33)
+ * - rounded-[14px] / padding 15px 24px / fontSize 14px / letterSpacing 0.3px
  */
 const baseClass =
-  "relative block w-full overflow-hidden rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6,#f3c5d4)] px-4 py-[14px] text-center text-sm font-bold text-white shadow-[0_8px_22px_rgba(166,149,216,0.33)] transition-all duration-150 hover:brightness-105 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50";
+  "relative block w-full overflow-hidden rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[15px] text-center text-sm font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] transition-all duration-150 hover:brightness-105 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * モックアップ AOSecondaryButton 完全準拠：
