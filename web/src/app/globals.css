@@ -10,6 +10,24 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /*
+   * iHub ブランドカラー（CLAUDE.md 公式値）
+   * モックアップ AO_C と一致
+   * 使い方:
+   *   bg-ihub-lavender / text-ihub-sky / border-ihub-pink
+   *   グラデ: bg-gradient-to-br from-ihub-lavender via-ihub-sky to-ihub-pink
+   */
+  --color-ihub-lavender: #a695d8;
+  --color-ihub-sky: #a8d4e6;
+  --color-ihub-pink: #f3c5d4;
+  --color-ihub-warn: #d4866b;
+  --color-ihub-ok: #6bb39a;
+
+  /* 透明度バリエーション（よく使うもの） */
+  --color-ihub-lavender-20: #a695d833;
+  --color-ihub-sky-20: #a8d4e633;
+  --color-ihub-pink-20: #f3c5d433;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -10,15 +10,45 @@ import {
 import { Spinner } from "./Spinner";
 import { useRipple } from "./useRipple";
 
+/**
+ * モックアップ AOPrimaryButton 準拠：
+ * - 3色グラデ（lavender → sky → pink, 135deg）
+ * - 影：rgba(166,149,216,0.33) で柔らかいパープル
+ * - rounded-2xl（borderRadius 14 相当）
+ * - hover で軽く明るくする（brightness-105）
+ * - active で 0.97 縮小（A: タクタイル感）
+ * - disabled / pending で 50% に薄まる
+ */
 const baseClass = `
-  relative block w-full overflow-hidden rounded-xl
-  bg-gradient-to-r from-purple-400 to-pink-300
-  px-4 py-3.5 text-center text-base font-bold text-white shadow-md
+  relative block w-full overflow-hidden rounded-2xl
+  bg-gradient-to-br from-ihub-lavender via-ihub-sky to-ihub-pink
+  px-4 py-3.5 text-center text-base font-bold text-white
+  shadow-[0_8px_22px_rgba(166,149,216,0.33)]
   transition-all duration-150
-  hover:from-purple-500 hover:to-pink-400
+  hover:brightness-105
   active:scale-[0.97]
-  disabled:from-purple-500 disabled:to-purple-600
-  disabled:cursor-not-allowed disabled:opacity-90
+  disabled:cursor-not-allowed disabled:opacity-50
+`;
+
+/**
+ * モックアップ AOSecondaryButton 準拠：
+ * - 白背景
+ * - 1.5px の紫透明枠（lavender + 33% 透明）
+ * - 黒テキスト（ink 色）
+ * - rounded-2xl
+ * - hover でうっすら紫に
+ * - active で 0.97 縮小
+ *
+ * 用途: Google ログイン、再送信ボタン、サブアクション等
+ */
+export const secondaryBaseClass = `
+  relative flex w-full items-center justify-center gap-2.5 overflow-hidden
+  rounded-2xl border-[1.5px] border-ihub-lavender/35 bg-white
+  px-4 py-3 text-sm font-bold text-gray-900
+  transition-all duration-150
+  hover:bg-ihub-lavender/5 hover:border-ihub-lavender/55
+  active:scale-[0.97]
+  disabled:cursor-not-allowed disabled:opacity-50
 `;
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {

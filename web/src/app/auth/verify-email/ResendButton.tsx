@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { resendVerification } from "@/app/auth/actions";
 import { Spinner } from "@/components/auth/Spinner";
+import { secondaryBaseClass } from "@/components/auth/PrimaryButton";
 import { useRipple } from "@/components/auth/useRipple";
 
 const COOLDOWN_SECONDS = 60;
@@ -53,7 +54,7 @@ export function ResendButton({
   const disabled = pending || cooldown > 0;
   const ref = useRef<HTMLButtonElement>(null);
   const { trigger, renderRipples } = useRipple({
-    color: "bg-purple-300/35",
+    color: "bg-ihub-lavender/25",
   });
 
   return (
@@ -64,7 +65,7 @@ export function ResendButton({
         onClick={handleResend}
         onMouseDown={(e) => !disabled && trigger(e, ref.current)}
         disabled={disabled}
-        className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl border border-purple-200 bg-white px-4 py-3 text-sm font-bold text-purple-600 transition-all duration-150 hover:bg-purple-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+        className={secondaryBaseClass}
       >
         <span className="relative z-10 flex items-center gap-2">
           {pending ? (

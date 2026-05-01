@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/auth/actions";
 import { IHubLogo } from "@/components/auth/IHubLogo";
-import { PrimaryLinkButton } from "@/components/auth/PrimaryButton";
+import {
+  PrimaryLinkButton,
+  secondaryBaseClass,
+} from "@/components/auth/PrimaryButton";
 
 type Props = {
   searchParams: Promise<{
@@ -85,7 +88,7 @@ function WelcomeView() {
             type="button"
             disabled
             title="準備中"
-            className="mt-2.5 flex w-full items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition-all duration-150 hover:bg-gray-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+            className={`mt-2.5 ${secondaryBaseClass}`}
           >
             <GoogleIcon />
             Googleで新規登録
