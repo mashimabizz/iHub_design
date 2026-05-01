@@ -9,7 +9,14 @@ export const metadata = {
   title: "ログイン — iHub",
 };
 
-export default async function LoginPage() {
+type Props = {
+  searchParams: Promise<{ password_reset?: string }>;
+};
+
+export default async function LoginPage({ searchParams }: Props) {
+  const params = await searchParams;
+  const passwordResetSuccess = params.password_reset === "success";
+
   // 既ログインなら / へ
   const supabase = await createClient();
   const {
@@ -26,6 +33,12 @@ export default async function LoginPage() {
           <IHubLogo size={60} />
           <p className="mt-3.5 text-xs text-gray-500">おかえりなさい</p>
         </div>
+
+        {passwordResetSuccess && (
+          <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+            ✓ パスワードを変更しました。新しいパスワードでログインしてください。
+          </div>
+        )}
 
         <LoginForm />
 

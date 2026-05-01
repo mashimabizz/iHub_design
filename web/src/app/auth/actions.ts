@@ -208,6 +208,35 @@ export async function passwordReset(formData: FormData): Promise<AuthResult> {
 }
 
 // ----------------------------------------------------------------------
+// setNewPassword: パスワードリセット後の新しいパスワードを設定
+// ----------------------------------------------------------------------
+export async function setNewPassword(
+  password: string,
+): Promise<AuthResult> {
+  if (!password || password.length < 8) {
+    return {
+      fieldErrors: { password: "パスワードは 8 文字以上で入力してください" },
+    };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({ password });
+
+  if (error) {
+    if (error.message.includes("New password should be different")) {
+      return {
+        fieldErrors: {
+          password: "現在と同じパスワードは設定できません",
+        },
+      };
+    }
+    return { error: error.message };
+  }
+
+  return {};
+}
+
+// ----------------------------------------------------------------------
 // resendVerification: 認証メール再送（60秒制限はSupabase側）
 // ----------------------------------------------------------------------
 export async function resendVerification(formData: FormData): Promise<AuthResult> {
