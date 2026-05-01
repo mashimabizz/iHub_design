@@ -419,6 +419,134 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション53：Phase 0b-2 — Auth フロー実装（signup / login / logout）
+
+### 達成事項
+
+iter52 で DB マイグレーション完了 → 本 iter で **認証フロー UI + Server Actions** を実装。
+ユーザーが自分でアカウント作成・ログインできる状態に到達。
+
+### 作業内容
+
+#### Server Actions（`web/src/app/auth/actions.ts`）
+- `signup(formData)`：メアド + PW + handle + 表示名で登録、確認メール送信、`/auth/verify-email` へ
+- `login(formData)`：メアド + PW でログイン、`/` へ
+- `logout()`：セッション削除、`/login` へ
+- `resendVerification(formData)`：認証メール再送
+
+バリデーション:
+- email: `@` 含むこと
+- password: 8文字以上
+- handle: `^[a-z0-9_]{3,20}$` 正規表現（DBの CHECK 制約と一致）
+- display_name: 1〜50文字
+- accepted_terms: 必須（規約同意）
+
+ハンドル重複チェック: 事前に `public.users` を select で確認。
+
+#### Auth Callback（`web/src/app/auth/callback/route.ts`）
+- メール認証リンクから `/auth/callback?code=xxx` でアクセス
+- `exchangeCodeForSession(code)` で session に交換
+- 認証成功 → `/` へ、失敗 → `/auth/auth-error` へ
+
+#### UI ページ
+- `web/src/app/signup/page.tsx` + `SignUpForm.tsx`
+- `web/src/app/login/page.tsx` + `LoginForm.tsx`
+- `web/src/app/auth/verify-email/page.tsx` + `ResendButton.tsx`
+- `web/src/app/auth/auth-error/page.tsx`
+
+すべて Server Component（既ログインなら `/` へリダイレクト）+ Client Component フォーム（フォーム状態管理）。
+
+iHub ブランドカラー（紫→ピンクグラデ）+ Noto Sans JP 統一。
+
+#### `web/src/app/page.tsx` 更新
+- ログイン状態を Server Component で取得
+- ログイン中：「ようこそ {display_name} @{handle}」+ ログアウトボタン
+- 未ログイン：「新規登録」「ログイン」リンク
+- Phase 表示：0a → 0b に更新
+
+### 実装したルート（6つ）
+
+```
+/             ホーム（ログイン状態切替）
+/signup       新規登録フォーム
+/login        ログインフォーム
+/auth/verify-email  認証メール送信完了画面（再送ボタン付）
+/auth/callback Route Handler（メール認証リンクの戻り）
+/auth/auth-error  認証エラー画面
+```
+
+### ビルド確認
+
+```
+$ npm run build
+✓ Compiled successfully in 1327ms
+✓ Generating static pages 9/9
+Route (app)
+┌ ƒ /
+├ ○ /_not-found
+├ ○ /auth/auth-error
+├ ƒ /auth/callback
+├ ƒ /auth/verify-email
+├ ƒ /login
+└ ƒ /signup
+```
+
+### 09_state_machines / 規約原典との整合
+
+`signup` Server Action は規約原典 §2 会員登録に対応：
+- email + password での登録
+- 利用規約・プライバシーポリシー同意必須
+- ハンドル名は `^[a-z0-9_]{3,20}$` で検証（規約より厳格、DB と一致）
+
+状態遷移（09 §7 Account Lifecycle）：
+- `auth.users` INSERT → `handle_new_user()` トリガー → `public.users.account_status = 'registered'`
+- メール認証完了 → callback で `email_confirmed_at` セット
+  - ※ public.users.account_status の自動更新は未実装、後の iter で auth トリガー追加
+
+### Vercel デプロイ後の必要作業（ユーザー対応）
+
+#### 1. Supabase Auth 設定
+Supabase ダッシュボード → Authentication → URL Configuration:
+
+```
+Site URL: https://ihub.tokyo
+
+Redirect URLs:
+- https://ihub.tokyo/auth/callback
+- https://www.ihub.tokyo/auth/callback
+- http://localhost:3000/auth/callback  ← ローカル開発用
+```
+
+#### 2. Vercel に本番URL 環境変数追加（任意）
+```
+NEXT_PUBLIC_APP_URL=https://ihub.tokyo
+```
+これがあると signup の emailRedirectTo が確実に本番URLに。
+無くても VERCEL_URL でフォールバック動作する。
+
+### 関連ファイル
+
+新規（8ファイル）:
+- `web/src/app/auth/actions.ts`（Server Actions）
+- `web/src/app/auth/callback/route.ts`（Route Handler）
+- `web/src/app/auth/verify-email/page.tsx` + `ResendButton.tsx`
+- `web/src/app/auth/auth-error/page.tsx`
+- `web/src/app/signup/page.tsx` + `SignUpForm.tsx`
+- `web/src/app/login/page.tsx` + `LoginForm.tsx`
+
+更新:
+- `web/src/app/page.tsx`（ログイン状態対応）
+
+### 次のステップ
+
+1. **動作確認**：本番（ihub.tokyo）で実際にユーザー登録 → メール受信 → リンククリック → ログイン状態表示まで
+2. **Supabase Auth URL設定**（ユーザー対応）
+3. **Phase 0b-3：オンボーディング画面**：性別選択、推しグループ選択、推しメンバー選択、AW初期設定
+
+これで Phase 0 の認証部分完了、次はオンボードへ。
+
+---
+
 ## イテレーション52：Phase 0b-1 — Supabase CLI セットアップ + 初回マイグレーション
 
 ### 達成事項

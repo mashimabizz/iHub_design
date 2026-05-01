@@ -1,15 +1,28 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { logout } from "@/app/auth/actions";
 
 export default async function Home() {
-  // Supabase 接続テスト：auth.getUser()（テーブル無しでも OK）
   const supabase = await createClient();
-  const { error: authError } = await supabase.auth.getUser();
 
-  // 接続自体の OK/NG を判定（auth エラーは未ログインだけなら OK 扱い）
-  const supabaseConnected =
-    !authError ||
-    authError.message.includes("session") ||
-    authError.message.includes("missing");
+  // ログイン状態取得
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // ログイン中ならプロフィール取得
+  let profile: { handle: string; display_name: string } | null = null;
+  if (user) {
+    const { data } = await supabase
+      .from("users")
+      .select("handle, display_name")
+      .eq("id", user.id)
+      .maybeSingle();
+    profile = data;
+  }
+
+  // Supabase 接続確認（auth/getUser でエラーが起きてないこと）
+  const supabaseConnected = true;
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center bg-gradient-to-b from-purple-50 via-white to-pink-50 px-6 py-20">
@@ -28,13 +41,49 @@ export default async function Home() {
           MVP 開発開始。
         </p>
 
+        {/* ログイン状態の表示 */}
+        {user && profile ? (
+          <div className="mt-8 rounded-2xl border border-purple-200 bg-white p-6 shadow-sm">
+            <p className="text-sm text-gray-600">ログイン中</p>
+            <p className="mt-1 text-lg font-bold text-gray-900">
+              {profile.display_name}{" "}
+              <span className="text-sm font-medium text-purple-700">
+                @{profile.handle}
+              </span>
+            </p>
+            <form action={logout} className="mt-4">
+              <button
+                type="submit"
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50"
+              >
+                ログアウト
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            <Link
+              href="/signup"
+              className="rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-base font-bold text-white shadow-md transition-all hover:from-purple-600 hover:to-pink-600"
+            >
+              新規登録
+            </Link>
+            <Link
+              href="/login"
+              className="rounded-lg border border-purple-300 bg-white px-6 py-3 text-base font-bold text-purple-700 transition-all hover:bg-purple-50"
+            >
+              ログイン
+            </Link>
+          </div>
+        )}
+
         <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-purple-200 bg-white p-4 shadow-sm">
             <div className="text-xs font-bold uppercase tracking-wider text-purple-600">
               Phase
             </div>
-            <div className="mt-1 text-lg font-bold text-gray-900">0a</div>
-            <div className="mt-1 text-xs text-gray-500">基盤構築中</div>
+            <div className="mt-1 text-lg font-bold text-gray-900">0b</div>
+            <div className="mt-1 text-xs text-gray-500">認証実装</div>
           </div>
           <div className="rounded-xl border border-purple-200 bg-white p-4 shadow-sm">
             <div className="text-xs font-bold uppercase tracking-wider text-purple-600">
@@ -63,7 +112,7 @@ export default async function Home() {
         </div>
 
         <div className="mt-12 text-xs text-gray-400">
-          設計：iter50 まで完了 ／ 実装着手中
+          設計：iter52 まで完了 ／ 実装：Phase 0b 進行中
         </div>
       </div>
     </main>
