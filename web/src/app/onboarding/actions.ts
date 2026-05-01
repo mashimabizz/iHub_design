@@ -275,3 +275,33 @@ export async function saveMembers(
   revalidatePath("/onboarding/area");
   return undefined;
 }
+
+// ----------------------------------------------------------------------
+// saveArea: 活動エリアを保存して onboarding 完了
+// ----------------------------------------------------------------------
+export async function saveArea(areas: string[]): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // カンマ区切りで保存（空ならスキップ）
+  const value = areas.length > 0 ? areas.join(",") : null;
+
+  const { error } = await supabase
+    .from("users")
+    .update({
+      primary_area: value,
+      account_status: "active", // onboarding 完了 → active
+    })
+    .eq("id", user.id);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/onboarding/done");
+  revalidatePath("/", "layout"); // ホームの user 表示も更新
+  return undefined;
+}
