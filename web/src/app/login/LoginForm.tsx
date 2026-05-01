@@ -3,10 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { login } from "@/app/auth/actions";
-import {
-  PrimaryButton,
-  secondaryBaseClass,
-} from "@/components/auth/PrimaryButton";
+import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
 export function LoginForm() {
   const [pending, setPending] = useState(false);
@@ -97,7 +94,7 @@ export function LoginForm() {
         type="button"
         disabled
         title="準備中"
-        className={`mt-5 ${secondaryBaseClass}`}
+        className="relative mt-5 flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-[14px] border-[1.5px] border-solid border-[#a695d855] bg-white px-4 py-[13px] text-sm font-bold text-gray-900 transition-all duration-150 hover:bg-[#a695d80d] hover:border-[#a695d899] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
       >
         <GoogleIcon />
         Googleでログイン

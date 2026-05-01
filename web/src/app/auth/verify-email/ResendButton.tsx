@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { resendVerification } from "@/app/auth/actions";
 import { Spinner } from "@/components/auth/Spinner";
-import { secondaryBaseClass } from "@/components/auth/PrimaryButton";
 import { useRipple } from "@/components/auth/useRipple";
 
 const COOLDOWN_SECONDS = 60;
@@ -65,7 +64,7 @@ export function ResendButton({
         onClick={handleResend}
         onMouseDown={(e) => !disabled && trigger(e, ref.current)}
         disabled={disabled}
-        className={secondaryBaseClass}
+        className="relative flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-[14px] border-[1.5px] border-solid border-[#a695d855] bg-white px-4 py-[13px] text-sm font-bold text-gray-900 transition-all duration-150 hover:bg-[#a695d80d] hover:border-[#a695d899] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span className="relative z-10 flex items-center gap-2">
           {pending ? (
