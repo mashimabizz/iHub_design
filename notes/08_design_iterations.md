@@ -419,6 +419,119 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション50：Supabase 接続 + Next.js 16 Proxy 対応
+
+### 背景
+
+iter49 で web/ プロジェクト初期化済。次はSupabase 接続。
+ユーザーが新規 Supabase プロジェクト `ihub` を作成し、API URL + Publishable key + Secret key を共有。
+
+### 作業中の発見
+
+#### 新キーフォーマット（Supabase 2024+）
+
+旧:
+- `eyJhbGciOiJIUzI1NiI...` JWT形式の anon key / service_role key
+
+新:
+- `sb_publishable_xxx`（旧 anon key、ブラウザ用、公開可）
+- `sb_secret_xxx`（旧 service_role key、サーバー専用、秘密）
+
+`web/.env.local.example` も新naming convention で更新。
+
+#### Next.js 16 で `middleware` → `proxy` にリネーム
+
+ビルド時に warning：
+> The "middleware" file convention is deprecated. Please use "proxy" instead.
+
+Next.js 16 の規約変更。`src/middleware.ts` を `src/proxy.ts` にリネーム、関数名も `middleware()` → `proxy()` に変更。機能は同じ。
+
+### 変更内容
+
+#### `web/.env.local`（gitignore済、commit対象外）
+- NEXT_PUBLIC_SUPABASE_URL
+- NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+- SUPABASE_SECRET_KEY
+
+#### `web/.gitignore` 修正
+- `.env*` のままだと `.env.local.example` も除外される問題を修正
+- `!.env.local.example` `!.env.example` を追加して例外指定
+
+#### Supabase ライブラリインストール
+- `@supabase/supabase-js@2.105.1`
+- `@supabase/ssr@0.10.2`（Next.js SSR 対応、旧 auth-helpers の後継）
+
+#### `web/src/lib/supabase/` 新規作成
+- `client.ts`: `createBrowserClient`（Client Component 用）
+- `server.ts`: `createServerClient`（Server Component / Route Handler 用）+ `createServiceRoleClient`（特権処理用）
+- `middleware.ts`: `updateSession`（セッション refresh ヘルパー）
+
+#### `web/src/proxy.ts`（旧 middleware.ts）
+- Next.js 16 規約に従って `proxy.ts` にリネーム
+- 関数名 `middleware()` → `proxy()` に変更
+- 全リクエストでセッション更新（matcher で静的ファイルは除外）
+
+#### `web/src/app/page.tsx` 更新
+- Supabase 接続テスト追加（auth.getUser を試行）
+- 接続状態を3列目のカードで表示（`✓ 接続` 緑 / `✗ 失敗` 赤）
+
+### 動作確認
+
+```bash
+cd web && npm run build
+# ✅ ビルド成功、警告なし
+# ✅ Proxy (Middleware) で表示される
+# ✅ static + dynamic ルート両方OK
+```
+
+### Phase 0a 進捗
+
+```
+✅ Step 1-5: Next.js 初期化（iter49）
+✅ Step 6: Supabase 既存削除（ユーザー）
+✅ Step 7: Supabase 新規作成（ユーザー、Tokyo region）
+✅ Step 8: API keys 共有（Publishable + Secret）
+✅ Step 9: web/.env.local 設定
+✅ Step 10: Supabase クライアント初期化（browser / server / SSR proxy）
+✅ Step 11: 接続テスト追加（page.tsx）
+
+📋 残タスク:
+[ ] Vercel 既存削除（ユーザー）
+[ ] Vercel 新規プロジェクト作成（ユーザー、GitHub iHub_design 連携）
+[ ] Vercel に環境変数登録（ユーザー、Supabase URL/keys）
+[ ] Vercel デプロイ確認
+[ ] Vercel カスタムドメインに ihub.tokyo 設定（ユーザー）
+[ ] お名前.com で DNS 確認/更新（ユーザー）
+[ ] https://ihub.tokyo で「Hello iHub」表示確認
+```
+
+### 関連ファイル
+
+新規:
+- `web/src/lib/supabase/client.ts`
+- `web/src/lib/supabase/server.ts`
+- `web/src/lib/supabase/middleware.ts`
+- `web/src/proxy.ts`（旧 middleware.ts をリネーム）
+
+更新:
+- `web/.gitignore`：env.example の除外解除
+- `web/.env.local.example`：新キー名に更新
+- `web/.env.local`：実値設定（gitignore で除外）
+- `web/package.json`: @supabase/supabase-js + @supabase/ssr 追加
+- `web/src/app/page.tsx`: Supabase 接続テスト追加
+
+⚠️ `.env.local` は git に push されない（.gitignore済）。Secret key は安全に管理。
+
+### 次のステップ
+
+ユーザー対応待ち：
+1. Vercel 既存 ihub プロジェクト削除
+2. Vercel 新規プロジェクト作成・GitHub iHub_design 連携
+3. 環境変数登録（Supabase の3つ + APP_ENV）
+4. デプロイ → ihub.tokyo 接続
+
+---
+
 ## イテレーション49：Phase 0a 着手 — Next.js 16 プロジェクト初期化
 
 ### 背景
