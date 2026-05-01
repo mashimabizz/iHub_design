@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { saveOshi } from "@/app/onboarding/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
@@ -59,11 +60,18 @@ export function OshiForm({
   initialSelected: string[];
   pendingRequests: PendingRequest[];
 }) {
+  const router = useRouter();
   const [selected, setSelected] = useState<string[]>(initialSelected);
   const [filterGenreId, setFilterGenreId] = useState<string | "all">("all");
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 次画面を事前ロード
+  useEffect(() => {
+    router.prefetch("/onboarding/members");
+    router.prefetch("/onboarding/oshi/request");
+  }, [router]);
 
   // 「人気」判定: 各ジャンル内の上位N件
   const popularSet = useMemo(() => {
@@ -112,10 +120,12 @@ export function OshiForm({
     setPending(true);
     setError(null);
     const result = await saveOshi(selected);
-    setPending(false);
     if (result?.error) {
+      setPending(false);
       setError(result.error);
+      return;
     }
+    router.push("/onboarding/members");
   }
 
   return (

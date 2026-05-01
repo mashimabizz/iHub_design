@@ -3,10 +3,15 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-type ActionResult = { error?: string } | void;
+/**
+ * Server Action は redirect せず、success/error だけ返す。
+ * ナビゲーションは呼び出し側 Client Component で router.push する
+ * （体感速度を上げるため）。
+ */
+type ActionResult = { error?: string } | undefined;
 
 // ----------------------------------------------------------------------
-// saveGender: 性別を保存して /onboarding/oshi へ
+// saveGender: 性別を保存
 // ----------------------------------------------------------------------
 export async function saveGender(gender: string): Promise<ActionResult> {
   const valid = ["female", "male", "other", "no_answer"];
@@ -29,7 +34,7 @@ export async function saveGender(gender: string): Promise<ActionResult> {
     return { error: error.message };
   }
 
-  redirect("/onboarding/oshi");
+  return undefined;
 }
 
 // ----------------------------------------------------------------------
@@ -72,7 +77,7 @@ export async function saveOshi(
     return { error: insertError.message };
   }
 
-  redirect("/onboarding/members");
+  return undefined;
 }
 
 // ----------------------------------------------------------------------
@@ -107,5 +112,5 @@ export async function saveOshiRequest(input: {
     return { error: error.message };
   }
 
-  redirect("/onboarding/oshi");
+  return undefined;
 }

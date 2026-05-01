@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { saveOshiRequest } from "@/app/onboarding/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
@@ -15,12 +16,18 @@ export function RequestForm({
 }: {
   genres: { id: string; name: string }[];
 }) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [genreId, setGenreId] = useState<string>("");
   const [kind, setKind] = useState<"group" | "work" | "solo" | "">("");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 戻り先を事前ロード
+  useEffect(() => {
+    router.prefetch("/onboarding/oshi");
+  }, [router]);
 
   async function handleSubmit() {
     const trimmed = name.trim();
@@ -36,8 +43,13 @@ export function RequestForm({
       kind: kind || undefined,
       note: note.trim() || undefined,
     });
-    setPending(false);
-    if (result?.error) setError(result.error);
+    if (result?.error) {
+      setPending(false);
+      setError(result.error);
+      return;
+    }
+    router.push("/onboarding/oshi");
+    router.refresh(); // 「審査中」アイテムを再取得するために revalidate
   }
 
   return (

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { saveGender } from "@/app/onboarding/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
@@ -12,11 +13,17 @@ const OPTIONS: { value: string; label: string }[] = [
 ];
 
 export function GenderForm({ initialValue }: { initialValue?: string | null }) {
+  const router = useRouter();
   const [selected, setSelected] = useState<string | undefined>(
     initialValue ?? undefined,
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 次画面を事前ロード（押す前に prefetch されるので体感が早くなる）
+  useEffect(() => {
+    router.prefetch("/onboarding/oshi");
+  }, [router]);
 
   async function handleSubmit() {
     if (!selected) {
@@ -26,11 +33,13 @@ export function GenderForm({ initialValue }: { initialValue?: string | null }) {
     setPending(true);
     setError(null);
     const result = await saveGender(selected);
-    // success だと redirect されるのでここには到達しない
-    setPending(false);
     if (result?.error) {
+      setPending(false);
       setError(result.error);
+      return;
     }
+    // 成功 → クライアント側で即座に遷移（prefetch 済み）
+    router.push("/onboarding/oshi");
   }
 
   return (
