@@ -43,7 +43,7 @@ const baseClass = `
  */
 export const secondaryBaseClass = `
   relative flex w-full items-center justify-center gap-2.5 overflow-hidden
-  rounded-2xl border-[1.5px] border-ihub-lavender/35 bg-white
+  rounded-2xl border-[1.5px] border-solid border-ihub-lavender/35 bg-white
   px-4 py-3 text-sm font-bold text-gray-900
   transition-all duration-150
   hover:bg-ihub-lavender/5 hover:border-ihub-lavender/55
