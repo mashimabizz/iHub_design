@@ -11,17 +11,17 @@ import { Spinner } from "./Spinner";
 import { useRipple } from "./useRipple";
 
 /**
- * モックアップ AOPrimaryButton 準拠：
- * - 3色グラデ（lavender → sky → pink, 135deg）
+ * モックアップ AOPrimaryButton 完全準拠：
+ * - linear-gradient(135deg, #a695d8, #a8d4e6, #f3c5d4) = lavender→sky→pink
+ *   ※ bg-gradient-to-br は要素の対角線方向で角度がズレるので arbitrary で固定
  * - 影：rgba(166,149,216,0.33) で柔らかいパープル
  * - rounded-2xl（borderRadius 14 相当）
- * - hover で軽く明るくする（brightness-105）
- * - active で 0.97 縮小（A: タクタイル感）
- * - disabled / pending で 50% に薄まる
+ * - hover で軽く明るく（brightness-105）
+ * - active で 0.97 縮小
  */
 const baseClass = `
   relative block w-full overflow-hidden rounded-2xl
-  bg-gradient-to-br from-ihub-lavender via-ihub-sky to-ihub-pink
+  bg-[linear-gradient(135deg,#a695d8,#a8d4e6,#f3c5d4)]
   px-4 py-3.5 text-center text-base font-bold text-white
   shadow-[0_8px_22px_rgba(166,149,216,0.33)]
   transition-all duration-150
@@ -31,9 +31,10 @@ const baseClass = `
 `;
 
 /**
- * モックアップ AOSecondaryButton 準拠：
+ * モックアップ AOSecondaryButton 完全準拠：
  * - 白背景
- * - 1.5px の紫透明枠（lavender + 33% 透明）
+ * - 1.5px の紫透明枠（#a695d8 33%透明 = #a695d859）
+ *   ※ 確実な arbitrary value で固定
  * - 黒テキスト（ink 色）
  * - rounded-2xl
  * - hover でうっすら紫に
@@ -43,10 +44,10 @@ const baseClass = `
  */
 export const secondaryBaseClass = `
   relative flex w-full items-center justify-center gap-2.5 overflow-hidden
-  rounded-2xl border-[1.5px] border-solid border-ihub-lavender/35 bg-white
+  rounded-2xl border-[1.5px] border-solid border-[#a695d855] bg-white
   px-4 py-3 text-sm font-bold text-gray-900
   transition-all duration-150
-  hover:bg-ihub-lavender/5 hover:border-ihub-lavender/55
+  hover:bg-[#a695d80d] hover:border-[#a695d899]
   active:scale-[0.97]
   disabled:cursor-not-allowed disabled:opacity-50
 `;
