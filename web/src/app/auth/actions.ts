@@ -2,7 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+  createServiceRoleClient,
+} from "@/lib/supabase/server";
 
 /**
  * 認証 Server Actions
@@ -52,15 +55,31 @@ export async function signup(formData: FormData): Promise<AuthResult> {
 
   const supabase = await createClient();
 
-  // ハンドル重複チェック（事前）
-  const { data: existing } = await supabase
+  // ハンドル重複チェック（未認証ユーザーは自動 cleanup）
+  // 過去に signup したけどメール認証してないユーザーがハンドルを占有している場合、
+  // ハンドル名で再登録できなくなる（iter56 の積み残し）。
+  // → 既存ユーザーの auth.email_confirmed_at を確認、未認証なら admin API で削除。
+  const { data: existingHandleUser } = await supabase
     .from("users")
-    .select("handle")
+    .select("id")
     .eq("handle", handle)
     .maybeSingle();
 
-  if (existing) {
-    return { fieldErrors: { handle: "このハンドル名は既に使われています" } };
+  if (existingHandleUser) {
+    const adminSupabase = createServiceRoleClient();
+    const { data: authUserData } =
+      await adminSupabase.auth.admin.getUserById(existingHandleUser.id);
+
+    if (authUserData?.user && !authUserData.user.email_confirmed_at) {
+      // 未認証 → 削除（ON DELETE CASCADE で public.users も自動削除）
+      await adminSupabase.auth.admin.deleteUser(existingHandleUser.id);
+      // 後続の signUp に進む
+    } else {
+      // 認証済（or 取得失敗）→ ハンドル既使用エラー
+      return {
+        fieldErrors: { handle: "このハンドル名は既に使われています" },
+      };
+    }
   }
 
   // Supabase Auth で signup
