@@ -131,10 +131,50 @@ export async function saveOshiRequest(input: {
 }
 
 // ----------------------------------------------------------------------
+// saveCharacterRequest: メンバー追加リクエストを送信
+// ----------------------------------------------------------------------
+export async function saveCharacterRequest(input: {
+  groupId: string;
+  name: string;
+  note?: string;
+}): Promise<ActionResult> {
+  const name = input.name.trim();
+  if (!name || name.length > 100) {
+    return { error: "メンバー名は 1〜100 文字で入力してください" };
+  }
+  if (!input.groupId) {
+    return { error: "グループの指定が不正です" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase.from("character_requests").insert({
+    user_id: user.id,
+    group_id: input.groupId,
+    requested_name: name,
+    note: input.note?.trim() || null,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/onboarding/members");
+  return undefined;
+}
+
+// ----------------------------------------------------------------------
 // saveMembers: 各推しごとにメンバー選択（箱推し or 特定メンバー）を保存
 // ----------------------------------------------------------------------
 export async function saveMembers(
-  selections: Record<string, { isBox: boolean; memberIds: string[] }>,
+  selections: Record<
+    string,
+    { isBox: boolean; memberIds: string[]; requestIds: string[] }
+  >,
 ): Promise<ActionResult> {
   const supabase = await createClient();
   const {
@@ -168,6 +208,7 @@ export async function saveMembers(
     group_id: string | null;
     oshi_request_id: string | null;
     character_id?: string;
+    character_request_id?: string;
     kind: "box" | "specific" | "multi";
     priority: number;
   };
@@ -176,13 +217,16 @@ export async function saveMembers(
 
   for (const oshi of existing) {
     const sel = selections[oshi.id];
-    // 審査中（oshi_request_id 経由）はメンバー選択不可なので常に box 扱い
+    // 審査中グループ（oshi_request_id）はメンバー選択不可
     const isPendingRequest = !!oshi.oshi_request_id;
+    const totalMemberSelections =
+      (sel?.memberIds.length ?? 0) + (sel?.requestIds.length ?? 0);
+
     if (
       isPendingRequest ||
       !sel ||
       sel.isBox ||
-      sel.memberIds.length === 0
+      totalMemberSelections === 0
     ) {
       newRows.push({
         user_id: user.id,
@@ -192,13 +236,25 @@ export async function saveMembers(
         priority: p++,
       });
     } else {
-      const kind = sel.memberIds.length > 1 ? "multi" : "specific";
+      const kind = totalMemberSelections > 1 ? "multi" : "specific";
+      // characters_master 選択分
       for (const cid of sel.memberIds) {
         newRows.push({
           user_id: user.id,
           group_id: oshi.group_id,
           oshi_request_id: oshi.oshi_request_id,
           character_id: cid,
+          kind,
+          priority: p++,
+        });
+      }
+      // character_requests 選択分（審査中メンバー）
+      for (const rid of sel.requestIds) {
+        newRows.push({
+          user_id: user.id,
+          group_id: oshi.group_id,
+          oshi_request_id: oshi.oshi_request_id,
+          character_request_id: rid,
           kind,
           priority: p++,
         });

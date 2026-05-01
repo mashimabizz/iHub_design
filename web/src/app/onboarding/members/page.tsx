@@ -23,11 +23,15 @@ export default async function MembersPage() {
   if (!user) redirect("/login");
 
   // 並列クエリ
-  const [{ data: userOshiList }, { data: characters }] = await Promise.all([
+  const [
+    { data: userOshiList },
+    { data: characters },
+    { data: pendingCharacterRequests },
+  ] = await Promise.all([
     supabase
       .from("user_oshi")
       .select(
-        "id, group_id, oshi_request_id, character_id, kind, priority, group:groups_master(id, name), oshi_request:oshi_requests(id, requested_name)",
+        "id, group_id, oshi_request_id, character_id, character_request_id, kind, priority, group:groups_master(id, name), oshi_request:oshi_requests(id, requested_name)",
       )
       .eq("user_id", user.id)
       .order("priority", { ascending: true }),
@@ -35,6 +39,11 @@ export default async function MembersPage() {
       .from("characters_master")
       .select("id, group_id, name, display_order")
       .order("display_order", { ascending: true }),
+    supabase
+      .from("character_requests")
+      .select("id, group_id, requested_name, user_id, created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false }),
   ]);
 
   // 推し選択未完なら戻す
@@ -52,7 +61,8 @@ export default async function MembersPage() {
       groupId: string | null;
       groupName: string;
       isPendingRequest: boolean;
-      memberIds: string[]; // 既選択メンバー
+      memberIds: string[]; // 既選択 characters_master.id
+      requestIds: string[]; // 既選択 character_requests.id
       kind: "box" | "specific" | "multi";
       minPriority: number;
     }
@@ -68,8 +78,9 @@ export default async function MembersPage() {
 
     const existing = sectionMap.get(key);
     if (existing) {
-      // 同じ group の追加 row（複数メンバー選択時）
       if (o.character_id) existing.memberIds.push(o.character_id);
+      if (o.character_request_id)
+        existing.requestIds.push(o.character_request_id);
       if (o.priority < existing.minPriority) {
         existing.minPriority = o.priority;
         existing.oshiId = o.id;
@@ -81,6 +92,7 @@ export default async function MembersPage() {
         groupName: groupRel?.name ?? reqRel?.requested_name ?? "(不明)",
         isPendingRequest: !!o.oshi_request_id,
         memberIds: o.character_id ? [o.character_id] : [],
+        requestIds: o.character_request_id ? [o.character_request_id] : [],
         kind: (o.kind ?? "box") as "box" | "specific" | "multi",
         minPriority: o.priority,
       });
@@ -96,6 +108,20 @@ export default async function MembersPage() {
     charsByGroup.set(c.group_id, arr);
   }
 
+  // 審査中メンバー（character_requests）を group_id ごとにマップ化
+  type PendingMember = { id: string; name: string; isMine: boolean };
+  const pendingByGroup = new Map<string, PendingMember[]>();
+  for (const r of pendingCharacterRequests ?? []) {
+    if (!r.group_id) continue;
+    const arr = pendingByGroup.get(r.group_id) ?? [];
+    arr.push({
+      id: r.id,
+      name: r.requested_name,
+      isMine: r.user_id === user.id,
+    });
+    pendingByGroup.set(r.group_id, arr);
+  }
+
   // section 構築（minPriority 順）
   const sections: Section[] = Array.from(sectionMap.values())
     .sort((a, b) => a.minPriority - b.minPriority)
@@ -105,17 +131,19 @@ export default async function MembersPage() {
       groupName: s.groupName,
       isPendingRequest: s.isPendingRequest,
       members: s.groupId ? (charsByGroup.get(s.groupId) ?? []) : [],
+      pendingMembers: s.groupId ? (pendingByGroup.get(s.groupId) ?? []) : [],
     }));
 
   // 既存選択の初期値構築
   const initialSelections: Record<
     string,
-    { isBox: boolean; memberIds: string[] }
+    { isBox: boolean; memberIds: string[]; requestIds: string[] }
   > = {};
   for (const s of sectionMap.values()) {
     initialSelections[s.oshiId] = {
       isBox: s.kind === "box",
       memberIds: s.memberIds,
+      requestIds: s.requestIds,
     };
   }
 
