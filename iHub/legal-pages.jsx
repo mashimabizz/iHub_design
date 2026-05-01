@@ -315,13 +315,14 @@ function LegalNotice({ tweaks }) {
           border: `0.5px solid ${c.divide}`,
           padding: '4px 16px', marginBottom: 18,
         }}>
-          <LPDataRow colors={c} label="販売事業者" value="松尾 満天（個人事業主）" />
-          <LPDataRow colors={c} label="運営責任者" value="松尾 満天" />
+          <LPDataRow colors={c} label="代表者名" value={
+            <>非公表<br/><span style={{ fontSize: 11, color: c.mute }}>※代表者のプライバシーに関わる事項のため公表しておりません。理由を明示のうえ問い合わせをいただきましたら、遅滞なく回答いたします。</span></>
+          } />
           <LPDataRow colors={c} label="所在地" value={
-            <>東京都＊＊＊区<br/><span style={{ fontSize: 11, color: c.mute }}>※詳細住所は請求があれば遅滞なく開示します</span></>
+            <>非公表<br/><span style={{ fontSize: 11, color: c.mute }}>※同上</span></>
           } />
           <LPDataRow colors={c} label="電話番号" value={
-            <>請求があれば遅滞なく開示<br/><span style={{ fontSize: 11, color: c.mute }}>※お問い合わせは原則メールで承ります</span></>
+            <>非公表<br/><span style={{ fontSize: 11, color: c.mute }}>※同上、お問い合わせは原則メールで承ります</span></>
           } />
           <LPDataRow colors={c} label="メールアドレス" value="hello@ihub.example.com" />
           <LPDataRow colors={c} label="受付時間" value="平日 10:00〜18:00（土日祝・年末年始を除く）" last />
@@ -380,7 +381,7 @@ function LegalNotice({ tweaks }) {
           borderTop: `0.5px solid ${c.divide}`,
         }}>
           掲載日：2026年5月1日<br/>
-          松尾 満天（iHub 運営）
+          iHub 運営
         </div>
       </div>
     </div>

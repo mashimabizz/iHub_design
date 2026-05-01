@@ -14,8 +14,31 @@
 3. **`notes/09_state_machines.md` の目次を確認**（状態名を間違えないため）
 4. **`notes/08_design_iterations.md` の最新 iter を 1〜2件読む**（直近のコンテキスト）
 5. **オーナーがタスク的な指示をした場合は `notes/USER_PLAYBOOK.md` を確認**（Phase 2 タスク・指示テンプレ・チェックポイントが集約されている）
+6. **法的文書（規約・プライバシー・特商法）に関わる作業は `notes/17_legal_alignment.md` を確認**（弁護士納品の規約原典との整合性管理）
 
 これらを読まずに作業を始めない。
+
+## 📜 重要な用語ルール（iter46 確定）
+
+旧規約用語（`利用規約など/` 内docx）と現状 iHub の用語マッピング：
+
+| 旧規約 | 新（iHub） | 備考 |
+|---|---|---|
+| ダイレクトメッセージ / DM | **取引チャット** | iter46 統一 |
+| 交換依頼 | **打診（proposal）** | iter46 統一 |
+| ~~交換募集 / 募集情報 / 募集登録~~ | （概念消滅） | 在庫登録（kind=for_trade）に吸収 |
+| ~~MyLog / MyLog投稿 / 投稿コンテンツ~~ | （削除） | iter46 で MVP 対象外 |
+| ~~郵送 / 本人確認（身分証）~~ | （削除） | iter46 で現地のみ |
+
+**「交換募集」「交換依頼」「ダイレクトメッセージ」「MyLog」「郵送」を新規ドキュメントに書かない。**
+詳細は `notes/10_glossary.md` §J 廃止用語、§M 規約原典マッピングを参照。
+
+## 🔒 法的文書の方針
+
+- **規約原典**：`利用規約など/` 配下の docx（弁護士納品、git管理外）
+- **代表者情報**：**非公表**（請求があれば回答）— 規約原典通り、`legal-pages.jsx` でも非公表
+- **規約改訂**：`notes/17_legal_alignment.md` で齟齬整理 → 弁護士再依頼
+- **`legal-pages.jsx` の値を変更する時は必ず `notes/17_legal_alignment.md` を確認**（規約原典と整合させる）
 
 ---
 
@@ -89,7 +112,14 @@
 | `08_design_iterations.md` | **設計判断の履歴** | **高（変更のたび）** |
 | `09_state_machines.md` | **状態遷移図（mermaid）** | 中（状態追加・変更時） |
 | `10_glossary.md` | **用語集＋廃止用語** | 中（用語追加時） |
-| `USER_PLAYBOOK.md` | **オーナー向け作業手順書（Phase 2タスク・指示テンプレ・チェックポイント）** | 中（フェーズ進行時） |
+| `11_screen_inventory.md` | 画面マトリクス（89画面） | 中（画面追加時） |
+| `12_screens/` | per-screen spec（主要5画面） | 中（実装中） |
+| `13_api_spec.md` | REST API仕様（70+ endpoints） | 中（API追加時） |
+| `14_implementation_phases.md` | 実装フェーズ分割 Phase 0〜6 | 中（Phase 進行時） |
+| `15_non_functional.md` | 非機能要件（プライバシー・セキュリティ等） | 低 |
+| `16_monetization.md` | マネタイズ戦略（広告・ブースト・Premium） | 中（戦略変更時） |
+| `17_legal_alignment.md` | **規約原典との整合性管理** | 中（規約改訂時） |
+| `USER_PLAYBOOK.md` | **オーナー向け作業手順書** | 中（フェーズ進行時） |
 
 ### `.claude/`（Claude設定）
 

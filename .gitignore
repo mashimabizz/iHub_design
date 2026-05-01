@@ -18,6 +18,10 @@
 .claude/settings.local.json
 .claude/cache/
 
+# 法的文書原典（弁護士納品 docx、個人情報・著作権配慮）
+# 詳細は notes/17_legal_alignment.md
+利用規約など/
+
 # Logs
 *.log
 npm-debug.log*
