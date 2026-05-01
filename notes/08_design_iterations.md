@@ -419,6 +419,83 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション48：メール構造を2つに簡素化 + ハンドル概念整理 + Supabase/Vercel 既設
+
+### 背景
+
+iter47 の確認後、ユーザーから3点の補足：
+1. `privacy@ihub.tokyo` は実在しない（不要）
+2. 「ハンドル名」の意味を確認 → 公式 X アカウント名のことと判明
+3. Supabase / Vercel は既に作成済み（アカウント作成不要）
+
+### 修正
+
+#### メール構造を 3 → 2 に簡素化
+
+| メール | 用途 |
+|---|---|
+| `support@ihub.tokyo` | メイン（新規登録・問い合わせ・サポート・**個人情報保護関係も**） |
+| `info@ihub.tokyo` | お知らせ・通知系 |
+
+`privacy@` は廃止、`support@` に統合。
+
+#### 「ハンドル」用語の整理
+
+2種類の意味を明確化：
+
+| 種類 | 意味 | 例 | 必要性 |
+|---|---|---|---|
+| **A. iHubユーザーのハンドル** | アプリ内ユーザー識別子（システムフィールド） | `@hana_lumi`、`@lumi_sua` | **必須** |
+| **B. iHub公式 X アカウント** | 運営の広報用 X アカウント | `@ihub_jp` 等 | **当面なし、Phase β以降検討** |
+
+iter45-47 で「対外ハンドル `@ihub_jp` 暫定」と書いていたが、これは B（公式X）を指していた。
+ユーザー判断：**当面 X アカウントは作らない**。Phase β（マネタイズ開始時期）以降に広報強化が必要になったら検討。
+
+#### Supabase / Vercel：既設利用
+
+ユーザーが既に Supabase / Vercel アカウントを作成済み。Phase 0a で**新規プロジェクトのみ作成**する：
+- Supabase 新規プロジェクト作成（既アカウント内に iHub 専用）
+- Vercel 新規プロジェクト作成（既アカウント内に iHub 専用）
+
+### 変更ファイル
+
+- `iHub/legal-pages.jsx`：`privacy@ihub.tokyo` → `support@ihub.tokyo`
+- `notes/15_non_functional.md`：3メール → 2メール
+- `notes/16_monetization.md`：
+  - 3メール → 2メール
+  - 「対外ハンドル」 → 「公式X アカウント未作成」
+  - 未確定項目の「対外ハンドル」を Phase β 検討項目に
+- `notes/17_legal_alignment.md`：
+  - メールアドレスを 2構造に
+  - 「プライバシーポリシーの個人情報保護管理者連絡先も support@ に統一」TODO追加
+
+### Phase 0a 着手プラン（更新）
+
+```
+旧プラン:
+  Step 1: Supabase アカウント作成 ← 不要（既設）
+  Step 2: Vercel アカウント作成 ← 不要（既設）
+
+新プラン:
+  Step 1: GitHub 上に実装リポ作成（推奨：「ihub」小文字）
+  Step 2: Next.js プロジェクト初期化（npx create-next-app@latest）
+  Step 3: 既存 Supabase アカウントに iHub 専用プロジェクト作成
+  Step 4: 既存 Vercel アカウントに iHub_app プロジェクト作成 → デプロイ
+  Step 5: お名前.com で DNS 設定 → ihub.tokyo を Vercel に向ける
+```
+
+所要時間：1〜2 セッション（合計 2〜4 時間）
+
+### 確認したい残事項
+
+1. 実装リポジトリ名：**`ihub`**（小文字、ドメインと統一）でOK？
+2. Supabase 新規プロジェクト名：**`ihub-mvp`** or 別案？
+3. Vercel 新規プロジェクト名：**`ihub`** or 別案？
+
+これらが決まったら **Phase 0a 即着手** 可能。
+
+---
+
 ## イテレーション47：ドメイン・メール構造確定 + 弁護士OK 判明
 
 ### 背景

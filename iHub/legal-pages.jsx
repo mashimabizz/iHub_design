@@ -271,7 +271,7 @@ function PrivacyPolicy({ tweaks }) {
           個人情報の取り扱いに関するお問い合わせは、以下の窓口までご連絡ください。<br/>
           <br/>
           <b style={{ color: c.ink }}>iHub 個人情報保護管理者</b><br/>
-          メール：privacy@ihub.tokyo<br/>
+          メール：support@ihub.tokyo<br/>
           受付時間：平日 10:00〜18:00（土日祝・年末年始を除く）
         </LPArticle>
 
