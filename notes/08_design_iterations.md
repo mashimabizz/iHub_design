@@ -419,6 +419,98 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション55：Brevo SMTP セットアップ完了 + Phase 0b-2 認証フロー全動作確認
+
+### 達成事項
+
+iter53 の Auth フロー実装＋ iter54 のフォールバック対応を経て、本 iter で **メール送信の本番運用基盤（Brevo）を構築し、認証フローが iHub.tokyo 上で end-to-end で動作することを確認**。Phase 0b-2 を完全完了。
+
+### 背景・問題意識
+
+iter53 直後に発生した問題：
+- Supabase 組み込み SMTP のレート制限（1時間3〜4通）に即詰まる
+- `email rate limit exceeded` で開発・テスト不可
+- 本番リリース前にカスタム SMTP 必須
+
+検討した選択肢：
+| 選択肢 | 結論 |
+|---|---|
+| Firebase Auth に戻す | ❌ Supabase RLS / Postgres 設計を全捨てになる |
+| AWS SES | △ コスパ最強（$0.10/1000通）だがサンドボックス解除など設定複雑 |
+| **Brevo（旧 Sendinblue）** | ⭐ 永続無料 300/日 / 設定簡単 / Supabase 公式手順あり |
+| Resend | △ 100/日（Brevo の1/3） |
+| ZeptoMail | △ 設定難易度中 |
+
+→ **Brevo 採用**（MVP 期は無料で運用可、スケール時は AWS SES へ移行）
+
+### 作業内容
+
+#### A. Brevo アカウント設定
+- 既存アカウント（前プロジェクト Bubble.io 用）に iHub 用 SMTP Key を追加発行
+- SMTP Key 名前：`iHub Production`（Standard variant・64文字）
+
+#### B. ドメイン認証（DKIM/SPF/DMARC）
+- お名前.com の DNS 管理画面で 4 レコード追加：
+
+| Type | Name | Value | 用途 |
+|---|---|---|---|
+| TXT | （空欄）| `brevo-code:b948bda79e385f2a3935fadb98f04ca7` | ドメイン所有確認 |
+| CNAME | `brevo1._domainkey` | `b1.ihub-tokyo.dkim.brevo.com` | DKIM 1 |
+| CNAME | `brevo2._domainkey` | `b2.ihub-tokyo.dkim.brevo.com` | DKIM 2 |
+| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com` | DMARC |
+
+→ Brevo の Authentication 完了
+
+#### C. Supabase に SMTP 接続情報を設定
+- Auth → SMTP Settings → Enable Custom SMTP: ON
+- Host: `smtp-relay.brevo.com`
+- Port: `587`
+- Username: Brevo の SMTP Login（`7b1d8e001@smtp-brevo.com`）
+- Password: Brevo SMTP Key
+- Sender email: **`support@ihub.tokyo`**
+- Sender name: **`iHub`**
+
+#### D. Brevo IP blocking の解除
+- Supabase Cloud（AWS 東京 `13.113.119.158` 等）が Brevo の Authorized IPs に含まれず、初回送信時に保留＋本人確認メールが飛ぶ事象が発生
+- **Brevo Security → Authorized IPs → SMTP keys → Deactivate for SMTP** を実施
+- 理由：Supabase Cloud は IP が変動するため個別認証は運用負担大／SMTP Key 厳重管理でセキュリティ担保
+
+#### E. End-to-end テスト成功
+- signup（Gmail エイリアス使用）
+- メール `iHub <support@ihub.tokyo>` から到着
+- 「Confirm your mail」リンク → `/auth/callback` で `exchangeCodeForSession` 成功
+- ホーム画面に「ログイン中 / ましま / @mashima / ログアウト」表示
+- iter54 のフォールバック（root に code が来た時の `/auth/callback` 転送）も正常動作
+
+### 影響範囲
+
+- 本番ドメイン `ihub.tokyo` から正規メール送信可能（DKIM/SPF/DMARC 完備）
+- 配信成功率：DKIM 認証済みのため Gmail/Yahoo 等での迷惑メール判定回避
+- 永続無料 300/日 → MVP 期は完全無料で運用可
+- スケール時の AWS SES 移行は SMTP credentials 差し替えのみ（DKIM/SPF レコードは流用可能）
+
+### Phase 0b-2 完了報告
+
+```
+✅ Phase 0a:    Vercel + Supabase 接続（iter49-51）
+✅ Phase 0b-1:  DB マイグレーション（iter52）
+✅ Phase 0b-2:  Auth 実装 + メール送信基盤（iter53-55）
+🔵 Phase 0b-3:  Onboarding 実装（次）
+```
+
+### 関連ファイル
+
+- 設定（コード変更なし）
+- `notes/08_design_iterations.md`（本 iter 追記）
+
+### 次の課題（メモ）
+
+- 認証メールのテンプレート日本語化（Supabase Auth → Email Templates）
+- Phase 0b-3：Onboarding（性別 / 推し / AW 初期）UI + Server Actions
+- Phase 0c：本登録時の `users.account_status` を `registered` → `verified` に同期する DB トリガー追加
+
+---
+
 ## イテレーション54：認証メール `/?code=xxx` フォールバック対応
 
 ### 背景・問題意識
