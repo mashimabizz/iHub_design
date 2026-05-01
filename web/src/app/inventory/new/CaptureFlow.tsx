@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
+import { CroppingCanvas, type CropResult } from "./CroppingCanvas";
+import { CropToast } from "./CropToast";
 
 type Master = { id: string; name: string };
 
@@ -36,6 +38,22 @@ export function CaptureFlow({
   // Step 2: 撮影/アップロード
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const supabase = createClient();
+
+  // Step 3: 切り抜き
+  const [crops, setCrops] = useState<CropResult[]>([]);
+  const [currentPhotoIdx, setCurrentPhotoIdx] = useState(0);
+  const [toastSignal, setToastSignal] = useState(0);
+  const [lastCropThumb, setLastCropThumb] = useState<string | undefined>();
+
+  function handleCropped(crop: CropResult) {
+    setCrops((prev) => [...prev, crop]);
+    setLastCropThumb(crop.dataUrl);
+    setToastSignal(Date.now());
+  }
+
+  function removeCrop(index: number) {
+    setCrops((prev) => prev.filter((_, i) => i !== index));
+  }
 
   // Step 1 → 2 へ進める条件
   const canProceedFromCommon = !!groupId && !!goodsTypeId;
@@ -303,27 +321,185 @@ export function CaptureFlow({
   }
 
   // ────────────────────────────────────────
-  // Step 3: 切り抜き（次回実装）
+  // Step 3: 切り抜き
   // ────────────────────────────────────────
   if (step === "crop") {
+    const uploadedPhotos = photos.filter((p) => p.status === "uploaded");
+    const safeIdx = Math.min(currentPhotoIdx, uploadedPhotos.length - 1);
+    const currentPhoto = uploadedPhotos[safeIdx];
+
+    if (!currentPhoto) {
+      return (
+        <div className="space-y-4">
+          <div className="rounded-xl bg-yellow-50 px-4 py-3 text-[12px] text-yellow-900">
+            アップロード済みの写真がありません。撮影に戻ってください。
+          </div>
+          <button
+            type="button"
+            onClick={() => setStep("shoot")}
+            className="flex h-11 w-full items-center justify-center rounded-2xl border border-[#3a324a14] bg-white text-[13px] font-semibold text-gray-700"
+          >
+            ← 撮影に戻る
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3 pb-4">
+        {/* ナビ：写真切替 */}
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            disabled={safeIdx === 0}
+            onClick={() => setCurrentPhotoIdx(safeIdx - 1)}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white border border-[#3a324a14] disabled:opacity-30"
+            aria-label="前の写真"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="#3a324a"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            >
+              <path d="M9 2L4 7l5 5" />
+            </svg>
+          </button>
+          <div className="text-[12px] font-bold text-gray-900 tabular-nums">
+            {safeIdx + 1} / {uploadedPhotos.length}
+          </div>
+          <button
+            type="button"
+            disabled={safeIdx === uploadedPhotos.length - 1}
+            onClick={() => setCurrentPhotoIdx(safeIdx + 1)}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white border border-[#3a324a14] disabled:opacity-30"
+            aria-label="次の写真"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="#3a324a"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            >
+              <path d="M5 2l5 5-5 5" />
+            </svg>
+          </button>
+        </div>
+
+        {/* キャンバス（ドラッグで切り抜き） */}
+        <CroppingCanvas
+          key={currentPhoto.url}
+          sourceUrl={currentPhoto.url}
+          onCropped={handleCropped}
+        />
+
+        {/* 切り抜き一覧 */}
+        <div>
+          <div className="mb-1.5 flex items-center justify-between text-[11px] text-gray-500">
+            <span>
+              切り抜き <b className="text-[#a695d8]">{crops.length}</b> 件
+            </span>
+          </div>
+          {crops.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#3a324a14] bg-white py-4 text-center text-[11px] text-gray-500">
+              まだ切り抜きはありません。
+              <br />
+              写真上でドラッグして範囲を選んでください。
+            </div>
+          ) : (
+            <div className="grid grid-cols-4 gap-1.5">
+              {crops.map((c, i) => (
+                <div
+                  key={i}
+                  className="relative overflow-hidden rounded-lg border border-[#3a324a14] bg-white"
+                  style={{ aspectRatio: "1 / 1" }}
+                >
+                  <img
+                    src={c.dataUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeCrop(i)}
+                    className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
+                    aria-label="削除"
+                  >
+                    <svg
+                      width="8"
+                      height="8"
+                      viewBox="0 0 10 10"
+                      fill="none"
+                      stroke="#fff"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    >
+                      <path d="M2 2l6 6M8 2l-6 6" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* アクションボタン */}
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setStep("shoot")}
+            className="flex h-12 items-center justify-center rounded-2xl border border-[#3a324a14] bg-white px-5 text-[13px] font-semibold text-gray-700"
+          >
+            戻る
+          </button>
+          <button
+            type="button"
+            disabled={crops.length === 0}
+            onClick={() => setStep("meta")}
+            className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#a695d8,#f3c5d4)] text-[14px] font-bold text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            次へ：ラベル設定 ({crops.length})
+          </button>
+        </div>
+
+        {/* トースト */}
+        <CropToast
+          signal={toastSignal}
+          message="切り抜きました"
+          thumbnail={lastCropThumb}
+        />
+      </div>
+    );
+  }
+
+  // ────────────────────────────────────────
+  // Step 4: ラベル設定（次回実装）
+  // ────────────────────────────────────────
+  if (step === "meta") {
     return (
       <div className="space-y-4">
         <div className="rounded-xl bg-[#f3c5d420] px-4 py-4 text-center">
           <div className="text-[14px] font-bold text-gray-900">
-            ✂️ 切り抜き機能
+            🏷 ラベル設定
           </div>
           <p className="mt-2 text-[12px] leading-relaxed text-gray-600">
             次の iter で実装します。
             <br />
-            ドラッグで矩形選択 → 自動切り抜き → トースト通知。
+            切り抜き {crops.length} 件にキャラ・タイトル・コンディションを設定。
           </p>
         </div>
         <button
           type="button"
-          onClick={() => setStep("shoot")}
+          onClick={() => setStep("crop")}
           className="flex h-11 w-full items-center justify-center rounded-2xl border border-[#3a324a14] bg-white text-[13px] font-semibold text-gray-700"
         >
-          ← 撮影に戻る
+          ← 切り抜きに戻る
         </button>
         <button
           type="button"
