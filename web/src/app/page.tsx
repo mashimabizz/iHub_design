@@ -1,8 +1,38 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/auth/actions";
 
-export default async function Home() {
+type Props = {
+  searchParams: Promise<{
+    code?: string;
+    error?: string;
+    error_code?: string;
+    error_description?: string;
+  }>;
+};
+
+export default async function Home({ searchParams }: Props) {
+  const params = await searchParams;
+
+  // フォールバック：認証コードが root に飛んできた場合は /auth/callback へ転送
+  // （Supabase Redirect URLs 設定漏れ・メールテンプレ古版・wwwドメイン経由など対策）
+  if (params.code) {
+    redirect(`/auth/callback?code=${params.code}`);
+  }
+
+  // フォールバック：認証エラーが root に飛んできた場合は /auth/auth-error へ転送
+  if (params.error) {
+    const errorParams = new URLSearchParams({
+      error: params.error,
+      ...(params.error_code && { error_code: params.error_code }),
+      ...(params.error_description && {
+        error_description: params.error_description,
+      }),
+    });
+    redirect(`/auth/auth-error?${errorParams.toString()}`);
+  }
+
   const supabase = await createClient();
 
   // ログイン状態取得

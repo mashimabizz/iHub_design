@@ -419,6 +419,83 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション54：認証メール `/?code=xxx` フォールバック対応
+
+### 背景・問題意識
+
+iter53 で Auth フロー実装後、`Confirm your mail` メールリンクをクリックすると以下のような URL に飛んでしまう事象が発生：
+
+```
+❌ https://ihub.tokyo/?code=9961e53b-2a89-41bf-b972-d156d3e97f73
+```
+
+期待していた挙動：
+```
+✅ https://ihub.tokyo/auth/callback?code=xxx
+```
+
+ルート (`/`) は `page.tsx` がレンダリングされるだけで code 処理ロジックがないため、**確認コードが検証されないままトップページが表示され、ユーザーは認証完了状態にならない**。
+
+### 原因
+
+Supabase Auth の Redirect URLs allowlist 未設定／設定遅延／メールテンプレ古版／www サブドメイン経由など、本番環境で `redirect_to` が想定外の値になるケースが複数存在する。
+
+ユーザー側の Supabase URL Configuration は本 iter 時点で正しく設定済（Site URL=`https://ihub.tokyo`、Redirect URLs に 3 つの `/auth/callback` を登録）だが、**設定変更前に送信された確認メールには古い fallback URL が焼き込まれている**ため、過去メールでの認証は失敗する。
+
+### 変更内容
+
+#### `web/src/app/page.tsx`
+- `searchParams` を Props で受け取り、`code` クエリ検出時に `/auth/callback?code=xxx` へサーバーサイドリダイレクト
+- `error` クエリ検出時には `/auth/auth-error?error=xxx&error_code=xxx&error_description=xxx` へリダイレクト
+- 既存のログイン状態判定ロジックは維持
+
+```typescript
+type Props = {
+  searchParams: Promise<{
+    code?: string;
+    error?: string;
+    error_code?: string;
+    error_description?: string;
+  }>;
+};
+
+export default async function Home({ searchParams }: Props) {
+  const params = await searchParams;
+  if (params.code) {
+    redirect(`/auth/callback?code=${params.code}`);
+  }
+  if (params.error) {
+    const errorParams = new URLSearchParams({
+      error: params.error,
+      ...(params.error_code && { error_code: params.error_code }),
+      ...(params.error_description && { error_description: params.error_description }),
+    });
+    redirect(`/auth/auth-error?${errorParams.toString()}`);
+  }
+  // ... 既存のログイン状態判定
+}
+```
+
+### 効果
+
+- メールが古い設定状態で送信されていても、root に飛んできた認証コードを `/auth/callback` で正しく検証できる
+- Supabase 側の設定漏れに対する保険として恒常的に機能（ローカル開発・別ドメイン経由など）
+- 認証エラー（`?error=access_denied&error_code=otp_expired` など）も `/auth/auth-error` に正しく誘導される
+
+### 確認方法
+
+1. `npm run build` でビルド成功（6 routes 不変）
+2. Vercel 再デプロイ後、新たに signup → 受信メールリンクをクリック
+3. `/auth/callback` または root → `/auth/callback` 転送経由でログイン状態に到達
+
+### 関連ファイル
+
+- `web/src/app/page.tsx`（修正）
+- `web/src/app/auth/callback/route.ts`（既存・修正なし）
+- `web/src/app/auth/auth-error/page.tsx`（既存・修正なし）
+
+---
+
 ## イテレーション53：Phase 0b-2 — Auth フロー実装（signup / login / logout）
 
 ### 達成事項
