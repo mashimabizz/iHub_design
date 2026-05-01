@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { signup } from "@/app/auth/actions";
+import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
 // パスワード強度判定（モックアップ準拠：4段階バー）
 function getPasswordStrength(pw: string): {
@@ -273,13 +274,14 @@ export function SignUpForm() {
       )}
 
       {/* 送信ボタン（モックアップ「次へ」） */}
-      <button
+      <PrimaryButton
         type="submit"
-        disabled={pending || !canSubmit}
-        className="w-full rounded-xl bg-gradient-to-r from-purple-400 to-pink-300 px-4 py-3.5 text-base font-bold text-white shadow-md transition-all hover:from-purple-500 hover:to-pink-400 disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={!canSubmit}
+        pending={pending}
+        pendingLabel="登録中..."
       >
-        {pending ? "登録中..." : "次へ"}
-      </button>
+        次へ
+      </PrimaryButton>
     </form>
   );
 }

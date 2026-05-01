@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { passwordReset } from "@/app/auth/actions";
+import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
 export function ResetForm() {
   const [pending, setPending] = useState(false);
@@ -49,13 +50,13 @@ export function ResetForm() {
         </div>
       )}
 
-      <button
+      <PrimaryButton
         type="submit"
-        disabled={pending}
-        className="w-full rounded-xl bg-gradient-to-r from-purple-400 to-pink-300 px-4 py-3.5 text-base font-bold text-white shadow-md transition-all hover:from-purple-500 hover:to-pink-400 disabled:cursor-not-allowed disabled:opacity-50"
+        pending={pending}
+        pendingLabel="送信中..."
       >
-        {pending ? "送信中..." : "リセットメールを送信"}
-      </button>
+        リセットメールを送信
+      </PrimaryButton>
     </form>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { resendVerification } from "@/app/auth/actions";
+import { Spinner } from "@/components/auth/Spinner";
 
 const COOLDOWN_SECONDS = 60;
 
@@ -49,11 +50,6 @@ export function ResendButton({
   }
 
   const disabled = pending || cooldown > 0;
-  const label = pending
-    ? "送信中..."
-    : cooldown > 0
-      ? `再送信する（あと ${cooldown} 秒）`
-      : "再送信する";
 
   return (
     <div>
@@ -61,9 +57,18 @@ export function ResendButton({
         type="button"
         onClick={handleResend}
         disabled={disabled}
-        className="w-full rounded-xl border border-purple-200 bg-white px-4 py-3 text-sm font-bold text-purple-600 transition-all hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-purple-200 bg-white px-4 py-3 text-sm font-bold text-purple-600 transition-all duration-150 hover:bg-purple-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {label}
+        {pending ? (
+          <>
+            <Spinner size={16} />
+            <span>送信中...</span>
+          </>
+        ) : cooldown > 0 ? (
+          <span>再送信する（あと {cooldown} 秒）</span>
+        ) : (
+          <span>再送信する</span>
+        )}
       </button>
       {message && (
         <p className="mt-2 text-xs text-emerald-600">{message}</p>

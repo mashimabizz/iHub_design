@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { PrimaryLinkButton } from "@/components/auth/PrimaryButton";
 
 export const metadata = {
   title: "認証完了 — iHub",
@@ -67,12 +67,9 @@ export default async function EmailConfirmedPage() {
 
         {/* 進むボタン */}
         <div>
-          <Link
-            href="/onboarding/gender"
-            className="block w-full rounded-xl bg-gradient-to-r from-purple-400 to-pink-300 px-4 py-3.5 text-center text-base font-bold text-white shadow-md transition-all hover:from-purple-500 hover:to-pink-400"
-          >
+          <PrimaryLinkButton href="/onboarding/gender">
             プロフィール設定へ進む
-          </Link>
+          </PrimaryLinkButton>
         </div>
       </div>
     </main>

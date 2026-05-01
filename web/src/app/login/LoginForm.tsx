@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { login } from "@/app/auth/actions";
+import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
 export function LoginForm() {
   const [pending, setPending] = useState(false);
@@ -72,13 +73,13 @@ export function LoginForm() {
           </div>
         )}
 
-        <button
+        <PrimaryButton
           type="submit"
-          disabled={pending}
-          className="w-full rounded-xl bg-gradient-to-r from-purple-400 to-pink-300 px-4 py-3.5 text-base font-bold text-white shadow-md transition-all hover:from-purple-500 hover:to-pink-400 disabled:cursor-not-allowed disabled:opacity-50"
+          pending={pending}
+          pendingLabel="ログイン中..."
         >
-          {pending ? "ログイン中..." : "ログイン"}
-        </button>
+          ログイン
+        </PrimaryButton>
       </form>
 
       {/* または divider（モックアップ準拠） */}
@@ -93,7 +94,7 @@ export function LoginForm() {
         type="button"
         disabled
         title="準備中"
-        className="mt-5 flex w-full items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-5 flex w-full items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition-all duration-150 hover:bg-gray-50 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
       >
         <GoogleIcon />
         Googleでログイン
