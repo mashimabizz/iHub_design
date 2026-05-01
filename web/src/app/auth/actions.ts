@@ -157,6 +157,38 @@ export async function logout(): Promise<void> {
 }
 
 // ----------------------------------------------------------------------
+// passwordReset: パスワードリセット用メールを送信
+// ----------------------------------------------------------------------
+export async function passwordReset(formData: FormData): Promise<AuthResult> {
+  const email = String(formData.get("email") ?? "").trim();
+
+  if (!email || !email.includes("@")) {
+    return {
+      fieldErrors: { email: "有効なメールアドレスを入力してください" },
+    };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${getBaseUrl()}/auth/password-reset-confirm`,
+  });
+
+  if (error) {
+    if (error.message.includes("rate limit")) {
+      return {
+        error: "送信間隔が短すぎます。しばらく待ってから再度試してください",
+      };
+    }
+    return { error: error.message };
+  }
+
+  // verify-email 画面に reset purpose で遷移
+  redirect(
+    `/auth/verify-email?email=${encodeURIComponent(email)}&purpose=reset`,
+  );
+}
+
+// ----------------------------------------------------------------------
 // resendVerification: 認証メール再送（60秒制限はSupabase側）
 // ----------------------------------------------------------------------
 export async function resendVerification(formData: FormData): Promise<AuthResult> {

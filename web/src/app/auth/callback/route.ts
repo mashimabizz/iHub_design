@@ -11,7 +11,8 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+  // デフォルト遷移先：認証完了画面（onboarding 完了済なら自動的に / へ）
+  const next = searchParams.get("next") ?? "/auth/email-confirmed";
 
   if (code) {
     const supabase = await createClient();

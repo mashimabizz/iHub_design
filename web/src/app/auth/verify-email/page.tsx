@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HeaderBack } from "@/components/auth/HeaderBack";
 import { ResendButton } from "./ResendButton";
 
 export const metadata = {
@@ -6,81 +7,83 @@ export const metadata = {
 };
 
 type Props = {
-  searchParams: Promise<{ email?: string }>;
+  searchParams: Promise<{ email?: string; resent?: string }>;
 };
 
 export default async function VerifyEmailPage({ searchParams }: Props) {
   const params = await searchParams;
   const email = params.email ?? "";
+  const wasResent = params.resent === "1";
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center bg-gradient-to-b from-purple-50 via-white to-pink-50 px-6 py-12">
-      <div className="w-full max-w-md text-center">
-        <Link href="/" className="inline-block">
-          <span className="inline-block rounded-full bg-purple-100 px-4 py-1 text-xs font-bold tracking-widest text-purple-700">
-            ★ iHub
-          </span>
-        </Link>
-
-        <div className="mx-auto mt-6 flex h-16 w-16 items-center justify-center rounded-full bg-purple-100">
+    <main className="flex flex-1 flex-col bg-[#fafafa]">
+      <HeaderBack title="メール認証" backHref="/signup" />
+      <div className="mx-auto w-full max-w-md flex-1 px-7 pb-8 pt-10 text-center">
+        {/* 中央アイコン（モックアップ：紫＆水色のグラデ丸 + メールアイコン） */}
+        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-purple-100 to-sky-100">
           <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
+            width="40"
+            height="40"
+            viewBox="0 0 40 40"
             fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            className="h-8 w-8 text-purple-700"
+            stroke="#a695d8"
+            strokeWidth="1.8"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"
-            />
+            <rect x="6" y="10" width="28" height="20" rx="3" />
+            <path d="M6 13l14 9 14-9" />
           </svg>
         </div>
 
-        <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-gray-900">
-          確認メールを送信しました
+        <h1 className="mt-5 text-xl font-extrabold leading-tight text-gray-900">
+          確認メールを送りました
         </h1>
 
-        <p className="mt-4 text-base leading-relaxed text-gray-600">
-          {email && (
-            <>
-              <strong className="text-gray-900">{email}</strong> 宛に
-              <br />
-            </>
-          )}
-          認証リンク付きのメールを送りました。
+        <p className="mt-2 text-[13px] leading-relaxed text-gray-500">
+          下記のメールアドレスに認証用のリンクを送りました。
           <br />
-          メール内のリンクをクリックして登録を完了してください。
+          メール内のリンクをタップして、認証を完了してください。
         </p>
 
-        <div className="mt-8 rounded-2xl border border-purple-100 bg-white p-6 text-left shadow-sm">
-          <h2 className="text-sm font-bold text-gray-900">
-            メールが届かない場合
-          </h2>
-          <ul className="mt-3 space-y-1 text-sm text-gray-600">
-            <li>・迷惑メールフォルダを確認</li>
-            <li>・メールアドレスの入力間違いがないか確認</li>
-            <li>・数分待ってから再送を試す</li>
-          </ul>
+        {/* resent 通知（既存メアド未認証の再 signup 流入時） */}
+        {wasResent && (
+          <div className="mx-auto mt-5 inline-block rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+            ✓ 確認メールを再送しました
+          </div>
+        )}
 
-          {email && (
-            <div className="mt-4">
-              <ResendButton email={email} />
-            </div>
-          )}
+        {/* メアド表示 */}
+        {email && (
+          <div className="mx-auto mt-5 inline-block rounded-xl border border-gray-200 bg-white px-4 py-3 text-[13px] font-semibold text-gray-900">
+            {email}
+          </div>
+        )}
+
+        {/* 注意書き（ピンク背景） */}
+        <div className="mt-6 rounded-xl bg-pink-100/70 px-4 py-3 text-left text-[11px] leading-relaxed text-gray-800">
+          <span className="font-bold">📧 メールが届かない場合</span>
+          <br />
+          迷惑メールフォルダもご確認ください。それでも見つからない場合は、再送信または別のメールアドレスをお試しください。
         </div>
 
-        <p className="mt-6 text-sm text-gray-600">
-          既に認証完了している方は{" "}
+        {/* 再送信ボタン（60秒クールダウン） */}
+        {email && (
+          <div className="mt-6">
+            <ResendButton
+              email={email}
+              initialCooldown={wasResent ? 60 : 0}
+            />
+          </div>
+        )}
+
+        {/* メールアドレスを変更する */}
+        <div className="mt-2.5">
           <Link
-            href="/login"
-            className="font-bold text-purple-700 hover:text-purple-900"
+            href="/signup"
+            className="inline-block px-2 py-2 text-[13px] font-semibold text-purple-600 hover:text-purple-700"
           >
-            ログイン
+            メールアドレスを変更する
           </Link>
-        </p>
+        </div>
       </div>
     </main>
   );

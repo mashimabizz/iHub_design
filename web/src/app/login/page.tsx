@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { LoginForm } from "./LoginForm";
+import { HeaderBack } from "@/components/auth/HeaderBack";
+import { IHubLogo } from "@/components/auth/IHubLogo";
 
 export const metadata = {
   title: "ログイン — iHub",
@@ -16,32 +18,27 @@ export default async function LoginPage() {
   if (user) redirect("/");
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center bg-gradient-to-b from-purple-50 via-white to-pink-50 px-6 py-12">
-      <div className="w-full max-w-md">
-        <div className="text-center">
-          <Link href="/" className="inline-block">
-            <span className="inline-block rounded-full bg-purple-100 px-4 py-1 text-xs font-bold tracking-widest text-purple-700">
-              ★ iHub
-            </span>
-          </Link>
-          <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-gray-900">
-            ログイン
-          </h1>
+    <main className="flex flex-1 flex-col bg-[#fafafa]">
+      <HeaderBack title="ログイン" backHref="/" />
+      <div className="mx-auto w-full max-w-md flex-1 px-5 pb-8 pt-8">
+        {/* iHub ロゴ + おかえりなさい */}
+        <div className="mb-7 flex flex-col items-center">
+          <IHubLogo size={60} />
+          <p className="mt-3.5 text-xs text-gray-500">おかえりなさい</p>
         </div>
 
-        <div className="mt-8 rounded-2xl border border-purple-100 bg-white p-6 shadow-sm">
-          <LoginForm />
-        </div>
+        <LoginForm />
 
-        <p className="mt-6 text-center text-sm text-gray-600">
+        {/* 新規登録誘導 */}
+        <div className="mt-6 text-center text-[13px] text-gray-500">
           アカウントをお持ちでない方は{" "}
           <Link
             href="/signup"
-            className="font-bold text-purple-700 hover:text-purple-900"
+            className="font-bold text-purple-600 hover:text-purple-700"
           >
             新規登録
           </Link>
-        </p>
+        </div>
       </div>
     </main>
   );

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/auth/actions";
+import { IHubLogo } from "@/components/auth/IHubLogo";
 
 type Props = {
   searchParams: Promise<{
@@ -16,12 +17,11 @@ export default async function Home({ searchParams }: Props) {
   const params = await searchParams;
 
   // フォールバック：認証コードが root に飛んできた場合は /auth/callback へ転送
-  // （Supabase Redirect URLs 設定漏れ・メールテンプレ古版・wwwドメイン経由など対策）
   if (params.code) {
     redirect(`/auth/callback?code=${params.code}`);
   }
 
-  // フォールバック：認証エラーが root に飛んできた場合は /auth/auth-error へ転送
+  // フォールバック：認証エラーが root に飛んできた場合
   if (params.error) {
     const errorParams = new URLSearchParams({
       error: params.error,
@@ -34,26 +34,87 @@ export default async function Home({ searchParams }: Props) {
   }
 
   const supabase = await createClient();
-
-  // ログイン状態取得
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // ログイン中ならプロフィール取得
-  let profile: { handle: string; display_name: string } | null = null;
-  if (user) {
-    const { data } = await supabase
-      .from("users")
-      .select("handle, display_name")
-      .eq("id", user.id)
-      .maybeSingle();
-    profile = data;
+  // 未ログイン → Welcome 画面（モックアップ AOWelcome 準拠）
+  if (!user) {
+    return <WelcomeView />;
   }
 
-  // Supabase 接続確認（auth/getUser でエラーが起きてないこと）
-  const supabaseConnected = true;
+  // ログイン中 → 暫定ホーム（Phase 1 で本実装予定）
+  let profile: { handle: string; display_name: string } | null = null;
+  const { data } = await supabase
+    .from("users")
+    .select("handle, display_name")
+    .eq("id", user.id)
+    .maybeSingle();
+  profile = data;
 
+  return <ProvisionalHomeView profile={profile} />;
+}
+
+// ──────────────────────────────────────────────
+// Welcome 画面（未ログイン時）
+// ──────────────────────────────────────────────
+function WelcomeView() {
+  return (
+    <main className="flex flex-1 flex-col bg-gradient-to-b from-purple-100/50 via-sky-50/30 to-white px-7 pb-8 pt-20">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
+        {/* 中央：ロゴ + タイトル + キャッチコピー */}
+        <div className="flex flex-1 flex-col items-center justify-center text-center">
+          <IHubLogo size={88} />
+          <h1 className="mt-6 text-[34px] font-extrabold tracking-wide text-gray-900">
+            iHub
+          </h1>
+          <p className="mt-2.5 max-w-[280px] text-[13px] leading-relaxed text-gray-500">
+            グッズ交換を、
+            <br />
+            現地で、もっと簡単に。
+          </p>
+        </div>
+
+        {/* 下部：CTA */}
+        <div>
+          <Link
+            href="/signup"
+            className="block w-full rounded-xl bg-gradient-to-r from-purple-400 to-pink-300 px-4 py-3.5 text-center text-base font-bold text-white shadow-md transition-all hover:from-purple-500 hover:to-pink-400"
+          >
+            メールアドレスで新規登録
+          </Link>
+          <button
+            type="button"
+            disabled
+            title="準備中"
+            className="mt-2.5 flex w-full items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <GoogleIcon />
+            Googleで新規登録
+          </button>
+          <div className="mt-5 text-center text-[13px] text-gray-500">
+            すでにアカウントをお持ちの方は{" "}
+            <Link
+              href="/login"
+              className="font-bold text-purple-600 hover:text-purple-700"
+            >
+              ログイン
+            </Link>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+// ──────────────────────────────────────────────
+// 暫定ホーム（ログイン後・Phase 1 で本実装予定）
+// ──────────────────────────────────────────────
+function ProvisionalHomeView({
+  profile,
+}: {
+  profile: { handle: string; display_name: string } | null;
+}) {
   return (
     <main className="flex flex-1 flex-col items-center justify-center bg-gradient-to-b from-purple-50 via-white to-pink-50 px-6 py-20">
       <div className="w-full max-w-md text-center">
@@ -71,8 +132,7 @@ export default async function Home({ searchParams }: Props) {
           MVP 開発開始。
         </p>
 
-        {/* ログイン状態の表示 */}
-        {user && profile ? (
+        {profile && (
           <div className="mt-8 rounded-2xl border border-purple-200 bg-white p-6 shadow-sm">
             <p className="text-sm text-gray-600">ログイン中</p>
             <p className="mt-1 text-lg font-bold text-gray-900">
@@ -89,21 +149,6 @@ export default async function Home({ searchParams }: Props) {
                 ログアウト
               </button>
             </form>
-          </div>
-        ) : (
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <Link
-              href="/signup"
-              className="rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-base font-bold text-white shadow-md transition-all hover:from-purple-600 hover:to-pink-600"
-            >
-              新規登録
-            </Link>
-            <Link
-              href="/login"
-              className="rounded-lg border border-purple-300 bg-white px-6 py-3 text-base font-bold text-purple-700 transition-all hover:bg-purple-50"
-            >
-              ログイン
-            </Link>
           </div>
         )}
 
@@ -128,23 +173,38 @@ export default async function Home({ searchParams }: Props) {
             <div className="text-xs font-bold uppercase tracking-wider text-purple-600">
               Supabase
             </div>
-            <div
-              className={`mt-1 text-lg font-bold ${
-                supabaseConnected ? "text-green-600" : "text-red-600"
-              }`}
-            >
-              {supabaseConnected ? "✓ 接続" : "✗ 失敗"}
-            </div>
-            <div className="mt-1 text-xs text-gray-500">
-              {supabaseConnected ? "正常" : "要確認"}
-            </div>
+            <div className="mt-1 text-lg font-bold text-green-600">✓ 接続</div>
+            <div className="mt-1 text-xs text-gray-500">正常</div>
           </div>
         </div>
 
         <div className="mt-12 text-xs text-gray-400">
-          設計：iter52 まで完了 ／ 実装：Phase 0b 進行中
+          設計：iter55 まで完了 ／ 実装：Phase 0b 進行中
         </div>
       </div>
     </main>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18">
+      <path
+        d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"
+        fill="#4285F4"
+      />
+      <path
+        d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
+        fill="#34A853"
+      />
+      <path
+        d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+        fill="#EA4335"
+      />
+    </svg>
   );
 }
