@@ -419,6 +419,109 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション51：Phase 0a 完了 — https://ihub.tokyo で本番公開 🎉
+
+### 達成事項
+
+設計フェーズ（iter1-48）+ 実装初期（iter49-50）を経て、**本番URL `https://ihub.tokyo` で iHub アプリが動作**するようになった。
+
+### 完了作業
+
+#### Vercel デプロイ
+- 新規 Vercel プロジェクト「ihub」作成
+- GitHub `iHub_design` 連携、Root Directory `web/` 設定
+- Application Preset 自動検出が UI 上は失敗したが、`web/vercel.json` の `framework: nextjs` でカバー
+- Build / Install / Output コマンドはデフォルト使用
+- 環境変数 4つ登録（NEXT_PUBLIC_SUPABASE_URL, _PUBLISHABLE_KEY, SUPABASE_SECRET_KEY, NEXT_PUBLIC_APP_ENV）
+- 初回デプロイ成功
+
+#### ドメイン接続（ihub.tokyo）
+**Vercel 側設定**:
+- `ihub.tokyo`（apex）: Production 環境に Connect
+- `www.ihub.tokyo`: Production 環境に Connect（後で apex への redirect 化検討）
+
+**お名前.com DNS 設定**:
+- A レコード `@` → `216.198.79.1`（新しい Vercel IP に更新）
+- CNAME `www` → `6a1fed19304af02c.vercel-dns-017.com.`（新プロジェクトの専用 CNAME）
+- 旧プロジェクトの www CNAME（`668c44...vercel-dns-017`）を更新
+- 旧 Firebase 関連レコード4つ削除（CNAME firebase1/2 _domainkey、TXT firebase=、TXT v=spf1 firebaseemail）
+- NS レコード4つ（01-04.dnsv.jp）は保持
+- TTL: 3600（標準）
+
+**反映確認**:
+- Vercel ダッシュボードで両ドメイン「Valid Configuration」（緑）
+- HTTPS 証明書 Let's Encrypt 自動発行
+- ブラウザで `https://ihub.tokyo` アクセス成功
+
+#### 動作検証
+
+ユーザーがブラウザで確認した結果：
+- ✅ ページ表示成功
+- ✅ 「★ iHub」バッジ表示
+- ✅ 「Hello iHub」見出し表示
+- ✅ 3カード表示（Phase 0a / Stack Next.js 16 / **Supabase: ✓ 接続（緑）**）
+- ✅ Server Component で Supabase auth.getUser を呼び出し → 接続成功
+- ✅ HTTPS 通信
+
+つまり：
+- Next.js 16 + React 19 が Vercel で正常動作
+- Supabase Auth が SSR で動作
+- 環境変数が正しく Vercel に渡っている
+- Proxy（旧 middleware）が動作してセッション処理OK
+
+### Phase 0a 達成状況
+
+```
+✅ Step 1: web/ ディレクトリ作成 + Next.js 16 初期化（iter49）
+✅ Step 2: 「Hello iHub」ページ実装（iter49）
+✅ Step 3: Supabase クライアント初期化（iter50）
+✅ Step 4: ローカル npm run build 成功（iter50）
+✅ Step 5: Supabase 既存削除 → 新規作成（ユーザー対応）
+✅ Step 6: API Keys 設定 → web/.env.local（iter50）
+✅ Step 7: Vercel 既存削除 → 新規作成（ユーザー対応、iter51）
+✅ Step 8: 環境変数登録（ユーザー対応、iter51）
+✅ Step 9: 初回デプロイ成功（ユーザー対応、iter51）
+✅ Step 10: ドメイン DNS 設定（ユーザー対応、iter51）
+✅ Step 11: https://ihub.tokyo 表示確認（ユーザー対応、iter51）
+✅ Step 12: Supabase 接続確認 ✓ 緑（ユーザー対応、iter51）
+```
+
+**Phase 0a 完全完了**。
+
+### 主要URL
+
+| 項目 | URL |
+|---|---|
+| 本番（apex） | https://ihub.tokyo |
+| 本番（www） | https://www.ihub.tokyo |
+| GitHub リポ | https://github.com/mashimabizz/iHub_design |
+| Vercel ダッシュ | https://vercel.com/mashimabizzs-projects/ihub |
+| Supabase ダッシュ | https://supabase.com/dashboard/project/kwpnlcojzseicqbxefih |
+| GitHub Pages（design preview） | https://mashimabizz.github.io/iHub_design/ |
+
+### 関連ファイル
+
+更新なし（実装は iter49-50 で完了済、本 iter は本番反映の記録）
+
+### 次のステップ
+
+**Phase 0b へ移行**：
+1. Supabase CLI セットアップ
+2. `supabase/` ディレクトリ初期化、リモートとリンク
+3. 初回 DB マイグレーション（最小構成）：
+   - `users`（auth.users 拡張）
+   - `user_oshi`（推し登録）
+   - マスタテーブル4つ（genres / groups / characters / goods_types）
+4. Auth フロー実装：
+   - `/signup` ページ（メアド + パスワード + ハンドル）
+   - `/login` ページ
+   - `/logout` API
+5. 確認：実際にユーザー登録 → ログイン → セッション維持
+
+これで Phase 0 の半分（基盤）+ Phase 1 の入口（マスタ）に到達。
+
+---
+
 ## イテレーション50：Supabase 接続 + Next.js 16 Proxy 対応
 
 ### 背景
