@@ -173,7 +173,7 @@
 
 | 画面ID | 名称 | 関連JSX関数 | 関連iter | 関連docs |
 |---|---|---|---|---|
-| `HOM-main` | ホーム — 4タブ（完全マッチ／私の譲が欲しい人／私が欲しい譲を持つ人／探索）・推し色適用 | `home-v2.jsx::HomeV2Screen` | iter25, 26 | 10 §E match types |
+| `HOM-main` | ホーム — 4タブ（完全マッチ／私の譲が欲しい人／私が欲しい譲を持つ人／探索）・推し色適用 ／ **📢 Tier 1 Native ad（マッチカード5枚毎）** | `home-v2.jsx::HomeV2Screen` | iter25, 26, 45 | 10 §E match types, 16 §広告 |
 
 ### C-2. プロフィール
 
@@ -195,7 +195,7 @@
 
 | 画面ID | 名称 | 関連JSX関数 | 関連iter | 関連docs |
 |---|---|---|---|---|
-| `WSH-list` | ウィッシュ一覧 — 優先度＋flexibility＋マッチ件数＋AW近隣 | `hub-screens.jsx::WishListScreen` | iter19.5 | 05 §3 user_wants, 09 §6 |
+| `WSH-list` | ウィッシュ一覧 — 優先度＋flexibility＋マッチ件数＋AW近隣 ／ **📢 Tier 1 Native ad（アフィリエイトリンク優先）** | `hub-screens.jsx::WishListScreen` | iter19.5, 45 | 05 §3 user_wants, 09 §6, 16 §広告 |
 | `WSH-empty` | ウィッシュ空状態 — 3ステップ説明＋初回CTA | `hub-screens.jsx::WishEmptyScreen` | iter19.5 | — |
 | `WSH-edit` | ウィッシュ編集 — flexibility 3択＋通知1トグル＋プレビュー | `hub-screens.jsx::WishEditScreen` | iter19.5 | 05 §3 flexibility |
 
@@ -217,7 +217,7 @@
 
 | 画面ID | 名称 | 関連JSX関数 | 関連iter | 関連docs |
 |---|---|---|---|---|
-| `SCH-main` | 検索 — キーワード＋クイックフィルタ＋結果一覧＋履歴・人気ワード | `search-filter.jsx::SearchScreen` | iter23, 25 | — |
+| `SCH-main` | 検索 — キーワード＋クイックフィルタ＋結果一覧＋履歴・人気ワード ／ **📢 Tier 1 Native ad（5件毎）** | `search-filter.jsx::SearchScreen` | iter23, 25, 45 | 16 §広告 |
 | `SCH-filter` | フィルタ — 距離・推し・グッズ種別・状態・★・並び替え＋条件保存CTA | `search-filter.jsx::FilterScreen` | iter23, 24, 25 | 05 §1 マスタ |
 | `SCH-saved` | 保存検索リスト — ピン留め・ワンタップ適用・件数バッジ | `search-filter.jsx::SavedSearchesScreen` | iter23 | — |
 
@@ -484,6 +484,45 @@ flowchart TD
 
 ---
 
+## K. 広告配置サマリ（iter45 追加）
+
+`notes/16_monetization.md` § 広告 に対応。
+
+### Tier 1: Native ad（カード列に5件毎に1件）
+
+| 画面ID | 配置詳細 |
+|---|---|
+| `HOM-main` | マッチカード列に native ad |
+| `SCH-main` | 検索結果列に native ad |
+| `WSH-list` | アイテム列にアフィリエイトリンク優先 |
+
+### Tier 2: フッターバナー
+
+| 画面ID | 配置詳細 |
+|---|---|
+| `PRO-other` | プロフ下部にコントロール付きバナー |
+| `TRD-past` | 過去取引リスト下部 |
+| `AW-list` | 自分のAW一覧下部 |
+
+### Tier 3: 広告ゼロ画面（必ず守る）
+
+```
+❌ AUTH-* / ONB-*               (認証・オンボ)
+❌ C0-* / C1-* / C15-*           (打診・ネゴ)
+❌ C2-* / C3-*                   (取引・完了)
+❌ D-* / RPT-*                   (Dispute・通報)
+❌ SET-* / PRO-edit / PRO-oshi-edit / PRO-identity / PRO-block-list / PRO-inv-privacy
+❌ LEG-* / HLP-*                  (法的・ヘルプ)
+```
+
+### 広告非表示の例外条件
+
+- **Premium 会員**：全広告非表示（永続）
+- **ブースト発動中（24h）**：当該ユーザーは全広告非表示
+
+---
+
 ## 更新ログ
 
 - v1.0 (2026-05-01, iter40): 初版。HTMLとJSXを全スキャンして 89画面（最新）+ 廃止12画面を整理。
+- v1.1 (2026-05-01, iter45): K. 広告配置サマリを追加。HOM-main/SCH-main/WSH-listに広告枠注釈。

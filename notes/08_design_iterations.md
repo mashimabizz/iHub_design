@@ -419,6 +419,103 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション45：マネタイズ戦略確定 + 運営者情報反映
+
+### 背景
+
+実装フェーズ移行決定を受けて、マネタイズ戦略を正式文書化。
+
+ユーザーの当初プラン：
+- 常時表示バナー広告
+- 打診時 全画面広告（インタースティシャル）
+- ブースト機能（広告スキップ + 上位表示）
+- Premium = 保存検索通知 + 月3ブースト配布
+
+ユーザーの問題意識：
+- 「Premium = コア機能解放」は筋が悪い（保存検索通知はコア機能であるべき）
+- 「コア機能は常時無料」を維持したい
+
+### 確定事項
+
+#### 運営者情報
+| 項目 | 値 |
+|---|---|
+| 運営者氏名 | 松尾 満天 |
+| 法形態 | 個人事業主（届出済） |
+| 屋号 | なし |
+| サービス名 | iHub |
+| 対外ハンドル（暫定） | @ihub_jp |
+
+#### マネタイズ戦略
+
+**広告**：
+- 打診時の全画面広告は **削除**（取引フロー離脱リスク高）
+- 代わりに **取引完了時** や **マッチ閲覧時** に native ad
+- Tier 1: HOM-main / SCH-main / WSH-list に native ad（5件毎）
+- Tier 2: PRO-other / TRD-past / AW-list にフッターバナー
+- Tier 3: 取引フロー全画面（C-0〜C-3）と認証・設定・法的・ヘルプは**完全に広告ゼロ**
+
+**ブースト機能**：
+- 単発 ¥150 / 5個 ¥600 / 10個 ¥1,000
+- 24時間有効、上位表示＋広告非表示
+- 1日2個発動上限（依存性防止）
+
+**Premium 会員**（月¥500 / 年¥4,800）：
+- コア機能の差は**ゼロ**
+- 広告完全非表示・月3ブースト無料配布・装飾（背景・絵文字・バッジ）
+- 副次的：メッセージ履歴永続・既読確認
+
+**アフィリエイト**（Phase γ〜）：Amazon・楽天・公式チケット販売
+**公式コラボ**（Phase δ〜）：ライブ運営との提携、法人化検討
+
+### 変更ファイル
+
+#### 新規
+- `notes/16_monetization.md`：マネタイズ戦略 v1.0 完全版
+
+#### 更新（マネタイズ反映）
+- `notes/05_data_model.md`：§9 マネタイズ追加（subscriptions / boosts / transactions / ad_overrides テーブル）
+- `notes/13_api_spec.md`：§15-17 追加（subscriptions / boosts / ads エンドポイント）
+- `notes/14_implementation_phases.md`：§10b 追加（Phase β-γマネタイズ実装、合計 2.5-3 人月追加）
+- `notes/15_non_functional.md`：決済セキュリティ・特商法対応追加
+- `notes/11_screen_inventory.md`：広告配置注釈追加（HOM-main / SCH-main / WSH-list）、§K 広告配置サマリ追加
+- `notes/10_glossary.md`：§L マネタイズ用語追加（ブースト・Premium・Native ad 等）
+- `iHub/legal-pages.jsx`：特商法ページに実名「松尾 満天」反映、有料機能の表記追加
+
+### Phase 2 完了状況
+
+USER_PLAYBOOK の 7タスク中：
+- ✅ タスク1〜6（iter38-44）
+- 🟡 タスク7（02 機能要件 更新）— 任意
+
+**Phase 2 完了に加えて、マネタイズ戦略 v1.0 確立**。
+
+### 確認方法
+
+- `notes/16_monetization.md`
+- 特商法ページ：http://localhost:8000/iHub%20Legal%20Pages.html
+
+### 関連ファイル
+
+新規：
+- `notes/16_monetization.md`
+
+更新：
+- `notes/05_data_model.md`、`13_api_spec.md`、`14_implementation_phases.md`、`15_non_functional.md`
+- `notes/11_screen_inventory.md`、`10_glossary.md`
+- `iHub/legal-pages.jsx`
+
+### 次フェーズ
+
+ドキュメント整備完了。次は：
+1. 法務監修（プライバシーポリシー・利用規約・年齢制限）
+2. ドメイン取得＋メールアドレス決定
+3. **Phase 0a 着手：Supabase + Next.js プロジェクト作成**
+
+Phase β（半年後）でマネタイズ実装着手の予定。
+
+---
+
 ## イテレーション44：非機能要件（USER_PLAYBOOK タスク6）
 
 ### 背景

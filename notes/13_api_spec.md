@@ -38,8 +38,11 @@
 12. [Deals（取引）](#12-deals取引)
 13. [Disputes（異議申し立て）](#13-disputes異議申し立て)
 14. [Reports（通報）](#14-reports通報)
-15. [Misc（通知・WebSocket）](#15-misc通知websocket)
-16. [⚠️ 未確定項目](#16-未確定項目)
+15. [Subscriptions（Premium 会員）](#15-subscriptionspremium-会員)
+16. [Boosts（ブースト機能）](#16-boostsブースト機能)
+17. [Ads（広告配信）](#17-ads広告配信)
+18. [Misc（通知・WebSocket）](#18-misc通知websocket)
+19. [⚠️ 未確定項目](#19-未確定項目)
 
 ---
 
@@ -1119,7 +1122,170 @@ dispute 詳細。
 
 ---
 
-## 15. Misc（通知・WebSocket）
+## 15. Subscriptions（Premium 会員）
+
+iter45 で追加。`notes/16_monetization.md` § Premium 会員 に対応。
+
+### GET /api/v1/subscriptions/me
+
+自分のサブスクリプション情報取得。
+
+- **Auth**: 必須
+- **Response 200**: `{ subscription: { plan_type, status, started_at, current_period_end, cancelled_at } | null, is_premium: boolean }`
+- **Screen**: `SET-top`、`PRO-hub`
+
+### POST /api/v1/subscriptions/checkout
+
+Premium 会員の決済セッション開始。
+
+- **Auth**: 必須
+- **Request**: `{ plan_type: "monthly" | "yearly", provider: "stripe" | "apple" | "google" }`
+- **Response 200**: `{ checkout_url, session_id }`（Stripe 等の決済画面 URL）
+- **備考**: Apple/Google の場合は in-app purchase でクライアント側完結 ⚠️
+- **Screen**: 「Premium 会員になる」CTA → 決済画面
+
+### POST /api/v1/subscriptions/webhooks/stripe
+
+Stripe webhook 受信。
+
+- **Auth**: webhook 署名検証
+- **Side effects**: `subscriptions` レコード作成・更新、`ad_overrides` 更新、`boosts` グラント
+
+### POST /api/v1/subscriptions/me/cancel
+
+サブスクリプション解約申請。
+
+- **Auth**: 必須
+- **Response 200**: `{ status: "cancelled", current_period_end }`（期間終了まで使える）
+- **State**: `subscription.status: active → cancelled`
+
+### POST /api/v1/subscriptions/me/resume
+
+解約済サブスクリプションの再開（期間終了前のみ）。
+
+- **Auth**: 必須
+- **Response 200**: `{ status: "active" }`
+
+---
+
+## 16. Boosts（ブースト機能）
+
+`notes/16_monetization.md` § ブースト機能 に対応。
+
+### GET /api/v1/boosts/me
+
+自分のブースト残数・履歴取得。
+
+- **Auth**: 必須
+- **Response 200**:
+  ```json
+  {
+    "remaining": 3,
+    "active": [{ "id", "consumed_at", "expires_at", "target_type", "target_id" }],
+    "history": [{ "id", "granted_at", "consumed_at", "granted_via" }]
+  }
+  ```
+
+### POST /api/v1/boosts/checkout
+
+ブーストパック購入の決済セッション開始。
+
+- **Auth**: 必須
+- **Request**: `{ pack: "single" | "pack5" | "pack10", provider: "stripe" | "apple" | "google" }`
+- **Response 200**: `{ checkout_url, session_id }`
+- **備考**: Apple/Google の場合は in-app purchase
+
+### POST /api/v1/boosts/:id/consume
+
+ブースト発動。
+
+- **Auth**: 必須（自分のブーストのみ）
+- **Request**:
+  ```json
+  {
+    "target_type": "proposal" | "match_view" | "chat",
+    "target_id": "uuid"
+  }
+  ```
+- **Response 200**:
+  ```json
+  {
+    "boost_id": "uuid",
+    "consumed_at": "...",
+    "expires_at": "...",
+    "ad_override_until": "..."
+  }
+  ```
+- **State**: `boost.consumed_at = NOW()`、`expires_at = NOW() + 24h`、`ad_overrides` に新レコード INSERT
+- **Errors**:
+  - 409（残数なし、`{"code": "NO_BOOSTS_REMAINING"}`）
+  - 429（1日2個発動上限、`{"code": "BOOST_DAILY_LIMIT"}`）
+- **Screen**: マッチング画面・打診作成画面の「⚡ ブースト」ボタン
+
+### GET /api/v1/boosts/active
+
+現在発動中の他ユーザーのブースト一覧（マッチング表示の優先順位計算用）。
+
+- **Auth**: 必須
+- **Response 200**: `[{ user_id, target_type, target_id, expires_at }]`
+- **備考**: マッチング計算ロジックでこのデータを使い、ブースト中ユーザーを上位表示
+
+---
+
+## 17. Ads（広告配信）
+
+`notes/16_monetization.md` § 広告 に対応。
+
+### GET /api/v1/ads/should-show
+
+広告を表示すべきか判定（ad_overrides を考慮）。
+
+- **Auth**: 必須
+- **Query**: `?screen_id=HOM-main&placement=tier1`
+- **Response 200**: `{ show: boolean, reason?: "premium" | "boost" | "tier3_screen" | null }`
+- **備考**: フロントエンドで広告SDK呼び出し前に判定
+
+### GET /api/v1/ads/native
+
+Native ad（マッチカード型広告）取得。
+
+- **Auth**: 必須
+- **Query**: `?screen_id=HOM-main&user_oshi=group_id` （推し情報でターゲティング）
+- **Response 200**:
+  ```json
+  {
+    "ads": [{
+      "id": "ad_xxx",
+      "type": "native",
+      "title": "TWICE 公式ペンライト 新色",
+      "subtitle": "公式オンラインストア",
+      "image_url": "...",
+      "cta_text": "見る",
+      "cta_url": "...",
+      "sponsor_label": "★ Sponsored"
+    }]
+  }
+  ```
+
+### POST /api/v1/ads/:id/impression
+
+広告インプレッション記録（分析用）。
+
+- **Auth**: 必須
+- **Request**: `{ screen_id, position }`
+- **Response 204**: なし
+- **備考**: Post-MVP で詳細分析用
+
+### POST /api/v1/ads/:id/click
+
+広告クリック記録。
+
+- **Auth**: 必須
+- **Response 200**: `{ redirect_url }`
+
+---
+
+## 18. Misc（通知・WebSocket）
 
 ### POST /api/v1/notifications/devices
 
@@ -1165,7 +1331,7 @@ WebSocket でリアルタイム更新。
 
 ---
 
-## 16. ⚠️ 未確定項目
+## 19. ⚠️ 未確定項目
 
 各エンドポイントの「⚠️ 要確認」を集約。
 

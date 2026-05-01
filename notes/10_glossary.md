@@ -34,6 +34,7 @@
 - [I. ルール・SLA](#i-ルールsla)
 - [J. 廃止用語](#j-廃止用語)
 - [K. 表記揺れに迷う用語](#k-表記揺れに迷う用語)
+- [L. マネタイズ用語](#l-マネタイズ用語iter45)
 
 ---
 
@@ -286,6 +287,36 @@
 - **自然文**: 「取引」
 - **実装**: `deal`（合意後）、`trade`（広義）
 - 使い分け: 厳密には deal（合意確定後）≠ trade（プロセス全体）。混在気味で要整理
+
+---
+
+## L. マネタイズ用語（iter45）
+
+| 用語 | 別名/英 | 定義 | 関連 |
+|---|---|---|---|
+| **ブースト** | boost | 24時間限定で自分の打診・在庫を相手画面で上位表示する課金機能。広告非表示も付帯 | iter45, 16 §6 |
+| **ブーストパック** | boost pack | ブースト購入時の単位（単発1個 / 5個 / 10個） | iter45 |
+| **Premium 会員** | premium subscriber | 月額/年額のサブスク会員。広告非表示＋月3ブースト＋装飾 | iter45, 16 §7 |
+| **Native ad** | ネイティブ広告 | マッチカード等と同形のスポンサー広告。「★ Sponsored」明示 | iter45, 16 §5 |
+| **フッターバナー** | footer banner | 画面下部の固定/末尾バナー広告 | iter45 |
+| **Tier 1 / Tier 2 / Tier 3** | — | 広告配置の3階層。Tier 1=Native、Tier 2=フッター、Tier 3=広告ゼロ画面 | iter45, 16 §5 |
+| **アフィリエイト** | affiliate | Amazon・楽天等への外部リンクで成果報酬収入 | iter45, 16 §8 |
+| **公式コラボ** | official collaboration | ライブ運営・グッズメーカーとの提携 | iter45, 16 §9 |
+| **個人事業主** | sole proprietor | iHub の運営形態（Phase α〜γ）。屋号なし、運営者: 松尾満天 | iter45, 16 §1 |
+| **特商法** | 特定商取引法表記 | 有料サービス導入時に必須の事業者情報表示 | iter21, 45 |
+
+### Subscription / Boost ステータス値
+
+| 値 | カテゴリ | 意味 |
+|---|---|---|
+| `active` | subscription.status | アクティブ（有効中） |
+| `cancelled` | subscription.status | 解約申請済（期間終了まで使用可） |
+| `expired` | subscription.status | 期間終了（更新なし） |
+| `monthly` / `yearly` | subscription.plan_type | 課金周期 |
+| `purchase` / `premium_grant` | boosts.granted_via | 取得経路 |
+| `proposal` / `match_view` / `chat` | boosts.target_type | 発動対象種別 |
+| `boost_pack` / `subscription_initial` / `subscription_renewal` | transactions.kind | 決済種別 |
+| `pending` / `succeeded` / `failed` / `refunded` | transactions.status | 決済状態 |
 
 ---
 

@@ -315,15 +315,15 @@ function LegalNotice({ tweaks }) {
           border: `0.5px solid ${c.divide}`,
           padding: '4px 16px', marginBottom: 18,
         }}>
-          <LPDataRow colors={c} label="販売事業者" value="株式会社iHub" />
-          <LPDataRow colors={c} label="運営責任者" value="代表取締役 山田 太郎" />
+          <LPDataRow colors={c} label="販売事業者" value="松尾 満天（個人事業主）" />
+          <LPDataRow colors={c} label="運営責任者" value="松尾 満天" />
           <LPDataRow colors={c} label="所在地" value={
-            <>〒150-0001<br/>東京都渋谷区神宮前0-0-0 iHubビル0階</>
+            <>東京都＊＊＊区<br/><span style={{ fontSize: 11, color: c.mute }}>※詳細住所は請求があれば遅滞なく開示します</span></>
           } />
           <LPDataRow colors={c} label="電話番号" value={
-            <>03-0000-0000<br/><span style={{ fontSize: 11, color: c.mute }}>※お問い合わせは原則メールで承ります</span></>
+            <>請求があれば遅滞なく開示<br/><span style={{ fontSize: 11, color: c.mute }}>※お問い合わせは原則メールで承ります</span></>
           } />
-          <LPDataRow colors={c} label="メールアドレス" value="contact@ihub.example.com" />
+          <LPDataRow colors={c} label="メールアドレス" value="hello@ihub.example.com" />
           <LPDataRow colors={c} label="受付時間" value="平日 10:00〜18:00（土日祝・年末年始を除く）" last />
         </div>
 
@@ -336,11 +336,28 @@ function LegalNotice({ tweaks }) {
           <LPDataRow colors={c} label="サービス内容" value={
             <>個人間グッズ交換マッチングプラットフォーム<br/><span style={{ fontSize: 11, color: c.mute }}>利用者間の物々交換を仲介するサービスを提供します</span></>
           } />
-          <LPDataRow colors={c} label="利用料金" value={
-            <><b style={{ color: c.ink }}>無料</b><br/><span style={{ fontSize: 11, color: c.mute }}>※今後有料機能を追加する場合は別途明示します</span></>
+          <LPDataRow colors={c} label="基本料金" value={
+            <><b style={{ color: c.ink }}>マッチング・取引機能は無料</b><br/><span style={{ fontSize: 11, color: c.mute }}>※コア機能（マッチング・打診・取引・dispute）は永久無料</span></>
+          } />
+          <LPDataRow colors={c} label="有料機能" value={
+            <>
+              <b>ブースト</b>：単発 ¥150 / 5個 ¥600 / 10個 ¥1,000<br/>
+              <b>Premium 会員</b>：月額 ¥500 / 年額 ¥4,800<br/>
+              <span style={{ fontSize: 11, color: c.mute }}>※すべて税込。Phase β 以降に提供予定</span>
+            </>
           } />
           <LPDataRow colors={c} label="支払方法" value={
-            <>該当なし<br/><span style={{ fontSize: 11, color: c.mute }}>※有料機能追加時に別途記載</span></>
+            <>クレジットカード（Stripe）<br/>Apple In-App Purchase / Google Play Billing</>
+          } />
+          <LPDataRow colors={c} label="支払時期" value="購入時即時" />
+          <LPDataRow colors={c} label="商品引渡し時期" value={
+            <>決済完了即時（デジタルコンテンツのため）</>
+          } />
+          <LPDataRow colors={c} label="返品・解約" value={
+            <>
+              <b>ブースト</b>：未使用分は30日以内なら返金可<br/>
+              <b>Premium 会員</b>：いつでも解約可（期間終了まで使用可、中途返金なし）
+            </>
           } last />
         </div>
 
@@ -362,8 +379,8 @@ function LegalNotice({ tweaks }) {
           textAlign: 'right', paddingTop: 18, paddingBottom: 30,
           borderTop: `0.5px solid ${c.divide}`,
         }}>
-          掲載日：2026年4月30日<br/>
-          株式会社iHub
+          掲載日：2026年5月1日<br/>
+          松尾 満天（iHub 運営）
         </div>
       </div>
     </div>
