@@ -23,7 +23,6 @@ export function AWAddEntry({ returnTo }: { returnTo?: string } = {}) {
   // 子ページを先読み（タップ即遷移）
   useEffect(() => {
     router.prefetch(`/aw/new/location${qs}`);
-    router.prefetch(`/aw/new/event${qs}`);
     router.prefetch(closeHref);
   }, [router, qs, closeHref]);
 
@@ -105,55 +104,7 @@ export function AWAddEntry({ returnTo }: { returnTo?: string } = {}) {
           </div>
         </Link>
 
-        {/* Secondary: Event-led — ショートカット */}
-        <Link
-          href={`/aw/new/event${qs}`}
-          className="relative mt-2 flex w-full items-start gap-3 rounded-2xl border-[0.5px] border-[#3a324a14] bg-white px-4 py-3.5 text-left transition-transform active:scale-[0.99]"
-        >
-          <span className="absolute right-2.5 top-2.5 rounded-full bg-[#3a324a14] px-[7px] py-0.5 text-[9px] font-extrabold tracking-[0.5px] text-[#3a324a8c]">
-            ショートカット
-          </span>
-          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-[#3a324a14]">
-            <svg width="22" height="22" viewBox="0 0 22 22">
-              <rect
-                x="4"
-                y="6"
-                width="14"
-                height="13"
-                rx="2"
-                stroke="#3a324a"
-                strokeWidth="1.4"
-                fill="none"
-              />
-              <path
-                d="M4 10h14M8 3v4M14 3v4"
-                stroke="#3a324a"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[14.5px] font-extrabold tracking-[0.2px] text-[#3a324a]">
-              🎤 イベントから埋める
-            </div>
-            <div className="mt-[3px] text-[11.5px] leading-[1.5] text-[#3a324a8c]">
-              ライブ・ファンミ・ポップアップ等を選ぶと
-              <span className="font-semibold text-[#3a324a]">
-                {" "}会場座標と開演±30分が自動入力
-              </span>
-              。1タップで保存できる。
-            </div>
-            {/* upcoming preview */}
-            <div className="mt-2 flex items-center gap-1.5 rounded-[10px] bg-[#fbf9fc] px-2.5 py-[7px] text-[10.5px] tabular-nums text-[#3a324a]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#f3c5d4]" />
-              <b>4/27 今夜</b>
-              <span className="text-[#3a324a8c]">
-                LUMENA WORLD TOUR DAY 2 — 横浜アリーナ
-              </span>
-            </div>
-          </div>
-        </Link>
+        {/* Event-led は iter65.7 で廃止（ユーザー要望） */}
 
         {/* Cancel */}
         <Link

@@ -106,6 +106,25 @@ export function CarryingSelectView({
 
   return (
     <>
+      {/* タイトル行 + 右上の解除ボタン */}
+      <div className="mb-2.5 flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[12px] leading-relaxed text-gray-500">
+            現地交換モードで時空マッチに使うグッズを選びます。
+            <br />
+            複数選択可能です。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={clearAll}
+          disabled={selected.length === 0}
+          className="flex-shrink-0 rounded-full border border-[#3a324a14] bg-white px-3 py-1.5 text-[11px] font-bold text-[#3a324a] shadow-[0_2px_4px_rgba(58,50,74,0.06)] disabled:opacity-40"
+        >
+          選択解除
+        </button>
+      </div>
+
       {/* フィルタ */}
       <div className="space-y-1.5">
         <FilterRow
@@ -122,7 +141,7 @@ export function CarryingSelectView({
         />
       </div>
 
-      {/* 選択操作 */}
+      {/* 選択件数 + 全選択 */}
       <div className="mt-2 flex items-center gap-2 text-[11px]">
         <span className="font-bold text-[#a695d8]">
           {selected.length}件選択中
@@ -135,17 +154,8 @@ export function CarryingSelectView({
           onClick={selectAllVisible}
           className="rounded-full border border-[#3a324a14] bg-white px-2.5 py-1 text-[10.5px] font-bold text-[#3a324a]"
         >
-          全選択
+          表示全選択
         </button>
-        {selected.length > 0 && (
-          <button
-            type="button"
-            onClick={clearAll}
-            className="rounded-full border border-[#3a324a14] bg-white px-2.5 py-1 text-[10.5px] font-bold text-[#3a324a8c]"
-          >
-            解除
-          </button>
-        )}
       </div>
 
       {/* グリッド */}

@@ -169,12 +169,10 @@ export function LocationLedForm() {
   const [venue, setVenue] = useState("");
   const [venueAutoFilled, setVenueAutoFilled] = useState(false); // 自動入力かユーザー入力か
   const [radiusM, setRadiusM] = useState(500);
-  const [eventIdx, setEventIdx] = useState<number | null>(null);
+  // eventIdx は iter65.7 でイベント連動を廃止したので不要
   const [startAt, setStartAt] = useState(() => new Date().toISOString());
   const [endAt, setEndAt] = useState(() => plusMinutes(120));
   const [activeChip, setActiveChip] = useState<string>("now");
-  const [express, setExpress] = useState(true);
-  const [mobile, setMobile] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -261,8 +259,6 @@ export function LocationLedForm() {
     [radiusM],
   );
 
-  const chosenEvent = eventIdx === null ? null : MOCK_EVENTS[eventIdx] ?? null;
-
   const applyChip = useCallback((chip: string) => {
     setActiveChip(chip);
     const now = new Date();
@@ -274,30 +270,12 @@ export function LocationLedForm() {
     } else if (chip === "min30") {
       s = now.getTime() + 30 * 60_000;
       e = s + 120 * 60_000;
-    } else if (chip === "h19") {
-      const d = new Date();
-      s = d.setHours(19, 0, 0, 0);
-      e = d.setHours(21, 0, 0, 0);
-    } else if (chip === "h1930") {
-      const d = new Date();
-      s = d.setHours(19, 30, 0, 0);
-      e = d.setHours(21, 30, 0, 0);
     }
     setStartAt(new Date(s).toISOString());
     setEndAt(new Date(e).toISOString());
   }, []);
 
-  function selectEvent(idx: number | null) {
-    setEventIdx(idx);
-    if (idx === null) return;
-    const ev = MOCK_EVENTS[idx];
-    if (!ev) return;
-    setVenue(ev.venue);
-    setVenueAutoFilled(false);
-    setStartAt(ev.startISO());
-    setEndAt(ev.endISO());
-    setActiveChip("");
-  }
+  // selectEvent は iter65.7 でイベント連動を廃止したので削除
 
   function pickSearchResult(p: Place) {
     const lat = parseFloat(p.lat);
@@ -355,8 +333,8 @@ export function LocationLedForm() {
     setPending(true);
     const result = await saveAW({
       venue: venue.trim(),
-      eventName: chosenEvent?.name,
-      eventless: chosenEvent === null,
+      eventName: undefined,
+      eventless: true, // iter65.7: イベント連動を廃止
       startAt: isoToLocalDatetimeLocal(startAt),
       endAt: isoToLocalDatetimeLocal(endAt),
       radiusM,
@@ -572,100 +550,15 @@ export function LocationLedForm() {
             : "ピンを動かす or 検索すると自動入力されます"}
         </p>
 
-        {/* Events nearby */}
-        <FLabel top={16}>
-          このエリアの近日イベント{" "}
-          <span className="font-semibold text-[#3a324a4d]">
-            (任意・加点要素)
-          </span>
-        </FLabel>
-        <div className="flex flex-col gap-1.5">
-          {/* イベントなしオプション */}
-          <button
-            type="button"
-            onClick={() => selectEvent(null)}
-            className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-[11px] text-left transition-all ${
-              eventIdx === null
-                ? "border-[1.5px] border-[#a695d8] bg-white"
-                : "border-[0.5px] border-[#3a324a14] bg-white"
-            }`}
-          >
-            <div className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-[10px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] text-white">
-              <svg width="18" height="18" viewBox="0 0 18 18">
-                <circle
-                  cx="9"
-                  cy="9"
-                  r="6"
-                  stroke="#fff"
-                  strokeWidth="1.4"
-                  fill="none"
-                />
-                <path
-                  d="M9 5v4l3 2"
-                  stroke="#fff"
-                  strokeWidth="1.6"
-                  fill="none"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[12.5px] font-bold text-[#3a324a]">
-                イベントなしで設定
-              </div>
-              <div className="mt-px text-[10.5px] text-[#3a324a8c]">
-                場所×時間だけでマッチング
-              </div>
-            </div>
-            <Radio selected={eventIdx === null} />
-          </button>
-
-          {MOCK_EVENTS.map((e, i) => {
-            const sel = eventIdx === i;
-            return (
-              <button
-                key={e.id}
-                type="button"
-                onClick={() => selectEvent(i)}
-                className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-[11px] text-left transition-all ${
-                  sel
-                    ? "border-[1.5px] border-[#a695d8] bg-[#a695d814]"
-                    : "border-[0.5px] border-[#3a324a14] bg-white"
-                }`}
-              >
-                <div
-                  className={`flex h-[38px] w-[38px] flex-shrink-0 flex-col items-center justify-center rounded-[10px] text-[9px] font-bold leading-tight ${
-                    sel
-                      ? "bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] text-white"
-                      : "bg-[#3a324a14] text-[#3a324a8c]"
-                  }`}
-                >
-                  <span>{e.d}</span>
-                  <span className="text-[10px]">{e.date}</span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12.5px] font-bold text-[#3a324a]">
-                    {e.name}
-                  </div>
-                  <div className="mt-px text-[10.5px] tabular-nums text-[#3a324a8c]">
-                    {e.venue}
-                  </div>
-                </div>
-                <Radio selected={sel} />
-              </button>
-            );
-          })}
-        </div>
+        {/* このエリアの近日イベント section は iter65.7 で廃止 */}
 
         {/* 有効時間 chips */}
-        <FLabel top={14}>有効時間</FLabel>
+        <FLabel top={16}>有効時間</FLabel>
         <div className="mb-1.5 flex flex-wrap gap-1.5">
           {[
             { id: "now", l: "いま" },
             { id: "min15", l: "15分後" },
             { id: "min30", l: "30分後" },
-            { id: "h19", l: "19:00" },
-            { id: "h1930", l: "19:30" },
           ].map((t) => {
             const sel = activeChip === t.id;
             return (
@@ -690,12 +583,10 @@ export function LocationLedForm() {
             {fmtTime(endAt)}
           </span>
           <span>
-            {chosenEvent
-              ? "(イベント終了)"
-              : `(${Math.round(
-                  (new Date(endAt).getTime() - new Date(startAt).getTime()) /
-                    60000,
-                )}分間)`}
+            ({Math.round(
+              (new Date(endAt).getTime() - new Date(startAt).getTime()) /
+                60000,
+            )}分間)
           </span>
         </div>
 
@@ -728,23 +619,7 @@ export function LocationLedForm() {
           </div>
         )}
 
-        {/* Quick toggles */}
-        <div className="mt-3 rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white p-3">
-          <ToggleRow
-            title="今すぐ交換 (5分以内)"
-            sub="完全マッチ相手に即通知"
-            v={express}
-            onChange={setExpress}
-            accent="#f3c5d4"
-          />
-          <div className="my-2 h-px bg-[#3a324a14]" />
-          <ToggleRow
-            title="動けます"
-            sub="相手の場所近くもOK"
-            v={mobile}
-            onChange={setMobile}
-          />
-        </div>
+        {/* 今すぐ交換 / 動けます トグルは iter65.7 で廃止 */}
 
         {error && (
           <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">

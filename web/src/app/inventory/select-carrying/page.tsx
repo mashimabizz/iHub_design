@@ -100,12 +100,11 @@ export default async function SelectCarryingPage({ searchParams }: Props) {
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="持参グッズを選択" backHref={safeReturn} />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-[120px] pt-4">
-        <p className="mb-3 text-[12px] leading-relaxed text-gray-500">
-          現地交換モードで時空マッチに使うグッズを選びます。
-          <br />
-          複数選択可能です。
-        </p>
-        <CarryingSelectView items={items} initialSelected={initialSelected} returnTo={safeReturn} />
+        <CarryingSelectView
+          items={items}
+          initialSelected={initialSelected}
+          returnTo={safeReturn}
+        />
       </div>
     </main>
   );

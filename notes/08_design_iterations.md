@@ -419,6 +419,74 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション65.7：UI さらに簡素化（priority/フィルタ/モック/トグル削除、定価追加）
+
+### 背景
+
+オーナーから連続要望:
+1. wish 一覧の「最優先」「2 番手」フィルタを削除
+2. wish と個別募集で「定価」を選べるようにしたい
+3. 現地モード持参選択画面の右上に「選択解除」ボタン
+4. AW 追加で「イベントから埋める」モードを削除
+5. 場所から作るモードの「このエリアの近日イベント」リスト削除
+6. 場所から作るモードの「19:00」「19:30」固定 chip 削除
+7. 「今すぐ交換」「動けます」トグルも削除
+
+### 変更内容
+
+#### A. Migration: 「定価」を goods_types_master に追加
+
+`supabase/migrations/20260503150000_add_cash_goods_type.sql`:
+- `('定価', 'other', 90)` を insert
+- 既存 CHECK 制約に合わせて category は `other` を流用（cash 専用 category は追加しない）
+
+#### B. WishView: priority フィルタ chip を削除
+
+- 「最優先」「2 番手」「妥協 OK」フィルタ chip 行を削除
+- `filter` state, `counts` useMemo, `filtered` ロジックを simplify
+- カード内の priority バッジ表示も削除
+- `PRIO_LABEL`, `useState`, `useMemo` import 削除
+
+#### C. CarryingSelectView: 右上に「選択解除」ボタン
+
+- ヘッダー下に説明文 + 右寄せの「選択解除」ボタンを配置
+- 選択件数 0 のとき disabled
+- 既存の inline「解除」ボタンは「表示全選択」のみ残置
+
+#### D. AWAddEntry: 「イベントから埋める」を削除
+
+- secondary card（🎤 イベントから埋める）の Link を削除
+- prefetch から `/aw/new/event` を削除
+- チューザーの選択肢は「📍 場所から作る」のみ
+- `/aw/new/event` ルート自体は残置（直接 URL アクセスは可能）
+
+#### E. LocationLedForm: 不要 UI を一括削除
+
+- 「このエリアの近日イベント」section（イベントなし + MOCK_EVENTS リスト）→ 削除
+- 「有効時間」chip から `19:00`, `19:30` を削除（残る: いま / 15分後 / 30分後）
+- 「今すぐ交換」トグル削除
+- 「動けます」トグル削除
+- handleSubmit を `eventless: true, eventName: undefined` 固定に
+- 終了時刻表示の chosenEvent 分岐を削除（常に「N 分間」表示）
+
+未使用の MOCK_EVENTS / selectEvent / chosenEvent / express / mobile state を削除。
+
+### 関連ファイル
+
+- `supabase/migrations/20260503150000_add_cash_goods_type.sql`（新規）
+- `web/src/app/wishes/WishView.tsx`
+- `web/src/app/inventory/select-carrying/{page.tsx, CarryingSelectView.tsx}`
+- `web/src/app/aw/new/AWAddEntry.tsx`
+- `web/src/app/aw/new/location/LocationLedForm.tsx`
+
+### セルフレビュー（CLAUDE.md absolute rule C）
+
+- **A. デザイン整合性**: 既存の chip / button スタイルを流用、削除のみで新規追加 UI なし ✅
+- **B. 仕様整合性**: 「定価」は goods_types_master の通常エントリとして追加（特殊ロジックなし）。AW の `eventless` 列はそのまま、保存時 true 固定 ✅
+- **C. レビュー記録**: `/aw/new/event` ルートは残置（直 URL 可）。AWAddEntry チューザーの選択肢が 1 個だけになり「チューザーである必要性」は薄いが、UI 構造を急変させないため残置 ✅
+
+---
+
 ## イテレーション65.6：現地モード簡素化・持参グッズ管理を全面再構成・AW 戻り先実装
 
 ### 背景
