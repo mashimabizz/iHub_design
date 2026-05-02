@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   saveWishItem,
+  type ExchangeType,
   type WishFlexLevel,
   type WishPriority,
 } from "@/app/wishes/actions";
@@ -46,6 +47,28 @@ const FLEX_OPTIONS: {
   },
 ];
 
+const EXCHANGE_OPTIONS: {
+  value: ExchangeType;
+  label: string;
+  sub: string;
+}[] = [
+  {
+    value: "any",
+    label: "どちらでも",
+    sub: "同種・異種を問わない",
+  },
+  {
+    value: "same_kind",
+    label: "同種のみ",
+    sub: "同じグッズ種別での交換",
+  },
+  {
+    value: "cross_kind",
+    label: "異種のみ",
+    sub: "別の種別との交換",
+  },
+];
+
 export function WishNewForm({
   groups,
   characters,
@@ -62,6 +85,7 @@ export function WishNewForm({
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<WishPriority>("second");
   const [flexLevel, setFlexLevel] = useState<WishFlexLevel>("exact");
+  const [exchangeType, setExchangeType] = useState<ExchangeType>("any");
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
@@ -103,6 +127,7 @@ export function WishNewForm({
       title: title.trim(),
       priority,
       flexLevel,
+      exchangeType,
       note: note.trim() || undefined,
       quantity,
     });
@@ -286,6 +311,43 @@ export function WishNewForm({
             );
           })}
         </div>
+      </Section>
+
+      {/* 交換タイプ（自己申告タグ・システム判定なし） */}
+      <Section
+        label="交換タイプ"
+        hint="マッチカードに表示・判断材料"
+      >
+        <div className="grid grid-cols-3 gap-1.5">
+          {EXCHANGE_OPTIONS.map((e) => {
+            const active = exchangeType === e.value;
+            return (
+              <button
+                key={e.value}
+                type="button"
+                onClick={() => setExchangeType(e.value)}
+                className={`flex flex-col items-center justify-center rounded-xl px-2 py-2.5 text-center transition-all ${
+                  active
+                    ? "bg-[#a695d8] text-white shadow-[0_4px_10px_rgba(166,149,216,0.33)]"
+                    : "border border-[#3a324a14] bg-white text-gray-700"
+                }`}
+              >
+                <span className="text-[12px] font-bold">{e.label}</span>
+                <span
+                  className={`mt-0.5 text-[9.5px] leading-tight ${
+                    active ? "text-white/85" : "text-gray-500"
+                  }`}
+                >
+                  {e.sub}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-[10.5px] leading-relaxed text-gray-500">
+          ※ 自己申告タグです。マッチング演算では弾かれません。
+          相手の譲るグッズと並べてユーザー自身が判断する用途。
+        </p>
       </Section>
 
       {/* メモ */}

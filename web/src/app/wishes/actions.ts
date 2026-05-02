@@ -8,9 +8,11 @@ type ActionResult = { error?: string } | undefined;
 
 const VALID_PRIORITIES = ["top", "second", "flexible"] as const;
 const VALID_FLEX = ["exact", "character_any", "series_any"] as const;
+const VALID_EXCHANGE = ["same_kind", "cross_kind", "any"] as const;
 
 export type WishPriority = "top" | "second" | "flexible";
 export type WishFlexLevel = "exact" | "character_any" | "series_any";
+export type ExchangeType = "same_kind" | "cross_kind" | "any";
 
 export async function saveWishItem(input: {
   groupId?: string;
@@ -19,6 +21,7 @@ export async function saveWishItem(input: {
   title: string;
   priority: WishPriority;
   flexLevel: WishFlexLevel;
+  exchangeType?: ExchangeType; // iter62 / Phase A
   note?: string; // description カラムを使う
   quantity: number;
 }): Promise<ActionResult> {
@@ -37,6 +40,10 @@ export async function saveWishItem(input: {
   }
   if (!VALID_FLEX.includes(input.flexLevel)) {
     return { error: "柔軟度が不正です" };
+  }
+  const exchangeType = input.exchangeType ?? "any";
+  if (!VALID_EXCHANGE.includes(exchangeType)) {
+    return { error: "交換タイプが不正です" };
   }
   if (input.quantity < 1 || input.quantity > 999) {
     return { error: "数量は 1〜999 で入力してください" };
@@ -58,6 +65,7 @@ export async function saveWishItem(input: {
     description: input.note?.trim() || null,
     priority: input.priority,
     flex_level: input.flexLevel,
+    exchange_type: exchangeType,
     quantity: input.quantity,
     photo_urls: [],
   });

@@ -14,6 +14,7 @@ export type WishItem = {
   goodsTypeName: string;
   priority: "top" | "second" | "flexible" | null;
   flexLevel: "exact" | "character_any" | "series_any" | null;
+  exchangeType: "same_kind" | "cross_kind" | "any";
   quantity: number;
   createdAt: string; // ISO
 };
@@ -31,6 +32,12 @@ const FLEX_LABEL: Record<"exact" | "character_any" | "series_any", string> = {
   exact: "完全一致のみ",
   character_any: "キャラ問わず",
   series_any: "シリーズ問わず",
+};
+
+const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
+  same_kind: "同種のみ",
+  cross_kind: "異種のみ",
+  any: "どちらでも",
 };
 
 type FilterId = "all" | "top" | "second" | "flexible";
@@ -240,6 +247,11 @@ export function WishView({ items }: { items: WishItem[] }) {
                       {w.flexLevel && (
                         <span className="rounded-full border border-[#3a324a14] bg-[#3a324a08] px-2 py-0.5 text-[10px] font-bold text-gray-700">
                           {FLEX_LABEL[w.flexLevel]}
+                        </span>
+                      )}
+                      {w.exchangeType !== "any" && (
+                        <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
+                          {EXCHANGE_LABEL[w.exchangeType]}
                         </span>
                       )}
                     </div>

@@ -419,6 +419,79 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション62：Phase A — wish に exchange_type 追加 + chip 表示
+
+### 背景・問題意識
+
+iter61.11 で確定したマッチング v2 仕様の最初の段階。wish に「同種交換 / 異種交換 / どちらでも」のタグを付けられるようにする。**自己申告タグ**であり、システムはマッチング判定に使わない（notes/18 §A-1）。
+
+### 変更内容
+
+#### A. Migration
+
+**`supabase/migrations/20260503110000_add_exchange_type.sql`**
+
+`goods_inventory` テーブルに `exchange_type` カラム追加:
+- 値: `same_kind` / `cross_kind` / `any`（default `any`）
+- CHECK 制約付き
+- not null（default で埋まる）
+
+**注**: notes/05_data_model.md §3 では `user_wants.exchange_type` と書いていたが、実装上は wish/譲を `goods_inventory` テーブルに統合しているため、`goods_inventory.exchange_type` として実装。`kind='wanted'` の行で wish 用、`kind='for_trade'` では譲側でも使える設計（譲側は iter64 で listings 経由で意味を持つ）。
+
+#### B. Server action
+
+**`web/src/app/wishes/actions.ts`**
+
+- 型定義 `ExchangeType` をエクスポート
+- `saveWishItem` に `exchangeType?: ExchangeType` 引数追加（default `any`）
+- VALID_EXCHANGE 配列でバリデーション
+
+#### C. wish 新規作成 UI（`WishNewForm.tsx`）
+
+- `EXCHANGE_OPTIONS` 定数（3 件 chip）
+- 「交換タイプ」Section 追加（許容範囲の下、メモの上）
+- 3 列 grid の chip ボタン: `どちらでも / 同種のみ / 異種のみ`
+- アクティブ時は紫グラデ
+- 注釈: 「自己申告タグです。マッチング演算では弾かれません。相手の譲るグッズと並べてユーザー自身が判断する用途。」
+
+#### D. wish 一覧表示（`WishView.tsx`）
+
+- `WishItem` 型に `exchangeType: "same_kind" | "cross_kind" | "any"` 追加
+- `EXCHANGE_LABEL` 定数追加
+- カード右上のチップ群（priority + flexLevel）の右に exchangeType chip を追加
+- `any` のときは表示しない（ノイズを避ける）
+- 紫透明枠 + 紫文字で他の chip と差別化
+
+#### E. wish 一覧の SELECT 拡張
+
+**`web/src/app/wishes/page.tsx`**
+
+- SELECT 句に `exchange_type` 追加
+- `WishRow` 型に列追加
+- mapping で `exchangeType: r.exchange_type ?? "any"` を渡す
+
+### 後続フェーズへの繋ぎ
+
+- iter63（Phase B）でホーム画面のマッチカードにも同じ chip を表示する予定（現状ホームは mock data なので未対応）
+- iter64（Phase C）で listings にも同じ exchange_type 列を引き継ぐ
+- iter65（Phase D）打診の calendar 公開フラグでカードをさらに拡張
+
+### 関連ファイル
+
+- `supabase/migrations/20260503110000_add_exchange_type.sql`（新規）
+- `web/src/app/wishes/actions.ts`（saveWishItem 拡張）
+- `web/src/app/wishes/new/WishNewForm.tsx`（chip 追加）
+- `web/src/app/wishes/page.tsx`（SELECT + mapping）
+- `web/src/app/wishes/WishView.tsx`（型 + chip 表示）
+
+### セルフレビュー（CLAUDE.md absolute rule C）
+
+- **A. デザイン整合性**: 既存 chip スタイル（rounded-full, 紫トーン）に揃えた ✅
+- **B. 仕様整合性**: notes/18 §A-1（タグのみ・判定なし）と整合。実装上の `goods_inventory` 統合と仕様の `user_wants` の差は本ドキュメントで言及 ✅
+- **C. レビュー記録**: ホームのマッチカードに chip 表示は iter63 で同時対応（現状ホーム mock のため）✅
+
+---
+
 ## イテレーション61.11：マッチング v2 仕様を主要ドキュメントに反映
 
 ### 背景・問題意識

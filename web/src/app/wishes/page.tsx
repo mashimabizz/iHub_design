@@ -13,6 +13,7 @@ type WishRow = {
   description: string | null;
   priority: "top" | "second" | "flexible" | null;
   flex_level: "exact" | "character_any" | "series_any" | null;
+  exchange_type: "same_kind" | "cross_kind" | "any" | null;
   quantity: number;
   created_at: string;
   group: { name: string } | { name: string }[] | null;
@@ -35,7 +36,7 @@ export default async function WishesPage() {
   const { data: rows } = await supabase
     .from("goods_inventory")
     .select(
-      "id, title, description, priority, flex_level, quantity, created_at, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      "id, title, description, priority, flex_level, exchange_type, quantity, created_at, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
     )
     .eq("user_id", user.id)
     .eq("kind", "wanted")
@@ -55,6 +56,7 @@ export default async function WishesPage() {
       goodsTypeName: gt?.name ?? "?",
       priority: r.priority,
       flexLevel: r.flex_level,
+      exchangeType: r.exchange_type ?? "any",
       quantity: r.quantity,
       createdAt: r.created_at,
     };
