@@ -419,6 +419,94 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション61：AW（合流可能枠）画面 — 一覧 + 編集 3 画面 ピクセル準拠実装
+
+### 背景・問題意識
+
+iter58〜60 で「ホーム / 在庫 / wish」を実装後、ユーザーから「全然デザイン案通りじゃないんだけど。ちゃんとデザインをみて、あと仕様？ちゃんと前に話して整理してルカらそれ通りにして」という強いフィードバック。CLAUDE.md に **「画面実装時の絶対ルール」** を追加し、(1) 着手前にデザイン精読 (2) 共通ルール遵守 (3) 着手後セルフレビュー — を必ず踏むように。
+
+iter61 は AW 編集 3 画面（list / new chooser / new/location / new/event）をモックアップ aw-edit.jsx 完全準拠で再実装する iter。
+
+### 変更内容
+
+#### `web/src/app/aw/AWView.tsx`（一覧画面・iter61 前半 d50a29a で完了済）
+
+- AWListScreen (line 19-114) 完全準拠で再実装
+- ACTIVE NOW（pulse dot + LIVE badge）/ SCHEDULED / 自動アーカイブ の 3 セクション
+- AWCard: gradient bg + counter row（完全マッチ 14 / 打診中 2 / クローズまで N分）+ 3-action row（一時無効・編集・X告知）
+- 不足していた `hand` icon 追加（meta rows）
+- shadow-[0_8px_20px_rgba(166,149,216,0.15)] / text-[15.5px] / tracking-[0.3px] などピクセル値完全一致
+
+#### `web/src/app/aw/new/page.tsx` + `AWAddEntry.tsx`（チューザー）
+
+- モックアップ AWAddEntry (1078-1237) 準拠
+- 暗転バックドロップ + ボトムシート（rounded-t-22 / shadow 0 -10px 40px）
+- 「📍 場所から作る」（おすすめバッジ・gradient bg・1.5px lavender border）→ /aw/new/location
+- 「🎤 イベントから埋める」（ショートカットバッジ・白bg）→ /aw/new/event
+- 「キャンセル」→ /aw
+
+#### `web/src/app/aw/new/location/page.tsx` + `LocationLedForm.tsx`
+
+- モックアップ AWEditLocationLed (693-998) 準拠
+- 上部 360px の地図プレースホルダ（SVG ハッチ + 道路 + 半径200円 + ピン + 半径バブル + キャッシュバッジ）
+- 検索バーは実 input（venue 入力）として動作
+- ボトムシート: prominent radius slider（22px gradient bg）+ events nearby（イベントなしデフォルト + mock 3件）+ 有効時間 chips + 終了時刻ストリップ + 詳細編集（datetime-local 拡張）+ Express/動けますトグル
+- CTA「有効化 — 時空交差を再計算」
+
+#### `web/src/app/aw/new/event/page.tsx` + `EventLedForm.tsx`
+
+- モックアップ AWEditEventLed (276-571) 準拠
+- SheetHeader（× / 登録中 / クリア + タイトル）
+- イベント picker: 選択済みは LUMENA-style カード（4/27 dateChip + マスタ登録済 pill + 変更 button）、未選択時は mock 3件 + 自由入力
+- 位置と範囲: MiniMap + 半径スライダー
+- 時間ウィンドウ: タブ（プリセット / 手動調整 / いま）+ 4 つのプリセットカード（開演前後30分推奨など、選択イベントから動的計算）
+- 現地交換の希望: マルチ選択チェックボックス 4 種
+- 運用オプション: Express toggle + クローズ時間 chips
+- CTA「X告知も」+「保存して有効化」
+
+### 影響範囲
+
+- `/aw` 一覧画面のすべて
+- `/aw/new` チューザー（旧シンプル form を完全置換）
+- `/aw/new/location`, `/aw/new/event` 新規ルート
+- `BottomNav.tsx` の AW タブ → `/aw` で正しく動作（iter60 で配線済）
+- データ保存: 既存 `saveAW` server action 利用（venue / event_name / eventless / start_at / end_at / radius_m / note）
+
+### 既知の差分（mockup と機能の差）
+
+| 項目 | mockup | 実装 | 理由 |
+|---|---|---|---|
+| イベント master | 4/27 LUMENA など固定値 | mock 3件 + 自由入力フォールバック | events table 未実装、後続 iter で master 化 |
+| 地図 | 静的 SVG | 静的 SVG（同じ） | OSM/Mapbox 連携は後続 |
+| 「現在地を使う」「ピン調整」 | 動作 | UI のみ | Geolocation API 連携は後続 |
+| 「X告知も」 | 動作 | UI のみ | X (Twitter) 連携は後続 |
+| 「詳細編集」 | なし | datetime-local 2 個追加 | chips のみだと細かな時間調整不可、機能性最優先 |
+
+### 確認方法
+
+1. `npm run dev` で http://localhost:3000/aw を開く
+2. 右上「AWを追加」→ チューザー（暗転 + ボトムシート）
+3. 「📍 場所から作る」→ 地図 + ボトムシート → 「有効化」で /aw に戻る
+4. 「🎤 イベントから埋める」→ イベント picker + 位置 + 時間 + 希望 + オプション → 「保存して有効化」
+
+### 関連ファイル
+
+- `iHub/aw-edit.jsx`（モックアップ）
+- `web/src/app/aw/AWView.tsx`
+- `web/src/app/aw/new/{page.tsx, AWAddEntry.tsx}`
+- `web/src/app/aw/new/location/{page.tsx, LocationLedForm.tsx}`
+- `web/src/app/aw/new/event/{page.tsx, EventLedForm.tsx}`
+- `web/src/app/aw/actions.ts`（saveAW）
+- `supabase/migrations/20260502120000_add_activity_windows.sql`
+
+### セルフレビュー（CLAUDE.md absolute rule C 適用）
+
+- **A. デザイン整合性**: モックアップの 3 関数すべて構造・カラー・ピクセル値合致を逐一確認 ✅
+- **B. 仕様整合性**: activity_windows table のすべての列を埋める。enabled status 初期値で公開。RLS は既存 ✅
+- **C. レビュー記録**: 既知差分を上記表に明記。後続 iter で解消する項目を todo 化済 ✅
+
+---
+
 ## イテレーション57：Phase 0b-3 — Onboarding 5 画面 + 推し/メンバー追加リクエスト共有 + 速度最適化
 
 ### 達成事項
