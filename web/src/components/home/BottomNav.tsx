@@ -16,7 +16,7 @@ export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
 
   const items = [
     { href: "/", label: "ホーム", icon: "home" as const },
-    { href: "/trades", label: "取引", icon: "trade" as const },
+    { href: "/aw", label: "AW", icon: "aw" as const },
     { href: "/inventory", label: "在庫", icon: "inventory" as const },
     { href: "/wishes", label: "wish", icon: "wish" as const },
     { href: "/profile", label: "プロフ", icon: "profile" as const },
@@ -56,7 +56,7 @@ function NavIcon({
   name,
   active,
 }: {
-  name: "home" | "trade" | "inventory" | "wish" | "profile";
+  name: "home" | "aw" | "inventory" | "wish" | "profile";
   active: boolean;
 }) {
   const stroke = active ? "#a695d8" : "#6b6478";
@@ -76,7 +76,7 @@ function NavIcon({
           <path d="M3 11l9-8 9 8v10a2 2 0 01-2 2h-4v-7h-6v7H5a2 2 0 01-2-2V11z" />
         </svg>
       );
-    case "trade":
+    case "aw":
       return (
         <svg
           width="22"
@@ -88,8 +88,8 @@ function NavIcon({
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          <path d="M7 7h12l-3-3" />
-          <path d="M17 17H5l3 3" />
+          <path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z" />
+          <circle cx="12" cy="9" r="2.5" />
         </svg>
       );
     case "inventory":
