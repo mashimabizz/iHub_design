@@ -23,22 +23,33 @@ export default async function InventoryNewPage() {
   if (!user) redirect("/login");
 
   // 並列取得
-  const [{ data: userOshi }, { data: goodsTypes }, { data: characters }] =
-    await Promise.all([
-      supabase
-        .from("user_oshi")
-        .select("group_id, group:groups_master(id, name)")
-        .eq("user_id", user.id)
-        .not("group_id", "is", null),
-      supabase
-        .from("goods_types_master")
-        .select("id, name")
-        .order("display_order", { ascending: true }),
-      supabase
-        .from("characters_master")
-        .select("id, name, group_id")
-        .order("display_order", { ascending: true }),
-    ]);
+  const [
+    { data: userOshi },
+    { data: goodsTypes },
+    { data: characters },
+    { data: pendingRequests },
+  ] = await Promise.all([
+    supabase
+      .from("user_oshi")
+      .select("group_id, group:groups_master(id, name)")
+      .eq("user_id", user.id)
+      .not("group_id", "is", null),
+    supabase
+      .from("goods_types_master")
+      .select("id, name")
+      .order("display_order", { ascending: true }),
+    supabase
+      .from("characters_master")
+      .select("id, name, group_id")
+      .order("display_order", { ascending: true }),
+    // 自分の pending な character_requests（審査中メンバー）
+    supabase
+      .from("character_requests")
+      .select("id, group_id, requested_name")
+      .eq("user_id", user.id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false }),
+  ]);
 
   // 重複排除した group 一覧
   const groupMap = new Map<string, { id: string; name: string }>();
@@ -57,6 +68,15 @@ export default async function InventoryNewPage() {
     .filter((c) => c.group_id && groupIds.has(c.group_id))
     .map((c) => ({ id: c.id, name: c.name, group_id: c.group_id! }));
 
+  // 自分の pending リクエスト（自分推しのグループのみ）
+  const pendingMembers = (pendingRequests ?? [])
+    .filter((r) => r.group_id && groupIds.has(r.group_id))
+    .map((r) => ({
+      id: r.id,
+      name: r.requested_name,
+      group_id: r.group_id!,
+    }));
+
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="グッズを登録" backHref="/inventory" />
@@ -65,6 +85,7 @@ export default async function InventoryNewPage() {
           groups={groups}
           goodsTypes={goodsTypes ?? []}
           characters={filteredCharacters}
+          pendingMembers={pendingMembers}
           userId={user.id}
         />
       </div>

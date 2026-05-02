@@ -13,11 +13,12 @@ export type ItemCardData = {
   id: string;
   memberName: string; // 「スア」など。null の場合はグループ名
   goodsType: string; // 「トレカ」「生写真」など
-  series: string | null; // 「WORLD TOUR」「5th Mini」
+  series: string | null; // 廃止予定（互換のため残す）
   qty: number;
   hue: number; // 0〜360
   carrying: boolean;
   photoUrl?: string | null; // Supabase Storage の公開 URL（存在すればイニシャル表示の代わりに写真表示）
+  isPending?: boolean; // メンバーが審査中（character_request_id 経由）
 };
 
 export function ItemCard({
@@ -52,7 +53,7 @@ export function ItemCard({
       )}
 
       {/* メンバー名プレート */}
-      <div className="absolute left-1.5 top-1.5 z-10">
+      <div className="absolute left-1.5 top-1.5 z-10 flex items-center gap-1">
         <div
           className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
             hasPhoto ? "bg-black/55 text-white backdrop-blur-sm" : "bg-white/85"
@@ -61,6 +62,11 @@ export function ItemCard({
         >
           {item.memberName}
         </div>
+        {item.isPending && (
+          <div className="rounded-md bg-[#a695d8] px-1.5 py-0.5 text-[8px] font-extrabold tracking-[0.4px] text-white">
+            審査中
+          </div>
+        )}
       </div>
 
       {/* carrying トグルボタン（タップ領域大きめ） */}

@@ -13,6 +13,7 @@ import { CropToast } from "./CropToast";
 
 type Master = { id: string; name: string };
 type CharacterMaster = { id: string; name: string; group_id: string };
+type PendingMember = { id: string; name: string; group_id: string };
 
 type Step = "common" | "shoot" | "crop" | "meta";
 
@@ -26,13 +27,33 @@ const CONDITIONS: { value: Condition; label: string }[] = [
   { value: "poor", label: "難あり" },
 ];
 
+/**
+ * `characterId` は select の value をそのまま保持。
+ *   "" = 指定なし
+ *   "<UUID>" = characters_master.id
+ *   "req:<UUID>" = character_requests.id（審査中）
+ * 保存時に prefix で分岐して character_id / character_request_id に振り分ける。
+ */
 type CropMeta = {
-  characterId: string; // "" = 指定なし（共通）
+  characterId: string;
   title: string;
   series: string;
   condition: Condition;
   quantity: number;
 };
+
+const REQ_PREFIX = "req:";
+
+function splitCharacterValue(v: string): {
+  characterId: string | null;
+  characterRequestId: string | null;
+} {
+  if (!v) return { characterId: null, characterRequestId: null };
+  if (v.startsWith(REQ_PREFIX)) {
+    return { characterId: null, characterRequestId: v.slice(REQ_PREFIX.length) };
+  }
+  return { characterId: v, characterRequestId: null };
+}
 
 export type UploadedPhoto = {
   url: string; // Supabase Storage の public URL
@@ -46,11 +67,13 @@ export function CaptureFlow({
   groups,
   goodsTypes,
   characters,
+  pendingMembers: initialPendingMembers,
   userId,
 }: {
   groups: Master[];
   goodsTypes: Master[];
   characters: CharacterMaster[];
+  pendingMembers: PendingMember[];
   userId: string;
 }) {
   const router = useRouter();
@@ -59,6 +82,11 @@ export function CaptureFlow({
   // Step 1: 共通選択
   const [groupId, setGroupId] = useState<string>("");
   const [goodsTypeId, setGoodsTypeId] = useState<string>("");
+
+  // pending リクエスト（リクエスト送信時に動的に追加されるためローカル state）
+  const [pendingMembers, setPendingMembers] = useState<PendingMember[]>(
+    initialPendingMembers,
+  );
 
   // Step 2: 撮影/アップロード
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
@@ -119,6 +147,9 @@ export function CaptureFlow({
   const filteredCharacters = characters.filter(
     (c) => c.group_id === groupId,
   );
+  const filteredPending = pendingMembers.filter(
+    (p) => p.group_id === groupId,
+  );
   const selectedGroup = groups.find((g) => g.id === groupId);
   const selectedGoodsType = goodsTypes.find((g) => g.id === goodsTypeId);
 
@@ -128,10 +159,17 @@ export function CaptureFlow({
 
     // 自動タイトル生成のヘルパ
     const autoTitle = (meta: CropMeta): string => {
-      const ch = filteredCharacters.find((c) => c.id === meta.characterId);
-      return `${ch?.name ?? selectedGroup?.name ?? ""} ${
-        selectedGoodsType?.name ?? ""
-      }`.trim();
+      const { characterId, characterRequestId } = splitCharacterValue(
+        meta.characterId,
+      );
+      const ch = characterId
+        ? filteredCharacters.find((c) => c.id === characterId)
+        : null;
+      const req = characterRequestId
+        ? filteredPending.find((p) => p.id === characterRequestId)
+        : null;
+      const name = ch?.name ?? req?.name ?? selectedGroup?.name ?? "";
+      return `${name} ${selectedGoodsType?.name ?? ""}`.trim();
     };
 
     try {
@@ -146,10 +184,14 @@ export function CaptureFlow({
           return;
         }
         const title = meta.title.trim() || autoTitle(meta);
+        const { characterId, characterRequestId } = splitCharacterValue(
+          meta.characterId,
+        );
         items.push({
           groupId,
           goodsTypeId,
-          characterId: meta.characterId || null,
+          characterId,
+          characterRequestId,
           title,
           series: meta.series.trim() || undefined,
           condition: meta.condition,
@@ -183,11 +225,15 @@ export function CaptureFlow({
           } = supabase.storage.from("goods-photos").getPublicUrl(fileName);
 
           const title = meta.title.trim() || autoTitle(meta);
+          const { characterId, characterRequestId } = splitCharacterValue(
+            meta.characterId,
+          );
 
           items.push({
             groupId,
             goodsTypeId,
-            characterId: meta.characterId || null,
+            characterId,
+            characterRequestId,
             title,
             series: meta.series.trim() || undefined,
             condition: meta.condition,
@@ -257,6 +303,13 @@ export function CaptureFlow({
     }
     // ローカルに名前を記録（バッジ表示用）
     setRequestedNames((prev) => [...prev, name]);
+    // select の選択肢にも即追加
+    if (r.id) {
+      setPendingMembers((prev) => [
+        ...prev,
+        { id: r.id!, name, group_id: groupId },
+      ]);
+    }
     setRequestName("");
     setRequestNote("");
     setRequestOpen(false);
@@ -833,6 +886,15 @@ export function CaptureFlow({
                         {c.name}
                       </option>
                     ))}
+                    {filteredPending.length > 0 && (
+                      <optgroup label="審査中">
+                        {filteredPending.map((p) => (
+                          <option key={p.id} value={`${REQ_PREFIX}${p.id}`}>
+                            {p.name}（審査中）
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
 
                   {/* タイトル — その他選択時のみ */}

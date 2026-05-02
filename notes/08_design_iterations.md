@@ -419,6 +419,109 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション61.10：審査中メンバーを在庫の選択肢に + シリーズ廃止
+
+### 背景・問題意識
+
+ユーザー要望:
+1. 「グッズ登録の際、追加リクエストしたものも選べる選択肢に含めてほしい」
+2. 「グッズの編集画面で『シリーズ』は削除してください。もう使わないので」
+
+iter61.9 で追加リクエスト機能は付けたが、リクエスト中のメンバーは select に出てこず、登録すると `character_id = null` のまま保存され、後で承認されても紐付かなかった。
+データモデルとして `goods_inventory.character_request_id` を追加し、user_oshi と同じ「承認時に自動置換」の仕組みを採用。
+
+### 変更内容
+
+#### A. Migration: `goods_inventory.character_request_id` 追加
+
+**`supabase/migrations/20260503100000_add_inventory_character_request.sql`**
+
+- `character_request_id uuid references character_requests(id) on delete set null`
+- `character_id is null or character_request_id is null` の XOR 制約（同時に持たない）
+- `idx_goods_inventory_character_request` インデックス
+- `handle_character_request_approval()` trigger を拡張:
+  - 承認時 (`status: pending → merged/approved`) に `goods_inventory.character_request_id → character_id` 置換
+  - 却下時 (`pending → rejected`) は `character_request_id` を null にしてメンバー指定なしに戻す（user_oshi のように行ごと削除はしない）
+
+#### B. 新規登録 (`CaptureFlow`) で pending メンバーを選択肢に
+
+**`web/src/app/inventory/new/page.tsx`**
+
+`character_requests` を並列 fetch（自分の `pending` ステータスのみ、推しグループに紐づくもの）し、CaptureFlow に `pendingMembers` prop で渡す。
+
+**`web/src/app/inventory/new/CaptureFlow.tsx`**
+
+- `CropMeta.characterId` の値を文字列のまま prefix encoding で持つ:
+  - `""` = 指定なし
+  - `"<UUID>"` = `characters_master.id`
+  - `"req:<UUID>"` = `character_requests.id`（審査中）
+- select に `<optgroup label="審査中">` で pending を表示（"○○（審査中）"）
+- meta インラインリクエストフォーム送信成功時、`pendingMembers` ローカル state にも即追加 → select に瞬時に反映
+- 保存時に `splitCharacterValue` で分岐し、`characterId` / `characterRequestId` を別々に渡す
+
+**`web/src/app/inventory/actions.ts`**
+
+`saveBatchInventoryItems` と `updateInventoryItem` に `characterRequestId?: string | null` 引数追加。XOR 制約に従い、片方しか入らないように保存。
+
+#### C. 編集画面 (`/inventory/[id]`) でも pending サポート
+
+**`web/src/app/inventory/[id]/page.tsx`**
+
+- SELECT に `character_request_id` を追加、`character_requests` も並列 fetch
+- `pendingMembers` prop で EditForm に渡す
+
+**`web/src/app/inventory/[id]/EditForm.tsx`**
+
+- `characterId` / `characterRequestId` を pack/split して `characterValue` 単一 state で管理
+- chip UI で pending メンバーを破線枠 + 「審査中」バッジ付きで表示
+- 「運営の承認後、自動でメンバーマスタに切り替わります」のヒント表示
+- 保存時に分割して `updateInventoryItem` に渡す
+
+#### D. 一覧画面で pending 名を解決
+
+**`web/src/app/inventory/page.tsx`**
+
+- SELECT に `character_request:character_requests(requested_name, status)` を join
+- `memberName` の解決順を `character → character_request → group` に
+- 「審査中」フラグ `isPending` を渡す
+
+**`web/src/app/inventory/ItemCard.tsx`**
+
+- `isPending` のとき、メンバー名プレートの右に紫の「審査中」バッジを併置
+
+#### E. 「シリーズ」を UI から完全廃止
+
+- `EditForm.tsx`: 「シリーズ」セクションを削除
+- `page.tsx` (inventory list): SELECT から `series` を抜き、`series: null` 固定で渡す（ItemCard の表示は `{item.series && ...}` で条件付きなので何も出ない）
+- `actions.ts` の DB カラム書き込み (`series`) は互換のため残置（既存データ非破壊、将来的に migration で drop 予定）
+- CaptureFlow の `CropMeta.series` も互換のため残置（送信は常に空文字 → null）
+
+### 動線まとめ
+
+1. 在庫登録 → meta ステップ → メンバー select に審査中グループも出る
+2. 「+ メンバー追加リクエスト」で送信すると即その場で select 候補に追加 → そのまま選択可能
+3. 「審査中」のまま登録 → 一覧カードに「審査中」バッジ表示
+4. 運営が承認 → trigger が自動で `character_id` に置換 → カードのバッジが消えて正規メンバー名に
+
+### 関連ファイル
+
+- `supabase/migrations/20260503100000_add_inventory_character_request.sql`（新規）
+- `web/src/app/inventory/page.tsx`（pending join、シリーズ非表示）
+- `web/src/app/inventory/ItemCard.tsx`（審査中バッジ）
+- `web/src/app/inventory/[id]/page.tsx`（pending fetch）
+- `web/src/app/inventory/[id]/EditForm.tsx`（pending サポート、シリーズ削除、auto-title）
+- `web/src/app/inventory/new/page.tsx`（pending fetch）
+- `web/src/app/inventory/new/CaptureFlow.tsx`（select に optgroup）
+- `web/src/app/inventory/actions.ts`（characterRequestId 引数）
+
+### セルフレビュー
+
+- **A. デザイン整合性**: 審査中バッジは既存 onboarding の紫トーンと整合 ✅
+- **B. 仕様整合性**: trigger で自動置換するので承認後の手動再選択は不要 ✅
+- **C. レビュー記録**: シリーズは UI 廃止のみ、DB カラムは互換のため残置 ✅
+
+---
+
 ## イテレーション61.9：在庫まわり 5 つの UX 改善
 
 ### 背景・問題意識

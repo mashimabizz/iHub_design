@@ -13,9 +13,9 @@ type ItemRow = {
   kind: "for_trade" | "wanted";
   group_id: string | null;
   character_id: string | null;
+  character_request_id: string | null;
   goods_type_id: string | null;
   title: string;
-  series: string | null;
   description: string | null;
   condition: "sealed" | "mint" | "good" | "fair" | "poor" | null;
   quantity: number;
@@ -49,11 +49,12 @@ export default async function InventoryEditPage({
     { data: userOshi },
     { data: goodsTypes },
     { data: characters },
+    { data: pendingRequests },
   ] = await Promise.all([
     supabase
       .from("goods_inventory")
       .select(
-        "id, user_id, kind, group_id, character_id, goods_type_id, title, series, description, condition, quantity, hue, photo_urls, carrying, status",
+        "id, user_id, kind, group_id, character_id, character_request_id, goods_type_id, title, description, condition, quantity, hue, photo_urls, carrying, status",
       )
       .eq("id", id)
       .eq("user_id", user.id)
@@ -71,6 +72,12 @@ export default async function InventoryEditPage({
       .from("characters_master")
       .select("id, name, group_id")
       .order("display_order", { ascending: true }),
+    supabase
+      .from("character_requests")
+      .select("id, group_id, requested_name")
+      .eq("user_id", user.id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false }),
   ]);
 
   if (!item) notFound();
@@ -103,6 +110,15 @@ export default async function InventoryEditPage({
     .filter((c) => c.group_id && groupIds.has(c.group_id))
     .map((c) => ({ id: c.id, name: c.name, group_id: c.group_id! }));
 
+  // 自分の pending リクエスト + 編集中のアイテムが参照しているリクエストも含める
+  const pendingMembers = (pendingRequests ?? [])
+    .filter((r) => r.group_id && groupIds.has(r.group_id))
+    .map((r) => ({
+      id: r.id,
+      name: r.requested_name,
+      group_id: r.group_id!,
+    }));
+
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="グッズを編集" backHref="/inventory" />
@@ -112,9 +128,9 @@ export default async function InventoryEditPage({
             id: it.id,
             groupId: it.group_id ?? "",
             characterId: it.character_id,
+            characterRequestId: it.character_request_id,
             goodsTypeId: it.goods_type_id ?? "",
             title: it.title,
-            series: it.series,
             description: it.description,
             condition: it.condition,
             quantity: it.quantity,
@@ -124,6 +140,7 @@ export default async function InventoryEditPage({
           groups={groups}
           goodsTypes={goodsTypes ?? []}
           characters={filteredCharacters}
+          pendingMembers={pendingMembers}
         />
       </div>
     </main>

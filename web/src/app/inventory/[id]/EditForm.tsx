@@ -15,9 +15,9 @@ type Props = {
     id: string;
     groupId: string;
     characterId: string | null;
+    characterRequestId: string | null;
     goodsTypeId: string;
     title: string;
-    series: string | null;
     description: string | null;
     condition: "sealed" | "mint" | "good" | "fair" | "poor" | null;
     quantity: number;
@@ -27,7 +27,30 @@ type Props = {
   groups: { id: string; name: string }[];
   goodsTypes: { id: string; name: string }[];
   characters: { id: string; name: string; group_id: string }[];
+  pendingMembers: { id: string; name: string; group_id: string }[];
 };
+
+const REQ_PREFIX = "req:";
+
+function packCharacterValue(
+  characterId: string | null,
+  characterRequestId: string | null,
+): string {
+  if (characterRequestId) return `${REQ_PREFIX}${characterRequestId}`;
+  if (characterId) return characterId;
+  return "";
+}
+
+function splitCharacterValue(v: string): {
+  characterId: string | null;
+  characterRequestId: string | null;
+} {
+  if (!v) return { characterId: null, characterRequestId: null };
+  if (v.startsWith(REQ_PREFIX)) {
+    return { characterId: null, characterRequestId: v.slice(REQ_PREFIX.length) };
+  }
+  return { characterId: v, characterRequestId: null };
+}
 
 const CONDITION_OPTIONS = [
   { id: "sealed", label: "未開封" },
@@ -43,14 +66,21 @@ const STATUS_OPTIONS = [
   { id: "traded", label: "過去に譲った", color: "#9aa3b0" },
 ] as const;
 
-export function EditForm({ item, groups, goodsTypes, characters }: Props) {
+export function EditForm({
+  item,
+  groups,
+  goodsTypes,
+  characters,
+  pendingMembers,
+}: Props) {
   const router = useRouter();
 
   const [groupId, setGroupId] = useState(item.groupId);
-  const [characterId, setCharacterId] = useState(item.characterId ?? "");
+  const [characterValue, setCharacterValue] = useState(
+    packCharacterValue(item.characterId, item.characterRequestId),
+  );
   const [goodsTypeId, setGoodsTypeId] = useState(item.goodsTypeId);
   const [title, setTitle] = useState(item.title);
-  const [series, setSeries] = useState(item.series ?? "");
   const [description, setDescription] = useState(item.description ?? "");
   const [condition, setCondition] = useState<typeof item.condition>(
     item.condition,
@@ -69,15 +99,27 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
     () => characters.filter((c) => c.group_id === groupId),
     [characters, groupId],
   );
+  const filteredPending = useMemo(
+    () => pendingMembers.filter((p) => p.group_id === groupId),
+    [pendingMembers, groupId],
+  );
+
+  // 「その他」種別のときのみタイトル手動入力。それ以外は自動。
+  const selectedGoodsType = goodsTypes.find((g) => g.id === goodsTypeId);
+  const isOther = selectedGoodsType?.name === "その他";
 
   useEffect(() => {
-    if (
-      characterId &&
-      !filteredCharacters.some((c) => c.id === characterId)
-    ) {
-      setCharacterId("");
+    if (!characterValue) return;
+    const validChar = filteredCharacters.some((c) => c.id === characterValue);
+    const validReq =
+      characterValue.startsWith(REQ_PREFIX) &&
+      filteredPending.some(
+        (p) => p.id === characterValue.slice(REQ_PREFIX.length),
+      );
+    if (!validChar && !validReq) {
+      setCharacterValue("");
     }
-  }, [characterId, filteredCharacters]);
+  }, [characterValue, filteredCharacters, filteredPending]);
 
   useEffect(() => {
     router.prefetch("/inventory");
@@ -162,13 +204,28 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
           return;
         }
       }
+      const { characterId, characterRequestId } =
+        splitCharacterValue(characterValue);
+      // 「その他」以外で title が空なら、auto-title を作る
+      let finalTitle = title.trim();
+      if (!finalTitle) {
+        const ch = characterId
+          ? filteredCharacters.find((c) => c.id === characterId)
+          : null;
+        const req = characterRequestId
+          ? filteredPending.find((p) => p.id === characterRequestId)
+          : null;
+        const grp = groups.find((g) => g.id === groupId);
+        const name = ch?.name ?? req?.name ?? grp?.name ?? "";
+        finalTitle = `${name} ${selectedGoodsType?.name ?? ""}`.trim();
+      }
       const r = await updateInventoryItem({
         id: item.id,
         groupId,
-        characterId: characterId || null,
+        characterId,
+        characterRequestId,
         goodsTypeId,
-        title,
-        series: series || undefined,
+        title: finalTitle,
         description: description || undefined,
         condition: condition ?? undefined,
         quantity,
@@ -307,9 +364,9 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
         <div className="flex flex-wrap gap-1.5">
           <button
             type="button"
-            onClick={() => setCharacterId("")}
+            onClick={() => setCharacterValue("")}
             className={`rounded-full px-3 py-1.5 text-[12px] font-bold transition-all ${
-              !characterId
+              !characterValue
                 ? "bg-[#a695d8] text-white"
                 : "border border-[#3a324a14] bg-white text-gray-700"
             }`}
@@ -317,12 +374,12 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
             指定なし
           </button>
           {filteredCharacters.map((c) => {
-            const sel = characterId === c.id;
+            const sel = characterValue === c.id;
             return (
               <button
                 key={c.id}
                 type="button"
-                onClick={() => setCharacterId(c.id)}
+                onClick={() => setCharacterValue(c.id)}
                 className={`rounded-full px-3 py-1.5 text-[12px] font-bold transition-all ${
                   sel
                     ? "bg-[#a695d8] text-white"
@@ -333,7 +390,38 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
               </button>
             );
           })}
+          {filteredPending.map((p) => {
+            const value = `${REQ_PREFIX}${p.id}`;
+            const sel = characterValue === value;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setCharacterValue(value)}
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-bold transition-all ${
+                  sel
+                    ? "bg-[#a695d8] text-white"
+                    : "border border-dashed border-[#a695d8] bg-white text-[#a695d8]"
+                }`}
+                title="運営の承認待ち"
+              >
+                {p.name}
+                <span
+                  className={`rounded-full px-1.5 text-[9px] font-extrabold ${
+                    sel ? "bg-white/30" : "bg-[#a695d822]"
+                  }`}
+                >
+                  審査中
+                </span>
+              </button>
+            );
+          })}
         </div>
+        {characterValue.startsWith(REQ_PREFIX) && (
+          <p className="mt-1.5 text-[10.5px] text-[#a695d8]">
+            運営の承認後、自動でメンバーマスタに切り替わります
+          </p>
+        )}
       </Section>
 
       {/* 種別 */}
@@ -359,30 +447,20 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
         </div>
       </Section>
 
-      {/* タイトル */}
-      <Section label="タイトル" required>
-        <input
-          type="text"
-          required
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          maxLength={100}
-          placeholder="例: トレカ・スア"
-          className="block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
-        />
-      </Section>
-
-      {/* シリーズ */}
-      <Section label="シリーズ" hint="(任意)">
-        <input
-          type="text"
-          value={series}
-          onChange={(e) => setSeries(e.target.value)}
-          maxLength={100}
-          placeholder="例: WORLD TOUR / 5th Mini"
-          className="block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
-        />
-      </Section>
+      {/* タイトル — 「その他」種別のときのみ手動入力。それ以外は自動生成。 */}
+      {isOther && (
+        <Section label="タイトル" required>
+          <input
+            type="text"
+            required
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={100}
+            placeholder="例: 公式ステッカー"
+            className="block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
+          />
+        </Section>
+      )}
 
       {/* コンディション */}
       <Section label="コンディション" hint="(任意)">

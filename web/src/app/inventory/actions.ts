@@ -16,6 +16,7 @@ export async function saveBatchInventoryItems(input: {
     groupId: string;
     goodsTypeId: string;
     characterId?: string | null;
+    characterRequestId?: string | null; // 審査中メンバーの選択
     title: string;
     series?: string;
     condition: "sealed" | "mint" | "good" | "fair" | "poor";
@@ -54,7 +55,8 @@ export async function saveBatchInventoryItems(input: {
     user_id: user.id,
     kind: "for_trade" as const,
     group_id: it.groupId,
-    character_id: it.characterId ?? null,
+    character_id: it.characterRequestId ? null : (it.characterId ?? null),
+    character_request_id: it.characterRequestId ?? null,
     goods_type_id: it.goodsTypeId,
     title: it.title.trim(),
     series: it.series?.trim() || null,
@@ -270,6 +272,7 @@ export async function updateInventoryItem(input: {
   id: string;
   groupId: string;
   characterId?: string | null;
+  characterRequestId?: string | null; // 審査中メンバー
   goodsTypeId: string;
   title: string;
   series?: string;
@@ -300,7 +303,8 @@ export async function updateInventoryItem(input: {
 
   const updateFields: Record<string, unknown> = {
     group_id: input.groupId,
-    character_id: input.characterId ?? null,
+    character_id: input.characterRequestId ? null : (input.characterId ?? null),
+    character_request_id: input.characterRequestId ?? null,
     goods_type_id: input.goodsTypeId,
     title,
     series: input.series?.trim() || null,

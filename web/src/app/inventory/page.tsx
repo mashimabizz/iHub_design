@@ -14,7 +14,6 @@ type InventoryRow = {
   id: string;
   kind: "for_trade" | "wanted";
   title: string;
-  series: string | null;
   quantity: number;
   status: "active" | "keep" | "traded" | "reserved" | "archived";
   carrying: boolean;
@@ -22,6 +21,10 @@ type InventoryRow = {
   photo_urls: string[] | null;
   group: { name: string } | { name: string }[] | null;
   character: { name: string } | { name: string }[] | null;
+  character_request:
+    | { requested_name: string; status: string }
+    | { requested_name: string; status: string }[]
+    | null;
   goods_type: { name: string } | { name: string }[] | null;
 };
 
@@ -52,7 +55,7 @@ export default async function InventoryPage() {
     supabase
       .from("goods_inventory")
       .select(
-        "id, kind, title, series, quantity, status, carrying, hue, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+        "id, kind, title, quantity, status, carrying, hue, photo_urls, group:groups_master(name), character:characters_master(name), character_request:character_requests(requested_name, status), goods_type:goods_types_master(name)",
       )
       .eq("user_id", user.id)
       .eq("kind", "for_trade")
@@ -69,19 +72,24 @@ export default async function InventoryPage() {
     (r) => {
       const grp = pickOne(r.group);
       const ch = pickOne(r.character);
+      const req = pickOne(r.character_request);
       const gt = pickOne(r.goods_type);
-      const memberName = ch?.name ?? grp?.name ?? "?";
+      // メンバー名解決: characters_master 優先 → 審査中リクエスト → グループ名
+      const memberName =
+        ch?.name ?? req?.requested_name ?? grp?.name ?? "?";
+      const isPending = !ch && !!req && req.status === "pending";
       return {
         id: r.id,
         memberName,
         groupName: grp?.name ?? null,
         goodsType: gt?.name ?? "?",
-        series: r.series,
+        series: null, // 「シリーズ」は廃止予定（DB 値は表示しない）
         qty: r.quantity,
         hue: r.hue ?? nameToHue(memberName),
         carrying: r.carrying,
         status: r.status,
         photoUrl: (r.photo_urls && r.photo_urls[0]) ?? null,
+        isPending,
       };
     },
   );
