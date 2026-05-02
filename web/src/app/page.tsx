@@ -46,16 +46,99 @@ export default async function Home({ searchParams }: Props) {
     return <WelcomeView />;
   }
 
-  // ログイン中 → ホーム画面（モックアップ home-v2.jsx 準拠・モックデータ）
-  const { data: profile } = await supabase
-    .from("users")
-    .select("handle, display_name")
-    .eq("id", user.id)
-    .maybeSingle();
+  // ログイン中 → ホーム画面
+  const [
+    { data: profile },
+    { data: localMode },
+    { data: aws },
+    { data: carryingItems },
+    { data: wishes },
+  ] = await Promise.all([
+    supabase
+      .from("users")
+      .select("handle, display_name")
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("user_local_mode_settings")
+      .select(
+        "enabled, aw_id, radius_m, selected_carrying_ids, selected_wish_ids, last_lat, last_lng",
+      )
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("activity_windows")
+      .select("id, venue, event_name, eventless, start_at, end_at")
+      .eq("user_id", user.id)
+      .eq("status", "enabled")
+      .order("start_at", { ascending: true }),
+    supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      )
+      .eq("user_id", user.id)
+      .eq("kind", "for_trade")
+      .eq("status", "active")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      )
+      .eq("user_id", user.id)
+      .eq("kind", "wanted")
+      .neq("status", "archived")
+      .order("created_at", { ascending: false }),
+  ]);
+
+  const pickName = (
+    v: { name: string } | { name: string }[] | null,
+  ): string | null => {
+    if (!v) return null;
+    return Array.isArray(v) ? v[0]?.name ?? null : v.name;
+  };
 
   return (
     <>
-      <HomeView profile={profile} />
+      <HomeView
+        profile={profile}
+        localMode={
+          localMode
+            ? {
+                enabled: localMode.enabled,
+                awId: localMode.aw_id,
+                radiusM: localMode.radius_m,
+                selectedCarryingIds: localMode.selected_carrying_ids ?? [],
+                selectedWishIds: localMode.selected_wish_ids ?? [],
+                lastLat: localMode.last_lat,
+                lastLng: localMode.last_lng,
+              }
+            : null
+        }
+        aws={(aws ?? []).map((a) => ({
+          id: a.id,
+          venue: a.venue,
+          eventName: a.event_name,
+          eventless: a.eventless,
+          startAt: a.start_at,
+          endAt: a.end_at,
+        }))}
+        carryingItems={(carryingItems ?? []).map((r) => ({
+          id: r.id,
+          title: r.title,
+          groupName: pickName(r.group),
+          characterName: pickName(r.character),
+          goodsTypeName: pickName(r.goods_type),
+        }))}
+        wishes={(wishes ?? []).map((r) => ({
+          id: r.id,
+          title: r.title,
+          groupName: pickName(r.group),
+          characterName: pickName(r.character),
+          goodsTypeName: pickName(r.goods_type),
+        }))}
+      />
       <BottomNav />
     </>
   );

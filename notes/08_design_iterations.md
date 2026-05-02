@@ -419,6 +419,133 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション63〜65：マッチング v2 一気実装（ホームモード切替・個別募集・カレンダー overlay）
+
+### 背景
+
+iter62 までで Phase A（wish.exchange_type）が完了。残りの 3 フェーズ（B/C/D）を一気に実装したいというオーナー指示で、3 つの iter を 1 セッションでまとめて実装。
+
+### iter63 — Phase B: ホーム広域/現地モード切替
+
+#### Migration
+
+`supabase/migrations/20260503120000_add_local_mode_settings.sql`:
+- `user_local_mode_settings` テーブル新規（user_id PK、enabled、aw_id、radius_m、selected_carrying_ids[]、selected_wish_ids[]、last_lat/lng）
+- updated_at trigger、RLS ポリシー
+
+#### Server actions
+
+`web/src/components/home/actions.ts`（新規）:
+- `enableLocalMode({ lat, lng })`: 現地モード ON、GPS で位置上書き
+- `disableLocalMode()`: 広域モードに戻す
+- `updateLocalModeSelections(...)`: AW・半径・持参・wish 選択の永続化
+- `resetLocalModeSelections()`: 持参・wish 一括リセット
+
+#### UI
+
+`web/src/app/page.tsx`:
+- 並列 fetch: profile + localMode + AW 一覧 + 携帯候補 + wish 一覧
+- HomeView へ props で渡す
+
+`web/src/components/home/HomeView.tsx`（大改修）:
+- 上部に **「🌐 広域 / 📍 現地交換」モード pill** 追加
+- 現地モード ON 切替時に `navigator.geolocation` で GPS 取得 → enableLocalMode
+- 現地モード ON 時: AW + 半径 + 件数のサマリ表示 + 「設定」ボタン
+- venue banner は廃止（モード pill とサマリに統合）
+
+`web/src/components/home/LocalModeSheet.tsx`（新規）:
+- slide-up シート（aria-modal、body スクロールロック、ESC 等は今回省略）
+- AW 選択 list（自分の active な AW から）
+- 半径スライダー（200〜2000m）
+- 持参グッズ multi-select chip
+- wish multi-select chip
+- 「選択を全解除」ボタン（一括リセット）
+- 「この設定で表示」CTA
+
+`web/src/components/home/MatchCard.tsx`:
+- `exchangeType` prop 追加
+- `any` 以外のときマッチカード末尾に紫 chip + 注釈表示
+
+### iter64 — Phase C: 個別募集（listings）
+
+#### Migration
+
+`supabase/migrations/20260503130000_add_listings.sql`:
+- `listings` テーブル新規（user_id, inventory_id, wish_id, exchange_type, ratio_give/receive, priority, status, note）
+- ratio_give/receive は 1〜10 CHECK
+- priority は 1〜5 CHECK
+- status: `active` / `paused` / `matched` / `closed`
+- **整合性 trigger** `validate_listing_refs`:
+  - listings.user_id == inventory.user_id == wish.user_id
+  - inventory は kind='for_trade'、wish は kind='wanted'
+- RLS: 自分の全件可視、他人の active なものは誰でも閲覧
+
+#### Server actions
+
+`web/src/app/listings/actions.ts`（新規）:
+- `createListing(...)`: 作成
+- `updateListing(...)`: 部分更新（status / 比率 / 優先度 / メモ / exchangeType）
+- `deleteListing(id)`
+
+#### 画面
+
+- `web/src/app/listings/page.tsx`（新規）: 個別募集一覧
+  - join で inventory + wish を取得して一画面でカード表示
+- `web/src/app/listings/ListingsView.tsx`（新規）:
+  - status バッジ + 優先度 + 交換タイプ
+  - 譲（写真 + メンバー）/ 比率（譲 N ↔ 受 M）/ wish（プレースホルダ）
+  - 「一時停止」「再開」「削除」アクション
+- `web/src/app/listings/new/page.tsx` + `ListingNewForm.tsx`（新規）:
+  - 譲 select（自分の active な譲から、写真付き）
+  - wish select（wish の exchange_type を引き継ぐ）
+  - 交換タイプ chip
+  - 比率 stepper（譲 1〜10 ↔ 受 1〜10）
+  - 優先度 5 段階 chip
+  - メモ
+- `WishView.tsx` のヘッダーに「個別募集 →」リンク追加（動線）
+
+### iter65 — Phase D: CalendarOverlay コンポーネント
+
+#### コンポーネント
+
+`web/src/components/calendar/CalendarOverlay.tsx`（新規）:
+- props: myAWs / partnerAWs / days（default 7）/ fromDate / colors
+- 横軸: 日付（7 日分、横スクロール可）、縦軸: 時刻（8:00〜24:00）
+- 自分の AW を左半分に紫帯、相手を右半分にピンク帯で描画
+- 重なる時間帯を黄色（#e0a847）でハイライト + 上下ボーダー
+- 凡例（自分 / 相手 / 重なり）
+
+打診画面（C-1 / propose-select）が iter67-68 で実装される時、`<CalendarOverlay myAWs={...} partnerAWs={...} />` で組み込む。
+
+#### proposals テーブルへの列追加は保留
+
+`proposals` テーブルが現状未作成のため、`expose_calendar` / `listing_id` の追加 migration は **打診機能実装時（iter67-68）に同時実行**。本 iter ではコンポーネントだけ用意。
+
+### 関連ファイル
+
+- `supabase/migrations/20260503120000_add_local_mode_settings.sql`
+- `supabase/migrations/20260503130000_add_listings.sql`
+- `web/src/app/page.tsx`
+- `web/src/components/home/{actions.ts, HomeView.tsx, LocalModeSheet.tsx, MatchCard.tsx}`
+- `web/src/app/listings/{page.tsx, ListingsView.tsx, actions.ts}`
+- `web/src/app/listings/new/{page.tsx, ListingNewForm.tsx}`
+- `web/src/components/calendar/CalendarOverlay.tsx`
+- `web/src/app/wishes/WishView.tsx`（個別募集リンク追加）
+
+### 残り課題
+
+1. 現地モードのマッチング演算は引き続き mock（実演算は iter66+）
+2. CalendarOverlay は単体テスト用のページがまだ無い → iter67-68 の打診画面で組み込む
+3. 個別募集のマッチカード表示（match card に listing バッジを出す）も iter66+
+
+### セルフレビュー（CLAUDE.md absolute rule C）
+
+- **A. デザイン整合性**: モード pill / シート / 個別募集カード — 既存 iHub トーン（紫グラデ + 薄紫枠 + chip スタイル）と統一 ✅
+- **B. 仕様整合性**: notes/05 / 09 / 18 のスキーマ・ライフサイクルと整合。listings の trigger で参照整合性を強制 ✅
+- **C. レビュー記録**: proposals 列追加は打診画面実装時に統合と明記。実マッチング演算は iter66 以降 ✅
+
+---
+
 ## イテレーション62：Phase A — wish に exchange_type 追加 + chip 表示
 
 ### 背景・問題意識

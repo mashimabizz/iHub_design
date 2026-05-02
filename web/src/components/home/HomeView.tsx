@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useEffect, useState, useTransition } from "react";
 import { logout } from "@/app/auth/actions";
 import { MatchCard, type MockMatchCard } from "./MatchCard";
+import {
+  disableLocalMode,
+  enableLocalMode,
+  type LocalModeSettings,
+} from "./actions";
+import {
+  LocalModeSheet,
+  type SimpleAW,
+  type SimpleItem,
+} from "./LocalModeSheet";
 
 const TABS = [
   { id: 0, label: "完全マッチ", count: 3 },
@@ -12,7 +21,7 @@ const TABS = [
   { id: 3, label: "探索", count: 64 },
 ];
 
-// モックデータ（実装が進めば DB から取得）
+// モックデータ（iter66 で実マッチング演算に置換予定）
 const MOCK_CARDS_BY_TAB: Record<number, MockMatchCard[]> = {
   0: [
     {
@@ -25,6 +34,7 @@ const MOCK_CARDS_BY_TAB: Record<number, MockMatchCard[]> = {
       wantsLabel: "ヒナ アクスタ / 生写真",
       matchType: "complete",
       distance: "横浜アリーナ 周辺 · 15m",
+      exchangeType: "any",
     },
     {
       id: "m2",
@@ -36,6 +46,7 @@ const MOCK_CARDS_BY_TAB: Record<number, MockMatchCard[]> = {
       wantsLabel: "スア 生写真",
       matchType: "complete",
       distance: "横浜アリーナ 周辺 · 80m",
+      exchangeType: "same_kind",
     },
   ],
   1: [
@@ -49,6 +60,7 @@ const MOCK_CARDS_BY_TAB: Record<number, MockMatchCard[]> = {
       wantsLabel: "（あなたの譲が欲しい）",
       matchType: "they_want_you",
       distance: "横浜アリーナ 周辺 · 200m",
+      exchangeType: "cross_kind",
     },
   ],
   2: [
@@ -62,6 +74,7 @@ const MOCK_CARDS_BY_TAB: Record<number, MockMatchCard[]> = {
       wantsLabel: "（あなたが欲しい）",
       matchType: "you_want_them",
       distance: "横浜アリーナ 周辺 · 350m",
+      exchangeType: "any",
     },
   ],
   3: [],
@@ -69,11 +82,74 @@ const MOCK_CARDS_BY_TAB: Record<number, MockMatchCard[]> = {
 
 export function HomeView({
   profile,
+  localMode,
+  aws,
+  carryingItems,
+  wishes,
 }: {
   profile: { handle: string; display_name: string } | null;
+  localMode: LocalModeSettings | null;
+  aws: SimpleAW[];
+  carryingItems: SimpleItem[];
+  wishes: SimpleItem[];
 }) {
   const [tab, setTab] = useState(0);
   const cards = MOCK_CARDS_BY_TAB[tab] ?? [];
+
+  // 現地モード state（DB から取得した初期値）
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  const isLocal = localMode?.enabled ?? false;
+  const settings: LocalModeSettings = localMode ?? {
+    enabled: false,
+    awId: null,
+    radiusM: 500,
+    selectedCarryingIds: [],
+    selectedWishIds: [],
+    lastLat: null,
+    lastLng: null,
+  };
+
+  // 現地モード ON 切替時に GPS 取得
+  function handleEnableLocal() {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      // Geolocation なくても ON にする（fallback として last_lat/lng を維持）
+      startTransition(async () => {
+        await enableLocalMode({});
+        setSheetOpen(true);
+      });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        startTransition(async () => {
+          await enableLocalMode({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          });
+          setSheetOpen(true);
+        });
+      },
+      () => {
+        // 取得失敗 → 位置情報なしで ON
+        startTransition(async () => {
+          await enableLocalMode({});
+          setSheetOpen(true);
+        });
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60_000 },
+    );
+  }
+
+  function handleDisableLocal() {
+    startTransition(async () => {
+      await disableLocalMode();
+    });
+  }
+
+  // chosen AW info
+  const chosenAW = aws.find((a) => a.id === settings.awId);
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
@@ -149,41 +225,80 @@ export function HomeView({
           </div>
         </div>
 
-        {/* Venue banner */}
-        <div className="mx-5 mt-2.5 flex items-center gap-3 rounded-2xl border border-[#a695d855] bg-[linear-gradient(120deg,#a695d826,#a8d4e630)] px-4 py-3.5">
-          <div
-            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] shadow-[0_4px_10px_rgba(166,149,216,0.33)]"
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 15 15"
-              fill="none"
-              stroke="#fff"
-              strokeWidth="1.6"
-            >
-              <path d="M7.5 1.5C5 1.5 3 3.4 3 5.7c0 3.4 4.5 8 4.5 8s4.5-4.6 4.5-8c0-2.3-2-4.2-4.5-4.2z" />
-              <circle cx="7.5" cy="5.7" r="1.5" />
-            </svg>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-bold leading-tight text-gray-900">
-              横浜アリーナ 周辺{" "}
-              <span className="ml-1 text-[10.5px] font-semibold text-[#a695d8]">
-                · AW 有効
-              </span>
-            </div>
-            <div className="mt-0.5 text-[11.5px] tabular-nums text-gray-500">
-              17:30〜18:30 · 半径500m · 時空交差でマッチング
-            </div>
-          </div>
+        {/* モード切替 pill */}
+        <div className="mx-5 mt-2 flex gap-1 rounded-full bg-[#3a324a0a] p-1">
           <button
             type="button"
-            className="flex-shrink-0 rounded-full bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#a695d8] shadow-sm"
+            onClick={() => isLocal && handleDisableLocal()}
+            disabled={pending}
+            className={`flex-1 rounded-full py-2 text-[12px] font-bold transition-all ${
+              !isLocal
+                ? "bg-white text-[#3a324a] shadow-[0_2px_6px_rgba(58,50,74,0.12)]"
+                : "bg-transparent text-[#3a324a8c]"
+            } disabled:opacity-50`}
           >
-            変更
+            🌐 広域
+            <span className="ml-1 text-[10px] font-semibold">
+              {!isLocal ? "（時空無制限）" : ""}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => (isLocal ? setSheetOpen(true) : handleEnableLocal())}
+            disabled={pending}
+            className={`flex-1 rounded-full py-2 text-[12px] font-bold transition-all ${
+              isLocal
+                ? "bg-white text-[#3a324a] shadow-[0_2px_6px_rgba(58,50,74,0.12)]"
+                : "bg-transparent text-[#3a324a8c]"
+            } disabled:opacity-50`}
+          >
+            📍 現地交換
+            <span className="ml-1 text-[10px] font-semibold">
+              {isLocal ? "（AW 連動）" : ""}
+            </span>
           </button>
         </div>
+
+        {/* 現地モード ON 時のみ：設定サマリ */}
+        {isLocal && (
+          <div className="mx-5 mt-3 flex items-center gap-3 rounded-2xl border border-[#a695d855] bg-[linear-gradient(120deg,#a695d826,#a8d4e630)] px-4 py-3">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] shadow-[0_4px_10px_rgba(166,149,216,0.33)]">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 15 15"
+                fill="none"
+                stroke="#fff"
+                strokeWidth="1.6"
+              >
+                <path d="M7.5 1.5C5 1.5 3 3.4 3 5.7c0 3.4 4.5 8 4.5 8s4.5-4.6 4.5-8c0-2.3-2-4.2-4.5-4.2z" />
+                <circle cx="7.5" cy="5.7" r="1.5" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13.5px] font-bold leading-tight text-gray-900">
+                {chosenAW
+                  ? chosenAW.venue
+                  : "AW 未選択（タップで設定）"}
+              </div>
+              <div className="mt-0.5 text-[11px] tabular-nums text-gray-600">
+                半径{" "}
+                {settings.radiusM >= 1000
+                  ? `${(settings.radiusM / 1000).toFixed(1)}km`
+                  : `${settings.radiusM}m`}{" "}
+                · 持参 {settings.selectedCarryingIds.length} 件 · wish{" "}
+                {settings.selectedWishIds.length} 件
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSheetOpen(true)}
+              className="flex-shrink-0 rounded-full bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#a695d8] shadow-sm"
+            >
+              設定
+            </button>
+          </div>
+        )}
 
         {/* Tab chips */}
         <div className="-mx-5 mt-3.5 flex gap-1.5 overflow-x-auto px-5 pb-2 pt-1 [&::-webkit-scrollbar]:hidden">
@@ -218,14 +333,13 @@ export function HomeView({
           {cards.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
               {tab === 3
-                ? "探索フィードは今後実装します（Phase 0c-2 以降）"
+                ? "探索フィードは今後実装します"
                 : "現在マッチがありません"}
             </div>
           ) : (
             cards.map((c) => <MatchCard key={c.id} card={c} />)
           )}
 
-          {/* Footer hint（完全マッチタブのみ） */}
           {tab === 0 && cards.length > 0 && (
             <div className="flex items-center justify-between rounded-2xl border border-[#3a324a14] bg-white px-4 py-3">
               <div>
@@ -243,14 +357,13 @@ export function HomeView({
             </div>
           )}
 
-          {/* 暫定: Phase 0c 進捗 */}
           {profile && (
             <div className="rounded-2xl border border-[#a695d822] bg-white p-4 text-[11px] leading-relaxed text-gray-600">
               <div className="font-bold text-gray-900">
                 ようこそ {profile.display_name}（@{profile.handle}）
               </div>
               <div className="mt-1.5">
-                ホーム画面は骨組み中。在庫・wish・マッチング機能は順次実装します。
+                マッチング演算は iter66 で実装予定。今は mock data 表示中。
               </div>
               <form action={logout} className="mt-3">
                 <button
@@ -264,6 +377,16 @@ export function HomeView({
           )}
         </div>
       </div>
+
+      {/* 現地モード設定シート */}
+      <LocalModeSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        initial={settings}
+        aws={aws}
+        carryingItems={carryingItems}
+        wishes={wishes}
+      />
     </main>
   );
 }

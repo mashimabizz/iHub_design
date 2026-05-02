@@ -13,6 +13,13 @@ export type MockMatchCard = {
   wantsLabel: string; // "ヒナ アクスタ" など
   matchType: "complete" | "they_want_you" | "you_want_them";
   distance: string; // "横浜アリーナ 周辺・15m"
+  exchangeType?: "same_kind" | "cross_kind" | "any";
+};
+
+const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
+  same_kind: "同種のみ",
+  cross_kind: "異種のみ",
+  any: "どちらでも",
 };
 
 export function MatchCard({ card }: { card: MockMatchCard }) {
@@ -75,6 +82,18 @@ export function MatchCard({ card }: { card: MockMatchCard }) {
           <span className="flex-1 text-gray-700">{card.wantsLabel}</span>
         </div>
       </div>
+
+      {/* 交換タイプタグ（自己申告・判定なし）*/}
+      {card.exchangeType && card.exchangeType !== "any" && (
+        <div className="mt-2.5 flex items-center gap-1.5">
+          <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
+            {EXCHANGE_LABEL[card.exchangeType]}
+          </span>
+          <span className="text-[9.5px] text-gray-500">
+            ※ 相手の自己申告。条件を見て判断してください
+          </span>
+        </div>
+      )}
 
       {/* CTA */}
       <div className="mt-3 flex gap-2">

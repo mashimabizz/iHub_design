@@ -87,7 +87,10 @@ export function WishView({ items }: { items: WishItem[] }) {
             </h1>
             <p className="mt-0.5 text-[11px] text-gray-500">
               探したいグッズを管理 ·{" "}
-              <span className="tabular-nums">{items.length}</span>件登録
+              <span className="tabular-nums">{items.length}</span>件登録 ·{" "}
+              <Link href="/listings" className="font-bold text-[#a695d8]">
+                個別募集 →
+              </Link>
             </p>
           </div>
           <Link
