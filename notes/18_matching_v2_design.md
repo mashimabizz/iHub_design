@@ -1,9 +1,9 @@
 # マッチング v2 設計（雑多メモを整理）
 
 > オーナーの 2026-05-03 メモを構造化したもの。
-> このドキュメントは **要件整理段階**。決定済みではなく、レビュー後に
-> `02_system_requirements.md` / `05_data_model.md` / `09_state_machines.md` /
-> `10_glossary.md` / `11_screen_inventory.md` 等へ反映する。
+> 2026-05-03 16:30 にオーナー回答が入り、§A で確定事項を整理。
+> 確定後、`02_system_requirements.md` / `05_data_model.md` / `09_state_machines.md` /
+> `10_glossary.md` / `11_screen_inventory.md` 等へ反映予定。
 
 ---
 
@@ -27,6 +27,171 @@
 > そして優先度の設定も可能。というふうにしたい。
 >
 > 打診をする際には、ほしいものと私が譲るものを指定するだけでなく、自身のカレンダーを公開するか選択できるようにして、交換方法の検討できる材料を増やしてほしい。
+
+---
+
+## A. オーナー回答（2026-05-03）と確定事項
+
+### A-1. 同種/異種の判定
+
+**確定**: システムによる自動判定は不要。
+
+> 「マッチングリストに『同種のみ』『異種のみ』『同異種』というタグがついて、
+> 相手の譲るグッズとそのタグをみて、提案されている自分の譲るが本当に当てはまるかを
+> ユーザーに確認してもらうためのもの」
+
+**意味するところ**:
+- `exchange_type` は **自己申告タグ**として保持する（DB に保存）
+- マッチングロジックでは **フィルタ条件として弾かない**
+- マッチング結果カードに **タグ表示**（chip）するだけで、判断は人間
+- これはマッチング演算が大幅にシンプルになる重要決定
+
+### A-2. 比率の上限
+
+**確定**: 1:10 〜 10:1 の範囲で OK。
+
+### A-3. 個別募集と wish の関係
+
+**確定**: 「**まず wish を登録してもらい、そこから個別募集を選ぶ**」。
+
+**意味するところ**:
+- wish が先に存在する前提
+- 個別募集の作成画面では、自分の wish 一覧から「この wish を個別募集として育てる」流れ
+- データ構造としては、個別募集は **譲アイテム × wish のセット** + 比率 + 優先度
+- listing_targets テーブルは、関連する wish への参照（または wish の subset 指定）として再設計
+
+**§3-2 のスキーマ提案を更新**: §B-2 参照。
+
+### A-4. モード切替の永続化
+
+**確定**:
+- 基本的に設定は記憶
+- ただし **位置情報だけは現在地で毎回更新**
+- **持参グッズと求めるグッズの一括リセット**機能を提供
+
+**意味するところ**:
+- AW（場所）はその時の GPS で center_lat/lng を上書き
+- 半径・時間・選択 wish・選択携帯グッズは前回の値を保持
+- 「全部 OFF にして選び直す」ボタンが必要
+
+### A-5. カレンダー公開のスコープ
+
+**確定**: 「**相手のカレンダーと自分のカレンダーを重ねて見れる**」。
+取引終了後は自動非公開。
+
+**意味するところ**:
+- 単なる相手の AW リスト表示ではなく、**自分と相手の AW を重ねた overlay UI** が必要
+- 重なる時間帯（時空交差）が一目で分かる必要がある
+- 公開期間は「打診中〜取引完了まで」、deal status が完了系（completed / disputed_resolved）になったら自動的に閲覧不可
+- 表示形式案: タイムライン横軸（日付）/ AW を色分けした帯 / 重なり帯ハイライト
+
+### A-6. 広域モードの通知頻度
+
+**確定**: **MVP では考えない**。後続フェーズで仕様化。
+
+### A-7. 用語の整理
+
+**確定**: 「Listing」という英語は使わず、**「個別募集」で統一**。
+
+**意味するところ**:
+- UI 文言・ドキュメントは「個別募集」
+- DB のテーブル名 `listings` は技術上の名称として残す（コメントで「= 個別募集」明記）
+- もしくは `pinpoint_proposals` 等のリネームも検討
+
+---
+
+## B. 確定事項を踏まえた仕様の更新
+
+### B-1. exchange_type は「タグ」（判定軸ではない）
+
+| 領域 | 役割 |
+|---|---|
+| `user_wants.exchange_type` | wish の自己申告タグ。デフォルト `any`。 |
+| `listings.exchange_type` | 個別募集の自己申告タグ。デフォルト `any`。 |
+| マッチングロジック | **タグを判定に使わない**。結果カードに chip 表示のみ。 |
+
+### B-2. 個別募集（旧 listing）のスキーマ再設計
+
+「wish ベースで作る」が確定。スキーマを wish 中心に組み替え。
+
+#### `listings`（個別募集）
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | → users（自分） |
+| `inventory_id` | uuid | → goods_inventory（譲、kind=for_trade） |
+| `wish_id` | uuid | → user_wants（求める対象。**1 個の listing は 1 個の wish**） |
+| `exchange_type` | text | `same_kind` / `cross_kind` / `any`（タグ） |
+| `ratio_give` | int | 譲の個数（1〜10） |
+| `ratio_receive` | int | 受の個数（1〜10） |
+| `priority` | int | 1（高）〜 5（低） |
+| `status` | text | `active` / `paused` / `matched` / `closed` |
+| `note` | text nullable | 自由メモ |
+| `created_at` / `updated_at` | timestamptz | |
+
+**改訂ポイント**:
+- 旧スキーマの `listing_targets` は廃止
+- 求める対象 = `wish_id` 経由で wish の `character_id` / `goods_type_id` / `flexibility` を参照
+- 「複数の wish を OR で対象にしたい」場合は **複数の listing を作る**（シンプル化）
+
+#### `user_wants` 拡張
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| `exchange_type` | text | `same_kind` / `cross_kind` / `any`（default `any`） |
+
+→ wish レベルでもタグ付け（個別募集化していない wish にも付けられる）。
+
+### B-3. 現地交換モードの状態管理
+
+#### `user_local_mode_settings`（新規・1ユーザー1行）
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| `user_id` | uuid PK | → users |
+| `enabled` | bool | 現地モード ON/OFF |
+| `aw_id` | uuid nullable | 使う AW |
+| `radius_m` | int | 半径（前回値の記憶） |
+| `selected_carrying_ids` | uuid[] | 選択中の携帯グッズ ID 配列 |
+| `selected_wish_ids` | uuid[] | 選択中の wish ID 配列 |
+| `last_lat` / `last_lng` | numeric | 最終 GPS 位置（毎回 ON 時に更新） |
+| `updated_at` | timestamptz | |
+
+→ シンプルな key-value 的な「現地モード設定」。
+   位置はモード ON にした瞬間に上書き。
+
+### B-4. カレンダー overlay UI
+
+打診画面 / 取引中の view に追加するパーツ。
+
+| 表示要素 | 内容 |
+|---|---|
+| 横軸 | 日付（今日〜今後 7〜14 日） |
+| 縦帯（自分） | 自分の `availability_windows` を色 A で描画 |
+| 縦帯（相手） | 相手の `availability_windows` を色 B で描画 |
+| 重なりハイライト | 同時刻にある AW を強調（紫グラデ等） |
+| 公開条件 | `proposals.expose_calendar = true` かつ deal が active |
+
+→ 取引完了で `proposals` の対応行を見て自動非表示にする RLS。
+
+### B-5. 通知
+
+MVP 範囲外。`notes/02_system_requirements.md` の現行通知制御もそのまま据え置き、後続フェーズで再検討。
+
+### B-6. 用語の確定（10_glossary.md 反映予定）
+
+| 用語 | 確定表記 | 廃語 |
+|---|---|---|
+| **広域マッチ** | global match | （新規） |
+| **現地マッチ** | local match | （新規） |
+| **個別募集** | pinpoint listing（DB のみ） | "listing" は UI に出さない |
+| **同種交換** | same-kind swap | — |
+| **異種交換** | cross-kind swap | — |
+| **混合交換** | any | "どちらでも" は併記 |
+| **交換比率** | exchange ratio | — |
+| **カレンダー公開** | calendar disclosure | — |
+| **カレンダー重ね見** | calendar overlay | — |
 
 ---
 
@@ -251,76 +416,83 @@ listing_matches = find_listings_for_my_inventory(my_haves)
 
 ---
 
-## 7. 実装フェーズの提案
+## 7. 実装フェーズの提案（オーナー回答反映後）
 
 ### Phase A — wish 属性拡張（最小限の v2）
-- wish に `exchange_type` 追加
-- マッチングロジックで判定追加
-- wish 編集 UI に chip 追加
-- → これだけで「同種/異種」の指定が wish レベルで可能になる
+- migration: `user_wants.exchange_type` 追加（同種/異種/どちらでも）
+- wish 編集画面で chip 選択
+- マッチング結果カードにタグ chip 表示（**判定はしない**）
 
-### Phase B — ホームモード切替
-- ホームに「広域 / 現地」モードトグル追加
-- 現地モードの設定パネル
-- 結果リストの差し替え
+### Phase B — ホームモード切替 + 現地モード
+- `user_local_mode_settings` テーブル追加（モード設定の永続化）
+- ホームに「広域 / 現地」切替 pill
+- 現地モード ON 時:
+  - 位置情報を即時更新（GPS）
+  - 持参グッズ・wish 選択（前回値を記憶）
+  - **一括リセット**ボタン
+  - サマリ表示
+- マッチングロジックに AW 時空交差フィルタ追加
 
-### Phase C — 個別募集（listing）
-- DB スキーマ追加
-- listing 作成 / 編集画面
-- 在庫一覧から「個別募集を作成」動線
-- マッチングロジックに listing 軸を追加
+### Phase C — 個別募集（listings）
+- migration: `listings`（**wish_id 必須**）
+- 個別募集作成画面: 既存 wish 一覧から選んで「これで募集する」
+- 譲アイテム選択 → wish 選択 → 比率 1:1〜10:1 → 優先度 → タグ
+- マッチングロジック: listing 一致を最優先（priority sort）
+- UI 表記は **「個別募集」**で統一（"listing" は出さない）
 
-### Phase D — 打診のカレンダー公開
-- proposals に `expose_calendar` 列追加
+### Phase D — 打診のカレンダー公開（重ね見 UI）
+- migration: `proposals.expose_calendar boolean default false`
 - 打診画面にトグル追加
-- 受諾側の AW 閲覧 UI
+- 取引画面に **calendar overlay** コンポーネント実装
+  - 自分と相手の AW をタイムラインで重ねて描画
+  - 重なる時間帯（時空交差）をハイライト
+- 取引完了で自動非公開（RLS で deal status を見て遮断）
 
 ---
 
 ## 8. 要確認事項（オーナーへの質問）
 
-1. **「同種交換」の判定軸**は `goods_type_id` のみで OK？  
-   （ジャンル軸も含めるなら追加検討）
+～ §8 は §A で全件回答済み。レコードとして残すが、解決済 ～
 
-2. **「比率」の上限**は？  
-   提案: 1:1 〜 1:10 / 10:1 程度に制限。極端な値は弾く。
-
-3. **listing と wish の関係**:  
-   - listing は wish と完全独立で良いか？
-   - 「既存 wish を listing 化」の動線は要る？
-
-4. **広域モードと現地モードの切替**:  
-   - 設定は記憶する？（切替後も覚えておく）
-   - 各モードでフィルタ状態は別々に持つ？
-
-5. **カレンダー公開の範囲**:  
-   - 公開する AW の本数（次 N 件 vs 全件）
-   - 公開期間（打診中のみ vs 永続）
-   - 取引終了後は自動非公開？
-
-6. **「全国マッチ（広域）」での通知頻度**:  
-   - 既存の「完全マッチ即時 / 片方向は 1 日まとめ」をそのまま流用？
-
-7. **片方向マッチ昇格**（既存仕様の検討中項目）との関係:  
-   - listing は片方向マッチ昇格の代替手段になる？
+1. **「同種交換」の判定軸**: → 自動判定なし、タグ表示のみ（§A-1）
+2. **「比率」の上限**: → 1:10〜10:1（§A-2）
+3. **listing と wish の関係**: → wish ベース、wish_id 必須（§A-3）
+4. **モード切替の永続化**: → 記憶 + 位置のみ毎回更新 + 一括リセット（§A-4）
+5. **カレンダー公開の範囲**: → 重ね見、取引終了で自動非公開（§A-5）
+6. **広域モードの通知頻度**: → MVP 外（§A-6）
+7. **「listing」用語**: → UI では「個別募集」で統一（§A-7）
 
 ---
 
 ## 9. 次アクション
 
-1. **オーナーレビュー**: 上記 §8 の質問に回答
-2. **質問回答後の整理**:
+1. **既存ドキュメントへの反映** （iter62 着手前）
    - `notes/02_system_requirements.md` の F4 マッチング節を更新
-   - `notes/05_data_model.md` に `listings` / `listing_targets` 追加、`user_wants.exchange_type` 追加、`proposals.expose_calendar` 追加
-   - `notes/09_state_machines.md` に listing と calendar 公開のライフサイクル追加
-   - `notes/10_glossary.md` の §C / §D / §E / §F に新用語追加
-   - `notes/11_screen_inventory.md` に新画面（モード切替、listing 編集、calendar 公開トグル）追加
-3. **iter62 以降の実装計画**:
-   - iter62 → 当初は「検索＋フィルタ」だったが、優先度を見直し
-   - **iter62 候補**: Phase A（wish.exchange_type）
-   - **iter63 候補**: Phase B（ホームモード切替）
-   - **iter64 候補**: Phase C（listing）
-   - **iter65 候補**: Phase D（カレンダー公開）
+   - `notes/05_data_model.md` に追加:
+     - `user_wants.exchange_type`
+     - `listings`（wish_id 必須版）
+     - `proposals.expose_calendar`
+     - `user_local_mode_settings`
+   - `notes/09_state_machines.md` に追加:
+     - 個別募集ライフサイクル（active / paused / matched / closed）
+     - calendar disclosure の有効期間
+   - `notes/10_glossary.md` の §C / §D / §E / §F に §B-6 の新用語追加
+   - `notes/11_screen_inventory.md` に新画面追加:
+     - ホーム広域/現地モード切替
+     - 個別募集作成画面
+     - カレンダー overlay コンポーネント
+
+2. **iter62 以降の実装計画（順序）**:
+   - **iter62**: Phase A（user_wants.exchange_type + chip 表示）
+   - **iter63**: Phase B（ホームモード切替 + 現地設定 + 一括リセット）
+   - **iter64**: Phase C（個別募集 = listings）
+   - **iter65**: Phase D（打診カレンダー公開 + overlay UI）
+   - iter62 当初予定の「検索＋フィルタ」は iter66 へ後送り
+
+3. **再確認したい曖昧点**（実装中に出る可能性）:
+   - 「カレンダー overlay」の対象 AW 範囲（今後 7 日 / 14 日 / 全件）→ 実装時に提案して決める
+   - 個別募集の重複制限（同じ譲 + wish の組み合わせを複数回作れる？）→ 仕様提案して決める
+   - 一括リセットは「持参グッズ」「wish 選択」を別々にリセットできる？両方一括？→ 実装時に決める
 
 ---
 
@@ -328,7 +500,9 @@ listing_matches = find_listings_for_my_inventory(my_haves)
 
 - **Layer A**（譲 + wish）→ 広域マッチ
 - **Layer B**（AW + 携帯 + 選択 wish）→ 現地マッチ
-- **Layer C**（listing = 譲ごとの細条件）→ ピンポイント募集
-- 打診時に **カレンダー公開** をオプションで付与
+- **Layer C**（個別募集 = 譲 + wish + 比率 + 優先度 + タグ）→ ピンポイント募集
+- 打診時に **カレンダー公開**（重ね見）をオプションで付与
+- **同種/異種は自己申告タグのみ。システムは判定しない**
+- **通知設計は MVP 外**
 
-→ オーナーレビュー（§8）後、データモデルと画面仕様を確定して iter62 から段階実装。
+→ §A 確定済み。iter62 から段階実装に着手。
