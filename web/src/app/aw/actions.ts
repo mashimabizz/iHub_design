@@ -116,3 +116,57 @@ export async function deleteAW(id: string): Promise<ActionResult> {
   revalidatePath("/aw");
   return undefined;
 }
+
+/**
+ * AW を「今すぐ開始」する。
+ *
+ * 元の duration（end_at - start_at）を維持しつつ、start_at を現在時刻に
+ * シフト、status を 'enabled' にする。
+ *
+ * 例: 19:00〜21:00 (2h) の AW を 14:30 に押すと → 14:30〜16:30 になる。
+ */
+export async function activateAWNow(id: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // 既存 AW を取得して duration 計算
+  const { data: aw, error: fetchErr } = await supabase
+    .from("activity_windows")
+    .select("start_at, end_at")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (fetchErr || !aw) return { error: fetchErr?.message ?? "AW が見つかりません" };
+
+  const origStart = new Date(aw.start_at);
+  const origEnd = new Date(aw.end_at);
+  const durationMs = origEnd.getTime() - origStart.getTime();
+  // duration が極端に短い/長い場合は 2 時間にする
+  const safeDur =
+    durationMs < 5 * 60_000 || durationMs > 24 * 60 * 60_000
+      ? 2 * 60 * 60_000
+      : durationMs;
+
+  const newStart = new Date();
+  // 現在時刻を 1 分単位に丸める
+  newStart.setSeconds(0, 0);
+  const newEnd = new Date(newStart.getTime() + safeDur);
+
+  const { error } = await supabase
+    .from("activity_windows")
+    .update({
+      start_at: newStart.toISOString(),
+      end_at: newEnd.toISOString(),
+      status: "enabled",
+    })
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return { error: error.message };
+  revalidatePath("/aw");
+  return undefined;
+}

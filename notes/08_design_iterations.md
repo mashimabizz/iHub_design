@@ -419,6 +419,92 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション61.7：AW slide-up シート + 「今すぐ開始」+ 在庫一覧で写真表示
+
+### 背景・問題意識
+
+ユーザーから 3 つの指摘:
+1. 「『AWを追加』を押すと別画面に飛ぶけど、推した瞬間にしたからニュッと出てくる感じにしてほしい」
+2. 「AWを今のものに有効にしてみたいんだけど、どうすれば？もしかしてその動線がない？」
+3. 「グッズ登録で、登録したものが在庫一覧に乗ると思うけど、ちゃんと画像が表示されるようにしてほしい」
+
+### 変更内容
+
+#### A. AW チューザーを slide-up ボトムシート化
+
+**`web/src/app/aw/AWView.tsx`**
+
+- 「AWを追加」ボタンを `<Link href="/aw/new">` から `<button onClick={setIsAddOpen(true)}>` に変更
+- `AWAddSheet` コンポーネントを内部に追加（AWAddEntry の内容を再描画）
+- アニメーション:
+  - backdrop: opacity 0 → 1（200ms）
+  - sheet: translate-y-full → translate-y-0（300ms cubic-bezier(0.32, 0.72, 0, 1)）
+- マウント制御: open 時即マウント、close 時 350ms 待ってアンマウント
+- ESC キーで閉じる、body スクロールロック、aria-modal/role=dialog で a11y 対応
+- シート内の「場所から作る」「イベントから埋める」は引き続き Link で別ルートへ遷移
+- `/aw/new` ルート自体は残す（直接 URL アクセス時のフォールバック）
+
+#### B. 「今すぐ開始」アクション
+
+**`web/src/app/aw/actions.ts`**
+
+`activateAWNow(id)` server action 追加:
+- 元 AW の duration（end_at - start_at）を計算
+- 安全範囲外（5 分未満 or 24h 超）は強制的に 2h
+- 現在時刻を 1 分単位に丸めた値を新 start_at に
+- new_end = new_start + duration
+- status を `'enabled'` にもセット（disabled だった場合も復帰）
+
+**`web/src/app/aw/AWView.tsx`**
+
+SCHEDULED（enabled but not yet started）の AW カードに「今すぐ開始」ボタン追加:
+- 紫グラデ背景の prominent ボタン
+- クリックで `activateAWNow` → router.refresh() → 該当 AW が ACTIVE NOW セクションに移動
+- 既存の「一時無効」「再有効化」ボタンは維持
+
+#### C. 在庫一覧で写真を表示
+
+**`web/src/app/inventory/page.tsx`**
+
+- SELECT に `photo_urls` を追加（`text[]` カラム、すでに DB にあるが取得していなかった）
+- `InventoryRow` 型に `photo_urls` 追加
+- map 時に `photoUrl: r.photo_urls[0] ?? null` をセット
+
+**`web/src/app/inventory/ItemCard.tsx`**
+
+- `ItemCardData` に `photoUrl?: string | null` 追加
+- 写真がある時:
+  - 背景を `#3a324a`（dark）に
+  - `<img>` でフルブリード `object-cover` 表示
+  - メンバー名プレートを白文字 + 黒 backdrop-blur に
+  - イニシャル文字（中央大）を非表示
+- 写真がない時: 従来通りの縞模様カード
+
+(Storage バケットは iter59 の migration で `public: true` 設定済、SELECT policy も「Anyone can view」なので URL アクセス OK)
+
+### 確認方法
+
+1. `/aw` で「AWを追加」 → シートが下からスッと出る
+2. 「キャンセル」or backdrop タップ → スッと下に消える
+3. SCHEDULED の AW カード → 「今すぐ開始」 → ACTIVE NOW に移動
+4. `/inventory/new` で写真撮影 → 保存
+5. `/inventory` 一覧 → 撮影した写真がカード全面に表示される
+
+### 関連ファイル
+
+- `web/src/app/aw/AWView.tsx`（再実装、AWAddSheet 追加）
+- `web/src/app/aw/actions.ts`（activateAWNow 追加）
+- `web/src/app/inventory/page.tsx`（photo_urls fetch）
+- `web/src/app/inventory/ItemCard.tsx`（photo 表示）
+
+### セルフレビュー（CLAUDE.md absolute rule C）
+
+- **A. デザイン整合性**: AWAddEntry の内容は維持しつつアニメーションだけ追加。「今すぐ開始」は紫グラデ統一 ✅
+- **B. 仕様整合性**: status 'enabled'/'disabled' 整合、duration 維持ロジック ✅
+- **C. レビュー記録**: シートと旧 `/aw/new` ルート両立、安全範囲外 duration の fallback を実装 ✅
+
+---
+
 ## イテレーション61.5：AW 編集に本物の地図を統合（Leaflet + OpenStreetMap + Geolocation + Nominatim）
 
 ### 背景・問題意識

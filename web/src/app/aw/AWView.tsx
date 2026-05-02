@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { deleteAW, toggleAWStatus } from "./actions";
+import { activateAWNow, deleteAW, toggleAWStatus } from "./actions";
 
 export type AWItem = {
   id: string;
@@ -67,6 +67,34 @@ export function AWView({ items }: { items: AWItem[] }) {
   const router = useRouter();
   const now = new Date();
 
+  // ─── slide-up シート制御 ─────────────────────────────────
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [sheetMounted, setSheetMounted] = useState(false);
+
+  // open: mount してから次フレームで visible（transition のため）
+  // close: visible を外してから 350ms 後に unmount
+  useEffect(() => {
+    if (isAddOpen) {
+      setSheetMounted(true);
+      // body スクロールロック
+      document.body.style.overflow = "hidden";
+    } else {
+      const t = setTimeout(() => setSheetMounted(false), 350);
+      document.body.style.overflow = "";
+      return () => clearTimeout(t);
+    }
+  }, [isAddOpen]);
+
+  // ESC で閉じる
+  useEffect(() => {
+    if (!isAddOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsAddOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isAddOpen]);
+
   const grouped = useMemo(() => {
     const active: AWItem[] = [];
     const scheduled: AWItem[] = [];
@@ -96,6 +124,12 @@ export function AWView({ items }: { items: AWItem[] }) {
     else router.refresh();
   }
 
+  async function handleActivateNow(id: string) {
+    const result = await activateAWNow(id);
+    if (result?.error) alert(result.error);
+    else router.refresh();
+  }
+
   return (
     <main
       className="flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]"
@@ -118,8 +152,9 @@ export function AWView({ items }: { items: AWItem[] }) {
               Availability Window — 場所 × 時間 × 半径
             </div>
           </div>
-          <Link
-            href="/aw/new"
+          <button
+            type="button"
+            onClick={() => setIsAddOpen(true)}
             className="inline-flex items-center gap-[5px] rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-[14px] py-2 text-[12px] font-bold text-white shadow-[0_4px_10px_rgba(166,149,216,0.31)] transition-all duration-150 active:scale-[0.97]"
           >
             <svg
@@ -134,7 +169,7 @@ export function AWView({ items }: { items: AWItem[] }) {
               <path d="M5.5 1v9M1 5.5h9" />
             </svg>
             AWを追加
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -156,6 +191,7 @@ export function AWView({ items }: { items: AWItem[] }) {
                   derived="active"
                   onToggle={handleToggle}
                   onDelete={handleDelete}
+                  onActivateNow={handleActivateNow}
                 />
               ))}
             </div>
@@ -181,6 +217,7 @@ export function AWView({ items }: { items: AWItem[] }) {
                   }
                   onToggle={handleToggle}
                   onDelete={handleDelete}
+                  onActivateNow={handleActivateNow}
                 />
               ))}
             </div>
@@ -241,16 +278,201 @@ export function AWView({ items }: { items: AWItem[] }) {
           <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c]">
             まだ AW がありません
             <br />
-            <Link
-              href="/aw/new"
+            <button
+              type="button"
+              onClick={() => setIsAddOpen(true)}
               className="mt-2 inline-block font-bold text-[#a695d8]"
             >
               + 最初の AW を追加
-            </Link>
+            </button>
           </div>
         )}
       </div>
+
+      {/* ─── slide-up ボトムシート（チューザー） ─────────── */}
+      {sheetMounted && (
+        <AWAddSheet
+          open={isAddOpen}
+          onClose={() => setIsAddOpen(false)}
+        />
+      )}
     </main>
+  );
+}
+
+/**
+ * AW 追加チューザー — slide-up ボトムシート
+ *
+ * モックアップ aw-edit.jsx AWAddEntry (1078-1237) の内容を
+ * fixed position の overlay として再描画し、
+ * backdrop fade-in + sheet slide-up でアニメーション。
+ */
+function AWAddSheet({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  // location / event ページのプリフェッチ
+  const router = useRouter();
+  useEffect(() => {
+    router.prefetch("/aw/new/location");
+    router.prefetch("/aw/new/event");
+  }, [router]);
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex flex-col ${
+        open ? "pointer-events-auto" : "pointer-events-none"
+      }`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="AW を追加"
+    >
+      {/* backdrop */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="閉じる"
+        className={`absolute inset-0 bg-[linear-gradient(180deg,rgba(58,50,74,0.18),rgba(58,50,74,0.32))] transition-opacity duration-200 ${
+          open ? "opacity-100" : "opacity-0"
+        }`}
+      />
+
+      {/* spacer (shrinks with viewport) */}
+      <div className="flex-1" />
+
+      {/* bottom sheet */}
+      <div
+        className={`relative mx-auto w-full max-w-md rounded-t-[22px] bg-white px-[18px] pb-[30px] pt-2.5 shadow-[0_-10px_40px_rgba(58,50,74,0.18)] transition-transform duration-300 ease-out ${
+          open ? "translate-y-0" : "translate-y-full"
+        }`}
+        style={{
+          transitionTimingFunction: open
+            ? "cubic-bezier(0.32, 0.72, 0, 1)"
+            : "cubic-bezier(0.4, 0, 1, 1)",
+          paddingBottom: `calc(30px + env(safe-area-inset-bottom))`,
+        }}
+      >
+        {/* drag handle */}
+        <div className="mx-auto mb-3.5 h-1 w-9 rounded-sm bg-[#3a324a4d]" />
+
+        {/* title block */}
+        <div className="mb-1 px-0.5">
+          <div className="text-[18px] font-extrabold tracking-[0.3px] text-[#3a324a]">
+            AW を追加
+          </div>
+          <div className="mt-[3px] text-[11.5px] leading-[1.5] text-[#3a324a8c]">
+            合流可能枠 ={" "}
+            <b className="text-[#3a324a]">場所 × 時間 × 半径</b>。
+            イベントは任意のタグ。
+          </div>
+        </div>
+
+        {/* Primary: Location-led */}
+        <Link
+          href="/aw/new/location"
+          className="relative mt-3.5 flex w-full items-start gap-3 rounded-2xl border-[1.5px] border-[#a695d8] bg-[linear-gradient(120deg,#a695d81c,#a8d4e624)] px-4 pb-3.5 pt-4 text-left transition-transform active:scale-[0.99]"
+        >
+          <span className="absolute right-2.5 top-2.5 rounded-full bg-[#a695d8] px-[7px] py-0.5 text-[9px] font-extrabold tracking-[0.5px] text-white">
+            おすすめ
+          </span>
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] shadow-[0_6px_14px_#a695d855]">
+            <svg width="22" height="22" viewBox="0 0 22 22">
+              <path
+                d="M11 2.5c-3.6 0-6 2.5-6 6 0 4 6 11 6 11s6-7 6-11c0-3.5-2.4-6-6-6z"
+                stroke="#fff"
+                strokeWidth="1.6"
+                fill="none"
+              />
+              <circle
+                cx="11"
+                cy="9"
+                r="2.2"
+                stroke="#fff"
+                strokeWidth="1.6"
+                fill="none"
+              />
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[14.5px] font-extrabold tracking-[0.2px] text-[#3a324a]">
+              📍 場所から作る
+            </div>
+            <div className="mt-[3px] text-[11.5px] leading-[1.5] text-[#3a324a8c]">
+              地図でピン → 半径ダイヤル → 時間。
+              <br />
+              <span className="font-semibold text-[#3a324a]">
+                「明日 渋谷で1時間」「会場周辺」
+              </span>
+              どちらでも対応。イベント紐付けは任意。
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {["イベントなしOK", "フレキシブル", "半径200m〜2km"].map((l) => (
+                <span
+                  key={l}
+                  className="rounded-full border-[0.5px] border-[#a695d833] bg-white px-2 py-0.5 text-[9.5px] font-semibold text-[#3a324a]"
+                >
+                  {l}
+                </span>
+              ))}
+            </div>
+          </div>
+        </Link>
+
+        {/* Secondary: Event-led */}
+        <Link
+          href="/aw/new/event"
+          className="relative mt-2 flex w-full items-start gap-3 rounded-2xl border-[0.5px] border-[#3a324a14] bg-white px-4 py-3.5 text-left transition-transform active:scale-[0.99]"
+        >
+          <span className="absolute right-2.5 top-2.5 rounded-full bg-[#3a324a14] px-[7px] py-0.5 text-[9px] font-extrabold tracking-[0.5px] text-[#3a324a8c]">
+            ショートカット
+          </span>
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-[#3a324a14]">
+            <svg width="22" height="22" viewBox="0 0 22 22">
+              <rect
+                x="4"
+                y="6"
+                width="14"
+                height="13"
+                rx="2"
+                stroke="#3a324a"
+                strokeWidth="1.4"
+                fill="none"
+              />
+              <path
+                d="M4 10h14M8 3v4M14 3v4"
+                stroke="#3a324a"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[14.5px] font-extrabold tracking-[0.2px] text-[#3a324a]">
+              🎤 イベントから埋める
+            </div>
+            <div className="mt-[3px] text-[11.5px] leading-[1.5] text-[#3a324a8c]">
+              ライブ・ファンミ・ポップアップ等を選ぶと
+              <span className="font-semibold text-[#3a324a]">
+                {" "}会場座標と開演±30分が自動入力
+              </span>
+              。1タップで保存できる。
+            </div>
+          </div>
+        </Link>
+
+        {/* Cancel */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-3 block w-full rounded-xl py-3 text-center text-[13px] font-semibold text-[#3a324a8c]"
+        >
+          キャンセル
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -279,11 +501,13 @@ function AWCard({
   derived,
   onToggle,
   onDelete,
+  onActivateNow,
 }: {
   aw: AWItem;
   derived: DerivedStatus;
   onToggle: (id: string, next: "enabled" | "disabled" | "archived") => void;
   onDelete: (id: string) => void;
+  onActivateNow: (id: string) => void;
 }) {
   const isActive = derived === "active";
   const isDisabled = derived === "disabled";
@@ -420,6 +644,18 @@ function AWCard({
       {/* scheduled / disabled 時：軽いアクション */}
       {!isActive && derived !== "archived" && (
         <div className="flex gap-1.5 px-[14px] pb-[12px] pt-[6px]">
+          {/* 「今すぐ開始」: scheduled な enabled AW のみ */}
+          {!isDisabled && (
+            <button
+              type="button"
+              onClick={() => onActivateNow(aw.id)}
+              className="flex flex-1 items-center justify-center gap-1 rounded-[10px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-2 text-[11px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.35)] active:scale-[0.97]"
+              title="開始時刻を今に移して LIVE 化"
+            >
+              <span className="h-[5px] w-[5px] rounded-full bg-white" />
+              今すぐ開始
+            </button>
+          )}
           {isDisabled ? (
             <button
               type="button"

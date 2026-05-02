@@ -16,6 +16,7 @@ export type ItemCardData = {
   qty: number;
   hue: number; // 0〜360
   carrying: boolean;
+  photoUrl?: string | null; // Supabase Storage の公開 URL（存在すればイニシャル表示の代わりに写真表示）
 };
 
 export function ItemCard({
@@ -28,17 +29,34 @@ export function ItemCard({
   const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 82%) 6px 11px)`;
   const memberLabelColor = `hsl(${item.hue}, 35%, 28%)`;
   const initialShadow = `0 2px 6px hsla(${item.hue}, 30%, 30%, 0.4)`;
+  const hasPhoto = !!item.photoUrl;
 
   return (
     <div
       className="relative overflow-hidden rounded-xl border border-[#3a324a14] shadow-[0_2px_6px_rgba(58,50,74,0.08)]"
-      style={{ aspectRatio: "3 / 4", background: stripeBg }}
+      style={{
+        aspectRatio: "3 / 4",
+        background: hasPhoto ? "#3a324a" : stripeBg,
+      }}
     >
+      {/* 写真（存在時はイニシャルの代わりにフルブリードで表示） */}
+      {hasPhoto && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.photoUrl!}
+          alt={`${item.memberName} ${item.goodsType}`}
+          className="absolute inset-0 h-full w-full object-cover"
+          loading="lazy"
+        />
+      )}
+
       {/* メンバー名プレート */}
-      <div className="absolute left-1.5 top-1.5">
+      <div className="absolute left-1.5 top-1.5 z-10">
         <div
-          className="rounded-md bg-white/85 px-1.5 py-0.5 text-[9px] font-bold"
-          style={{ color: memberLabelColor }}
+          className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
+            hasPhoto ? "bg-black/55 text-white backdrop-blur-sm" : "bg-white/85"
+          }`}
+          style={hasPhoto ? undefined : { color: memberLabelColor }}
         >
           {item.memberName}
         </div>
@@ -51,7 +69,7 @@ export function ItemCard({
           e.stopPropagation();
           onCarryingToggle?.(item.id, !item.carrying);
         }}
-        className="absolute right-0 top-0 flex h-9 w-9 items-center justify-center"
+        className="absolute right-0 top-0 z-10 flex h-9 w-9 items-center justify-center"
         aria-label={
           item.carrying ? "持参中をやめる" : "持参中にする"
         }
@@ -73,13 +91,15 @@ export function ItemCard({
         </div>
       </button>
 
-      {/* メンバーのイニシャル（中央・大） */}
-      <div
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[28px] font-extrabold text-white/90"
-        style={{ textShadow: initialShadow }}
-      >
-        {item.memberName[0]}
-      </div>
+      {/* メンバーのイニシャル（中央・大）— 写真がない時のみ */}
+      {!hasPhoto && (
+        <div
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[28px] font-extrabold text-white/90"
+          style={{ textShadow: initialShadow }}
+        >
+          {item.memberName[0]}
+        </div>
+      )}
 
       {/* 下部ストリップ */}
       <div

@@ -19,6 +19,7 @@ type InventoryRow = {
   status: "active" | "keep" | "traded" | "reserved" | "archived";
   carrying: boolean;
   hue: number | null;
+  photo_urls: string[] | null;
   group: { name: string } | { name: string }[] | null;
   character: { name: string } | { name: string }[] | null;
   goods_type: { name: string } | { name: string }[] | null;
@@ -51,7 +52,7 @@ export default async function InventoryPage() {
     supabase
       .from("goods_inventory")
       .select(
-        "id, kind, title, series, quantity, status, carrying, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+        "id, kind, title, series, quantity, status, carrying, hue, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
       )
       .eq("user_id", user.id)
       .eq("kind", "for_trade")
@@ -80,6 +81,7 @@ export default async function InventoryPage() {
         hue: r.hue ?? nameToHue(memberName),
         carrying: r.carrying,
         status: r.status,
+        photoUrl: (r.photo_urls && r.photo_urls[0]) ?? null,
       };
     },
   );
