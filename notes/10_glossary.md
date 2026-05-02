@@ -107,6 +107,15 @@
 | **wish一致** | wish match | 自分の wish と相手の譲が一致しているマーク | UI バッジ |
 | **マッチング相手** | — | ホームに表示される候補ユーザー | home-v2.jsx |
 | **保存検索** | saved search | カスタム検索条件を保存・繰り返し利用 | iter23 |
+| **広域マッチ** | global match、時空無制限 | 譲 × wish のみで全国マッチ。AW 不要。ホームのデフォルト（iter62〜） | notes/18 §B |
+| **現地マッチ** | local match、時空マッチ | AW + 携帯グッズ + 選択 wish で時空交差した相手のみ表示（iter63〜） | notes/18 §B |
+| **個別募集** | pinpoint listing（DB のみ） | 譲 1 + wish 1 + 比率 + 優先度 + タグ。「listing」は UI に出さない（iter64〜） | notes/18 §B |
+| **同種交換** | same-kind swap | 同じ goods_type 同士の交換。**自己申告タグのみ、システム判定なし** | notes/18 §A-1 |
+| **異種交換** | cross-kind swap | 異なる goods_type 同士の交換。タグのみ | notes/18 §A-1 |
+| **混合交換** | any、どちらでも | 同種・異種を問わない（デフォルト） | notes/18 §A-1 |
+| **交換比率** | exchange ratio | 譲 N 個 ↔ 受 M 個の比率。1:10〜10:1 まで | notes/18 §A-2 |
+| **カレンダー公開** | calendar disclosure | 打診時オプション。相手と自分の AW を重ね見可能にする | notes/18 §A-5 |
+| **カレンダー重ね見** | calendar overlay | 自分と相手の AW をタイムラインで重ねた UI。重なる時間帯がハイライト | notes/18 §B-4 |
 
 ## F. 場所・時間関連
 

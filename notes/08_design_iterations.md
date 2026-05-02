@@ -419,6 +419,74 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション61.11：マッチング v2 仕様を主要ドキュメントに反映
+
+### 背景・問題意識
+
+iter61.10 までで在庫まわりの UX が一段落。次の大きな展開（広域/現地マッチ・個別募集・カレンダー公開）に向けて、雑多メモ → notes/18 整理 → オーナー回答 §A の流れで仕様が確定。本 iter は **コード実装には入らず**、既存の主要ドキュメント 5 本に確定事項を反映するだけ。
+
+これがないと iter62〜65 の実装着手時に CLAUDE.md の「着手前精読」ルールが機能しない。
+
+### 変更内容（ドキュメントのみ）
+
+#### A. `notes/10_glossary.md` §E に 11 用語追加
+
+広域マッチ / 現地マッチ / 個別募集 / 同種交換 / 異種交換 / 混合交換 / 交換比率 / カレンダー公開 / カレンダー重ね見 を追加。「同種/異種は自己申告タグのみ」と明記。
+
+#### B. `notes/02_system_requirements.md` F4 マッチング節を v2 に書き換え
+
+- 「2軸構成」 → 「3軸構成（広域 / 現地 / 個別募集）」
+- 通知制御は「MVP 範囲外」と明記
+- 「同種/異種はタグのみ、システム判定なし」と明記
+- 打診時のカレンダー公開（重ね見）を追加
+
+#### C. `notes/05_data_model.md` に 4 つの追加
+
+- `user_wants.exchange_type` 列追加（iter62）
+- 新テーブル `listings`（iter64、wish_id 必須・ratio_give/receive・priority）
+- 新テーブル `user_local_mode_settings`（iter63、現地モード永続化）
+- `proposals.expose_calendar` + `proposals.listing_id` 列追加（iter65）
+
+#### D. `notes/09_state_machines.md` に 3 つの新ライフサイクル追加
+
+- **§8 Listing Lifecycle**: active / paused / matched / closed
+- **§9 Calendar Disclosure**: not_disclosed / disclosed / auto_revoked
+- **§10 Local Mode**: global / local / local_reset
+- 旧 §8 付録は §11 にリネーム
+
+#### E. `notes/11_screen_inventory.md` に 9 画面追加
+
+- C-1 ホームに 4 行（モード pill / 現地 setup / 現地サマリ / カードタグ）
+- C-3 ウィッシュに 3 行（exchange tag chip / 個別募集作成 / 個別募集一覧）
+- B-2 打診に 2 行（カレンダー公開トグル / カレンダー overlay UI）
+
+### 関連ファイル
+
+- `notes/02_system_requirements.md`
+- `notes/05_data_model.md`
+- `notes/09_state_machines.md`
+- `notes/10_glossary.md`
+- `notes/11_screen_inventory.md`
+- `notes/18_matching_v2_design.md`（前 iter で作成）
+
+### 次の実装計画
+
+| iter | 内容 | 範囲 |
+|---|---|---|
+| iter62 | Phase A: `user_wants.exchange_type` 追加 + chip 表示 | 小（migration + UI 1 箇所） |
+| iter63 | Phase B: ホームモード切替 + 現地設定 + 一括リセット | 大（home-v2 大改修 + 新テーブル） |
+| iter64 | Phase C: 個別募集（listings）UI + マッチング統合 | 大（新画面 2 つ + ロジック） |
+| iter65 | Phase D: 打診カレンダー公開 + overlay UI | 中（proposals 列 + overlay コンポーネント） |
+| iter66 | 検索＋フィルタ（後送り） | 中（元 iter62） |
+
+### セルフレビュー（CLAUDE.md absolute rule C）
+
+- **A. デザイン整合性**: 該当なし（コード変更なし）
+- **B. 仕様整合性**: 5 本のドキュメント間で用語・テーブル名・列名が整合 ✅
+- **C. レビュー記録**: 18 → 02/05/09/10/11 への反映漏れなし。「listing」は UI 表記から除外して「個別募集」に統一 ✅
+
+---
+
 ## イテレーション61.10：審査中メンバーを在庫の選択肢に + シリーズ廃止
 
 ### 背景・問題意識

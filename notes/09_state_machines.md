@@ -31,7 +31,10 @@
 5. [Item Lifecycle（在庫アイテム）](#5-item-lifecycle)
 6. [Wish Lifecycle](#6-wish-lifecycle)
 7. [Account Lifecycle](#7-account-lifecycle)
-8. [付録：エンティティ間の関係](#8-付録エンティティ間の関係)
+8. [Listing Lifecycle（個別募集 / iter64〜）](#8-listing-lifecycle)
+9. [Calendar Disclosure（カレンダー公開 / iter65〜）](#9-calendar-disclosure)
+10. [Local Mode（現地モード / iter63〜）](#10-local-mode)
+11. [付録：エンティティ間の関係](#11-付録エンティティ間の関係)
 
 ---
 
@@ -460,7 +463,122 @@ stateDiagram-v2
 
 ---
 
-## 8. 付録：エンティティ間の関係
+## 8. Listing Lifecycle
+
+個別募集（pinpoint listing / UI 表記は **「個別募集」**）。
+譲 1 件と wish 1 件を紐付けて、比率・優先度・タグを設定するピンポイント募集。
+iter64 で導入予定（notes/18 §B-2）。
+
+### 状態図
+
+```mermaid
+stateDiagram-v2
+    [*] --> active: 個別募集を作成
+    active --> paused: 一時停止
+    paused --> active: 再開
+    active --> matched: マッチ成立
+    matched --> active: 取引キャンセル
+    matched --> closed: 取引完了
+    active --> closed: 手動クローズ / 譲アイテム削除 / wish 削除
+    paused --> closed: 手動クローズ
+```
+
+### 状態定義
+
+| 状態 | 説明 |
+|---|---|
+| `active` | 募集中（マッチング対象） |
+| `paused` | 一時停止（マッチング対象外、UI には残る） |
+| `matched` | 紐付く wish/譲が打診〜取引中 |
+| `closed` | クローズ（譲削除・wish 削除・手動クローズ・取引完了） |
+
+### 主要トリガー
+
+- 関連 `goods_inventory` が `archived` / `traded` になったら自動 `closed`
+- 関連 `user_wants` が `achieved` になったら自動 `closed`
+- 取引完了（`deals.status = completed`）→ `closed`
+- 取引キャンセル（cancelled）→ `active` に戻す
+
+### ビジネスルール
+
+- 1 個別募集 = 1 譲 × 1 wish（複数の wish を OR 対象にしたい場合は複数 listing を作る）
+- 比率は `ratio_give` / `ratio_receive` ともに 1〜10
+- 同じ (inventory_id, wish_id) ペアの個別募集は複数作成可能（異なる比率を試すため）
+
+---
+
+## 9. Calendar Disclosure
+
+打診時の「カレンダー公開」フラグのライフサイクル。iter65（Phase D）で導入。
+
+### 状態図
+
+```mermaid
+stateDiagram-v2
+    [*] --> not_disclosed: proposal 作成（default）
+    not_disclosed --> disclosed: 送信時に「公開する」を ON
+    disclosed --> not_disclosed: proposal 修正で OFF
+    disclosed --> auto_revoked: deal 完了 / dispute 解決
+    not_disclosed --> [*]: proposal expired/rejected
+    disclosed --> [*]: proposal expired/rejected
+```
+
+### 状態定義
+
+| 状態 | 説明 |
+|---|---|
+| `not_disclosed` | `proposals.expose_calendar = false`（既定） |
+| `disclosed` | `proposals.expose_calendar = true`、相手が overlay で AW を見られる |
+| `auto_revoked` | 取引完了時に自動的に閲覧不可。`expose_calendar` は履歴として `true` のまま、RLS で制御 |
+
+### ビジネスルール
+
+- `expose_calendar = true` のとき、受信者は送信者の `availability_windows` を読める（RLS で許可）
+- ただし、関連する `deals` のステータスが `completed` / `disputed_resolved` などの terminal になったら、RLS で閲覧を遮断する
+- 閲覧側は **calendar overlay UI**（自分の AW と相手の AW を時系列で重ね描画）で時空交差を確認
+
+---
+
+## 10. Local Mode
+
+ホーム画面の「現地交換に切り替え」モードの状態管理。
+iter63（Phase B）で導入。`user_local_mode_settings` テーブルで永続化。
+
+### 状態図
+
+```mermaid
+stateDiagram-v2
+    [*] --> global: ユーザー初回（default）
+    global --> local: 「現地交換に切り替え」を押す
+    local --> global: 「広域に戻す」を押す
+    local --> local: 設定変更（AW / 半径 / 携帯 / wish 選択）
+    local --> local_reset: 一括リセット
+    local_reset --> local: 再選択
+```
+
+### 状態定義
+
+| 状態 | 説明 |
+|---|---|
+| `global` | 広域マッチ表示（時空無制限） |
+| `local` | 現地マッチ表示（AW + 携帯 + 選択 wish） |
+| `local_reset` | 携帯グッズ・wish 選択をすべてクリアした直後の状態（local の sub-state） |
+
+### 主要トリガー
+
+- モード ON 時: `last_lat` / `last_lng` を **GPS から毎回上書き**
+- モード ON 時: `aw_id` / `radius_m` / `selected_carrying_ids` / `selected_wish_ids` は前回値を保持
+- 一括リセット: `selected_carrying_ids = '{}'` / `selected_wish_ids = '{}'`
+
+### ビジネスルール
+
+- 1 ユーザー 1 モード設定（複数同時保持しない）
+- 位置情報の取得失敗時は前回値で代替（フォールバック）
+- AW 削除時: 該当 `aw_id` を null に戻す
+
+---
+
+## 11. 付録：エンティティ間の関係
 
 ```mermaid
 graph LR
