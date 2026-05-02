@@ -223,6 +223,66 @@ export async function toggleGoingOut(
   return undefined;
 }
 
+/**
+ * 在庫アイテムの編集（フィールド一括更新）
+ *
+ * 写真自体の差し替えは別 action で（将来）。ここでは meta のみ。
+ */
+export async function updateInventoryItem(input: {
+  id: string;
+  groupId: string;
+  characterId?: string | null;
+  goodsTypeId: string;
+  title: string;
+  series?: string;
+  description?: string;
+  condition?: "sealed" | "mint" | "good" | "fair" | "poor";
+  quantity: number;
+}): Promise<ActionResult> {
+  const title = input.title.trim();
+  if (!title || title.length > 100) {
+    return { error: "タイトルは 1〜100 文字で入力してください" };
+  }
+  if (!input.goodsTypeId || !input.groupId) {
+    return { error: "グループと種別は必須です" };
+  }
+  if (input.condition && !VALID_CONDITIONS.includes(input.condition)) {
+    return { error: "コンディション値が不正です" };
+  }
+  if (input.quantity < 1 || input.quantity > 999) {
+    return { error: "数量は 1〜999 で入力してください" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("goods_inventory")
+    .update({
+      group_id: input.groupId,
+      character_id: input.characterId ?? null,
+      goods_type_id: input.goodsTypeId,
+      title,
+      series: input.series?.trim() || null,
+      description: input.description?.trim() || null,
+      condition: input.condition ?? null,
+      quantity: input.quantity,
+    })
+    .eq("id", input.id)
+    .eq("user_id", user.id);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/inventory");
+  revalidatePath(`/inventory/${input.id}`);
+  return undefined;
+}
+
 export async function deleteInventoryItem(id: string): Promise<ActionResult> {
   const supabase = await createClient();
   const {

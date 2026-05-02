@@ -419,6 +419,79 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション61.8：在庫アイテムの編集 / 削除画面（/inventory/[id]）
+
+### 背景・問題意識
+
+ユーザーから「在庫を削除できるようにしてほしい。あと編集も。編集画面に飛んで、削除できるのがいいかな」。
+現状: 在庫一覧画面にカードがあるだけで、削除や編集の動線がなかった（`updateInventoryStatus` と `deleteInventoryItem` の server action は既存だが UI 未配線）。
+
+### 変更内容
+
+#### `web/src/app/inventory/actions.ts`
+
+`updateInventoryItem` server action 追加:
+- 編集対象: group / character / goodsType / title / series / description / condition / quantity
+- バリデーション: title 1〜100、quantity 1〜999、condition は VALID_CONDITIONS のいずれか
+- `revalidatePath("/inventory")` + `revalidatePath("/inventory/[id]")`
+
+`deleteInventoryItem` は既存。
+
+#### `web/src/app/inventory/[id]/page.tsx`（新規）
+
+- dynamic route `/inventory/[id]`
+- 並列取得: item 本体 + user_oshi + goods_types + characters
+- アイテムが「現在の推し」に紐付かないグループに属している場合も groups_master から救済取得
+- 該当グループに属するキャラだけフィルタしてフォームに渡す
+- HeaderBack で `/inventory` への戻りリンク
+
+#### `web/src/app/inventory/[id]/EditForm.tsx`（新規）
+
+フィールド構成（モックアップ b-inventory のラベル UI 流用）:
+- 写真表示（先頭 URL のみ、フルブリード）
+- グループ（推しから選択）
+- メンバー / キャラ（任意、グループ依存）
+- グッズ種別（chip）
+- タイトル（必須）
+- シリーズ（任意）
+- コンディション（chip、5 段階 + 指定なし）
+- 数量（−/＋ + 直接入力、1〜999）
+- 説明 / メモ（500 文字）
+- ステータス（active / keep / traded を 3 列 grid）
+
+下部 CTA:
+- `PrimaryButton`「変更を保存」（紫グラデ）
+- 区切り線の下に赤い「この在庫を削除」ボタン（confirm 必須）
+
+#### `web/src/app/inventory/ItemCard.tsx`
+
+- 外側 `<div>` を `<Link href="/inventory/[id]">` に置換
+- カード本体タップで編集画面へ
+- 右上の carrying トグルは `e.preventDefault() + e.stopPropagation()` で Link への伝搬を止める
+
+### 動線
+
+1. `/inventory` の在庫グリッドでカードタップ
+2. `/inventory/[id]` 編集画面に遷移
+3. フィールド変更 → 「変更を保存」 → `/inventory` へ戻る
+4. 削除 → confirm → `deleteInventoryItem` → `/inventory` へ戻る
+5. carrying ドット（右上）はカード上で個別操作（編集画面に行かない）
+
+### 関連ファイル
+
+- `web/src/app/inventory/[id]/page.tsx`（新規）
+- `web/src/app/inventory/[id]/EditForm.tsx`（新規）
+- `web/src/app/inventory/actions.ts`（updateInventoryItem 追加）
+- `web/src/app/inventory/ItemCard.tsx`（Link 化、ストッププロパゲーション）
+
+### セルフレビュー
+
+- **A. デザイン整合性**: 編集フォームは AWNewForm / WishNewForm と同じ Section ラベル UI に揃えた。削除ボタンは赤系で他と差別化 ✅
+- **B. 仕様整合性**: VALID_CONDITIONS / quantity 範囲 / status enum を新規 / 既存 action と整合 ✅
+- **C. レビュー記録**: 写真の差し替えは未実装（次 iter で）、carrying トグルの伝搬制御を明示的に preventDefault で対応 ✅
+
+---
+
 ## イテレーション61.7：AW slide-up シート + 「今すぐ開始」+ 在庫一覧で写真表示
 
 ### 背景・問題意識
