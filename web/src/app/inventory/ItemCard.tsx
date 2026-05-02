@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 /**
  * ItemCard（モックアップ b-inventory.jsx の ItemCard 準拠）
  *
@@ -7,7 +5,7 @@ import Link from "next/link";
  * - メンバー名プレート（左上）+ carrying ドット（右上）
  * - メンバーのイニシャル（中央・大）
  * - 下部ストリップ：種別 + シリーズ + 数量
- * - カード本体タップで /inventory/[id] へ（編集 / 削除）
+ * - 親 (ItemCardWrapper) でクリック →「譲る候補/キープ/譲渡履歴/編集」メニュー
  * - 右上の carrying ドットは stopPropagation で個別動作
  */
 
@@ -35,9 +33,8 @@ export function ItemCard({
   const hasPhoto = !!item.photoUrl;
 
   return (
-    <Link
-      href={`/inventory/${item.id}`}
-      className="relative block overflow-hidden rounded-xl border border-[#3a324a14] shadow-[0_2px_6px_rgba(58,50,74,0.08)] transition-transform duration-150 active:scale-[0.97]"
+    <div
+      className="relative block overflow-hidden rounded-xl border border-[#3a324a14] shadow-[0_2px_6px_rgba(58,50,74,0.08)]"
       style={{
         aspectRatio: "3 / 4",
         background: hasPhoto ? "#3a324a" : stripeBg,
@@ -70,8 +67,7 @@ export function ItemCard({
       <button
         type="button"
         onClick={(e) => {
-          // Link への伝搬を止めて編集画面へ飛ばないように
-          e.preventDefault();
+          // 親のメニューを開かないように
           e.stopPropagation();
           onCarryingToggle?.(item.id, !item.carrying);
         }}
@@ -131,7 +127,7 @@ export function ItemCard({
           </div>
         )}
       </div>
-    </Link>
+    </div>
   );
 }
 

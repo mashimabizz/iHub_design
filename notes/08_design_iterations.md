@@ -419,6 +419,109 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション61.9：在庫まわり 5 つの UX 改善
+
+### 背景・問題意識
+
+ユーザーから 4 つの要望:
+1. 「グッズ一覧で押すと『キープに/譲渡履歴へ』が出てくる選択肢の中に『編集する』を追加してほしい（編集画面に直接飛ぶ動線ではなく、既存メニュー経由）」
+2. 「編集画面で写真を撮り直せるようにしてほしい」
+3. 「在庫登録で、タイトルは基本的に入力不要・非表示。グッズ種別『その他』選択時のみ表示」
+4. 「メンバーが不足していたら、登録画面でも追加リクエストを入れられるように」
+5. 「写真は1枚も取らなくても登録できるように」
+
+### 変更内容
+
+#### A. 既存メニューに「編集する」追加
+
+**`web/src/app/inventory/ItemCard.tsx`**
+
+- iter61.8 で `<Link>` 化していたのを元の `<div>` に戻す（既存の `ItemCardWrapper` がメニューを出す方式に戻す）
+- carrying トグルは `e.stopPropagation()` のみ（preventDefault は不要）
+
+**`web/src/app/inventory/InventoryView.tsx`**
+
+`ItemCardWrapper` のメニューに 4 番目のアクション「編集する」追加:
+- 紫グラデの prominent ボタン（`/inventory/[id]` への Link）
+- 「譲る候補に / キープに / 譲渡履歴へ / 編集する / 閉じる」の順
+
+#### B. 編集画面の写真撮り直し
+
+**`web/src/app/inventory/actions.ts`**
+
+`updateInventoryItem` に `photoUrls?: string[]` 引数追加。指定された場合は `photo_urls` 配列を完全置換。
+
+**`web/src/app/inventory/[id]/EditForm.tsx`**
+
+- 写真エリアを動的に再構築:
+  - `<img>` フルブリード or「写真なし」プレースホルダ
+  - オーバーレイ位置に「📷 撮り直す / 差し替え」ボタン
+  - hidden file input + `capture="environment"`（カメラ起動）
+- `handlePhotoChange`:
+  - 画像タイプ / 10MB バリデーション
+  - Supabase Storage `goods-photos` bucket に `{userId}/{ts}_{rand}.{ext}` で upload
+  - `getPublicUrl` で URL 取得 → photoUrls の先頭に置換
+  - 旧画像は best-effort で `remove([oldPath])`（ストレージ容量節約）
+- `extractStoragePath` ヘルパで public URL から bucket 内 path を抽出
+
+#### C. タイトルを「その他」選択時のみ表示
+
+**`web/src/app/inventory/new/CaptureFlow.tsx`**
+
+- meta ステップで `selectedGoodsType?.name === "その他"` の時のみタイトル input をレンダ
+- それ以外は title state は空のまま、`handleBatchSave` 内で「メンバー名 + 種別名」を自動生成（既存ロジック）
+- placeholder も「タイトル（その他なので入力）」に変更
+
+#### D. 登録時のメンバー追加リクエスト動線
+
+**`web/src/app/inventory/actions.ts`**
+
+新規 server action `requestCharacterFromInventory(groupId, name, note?)`:
+- `character_requests` テーブルに insert（既存スキーマと整合: `user_id`, `group_id`, `requested_name`, `note`）
+- 返り値で `id` を返す
+
+**`web/src/app/inventory/new/CaptureFlow.tsx`**
+
+- meta ステップ上部に「+ メンバーが見つからない場合は追加リクエスト」ボタン
+- クリック → inline form 展開（名前 + メモ）
+- 送信 → `requestCharacterFromInventory` 呼び出し → 成功で local state `requestedNames` に追加
+- 「送信済リクエスト」セクションに `審査中` バッジで表示
+- 注意: リクエスト中の character は `goods_inventory.character_id` には紐付かない（FK 制約）。承認後に編集画面で再選択する運用
+
+#### E. 写真ナシでも登録可能
+
+**`web/src/app/inventory/actions.ts`**
+
+`saveBatchInventoryItems` の各 item の `photoUrl` を任意化:
+- 未指定なら `photo_urls: []` で保存（DB スキーマは default '{}' なので OK）
+
+**`web/src/app/inventory/new/CaptureFlow.tsx`**
+
+- shoot ステップに「写真なしで登録する →」リンク追加
+- `skipPhotoToMeta()` で cropMetas に空の 1 件を初期化、step="meta" へ
+- `noPhoto` フラグ（`crops.length === 0`）で UI 分岐:
+  - meta タイトルを「登録内容を設定」に
+  - サムネ表示・削除ボタンを非表示
+  - 戻るボタン先を `crop` → `shoot` に
+  - CTA 文言を「1 件登録（写真なし）」に
+- `handleBatchSave` の noPhoto 分岐: cropMetas[0] のみで 1 件、photoUrl なしで登録
+
+### 関連ファイル
+
+- `web/src/app/inventory/ItemCard.tsx`（Link 戻し）
+- `web/src/app/inventory/InventoryView.tsx`（メニューに編集追加）
+- `web/src/app/inventory/[id]/EditForm.tsx`（写真撮り直し）
+- `web/src/app/inventory/new/CaptureFlow.tsx`（C/D/E 一括）
+- `web/src/app/inventory/actions.ts`（`updateInventoryItem` 拡張、`requestCharacterFromInventory` 新規、`saveBatchInventoryItems.photoUrl` 任意化）
+
+### セルフレビュー
+
+- **A. デザイン整合性**: 既存メニューの styling（黒半透明 overlay）に揃える、編集ボタンだけ紫グラデで differentiate ✅
+- **B. 仕様整合性**: character_requests テーブルのカラム名（`user_id`, `requested_name`）を既存 onboarding actions と整合 ✅
+- **C. レビュー記録**: リクエスト中キャラは FK 制約で紐付け不可 → 編集画面で承認後に再選択する運用と明記。タイトル自動生成ロジックは既存を維持 ✅
+
+---
+
 ## イテレーション61.8：在庫アイテムの編集 / 削除画面（/inventory/[id]）
 
 ### 背景・問題意識

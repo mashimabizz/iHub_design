@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
+import { createClient } from "@/lib/supabase/client";
 import {
   deleteInventoryItem,
   updateInventoryItem,
@@ -56,6 +57,9 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
   );
   const [quantity, setQuantity] = useState(item.quantity);
   const [status, setStatus] = useState(item.status);
+  const [photoUrls, setPhotoUrls] = useState<string[]>(item.photoUrls);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
   const [deleting, startDeleteTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +82,71 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
   useEffect(() => {
     router.prefetch("/inventory");
   }, [router]);
+
+  /**
+   * 写真撮り直し
+   *  - file input から選択 → Supabase Storage に upload → URL を photoUrls 配列の先頭に置換
+   *  - 旧画像は Storage から削除（容量節約）
+   */
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("画像ファイルを選んでください");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("ファイルサイズは 10MB 以下にしてください");
+      return;
+    }
+    setError(null);
+    setPhotoUploading(true);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setError("セッションが切れました。再ログインしてください");
+        setPhotoUploading(false);
+        return;
+      }
+      const ext = file.type.split("/")[1] || "jpg";
+      const path = `${user.id}/${new Date().getTime()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("goods-photos")
+        .upload(path, file, { contentType: file.type, upsert: false });
+      if (upErr) {
+        setError(`アップロード失敗: ${upErr.message}`);
+        setPhotoUploading(false);
+        return;
+      }
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("goods-photos").getPublicUrl(path);
+
+      // 旧画像を Storage から削除（best effort）
+      const oldUrls = photoUrls;
+      const next = [publicUrl, ...oldUrls.slice(1)];
+      setPhotoUrls(next);
+      // 削除はバックグラウンドで（失敗しても無視）
+      if (oldUrls[0]) {
+        const oldPath = extractStoragePath(oldUrls[0]);
+        if (oldPath) {
+          supabase.storage
+            .from("goods-photos")
+            .remove([oldPath])
+            .catch(() => undefined);
+        }
+      }
+    } finally {
+      setPhotoUploading(false);
+      // 同じファイルを連続で選び直しても発火するように reset
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   function handleSave() {
     setError(null);
@@ -103,6 +172,7 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
         description: description || undefined,
         condition: condition ?? undefined,
         quantity,
+        photoUrls,
       });
       if (r?.error) {
         setError(r.error);
@@ -130,7 +200,7 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
     });
   }
 
-  const photoUrl = item.photoUrls[0] ?? null;
+  const photoUrl = photoUrls[0] ?? null;
 
   return (
     <form
@@ -140,17 +210,74 @@ export function EditForm({ item, groups, goodsTypes, characters }: Props) {
       }}
       className="space-y-5"
     >
-      {/* 写真 */}
-      {photoUrl && (
-        <div className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-[#3a324a]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={photoUrl}
-            alt={item.title}
-            className="block aspect-[3/4] w-full object-cover"
-          />
+      {/* 写真エリア */}
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[#a695d8]">
+            写真
+          </span>
+          {photoUrl && (
+            <span className="text-[10px] text-gray-500">
+              {photoUploading ? "アップロード中…" : "差し替え可"}
+            </span>
+          )}
         </div>
-      )}
+        <div className="relative overflow-hidden rounded-2xl border border-[#3a324a14] bg-[#3a324a]">
+          {photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={photoUrl}
+              alt={item.title || "在庫写真"}
+              className="block aspect-[3/4] w-full object-cover"
+            />
+          ) : (
+            <div className="flex aspect-[3/4] w-full items-center justify-center bg-[linear-gradient(135deg,#a695d822,#a8d4e624)] text-center text-xs text-gray-500">
+              <span>写真なし</span>
+            </div>
+          )}
+          {/* オーバーレイの撮り直しボタン */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={photoUploading}
+            className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-white/95 px-3.5 py-2 text-[12px] font-bold text-[#3a324a] shadow-[0_4px_10px_rgba(0,0,0,0.2)] backdrop-blur-md active:scale-[0.97] disabled:opacity-60"
+          >
+            {photoUploading ? (
+              <>
+                <span className="block h-3 w-3 animate-spin rounded-full border-2 border-[#a695d8] border-t-transparent" />
+                アップロード中
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path
+                    d="M2 4h2.5l1-1.5h3l1 1.5H12v7H2z"
+                    stroke="#3a324a"
+                    strokeWidth="1.4"
+                    strokeLinejoin="round"
+                  />
+                  <circle
+                    cx="7"
+                    cy="7.5"
+                    r="2"
+                    stroke="#3a324a"
+                    strokeWidth="1.4"
+                  />
+                </svg>
+                {photoUrl ? "撮り直す / 差し替え" : "写真を追加"}
+              </>
+            )}
+          </button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handlePhotoChange}
+          className="hidden"
+        />
+      </div>
 
       {/* グループ */}
       <Section label="グループ" required>
@@ -426,4 +553,17 @@ function Section({
       {children}
     </div>
   );
+}
+
+/**
+ * Supabase Storage の publicUrl から `{user_id}/...` 形式のパスを抽出。
+ * URL 例:
+ *   https://xxxx.supabase.co/storage/v1/object/public/goods-photos/{userId}/{file}.jpg
+ *                                                     ↑ ここから後ろを返す
+ */
+function extractStoragePath(url: string): string | null {
+  const marker = "/object/public/goods-photos/";
+  const i = url.indexOf(marker);
+  if (i < 0) return null;
+  return url.slice(i + marker.length);
 }

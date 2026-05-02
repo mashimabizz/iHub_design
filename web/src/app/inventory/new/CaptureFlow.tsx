@@ -4,7 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
-import { saveBatchInventoryItems } from "@/app/inventory/actions";
+import {
+  requestCharacterFromInventory,
+  saveBatchInventoryItems,
+} from "@/app/inventory/actions";
 import { CroppingCanvas, type CropResult } from "./CroppingCanvas";
 import { CropToast } from "./CropToast";
 
@@ -73,6 +76,18 @@ export function CaptureFlow({
   const [savePending, setSavePending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // 写真ナシ登録のためのデフォルト 1 件
+  // crops 空で meta に入った時、cropMetas が 1 件あればフォーム表示
+  const noPhoto = crops.length === 0;
+
+  // メンバー追加リクエスト
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestName, setRequestName] = useState("");
+  const [requestNote, setRequestNote] = useState("");
+  const [requestPending, setRequestPending] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [requestedNames, setRequestedNames] = useState<string[]>([]);
+
   function handleCropped(crop: CropResult) {
     setCrops((prev) => [...prev, crop]);
     setCropMetas((prev) => [
@@ -108,54 +123,29 @@ export function CaptureFlow({
   const selectedGoodsType = goodsTypes.find((g) => g.id === goodsTypeId);
 
   async function handleBatchSave() {
-    if (crops.length === 0) {
-      setSaveError("切り抜きがありません");
-      return;
-    }
-
     setSavePending(true);
     setSaveError(null);
 
+    // 自動タイトル生成のヘルパ
+    const autoTitle = (meta: CropMeta): string => {
+      const ch = filteredCharacters.find((c) => c.id === meta.characterId);
+      return `${ch?.name ?? selectedGroup?.name ?? ""} ${
+        selectedGoodsType?.name ?? ""
+      }`.trim();
+    };
+
     try {
-      // 各切り抜き Blob を Storage にアップロード
-      const items: Parameters<typeof saveBatchInventoryItems>[0]["items"] =
-        [];
+      const items: Parameters<typeof saveBatchInventoryItems>[0]["items"] = [];
 
-      for (let i = 0; i < crops.length; i++) {
-        const crop = crops[i];
-        const meta = cropMetas[i];
-
-        const fileName = `${userId}/${Date.now()}_${i}_${Math.random()
-          .toString(36)
-          .slice(2, 8)}.jpg`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("goods-photos")
-          .upload(fileName, crop.blob, {
-            cacheControl: "3600",
-            contentType: "image/jpeg",
-            upsert: false,
-          });
-
-        if (uploadError) {
-          throw new Error(`アップロード失敗: ${uploadError.message}`);
+      // 写真ナシ：cropMetas[0] のみで 1 件登録
+      if (noPhoto) {
+        const meta = cropMetas[0];
+        if (!meta) {
+          setSaveError("登録するアイテムがありません");
+          setSavePending(false);
+          return;
         }
-
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("goods-photos").getPublicUrl(fileName);
-
-        // タイトル：空ならメンバー名 + 種別で自動生成
-        let title = meta.title.trim();
-        if (!title) {
-          const ch = filteredCharacters.find(
-            (c) => c.id === meta.characterId,
-          );
-          title = `${ch?.name ?? selectedGroup?.name ?? ""} ${
-            selectedGoodsType?.name ?? ""
-          }`.trim();
-        }
-
+        const title = meta.title.trim() || autoTitle(meta);
         items.push({
           groupId,
           goodsTypeId,
@@ -164,8 +154,47 @@ export function CaptureFlow({
           series: meta.series.trim() || undefined,
           condition: meta.condition,
           quantity: meta.quantity,
-          photoUrl: publicUrl,
+          // photoUrl 省略
         });
+      } else {
+        // 写真アリ：各切り抜きを Storage にアップロード
+        for (let i = 0; i < crops.length; i++) {
+          const crop = crops[i];
+          const meta = cropMetas[i];
+
+          const fileName = `${userId}/${Date.now()}_${i}_${Math.random()
+            .toString(36)
+            .slice(2, 8)}.jpg`;
+
+          const { error: uploadError } = await supabase.storage
+            .from("goods-photos")
+            .upload(fileName, crop.blob, {
+              cacheControl: "3600",
+              contentType: "image/jpeg",
+              upsert: false,
+            });
+
+          if (uploadError) {
+            throw new Error(`アップロード失敗: ${uploadError.message}`);
+          }
+
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from("goods-photos").getPublicUrl(fileName);
+
+          const title = meta.title.trim() || autoTitle(meta);
+
+          items.push({
+            groupId,
+            goodsTypeId,
+            characterId: meta.characterId || null,
+            title,
+            series: meta.series.trim() || undefined,
+            condition: meta.condition,
+            quantity: meta.quantity,
+            photoUrl: publicUrl,
+          });
+        }
       }
 
       const result = await saveBatchInventoryItems({
@@ -183,6 +212,54 @@ export function CaptureFlow({
       setSaveError(e instanceof Error ? e.message : "保存に失敗しました");
       setSavePending(false);
     }
+  }
+
+  /**
+   * 「写真ナシで登録」を選んだ時、cropMetas に空の 1 件を初期化して meta へ
+   */
+  function skipPhotoToMeta() {
+    setCropMetas([
+      {
+        characterId: "",
+        title: "",
+        series: "",
+        condition: "good",
+        quantity: 1,
+      },
+    ]);
+    setStep("meta");
+  }
+
+  /**
+   * メンバー追加リクエスト送信
+   */
+  async function handleMemberRequest() {
+    setRequestError(null);
+    const name = requestName.trim();
+    if (!name) {
+      setRequestError("メンバー名を入力してください");
+      return;
+    }
+    if (!groupId) {
+      setRequestError("グループが未選択です");
+      return;
+    }
+    setRequestPending(true);
+    const r = await requestCharacterFromInventory({
+      groupId,
+      name,
+      note: requestNote.trim() || undefined,
+    });
+    setRequestPending(false);
+    if (r.error) {
+      setRequestError(r.error);
+      return;
+    }
+    // ローカルに名前を記録（バッジ表示用）
+    setRequestedNames((prev) => [...prev, name]);
+    setRequestName("");
+    setRequestNote("");
+    setRequestOpen(false);
   }
 
   // Step 1 → 2 へ進める条件
@@ -446,6 +523,20 @@ export function CaptureFlow({
             次へ：切り抜き ({uploadedCount})
           </button>
         </div>
+
+        {/* 写真なしで登録 */}
+        <div className="pt-1 text-center">
+          <button
+            type="button"
+            onClick={skipPhotoToMeta}
+            className="text-[12px] font-bold text-[#a695d8] underline-offset-2 hover:underline"
+          >
+            写真なしで登録する →
+          </button>
+          <p className="mt-1 text-[10.5px] text-gray-500">
+            あとから編集画面で写真を追加できます
+          </p>
+        </div>
       </div>
     );
   }
@@ -612,37 +703,119 @@ export function CaptureFlow({
   // Step 4: ラベル設定
   // ────────────────────────────────────────
   if (step === "meta") {
+    const isOther = selectedGoodsType?.name === "その他";
     return (
       <div className="space-y-3 pb-4">
         <div className="rounded-xl bg-[#a8d4e620] px-4 py-3 text-[12px] leading-relaxed text-gray-700">
-          <span className="font-bold">🏷 各切り抜きにキャラ名などを設定</span>
+          <span className="font-bold">
+            🏷 {noPhoto ? "登録内容を設定" : "各切り抜きにキャラ名などを設定"}
+          </span>
           <br />
           グループ:{" "}
           <b className="text-gray-900">{selectedGroup?.name}</b> ・ 種別:{" "}
           <b className="text-gray-900">{selectedGoodsType?.name}</b>
         </div>
 
-        {/* 切り抜き一覧 */}
+        {/* メンバー追加リクエスト ボタン / インラインフォーム */}
+        {!requestOpen ? (
+          <button
+            type="button"
+            onClick={() => setRequestOpen(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#a695d888] bg-white px-3 py-2.5 text-[12px] font-bold text-[#a695d8] transition-all active:scale-[0.99]"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path
+                d="M6 1v10M1 6h10"
+                stroke="#a695d8"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+            メンバーが見つからない場合は追加リクエスト
+          </button>
+        ) : (
+          <div className="space-y-2 rounded-xl border border-[#a695d855] bg-[#a695d80a] p-3">
+            <div className="text-[11px] font-bold text-[#a695d8]">
+              メンバー追加リクエスト
+            </div>
+            <input
+              type="text"
+              value={requestName}
+              onChange={(e) => setRequestName(e.target.value)}
+              placeholder="メンバー名（例: スア）"
+              maxLength={100}
+              className="block w-full rounded-lg border border-[#3a324a14] bg-white px-2.5 py-2 text-[12.5px] text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
+            />
+            <textarea
+              value={requestNote}
+              onChange={(e) => setRequestNote(e.target.value)}
+              placeholder="メモ（公式リンク・別名など、任意）"
+              rows={2}
+              maxLength={500}
+              className="block w-full resize-none rounded-lg border border-[#3a324a14] bg-white px-2.5 py-2 text-[11.5px] text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
+            />
+            {requestError && (
+              <div className="text-[11px] text-red-600">{requestError}</div>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRequestOpen(false);
+                  setRequestError(null);
+                }}
+                className="flex-1 rounded-lg border border-[#3a324a14] bg-white px-3 py-1.5 text-[11.5px] font-bold text-gray-700"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleMemberRequest}
+                disabled={requestPending || !requestName.trim()}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-1.5 text-[11.5px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.35)] active:scale-[0.97] disabled:opacity-60"
+              >
+                {requestPending ? "送信中…" : "リクエスト送信"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {requestedNames.length > 0 && (
+          <div className="rounded-xl bg-[#a8d4e620] px-3 py-2 text-[11px] text-gray-700">
+            <span className="font-bold">送信済リクエスト:</span>{" "}
+            {requestedNames.map((n, i) => (
+              <span
+                key={n + i}
+                className="ml-1 inline-block rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#a695d8]"
+              >
+                {n}（審査中）
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* アイテム一覧（写真ナシは 1 件、写真アリは crops の数だけ） */}
         <div className="space-y-2.5">
-          {crops.map((crop, i) => {
-            const meta = cropMetas[i];
-            if (!meta) return null;
+          {cropMetas.map((meta, i) => {
+            const crop = crops[i]; // 写真ナシのときは undefined
             return (
               <div
                 key={i}
                 className="flex gap-3 rounded-2xl border border-[#3a324a14] bg-white p-3"
               >
-                {/* サムネ */}
-                <div
-                  className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg border border-[#3a324a14] bg-gray-100"
-                  style={{ aspectRatio: "1 / 1" }}
-                >
-                  <img
-                    src={crop.dataUrl}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                </div>
+                {/* サムネ（写真アリのみ） */}
+                {crop && (
+                  <div
+                    className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg border border-[#3a324a14] bg-gray-100"
+                    style={{ aspectRatio: "1 / 1" }}
+                  >
+                    <img
+                      src={crop.dataUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                )}
 
                 {/* メタ入力 */}
                 <div className="flex-1 space-y-1.5 min-w-0">
@@ -662,17 +835,19 @@ export function CaptureFlow({
                     ))}
                   </select>
 
-                  {/* タイトル */}
-                  <input
-                    type="text"
-                    value={meta.title}
-                    onChange={(e) =>
-                      updateMeta(i, { title: e.target.value })
-                    }
-                    placeholder="タイトル（空欄で自動）"
-                    maxLength={100}
-                    className="block w-full rounded-lg border border-[#3a324a14] bg-white px-2.5 py-1.5 text-[12px] text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
-                  />
+                  {/* タイトル — その他選択時のみ */}
+                  {isOther && (
+                    <input
+                      type="text"
+                      value={meta.title}
+                      onChange={(e) =>
+                        updateMeta(i, { title: e.target.value })
+                      }
+                      placeholder="タイトル（その他なので入力）"
+                      maxLength={100}
+                      className="block w-full rounded-lg border border-[#3a324a14] bg-white px-2.5 py-1.5 text-[12px] text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
+                    />
+                  )}
 
                   {/* コンディション + 数量 */}
                   <div className="flex items-center gap-2">
@@ -719,23 +894,29 @@ export function CaptureFlow({
                         +
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => removeCrop(i)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] text-gray-400 hover:text-red-500"
-                      aria-label="削除"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 14 14"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
+                    {/* 写真ありの時のみ削除可 */}
+                    {crop && (
+                      <button
+                        type="button"
+                        onClick={() => removeCrop(i)}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] text-gray-400 hover:text-red-500"
+                        aria-label="削除"
                       >
-                        <path d="M3 3l8 8M11 3l-8 8" strokeLinecap="round" />
-                      </svg>
-                    </button>
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 14 14"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                        >
+                          <path
+                            d="M3 3l8 8M11 3l-8 8"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -771,7 +952,7 @@ export function CaptureFlow({
         <div className="flex gap-2 pt-1">
           <button
             type="button"
-            onClick={() => setStep("crop")}
+            onClick={() => setStep(noPhoto ? "shoot" : "crop")}
             disabled={savePending}
             className="flex h-12 items-center justify-center rounded-2xl border border-[#3a324a14] bg-white px-5 text-[13px] font-semibold text-gray-700 disabled:opacity-50"
           >
@@ -783,7 +964,7 @@ export function CaptureFlow({
             pending={savePending}
             pendingLabel="登録中..."
           >
-            {crops.length} 件まとめて登録
+            {noPhoto ? "1 件登録（写真なし）" : `${crops.length} 件まとめて登録`}
           </PrimaryButton>
         </div>
       </div>

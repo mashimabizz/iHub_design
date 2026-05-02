@@ -20,7 +20,7 @@ export async function saveBatchInventoryItems(input: {
     series?: string;
     condition: "sealed" | "mint" | "good" | "fair" | "poor";
     quantity: number;
-    photoUrl: string;
+    photoUrl?: string; // 任意：写真ナシでも登録可
   }>;
   startCarrying?: boolean;
 }): Promise<ActionResult> {
@@ -60,7 +60,7 @@ export async function saveBatchInventoryItems(input: {
     series: it.series?.trim() || null,
     condition: it.condition,
     quantity: it.quantity,
-    photo_urls: [it.photoUrl],
+    photo_urls: it.photoUrl ? [it.photoUrl] : [],
     carrying: input.startCarrying ?? false,
   }));
 
@@ -71,6 +71,42 @@ export async function saveBatchInventoryItems(input: {
 
   revalidatePath("/inventory");
   return undefined;
+}
+
+// ----------------------------------------------------------------------
+// requestCharacterFromInventory: 在庫登録中にメンバー追加リクエスト
+// ----------------------------------------------------------------------
+// onboarding の saveCharacterRequest と同じテーブルへ insert するが、
+// inventory 経由かつ groupId のみ受け付けるシンプル版。
+export async function requestCharacterFromInventory(input: {
+  groupId: string;
+  name: string;
+  note?: string;
+}): Promise<{ error?: string; id?: string }> {
+  const trimmed = input.name.trim();
+  if (!trimmed) return { error: "メンバー名を入力してください" };
+  if (trimmed.length > 100) return { error: "メンバー名は100文字以内です" };
+  if (!input.groupId) return { error: "グループが未指定です" };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data, error } = await supabase
+    .from("character_requests")
+    .insert({
+      user_id: user.id,
+      group_id: input.groupId,
+      requested_name: trimmed,
+      note: input.note?.trim() || null,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+  return { id: data?.id };
 }
 
 /**
@@ -226,7 +262,9 @@ export async function toggleGoingOut(
 /**
  * 在庫アイテムの編集（フィールド一括更新）
  *
- * 写真自体の差し替えは別 action で（将来）。ここでは meta のみ。
+ * - meta（group / character / goodsType / title / series / quantity 等）+ 写真URL配列
+ * - photoUrls を渡した場合は配列を完全置換
+ * - 写真の Storage 削除は別アクション（deleteStoragePhoto）でクライアント側から
  */
 export async function updateInventoryItem(input: {
   id: string;
@@ -238,6 +276,7 @@ export async function updateInventoryItem(input: {
   description?: string;
   condition?: "sealed" | "mint" | "good" | "fair" | "poor";
   quantity: number;
+  photoUrls?: string[];
 }): Promise<ActionResult> {
   const title = input.title.trim();
   if (!title || title.length > 100) {
@@ -259,18 +298,23 @@ export async function updateInventoryItem(input: {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const updateFields: Record<string, unknown> = {
+    group_id: input.groupId,
+    character_id: input.characterId ?? null,
+    goods_type_id: input.goodsTypeId,
+    title,
+    series: input.series?.trim() || null,
+    description: input.description?.trim() || null,
+    condition: input.condition ?? null,
+    quantity: input.quantity,
+  };
+  if (input.photoUrls !== undefined) {
+    updateFields.photo_urls = input.photoUrls;
+  }
+
   const { error } = await supabase
     .from("goods_inventory")
-    .update({
-      group_id: input.groupId,
-      character_id: input.characterId ?? null,
-      goods_type_id: input.goodsTypeId,
-      title,
-      series: input.series?.trim() || null,
-      description: input.description?.trim() || null,
-      condition: input.condition ?? null,
-      quantity: input.quantity,
-    })
+    .update(updateFields)
     .eq("id", input.id)
     .eq("user_id", user.id);
 

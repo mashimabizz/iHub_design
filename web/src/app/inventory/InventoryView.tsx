@@ -541,6 +541,12 @@ function ItemCardWrapper({
               譲渡履歴へ
             </button>
           )}
+          <Link
+            href={`/inventory/${item.id}`}
+            className="rounded-lg bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-1.5 text-center text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
+          >
+            編集する
+          </Link>
           <button
             type="button"
             onClick={() => setShowMenu(false)}
