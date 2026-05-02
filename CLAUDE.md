@@ -18,6 +18,94 @@
 
 これらを読まずに作業を始めない。
 
+## 🛑 画面実装時の絶対ルール（厳守）
+
+> **これを守らないとオーナーが激おこ。手抜き禁止。**
+
+### 1. 着手前：デザインと仕様を必ず読む
+
+画面を実装・変更する前に、以下を **end-to-end で精読** する：
+
+- 該当する **モックアップ JSX**（`iHub/*.jsx`）の関数全部
+  - 主要 function だけでなく、内部の small components も
+  - `style={{ ... }}` の数値（fontSize, padding, gap, borderRadius, fontWeight, letterSpacing, boxShadow, background のグラデ角度・色 stops）まで全部見る
+- **GitHub Pages で目視確認**：`https://mashimabizz.github.io/iHub_design/iHub/[ファイル名].html`
+- 関連する **仕様ドキュメント**：
+  - `notes/02_system_requirements.md` — 機能要件
+  - `notes/05_data_model.md` — データモデル
+  - `notes/09_state_machines.md` — 状態遷移
+  - `notes/10_glossary.md` — 用語
+  - `notes/12_screens/` — per-screen spec（あれば）
+  - `notes/13_api_spec.md` — API 仕様
+- 既に決まっている **共通規約**：
+  - ブランドカラー（後述）
+  - 共通コンポーネント（後述）
+  - ボタン規約（後述）
+
+### 2. 実装中：共通規約に従う
+
+既に整理したものを使い回す。新規実装は最後の手段。
+
+#### ブランドカラー（Tailwind theme 統合済）
+```
+bg-ihub-lavender / text-ihub-sky / border-ihub-pink / ihub-warn / ihub-ok
+（`#a695d8` などの直書きは禁止。opacity 修飾子も /35, /55 等で使う）
+```
+
+#### 共通コンポーネント（`web/src/components/auth/`）
+- `PrimaryButton` / `PrimaryLinkButton` — 主アクション（3色グラデ→2色版・rounded-[14px]）
+- `secondaryBaseClass` — セカンダリボタン用 className（白＋紫透明枠）
+- `HeaderBack` — 戻る + タイトル + サブ + 進捗
+- `IHubLogo` — 「iH」テキスト + 角丸正方形 + Inter Tight
+- `ProgressDots` — 4 セルの進捗バー
+- `Spinner` / `useRipple` — ボタン挙動補助
+
+新規ボタンを書く前に：「`PrimaryButton` で済まないか？」を必ず自問。
+
+#### レイアウト規約
+- 背景：通常画面は `bg-[#fbf9fc]`、Welcome 系はグラデ
+- ヘッダー：`HeaderBack` を使う（独自実装禁止）
+- ボトムナビ：`<BottomNav />`（共通）
+- max-width: `max-w-md`
+- safe-area: `pb-[env(safe-area-inset-bottom)]` を BottomNav が処理
+
+#### 数値は pixel-perfect
+- モックアップから `fontSize, padding, gap, borderRadius, letterSpacing, lineHeight, boxShadow` を抽出
+- `style={{ fontSize: 11.5 }}` → Tailwind `text-[11.5px]`
+- `padding: '11px 14px'` → `px-3.5 pt-2.5 pb-2`（または `px-[14px] py-[11px]`）
+- 「なんとなく似た値」で済まさない
+
+### 3. 完成後：必ずセルフレビュー
+
+実装完了 commit の前に、以下を check：
+
+#### A. デザイン整合性チェック
+- [ ] モックアップと**スクリーンショット並べて比較**（または記述レベルで突き合わせ）
+- [ ] ブランドカラー：直書き `#a695d8` 等が無い（`bg-ihub-lavender` 等を使用）
+- [ ] 共通コンポーネント：`PrimaryButton` 等を使い回している
+- [ ] フォント：日本語 = Noto Sans JP / 英字主体 = Inter Tight + letterSpacing
+- [ ] 余白・サイズ：モックアップの数値と一致
+- [ ] 影 / グラデ角度 / opacity：完全一致
+
+#### B. 仕様整合性チェック
+- [ ] 状態名は `notes/09` の通りか（snake_case 統一）
+- [ ] 用語は `notes/10` の通りか（廃止用語 = 「交換募集」「DM」「MyLog」「郵送」を使っていない）
+- [ ] DB スキーマは `notes/05` と整合（必要なら migration 追記）
+- [ ] 機能要件は `notes/02` の MVP 範囲内
+- [ ] API 仕様は `notes/13` と整合（あれば）
+
+#### C. レビュー結果の記述
+- iter エントリの末尾に **「セルフレビュー結果」セクション**を入れる
+- 「✅ ブランドカラー直書き なし」「✅ 共通 PrimaryButton 使用」「⚠️ Stat 統計のプレースホルダ値は次 iter でデータ連携」など具体的に
+- レビューでズレが見つかったら **commit 前に修正**
+
+### 4. 違反した場合
+
+- オーナーから「全然デザイン通りじゃない」「整合取れてない」と指摘される → 全面作り直し
+- 防止：最初から上記 1-3 を機械的に実行する
+
+---
+
 ## 📜 重要な用語ルール（iter46 確定）
 
 旧規約用語（`利用規約など/` 内docx）と現状 iHub の用語マッピング：
