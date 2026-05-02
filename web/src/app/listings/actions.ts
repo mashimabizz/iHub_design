@@ -14,16 +14,15 @@ export type ListingStatus = "active" | "paused" | "matched" | "closed";
 
 /**
  * 個別募集を作成。
- * inventory_id (kind=for_trade) と wish_id (kind=wanted) は同 user のもの。
+ * inventory_id (kind=for_trade) と wish_ids[] (kind=wanted) は同 user のもの。
  * trigger でも検証されるが、サーバー側でも事前チェック。
  */
 export async function createListing(input: {
   inventoryId: string;
-  wishId: string;
+  wishIds: string[];
   exchangeType?: ListingExchangeType;
   ratioGive: number;
   ratioReceive: number;
-  priority: number;
   note?: string;
 }): Promise<ActionResult> {
   const exchangeType = input.exchangeType ?? "any";
@@ -36,8 +35,8 @@ export async function createListing(input: {
   if (input.ratioReceive < 1 || input.ratioReceive > 10) {
     return { error: "受の比率は 1〜10 で指定してください" };
   }
-  if (input.priority < 1 || input.priority > 5) {
-    return { error: "優先度は 1〜5 で指定してください" };
+  if (!input.wishIds || input.wishIds.length === 0) {
+    return { error: "求める wish を 1 件以上選択してください" };
   }
 
   const supabase = await createClient();
@@ -49,11 +48,10 @@ export async function createListing(input: {
   const { error } = await supabase.from("listings").insert({
     user_id: user.id,
     inventory_id: input.inventoryId,
-    wish_id: input.wishId,
+    wish_ids: input.wishIds,
     exchange_type: exchangeType,
     ratio_give: input.ratioGive,
     ratio_receive: input.ratioReceive,
-    priority: input.priority,
     note: input.note?.trim() || null,
   });
 
@@ -64,10 +62,10 @@ export async function createListing(input: {
 
 export async function updateListing(input: {
   id: string;
+  wishIds?: string[];
   exchangeType?: ListingExchangeType;
   ratioGive?: number;
   ratioReceive?: number;
-  priority?: number;
   status?: ListingStatus;
   note?: string;
 }): Promise<ActionResult> {
@@ -78,6 +76,11 @@ export async function updateListing(input: {
   if (!user) redirect("/login");
 
   const updateFields: Record<string, unknown> = {};
+  if (input.wishIds !== undefined) {
+    if (input.wishIds.length === 0)
+      return { error: "wish を 1 件以上選択してください" };
+    updateFields.wish_ids = input.wishIds;
+  }
   if (input.exchangeType) {
     if (!VALID_EXCHANGE.includes(input.exchangeType))
       return { error: "交換タイプが不正です" };
@@ -92,11 +95,6 @@ export async function updateListing(input: {
     if (input.ratioReceive < 1 || input.ratioReceive > 10)
       return { error: "受の比率は 1〜10" };
     updateFields.ratio_receive = input.ratioReceive;
-  }
-  if (input.priority !== undefined) {
-    if (input.priority < 1 || input.priority > 5)
-      return { error: "優先度は 1〜5" };
-    updateFields.priority = input.priority;
   }
   if (input.status) {
     if (!VALID_STATUS.includes(input.status))

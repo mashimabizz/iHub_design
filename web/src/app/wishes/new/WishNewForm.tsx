@@ -13,39 +13,7 @@ import { PrimaryButton } from "@/components/auth/PrimaryButton";
 type Master = { id: string; name: string };
 type CharacterMaster = { id: string; name: string; group_id: string };
 
-const PRIORITIES: {
-  value: WishPriority;
-  label: string;
-  sub: string;
-  bg: string;
-  textOnActive: string;
-}[] = [
-  { value: "top", label: "最優先", sub: "最高ウェイト", bg: "#d4866b", textOnActive: "#fff" },
-  { value: "second", label: "2 番手", sub: "通常", bg: "#a695d8", textOnActive: "#fff" },
-  { value: "flexible", label: "妥協 OK", sub: "低ウェイト", bg: "#7a9a8a", textOnActive: "#fff" },
-];
-
-const FLEX_OPTIONS: {
-  value: WishFlexLevel;
-  label: string;
-  sub: string;
-}[] = [
-  {
-    value: "exact",
-    label: "完全一致のみ",
-    sub: "このグッズと完全に同じものだけ",
-  },
-  {
-    value: "character_any",
-    label: "キャラ問わず",
-    sub: "同じシリーズなら推し以外でも OK",
-  },
-  {
-    value: "series_any",
-    label: "シリーズ問わず",
-    sub: "推し関連なら何でも嬉しい",
-  },
-];
+// PRIORITIES / FLEX_OPTIONS は iter65.5 で UI から廃止（DB 列はデフォルトで埋める）
 
 const EXCHANGE_OPTIONS: {
   value: ExchangeType;
@@ -83,13 +51,18 @@ export function WishNewForm({
   const [characterId, setCharacterId] = useState<string>("");
   const [goodsTypeId, setGoodsTypeId] = useState<string>("");
   const [title, setTitle] = useState("");
-  const [priority, setPriority] = useState<WishPriority>("second");
-  const [flexLevel, setFlexLevel] = useState<WishFlexLevel>("exact");
   const [exchangeType, setExchangeType] = useState<ExchangeType>("any");
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 「その他」種別のとき手動でタイトル入力、それ以外は auto-title
+  const selectedGoodsType = goodsTypes.find((g) => g.id === goodsTypeId);
+  const isOther = selectedGoodsType?.name === "その他";
+
+  const selectedGroup = groups.find((g) => g.id === groupId);
+  const selectedCharacter = characters.find((c) => c.id === characterId);
 
   useEffect(() => {
     router.prefetch("/wishes");
@@ -105,10 +78,6 @@ export function WishNewForm({
   }, [groupId]);
 
   async function handleSubmit() {
-    if (!title.trim()) {
-      setError("タイトルを入力してください");
-      return;
-    }
     if (!goodsTypeId) {
       setError("グッズ種別を選択してください");
       return;
@@ -117,6 +86,18 @@ export function WishNewForm({
       setError("推しのグループまたはメンバーを選択してください");
       return;
     }
+    // タイトルは「その他」のとき必須、それ以外は自動生成
+    let finalTitle = title.trim();
+    if (isOther) {
+      if (!finalTitle) {
+        setError("タイトルを入力してください（その他選択時は必須）");
+        return;
+      }
+    } else if (!finalTitle) {
+      const name =
+        selectedCharacter?.name ?? selectedGroup?.name ?? "";
+      finalTitle = `${name} ${selectedGoodsType?.name ?? ""}`.trim();
+    }
 
     setPending(true);
     setError(null);
@@ -124,9 +105,10 @@ export function WishNewForm({
       groupId: groupId || undefined,
       characterId: characterId || undefined,
       goodsTypeId,
-      title: title.trim(),
-      priority,
-      flexLevel,
+      title: finalTitle,
+      // 優先度・許容範囲は UI 廃止（DB 列はデフォルト値で埋める）
+      priority: "second" as WishPriority,
+      flexLevel: "exact" as WishFlexLevel,
       exchangeType,
       note: note.trim() || undefined,
       quantity,
@@ -202,17 +184,20 @@ export function WishNewForm({
             </select>
           </Field>
 
-          <Field label="タイトル" required>
-            <input
-              type="text"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="例: スア 生写真 Vol.4"
-              maxLength={100}
-              className="block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
-            />
-          </Field>
+          {/* タイトルは「その他」種別のときのみ入力。それ以外は自動生成 */}
+          {isOther && (
+            <Field label="タイトル" required>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="例: 公式ステッカー"
+                maxLength={100}
+                className="block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
+              />
+            </Field>
+          )}
 
           <Field label="数量">
             <div className="flex items-center gap-3">
@@ -239,79 +224,7 @@ export function WishNewForm({
         </div>
       </Section>
 
-      {/* 優先度 */}
-      <Section label="優先度" hint="マッチ提案の並び順に影響">
-        <div className="grid grid-cols-3 gap-1.5">
-          {PRIORITIES.map((p) => {
-            const active = priority === p.value;
-            return (
-              <button
-                key={p.value}
-                type="button"
-                onClick={() => setPriority(p.value)}
-                className={`flex flex-col items-center gap-0.5 rounded-xl px-1 py-2.5 transition-all ${
-                  active
-                    ? "border-0 text-white"
-                    : "border border-[#3a324a14] bg-white text-gray-900"
-                }`}
-                style={{
-                  background: active ? p.bg : undefined,
-                }}
-              >
-                <span className="text-[12px] font-extrabold">{p.label}</span>
-                <span
-                  className={`text-[9.5px] ${
-                    active ? "text-white/85" : "text-gray-500"
-                  }`}
-                >
-                  {p.sub}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </Section>
-
-      {/* 許容範囲 */}
-      <Section label="許容範囲（マッチング条件）" hint="広いほどマッチ多数">
-        <div className="space-y-1.5">
-          {FLEX_OPTIONS.map((g) => {
-            const active = flexLevel === g.value;
-            return (
-              <button
-                key={g.value}
-                type="button"
-                onClick={() => setFlexLevel(g.value)}
-                className={`flex w-full items-start gap-3 rounded-xl px-3.5 py-3 text-left transition-all ${
-                  active
-                    ? "bg-[#a695d810]"
-                    : "bg-white border border-[#3a324a14]"
-                }`}
-              >
-                <div
-                  className={`mt-0.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full border-[1.5px] ${
-                    active
-                      ? "border-[#a695d8] bg-[#a695d8]"
-                      : "border-[#3a324a40] bg-transparent"
-                  }`}
-                >
-                  {active && (
-                    <span className="h-[7px] w-[7px] rounded-full bg-white" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="text-[12.5px] font-bold text-gray-900">
-                    {g.label}
-                  </div>
-                  <div className="mt-0.5 text-[10.5px] leading-snug text-gray-500">
-                    {g.sub}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </Section>
+      {/* 優先度・許容範囲は廃止（ユーザー要望、iter65.5） */}
 
       {/* 交換タイプ（自己申告タグ・システム判定なし） */}
       <Section

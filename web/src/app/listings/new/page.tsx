@@ -20,7 +20,7 @@ export default async function ListingNewPage() {
     supabase
       .from("goods_inventory")
       .select(
-        "id, title, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+        "id, title, photo_urls, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
       )
       .eq("user_id", user.id)
       .eq("kind", "for_trade")
@@ -37,6 +37,16 @@ export default async function ListingNewPage() {
       .order("created_at", { ascending: false }),
   ]);
 
+  // メンバー名 → hue ハッシュ
+  const nameToHue = (name: string): number => {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = (hash << 5) - hash + name.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash) % 360;
+  };
+
   const pickName = (
     v: { name: string } | { name: string }[] | null,
   ): string | null => {
@@ -44,15 +54,23 @@ export default async function ListingNewPage() {
     return Array.isArray(v) ? v[0]?.name ?? null : v.name;
   };
 
-  const inventoryItems = (inventoryRows ?? []).map((r) => ({
-    id: r.id,
-    title: r.title,
-    photoUrl:
-      (r.photo_urls && (r.photo_urls as string[])[0]) ?? null,
-    groupName: pickName(r.group),
-    characterName: pickName(r.character),
-    goodsTypeName: pickName(r.goods_type),
-  }));
+  const inventoryItems = (inventoryRows ?? []).map((r) => {
+    const charName = pickName(r.character);
+    const grpName = pickName(r.group);
+    const memberName = charName ?? grpName ?? r.title;
+    return {
+      id: r.id,
+      title: r.title,
+      photoUrl:
+        (r.photo_urls && (r.photo_urls as string[])[0]) ?? null,
+      groupName: grpName,
+      characterName: charName,
+      goodsTypeName: pickName(r.goods_type),
+      hue:
+        ((r as { hue?: number }).hue as number | undefined) ??
+        nameToHue(memberName),
+    };
+  });
 
   const wishItems = (wishRows ?? []).map((r) => ({
     id: r.id,
