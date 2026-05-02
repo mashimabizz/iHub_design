@@ -3,12 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  toggleCarryingAll,
-  toggleGoingOut,
-  toggleItemCarrying,
-  updateInventoryStatus,
-} from "./actions";
+import { updateInventoryStatus } from "./actions";
 import { AddCard, ItemCard, type ItemCardData } from "./ItemCard";
 import { BottomNav } from "@/components/home/BottomNav";
 
@@ -39,15 +34,11 @@ const SUB_IDS: SubTab[] = ["active", "keep", "traded"];
 
 export function InventoryView({
   items,
-  isGoingOut: initialIsGoingOut,
 }: {
   items: InventoryItemFull[];
-  isGoingOut: boolean;
 }) {
   const router = useRouter();
   const [sub, setSub] = useState<SubTab>("active");
-  const [isGoingOut, setIsGoingOut] = useState(initialIsGoingOut);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [pending, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -67,9 +58,7 @@ export function InventoryView({
     }),
     [items],
   );
-  const carryCount = items.filter(
-    (i) => i.status === "active" && i.carrying,
-  ).length;
+  // carrying 関連は持参グッズ管理機能の廃止に伴い削除（iter65.6）
 
   // スワイプ位置からタブを更新（debounce 付き）
   useEffect(() => {
@@ -104,29 +93,7 @@ export function InventoryView({
     });
   }
 
-  function handleToggleGoingOut() {
-    const next = !isGoingOut;
-    setIsGoingOut(next);
-    startTransition(async () => {
-      await toggleGoingOut(next);
-      router.refresh();
-    });
-  }
-
-  function handleCarryingToggleItem(id: string, next: boolean) {
-    startTransition(async () => {
-      await toggleItemCarrying(id, next);
-      router.refresh();
-    });
-  }
-
-  function handleAllCarrying(next: boolean) {
-    setShowMoreMenu(false);
-    startTransition(async () => {
-      await toggleCarryingAll(next);
-      router.refresh();
-    });
-  }
+  // carrying / going_out の制御は持参グッズ機能の廃止により削除（iter65.6）
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[140px]">
@@ -164,99 +131,10 @@ export function InventoryView({
                 <path d="M9.5 9.5L12 12" />
               </svg>
             </IconButton>
-            <IconButton
-              ariaLabel="その他"
-              onClick={() => setShowMoreMenu((v) => !v)}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 14 14"
-                fill="#3a324a"
-              >
-                <circle cx="3" cy="7" r="1.4" />
-                <circle cx="7" cy="7" r="1.4" />
-                <circle cx="11" cy="7" r="1.4" />
-              </svg>
-            </IconButton>
-            {showMoreMenu && (
-              <div className="absolute right-0 top-10 z-20 w-48 rounded-xl border border-[#3a324a14] bg-white p-1 shadow-lg">
-                <button
-                  type="button"
-                  onClick={() => handleAllCarrying(true)}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] hover:bg-[#a695d810]"
-                >
-                  🎒 譲る候補を全部持参
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAllCarrying(false)}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] hover:bg-[#a695d810]"
-                >
-                  🏠 全部置いていく
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* 外出モードバナー */}
-        <button
-          type="button"
-          onClick={handleToggleGoingOut}
-          disabled={pending}
-          className={`mx-auto mt-2.5 flex w-full max-w-md items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all duration-200 active:scale-[0.99] disabled:opacity-50 ${
-            isGoingOut
-              ? "border-[#a695d855] bg-[linear-gradient(120deg,#a695d826,#f3c5d426)]"
-              : "border-[#3a324a14] bg-[#3a324a06]"
-          }`}
-        >
-          {/* アイコン */}
-          <div
-            className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px] text-xl transition-all ${
-              isGoingOut
-                ? "bg-[linear-gradient(135deg,#a695d8,#f3c5d4)] shadow-[0_4px_10px_rgba(166,149,216,0.4)]"
-                : "bg-white border border-[#3a324a14]"
-            }`}
-          >
-            {isGoingOut ? "📍" : "🏠"}
-          </div>
-
-          {/* テキスト */}
-          <div className="min-w-0 flex-1">
-            <div
-              className={`text-[14px] font-extrabold ${
-                isGoingOut ? "text-gray-900" : "text-gray-500"
-              }`}
-            >
-              {isGoingOut ? "会場で交換可能" : "自宅"}
-            </div>
-            <div className="mt-0.5 text-[11px] leading-snug text-gray-500">
-              {isGoingOut ? (
-                <>
-                  持参中の{" "}
-                  <b className="text-[#a695d8] tabular-nums">{carryCount}</b>{" "}
-                  点が交換対象です
-                </>
-              ) : (
-                <>交換は受け付けていません（タップで切替）</>
-              )}
-            </div>
-          </div>
-
-          {/* スイッチ視覚 */}
-          <div
-            className="relative h-7 w-12 flex-shrink-0 rounded-full transition-colors"
-            style={{
-              background: isGoingOut ? "#a695d8" : "#3a324a14",
-            }}
-          >
-            <div
-              className="absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.15)] transition-all"
-              style={{ left: isGoingOut ? "22px" : "2px" }}
-            />
-          </div>
-        </button>
+        {/* 持参グッズの設定はホーム > 現地交換モードへ移行（iter65.6） */}
       </div>
 
       {/* サブタブ（active/keep/traded）- タップ + スワイプ対応 */}
@@ -317,7 +195,6 @@ export function InventoryView({
             subId={subId}
             items={itemsBySub[subId]}
             router={router}
-            onCarryingToggle={handleCarryingToggleItem}
           />
         ))}
       </div>
@@ -369,12 +246,10 @@ function SubPanel({
   subId,
   items,
   router,
-  onCarryingToggle,
 }: {
   subId: SubTab;
   items: InventoryItemFull[];
   router: ReturnType<typeof useRouter>;
-  onCarryingToggle: (id: string, next: boolean) => void;
 }) {
   return (
     <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pb-4 pt-2">
@@ -418,7 +293,6 @@ function SubPanel({
             item={item}
             currentSub={subId}
             router={router}
-            onCarryingToggle={onCarryingToggle}
           />
         ))}
       </div>
@@ -482,12 +356,10 @@ function ItemCardWrapper({
   item,
   currentSub,
   router,
-  onCarryingToggle,
 }: {
   item: InventoryItemFull;
   currentSub: SubTab;
   router: ReturnType<typeof useRouter>;
-  onCarryingToggle: (id: string, next: boolean) => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
 
@@ -510,7 +382,7 @@ function ItemCardWrapper({
         onClick={() => setShowMenu(!showMenu)}
         className="block w-full"
       >
-        <ItemCard item={item} onCarryingToggle={onCarryingToggle} />
+        <ItemCard item={item} />
       </button>
       {showMenu && (
         <div className="absolute inset-0 z-10 flex flex-col items-stretch justify-center gap-1.5 rounded-xl bg-black/70 p-2">

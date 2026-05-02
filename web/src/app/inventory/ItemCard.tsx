@@ -23,10 +23,8 @@ export type ItemCardData = {
 
 export function ItemCard({
   item,
-  onCarryingToggle,
 }: {
   item: ItemCardData;
-  onCarryingToggle?: (id: string, next: boolean) => void;
 }) {
   const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 82%) 6px 11px)`;
   const memberLabelColor = `hsl(${item.hue}, 35%, 28%)`;
@@ -69,35 +67,7 @@ export function ItemCard({
         )}
       </div>
 
-      {/* carrying トグルボタン（タップ領域大きめ） */}
-      <button
-        type="button"
-        onClick={(e) => {
-          // 親のメニューを開かないように
-          e.stopPropagation();
-          onCarryingToggle?.(item.id, !item.carrying);
-        }}
-        className="absolute right-0 top-0 z-10 flex h-9 w-9 items-center justify-center"
-        aria-label={
-          item.carrying ? "持参中をやめる" : "持参中にする"
-        }
-      >
-        <div
-          className={`flex h-[22px] w-[22px] items-center justify-center rounded-full transition-all ${
-            item.carrying
-              ? "bg-white shadow-[0_2px_6px_rgba(243,197,212,0.7)]"
-              : "bg-white/70 shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
-          }`}
-        >
-          <div
-            className={`h-2.5 w-2.5 rounded-full transition-all ${
-              item.carrying
-                ? "bg-[#f3c5d4]"
-                : "border-[1.5px] border-[#3a324a30] bg-transparent"
-            }`}
-          />
-        </div>
-      </button>
+      {/* carrying トグルは持参グッズ機能の廃止により削除（iter65.6） */}
 
       {/* メンバーのイニシャル（中央・大）— 写真がない時のみ */}
       {!hasPhoto && (

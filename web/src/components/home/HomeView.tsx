@@ -85,20 +85,29 @@ export function HomeView({
   localMode,
   aws,
   carryingItems,
-  wishes,
+  autoOpenLocalSheet = false,
 }: {
   profile: { handle: string; display_name: string } | null;
   localMode: LocalModeSettings | null;
   aws: SimpleAW[];
   carryingItems: SimpleItem[];
-  wishes: SimpleItem[];
+  autoOpenLocalSheet?: boolean;
 }) {
   const [tab, setTab] = useState(0);
   const cards = MOCK_CARDS_BY_TAB[tab] ?? [];
 
   // 現地モード state（DB から取得した初期値）
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(autoOpenLocalSheet);
   const [pending, startTransition] = useTransition();
+
+  // ?openLocalMode=1 で戻ってきたとき：URL パラメータを掃除しつつシート開く
+  useEffect(() => {
+    if (autoOpenLocalSheet && typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("openLocalMode");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [autoOpenLocalSheet]);
 
   const isLocal = localMode?.enabled ?? false;
   const settings: LocalModeSettings = localMode ?? {
@@ -282,12 +291,11 @@ export function HomeView({
                   : "AW 未選択（タップで設定）"}
               </div>
               <div className="mt-0.5 text-[11px] tabular-nums text-gray-600">
-                半径{" "}
-                {settings.radiusM >= 1000
-                  ? `${(settings.radiusM / 1000).toFixed(1)}km`
-                  : `${settings.radiusM}m`}{" "}
-                · 持参 {settings.selectedCarryingIds.length} 件 · wish{" "}
-                {settings.selectedWishIds.length} 件
+                {chosenAW
+                  ? `半径 ${chosenAW.radiusM >= 1000 ? `${(chosenAW.radiusM / 1000).toFixed(1)}km` : `${chosenAW.radiusM}m`}（AW 設定値）`
+                  : "範囲は AW 設定値を使用"}
+                {" · "}
+                持参 {settings.selectedCarryingIds.length} 件
               </div>
             </div>
             <button
@@ -385,7 +393,6 @@ export function HomeView({
         initial={settings}
         aws={aws}
         carryingItems={carryingItems}
-        wishes={wishes}
       />
     </main>
   );

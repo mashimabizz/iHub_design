@@ -28,17 +28,7 @@ const PRIO_LABEL: Record<
   flexible: { label: "妥協 OK", bg: "#a8d4e6" },
 };
 
-const FLEX_LABEL: Record<"exact" | "character_any" | "series_any", string> = {
-  exact: "完全一致のみ",
-  character_any: "キャラ問わず",
-  series_any: "シリーズ問わず",
-};
-
-const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
-  same_kind: "同種のみ",
-  cross_kind: "異種のみ",
-  any: "どちらでも",
-};
+// FLEX_LABEL / EXCHANGE_LABEL は iter65.5/65.6 で UI から廃止
 
 type FilterId = "all" | "top" | "second" | "flexible";
 
@@ -247,16 +237,7 @@ export function WishView({ items }: { items: WishItem[] }) {
                           {PRIO_LABEL[w.priority].label}
                         </span>
                       )}
-                      {w.flexLevel && (
-                        <span className="rounded-full border border-[#3a324a14] bg-[#3a324a08] px-2 py-0.5 text-[10px] font-bold text-gray-700">
-                          {FLEX_LABEL[w.flexLevel]}
-                        </span>
-                      )}
-                      {w.exchangeType !== "any" && (
-                        <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
-                          {EXCHANGE_LABEL[w.exchangeType]}
-                        </span>
-                      )}
+                      {/* flexLevel / exchangeType chip は wish レベルでは廃止（iter65.5/65.6） */}
                     </div>
 
                     {/* 探し中ステータス（マッチ数は将来実データ） */}

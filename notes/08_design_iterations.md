@@ -419,6 +419,94 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション65.6：現地モード簡素化・持参グッズ管理を全面再構成・AW 戻り先実装
+
+### 背景
+
+iter65.5 で wish/listings UI を整理した直後、オーナーから連続フィードバック:
+
+1. 「現地交換モードでマッチ範囲を指定するな（AW のを使え）」
+2. 「AW 未設定時に AW 追加 → 戻ってきたら現地モード画面に戻る」
+3. 「持参グッズは画像で選ばせろ。グッズ一覧と同じ感じで」
+4. 「現地モードの『求めるグッズ』選択は不要、削除」
+5. 「マイ在庫から持参グッズを指定する機能は全削除」
+6. 「wish 追加時の交換タイプも不要（個別募集の時に設定するから）」
+
+### 変更内容
+
+#### A. LocalModeSheet 大幅簡素化
+
+- 半径スライダー削除（AW 自身の radius_m を使う）
+- wish multi-select 削除（指定なし → 自動的に全件対象）
+- 持参グッズ multi-select chip も削除し、**「グッズを選ぶ →」リンク**に置換
+  → `/inventory/select-carrying?return=local-mode` に飛ぶ
+- AW カードに「半径 N」chip を追加（AW 値の可視化）
+- AW 追加リンクに `?return=local-mode` を付与
+
+#### B. `/inventory/select-carrying` 持参グッズ選択画面（新規）
+
+- 写真付きパネル（aspect 3/4 カード、in-place チェックマーク）
+- 推し / 種別フィルタ chip 行
+- 「全選択」「解除」ヘルパー
+- 下部固定 CTA「N 件で確定して戻る」 → updateLocalModeSelections → router.push(returnTo)
+- HeaderBack の戻るリンクも returnTo を尊重
+
+#### C. AW 作成 → 戻り先伝搬
+
+- `/aw/new/page.tsx`: searchParams.return を読み AWAddEntry に渡す
+- `AWAddEntry`: location-led / event-led の Link href にクエリ伝搬、close ボタンも `?return=local-mode` のとき `/?openLocalMode=1` に
+- `LocationLedForm` / `EventLedForm`: `useSearchParams` で return を取得、saveAW 後の `router.push` を動的化
+- `app/page.tsx`: `?openLocalMode=1` を検知して `HomeView` に `autoOpenLocalSheet={true}` を渡す
+- `HomeView`: `useEffect` で URL クエリを history.replaceState で除去（戻るボタン対策）
+
+#### D. マイ在庫の持参グッズ管理を全削除
+
+- `InventoryView`:
+  - 外出モードバナー削除
+  - 一括 carrying トグル（メニュー）削除
+  - `toggleCarryingAll` / `toggleGoingOut` / `toggleItemCarrying` の import 削除
+  - `isGoingOut` / `showMoreMenu` state 削除
+  - `SubPanel` / `ItemCardWrapper` の `onCarryingToggle` prop 削除
+- `ItemCard`:
+  - 右上の carrying ドット（タップ領域）削除
+  - `onCarryingToggle` prop 削除
+- `inventory/page.tsx`:
+  - `users.is_going_out` の fetch 削除
+  - `InventoryView` から `isGoingOut` prop 削除
+
+DB 列（`goods_inventory.carrying`、`users.is_going_out`、`toggleCarryingAll` server action）は互換のため残置。
+
+#### E. wish から「交換タイプ」削除（オーナー追加要望）
+
+- `WishNewForm`: EXCHANGE_OPTIONS / exchangeType state / chip section 削除
+- `WishView`: EXCHANGE_LABEL / chip 表示削除、FLEX_LABEL も同時削除
+- saveWishItem 呼び出しでは `exchangeType: "any"` 固定
+- 交換タイプは個別募集（listings）作成時のみ設定
+
+### 関連ファイル
+
+- `web/src/components/home/{LocalModeSheet.tsx, HomeView.tsx, actions.ts}`
+- `web/src/app/page.tsx`
+- `web/src/app/inventory/select-carrying/{page.tsx, CarryingSelectView.tsx}`（新規）
+- `web/src/app/aw/new/{page.tsx, AWAddEntry.tsx, location/LocationLedForm.tsx, event/EventLedForm.tsx}`
+- `web/src/app/inventory/{InventoryView.tsx, ItemCard.tsx, page.tsx}`
+- `web/src/app/wishes/{new/WishNewForm.tsx, WishView.tsx}`
+- `notes/18_matching_v2_design.md` §11 追加（マッチング仕様 + 65.6 の決定事項）
+
+### 残課題（iter66+）
+
+- 個別募集マッチングロジック（その譲には listing の wish 群でしかマッチしない）の実装
+- 現地モードの実マッチング演算（mock を実データに置換）
+- 個別募集が登録された譲アイテムの通常マッチ抑制（要確認）
+
+### セルフレビュー（CLAUDE.md absolute rule C）
+
+- **A. デザイン整合性**: シート構造の変更でフットプリント減（半径・wish 選択 UI 削除）、リンク（「グッズを選ぶ →」）に既存 chip スタイル流用 ✅
+- **B. 仕様整合性**: notes/18 §A-4（位置情報以外は記憶）、§A-5（wish 不要）と整合 ✅
+- **C. レビュー記録**: DB 列削除はせず（マイグレーション影響大）、UI 廃止のみ。「個別募集の譲は通常マッチから除外するか」は要確認として記録 ✅
+
+---
+
 ## イテレーション63〜65：マッチング v2 一気実装（ホームモード切替・個別募集・カレンダー overlay）
 
 ### 背景

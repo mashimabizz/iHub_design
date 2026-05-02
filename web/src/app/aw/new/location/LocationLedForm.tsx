@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { saveAW } from "@/app/aw/actions";
 
 /**
@@ -149,6 +149,10 @@ const FALLBACK_CENTER: [number, number] = [35.6595, 139.7005];
 
 export function LocationLedForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams?.get("return");
+  const destAfterSave =
+    returnTo === "local-mode" ? "/?openLocalMode=1" : "/aw";
 
   // ─── 地図状態 ─────────────────────────────────────────────
   const [center, setCenter] = useState<[number, number]>(FALLBACK_CENTER);
@@ -176,8 +180,8 @@ export function LocationLedForm() {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
-    router.prefetch("/aw");
-  }, [router]);
+    router.prefetch(destAfterSave);
+  }, [router, destAfterSave]);
 
   // ─── 初回 Geolocation ─────────────────────────────────────
   useEffect(() => {
@@ -364,7 +368,7 @@ export function LocationLedForm() {
       setError(result.error);
       return;
     }
-    router.push("/aw");
+    router.push(destAfterSave);
   }
 
   return (

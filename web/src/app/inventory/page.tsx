@@ -50,23 +50,16 @@ export default async function InventoryPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 並列取得：譲在庫 + 自分の users.is_going_out
-  const [{ data: rows }, { data: profile }] = await Promise.all([
-    supabase
-      .from("goods_inventory")
-      .select(
-        "id, kind, title, quantity, status, carrying, hue, photo_urls, group:groups_master(name), character:characters_master(name), character_request:character_requests(requested_name, status), goods_type:goods_types_master(name)",
-      )
-      .eq("user_id", user.id)
-      .eq("kind", "for_trade")
-      .neq("status", "archived")
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("users")
-      .select("is_going_out")
-      .eq("id", user.id)
-      .maybeSingle(),
-  ]);
+  // 譲在庫を取得（iter65.6: 持参グッズ管理機能廃止に伴い is_going_out fetch 削除）
+  const { data: rows } = await supabase
+    .from("goods_inventory")
+    .select(
+      "id, kind, title, quantity, status, carrying, hue, photo_urls, group:groups_master(name), character:characters_master(name), character_request:character_requests(requested_name, status), goods_type:goods_types_master(name)",
+    )
+    .eq("user_id", user.id)
+    .eq("kind", "for_trade")
+    .neq("status", "archived")
+    .order("created_at", { ascending: false });
 
   const items: InventoryItemFull[] = ((rows as InventoryRow[]) ?? []).map(
     (r) => {
@@ -96,10 +89,7 @@ export default async function InventoryPage() {
 
   return (
     <>
-      <InventoryView
-        items={items}
-        isGoingOut={profile?.is_going_out ?? false}
-      />
+      <InventoryView items={items} />
       <InventoryFooter />
     </>
   );

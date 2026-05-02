@@ -15,21 +15,23 @@ import { useRouter } from "next/navigation";
  *   ink #3a324a / mute rgba(58,50,74,0.55) / faint rgba(58,50,74,0.3)
  *   subtle rgba(58,50,74,0.06) / bg #fbf9fc / lavender #a695d8 / sky #a8d4e6
  */
-export function AWAddEntry() {
+export function AWAddEntry({ returnTo }: { returnTo?: string } = {}) {
   const router = useRouter();
+  const qs = returnTo ? `?return=${encodeURIComponent(returnTo)}` : "";
+  const closeHref = returnTo === "local-mode" ? "/?openLocalMode=1" : "/aw";
 
   // 子ページを先読み（タップ即遷移）
   useEffect(() => {
-    router.prefetch("/aw/new/location");
-    router.prefetch("/aw/new/event");
-    router.prefetch("/aw");
-  }, [router]);
+    router.prefetch(`/aw/new/location${qs}`);
+    router.prefetch(`/aw/new/event${qs}`);
+    router.prefetch(closeHref);
+  }, [router, qs, closeHref]);
 
   return (
     <main className="relative flex flex-1 flex-col bg-[#fbf9fc]">
       {/* 暗転バックドロップ — タップでキャンセル */}
       <Link
-        href="/aw"
+        href={closeHref}
         aria-label="閉じる"
         className="absolute inset-0 bg-[linear-gradient(180deg,rgba(58,50,74,0.18),rgba(58,50,74,0.32))]"
       />
@@ -53,7 +55,7 @@ export function AWAddEntry() {
 
         {/* Primary: Location-led — おすすめ */}
         <Link
-          href="/aw/new/location"
+          href={`/aw/new/location${qs}`}
           className="relative mt-3.5 flex w-full items-start gap-3 rounded-2xl border-[1.5px] border-[#a695d8] bg-[linear-gradient(120deg,#a695d81c,#a8d4e624)] px-4 pb-3.5 pt-4 text-left transition-transform active:scale-[0.99]"
         >
           <span className="absolute right-2.5 top-2.5 rounded-full bg-[#a695d8] px-[7px] py-0.5 text-[9px] font-extrabold tracking-[0.5px] text-white">
@@ -105,7 +107,7 @@ export function AWAddEntry() {
 
         {/* Secondary: Event-led — ショートカット */}
         <Link
-          href="/aw/new/event"
+          href={`/aw/new/event${qs}`}
           className="relative mt-2 flex w-full items-start gap-3 rounded-2xl border-[0.5px] border-[#3a324a14] bg-white px-4 py-3.5 text-left transition-transform active:scale-[0.99]"
         >
           <span className="absolute right-2.5 top-2.5 rounded-full bg-[#3a324a14] px-[7px] py-0.5 text-[9px] font-extrabold tracking-[0.5px] text-[#3a324a8c]">
@@ -155,7 +157,7 @@ export function AWAddEntry() {
 
         {/* Cancel */}
         <Link
-          href="/aw"
+          href={closeHref}
           className="mt-3 block w-full rounded-xl py-3 text-center text-[13px] font-semibold text-[#3a324a8c]"
         >
           キャンセル

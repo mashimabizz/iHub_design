@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { saveAW } from "@/app/aw/actions";
 
 // 地図は client-only ロード
@@ -188,6 +188,10 @@ const FALLBACK_CENTER: [number, number] = [35.6595, 139.7005];
 
 export function EventLedForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams?.get("return");
+  const destAfterSave =
+    returnTo === "local-mode" ? "/?openLocalMode=1" : "/aw";
 
   const [eventIdx, setEventIdx] = useState<number | null>(0); // モック: 既定で 1 件目
   const [customName, setCustomName] = useState("");
@@ -219,7 +223,7 @@ export function EventLedForm() {
   });
 
   useEffect(() => {
-    router.prefetch("/aw");
+    router.prefetch(destAfterSave);
   }, [router]);
 
   const chosenEvent = eventIdx === null ? null : MOCK_EVENTS[eventIdx] ?? null;
@@ -339,7 +343,7 @@ export function EventLedForm() {
       setError(result.error);
       return;
     }
-    router.push("/aw");
+    router.push(destAfterSave);
   }
 
   return (

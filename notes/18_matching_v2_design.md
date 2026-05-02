@@ -496,6 +496,58 @@ listing_matches = find_listings_for_my_inventory(my_haves)
 
 ---
 
+## 11. iter65.5/65.6 で確定した追加仕様
+
+### マッチング演算（iter66 以降で実装）
+
+オーナー指示「個別募集で指定した条件で、きちんとマッチングもされるように」を反映する。
+譲 A に対して個別募集が存在する場合、その募集条件 = 求対象 wish 群のいずれかと一致する相手のみマッチング候補。
+
+擬似コード:
+```
+for my_inv in my_inventories(kind=for_trade):
+    listings = my_listings_for(my_inv)
+    if listings:
+        # 個別募集あり：その指定条件のみで判定
+        for listing in listings:
+            for partner_inv in partners_inventories:
+                if any(matches(partner_inv, wish) for wish in listing.wishes):
+                    score += listing.priority_weight  # priority 廃止だが将来的にスコアに使う可能
+                    record_match(my_inv, partner_inv, listing.exchange_type)
+    else:
+        # 個別募集なし：通常の wish×譲 マッチに委譲
+        run_global_match(my_inv, my_wishes, partners)
+```
+
+→ 譲 A に **個別募集を作っただけで他の wish との通常マッチを抑制したい** ユースケースが基本想定（オーナー意図）。
+   ただし「個別募集に登録した譲は、通常 wish マッチからも除外する」かは要確認（iter66 で確認）。
+
+### wish からは「タグ・優先度・許容範囲」を排除
+
+- `goods_inventory.exchange_type` は `kind='wanted'` 行では使わない（常に `any` で保存）
+- `goods_inventory.priority` / `flex_level` も同様（UI 廃止）
+- 個別募集（listings）作成時に必要なら `exchange_type` を設定する
+
+### 持参グッズ管理は **ホームの現地交換モード経由のみ**
+
+- `/inventory` の在庫一覧から carrying トグル・外出モードバナー・一括 carrying を全削除
+- ホーム → 現地交換モード → 「グッズを選ぶ」 → `/inventory/select-carrying` 画面で選択
+- 戻ると自動的にホーム + 現地モードシートが開く
+
+### 現地モードのマッチ範囲
+
+- `LocalModeSheet` から半径スライダーを削除
+- AW 自身の `radius_m` を採用（AW 設定時に決定済みなので二重設定しない）
+
+### AW 未設定時のフロー
+
+- LocalModeSheet 内の「AW を追加 →」リンクに `?return=local-mode`
+- AW チューザー / location-led / event-led で `searchParams.get("return")` を読んで保存後の遷移先を `/?openLocalMode=1` に変更
+- ホーム `page.tsx` で `?openLocalMode=1` を検知すると HomeView に `autoOpenLocalSheet=true` を渡し、シートが自動的にスライドアップ
+- URL クエリは history.replaceState で除去（戻るボタンで再開しないように）
+
+---
+
 ## 10. 整理結果のまとめ（1 行で）
 
 - **Layer A**（譲 + wish）→ 広域マッチ

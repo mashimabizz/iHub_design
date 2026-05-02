@@ -13,6 +13,7 @@ type Props = {
     error?: string;
     error_code?: string;
     error_description?: string;
+    openLocalMode?: string;
   }>;
 };
 
@@ -52,7 +53,6 @@ export default async function Home({ searchParams }: Props) {
     { data: localMode },
     { data: aws },
     { data: carryingItems },
-    { data: wishes },
   ] = await Promise.all([
     supabase
       .from("users")
@@ -68,7 +68,9 @@ export default async function Home({ searchParams }: Props) {
       .maybeSingle(),
     supabase
       .from("activity_windows")
-      .select("id, venue, event_name, eventless, start_at, end_at")
+      .select(
+        "id, venue, event_name, eventless, start_at, end_at, radius_m",
+      )
       .eq("user_id", user.id)
       .eq("status", "enabled")
       .order("start_at", { ascending: true }),
@@ -80,15 +82,6 @@ export default async function Home({ searchParams }: Props) {
       .eq("user_id", user.id)
       .eq("kind", "for_trade")
       .eq("status", "active")
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("goods_inventory")
-      .select(
-        "id, title, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
-      )
-      .eq("user_id", user.id)
-      .eq("kind", "wanted")
-      .neq("status", "archived")
       .order("created_at", { ascending: false }),
   ]);
 
@@ -123,6 +116,7 @@ export default async function Home({ searchParams }: Props) {
           eventless: a.eventless,
           startAt: a.start_at,
           endAt: a.end_at,
+          radiusM: (a as { radius_m?: number }).radius_m ?? 500,
         }))}
         carryingItems={(carryingItems ?? []).map((r) => ({
           id: r.id,
@@ -130,14 +124,9 @@ export default async function Home({ searchParams }: Props) {
           groupName: pickName(r.group),
           characterName: pickName(r.character),
           goodsTypeName: pickName(r.goods_type),
+          photoUrl: null,
         }))}
-        wishes={(wishes ?? []).map((r) => ({
-          id: r.id,
-          title: r.title,
-          groupName: pickName(r.group),
-          characterName: pickName(r.character),
-          goodsTypeName: pickName(r.goods_type),
-        }))}
+        autoOpenLocalSheet={params.openLocalMode === "1"}
       />
       <BottomNav />
     </>

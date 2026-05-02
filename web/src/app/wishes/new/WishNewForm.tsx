@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   saveWishItem,
-  type ExchangeType,
   type WishFlexLevel,
   type WishPriority,
 } from "@/app/wishes/actions";
@@ -13,29 +12,8 @@ import { PrimaryButton } from "@/components/auth/PrimaryButton";
 type Master = { id: string; name: string };
 type CharacterMaster = { id: string; name: string; group_id: string };
 
-// PRIORITIES / FLEX_OPTIONS は iter65.5 で UI から廃止（DB 列はデフォルトで埋める）
-
-const EXCHANGE_OPTIONS: {
-  value: ExchangeType;
-  label: string;
-  sub: string;
-}[] = [
-  {
-    value: "any",
-    label: "どちらでも",
-    sub: "同種・異種を問わない",
-  },
-  {
-    value: "same_kind",
-    label: "同種のみ",
-    sub: "同じグッズ種別での交換",
-  },
-  {
-    value: "cross_kind",
-    label: "異種のみ",
-    sub: "別の種別との交換",
-  },
-];
+// PRIORITIES / FLEX_OPTIONS は iter65.5 で UI から廃止
+// EXCHANGE_OPTIONS も iter65.6 で wish レベルから廃止（個別募集の方で設定）
 
 export function WishNewForm({
   groups,
@@ -51,7 +29,6 @@ export function WishNewForm({
   const [characterId, setCharacterId] = useState<string>("");
   const [goodsTypeId, setGoodsTypeId] = useState<string>("");
   const [title, setTitle] = useState("");
-  const [exchangeType, setExchangeType] = useState<ExchangeType>("any");
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
@@ -106,10 +83,10 @@ export function WishNewForm({
       characterId: characterId || undefined,
       goodsTypeId,
       title: finalTitle,
-      // 優先度・許容範囲は UI 廃止（DB 列はデフォルト値で埋める）
+      // 優先度・許容範囲・交換タイプは UI 廃止（DB 列はデフォルト値で埋める）
       priority: "second" as WishPriority,
       flexLevel: "exact" as WishFlexLevel,
-      exchangeType,
+      exchangeType: "any",
       note: note.trim() || undefined,
       quantity,
     });
@@ -224,44 +201,8 @@ export function WishNewForm({
         </div>
       </Section>
 
-      {/* 優先度・許容範囲は廃止（ユーザー要望、iter65.5） */}
-
-      {/* 交換タイプ（自己申告タグ・システム判定なし） */}
-      <Section
-        label="交換タイプ"
-        hint="マッチカードに表示・判断材料"
-      >
-        <div className="grid grid-cols-3 gap-1.5">
-          {EXCHANGE_OPTIONS.map((e) => {
-            const active = exchangeType === e.value;
-            return (
-              <button
-                key={e.value}
-                type="button"
-                onClick={() => setExchangeType(e.value)}
-                className={`flex flex-col items-center justify-center rounded-xl px-2 py-2.5 text-center transition-all ${
-                  active
-                    ? "bg-[#a695d8] text-white shadow-[0_4px_10px_rgba(166,149,216,0.33)]"
-                    : "border border-[#3a324a14] bg-white text-gray-700"
-                }`}
-              >
-                <span className="text-[12px] font-bold">{e.label}</span>
-                <span
-                  className={`mt-0.5 text-[9.5px] leading-tight ${
-                    active ? "text-white/85" : "text-gray-500"
-                  }`}
-                >
-                  {e.sub}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-1.5 text-[10.5px] leading-relaxed text-gray-500">
-          ※ 自己申告タグです。マッチング演算では弾かれません。
-          相手の譲るグッズと並べてユーザー自身が判断する用途。
-        </p>
-      </Section>
+      {/* 優先度・許容範囲・交換タイプは wish レベルでは廃止（iter65.5/65.6）。
+          交換タイプは個別募集（listings）作成時のみ設定。 */}
 
       {/* メモ */}
       <Section label="メモ" hint={`${note.length} / 200`}>

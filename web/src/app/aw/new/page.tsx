@@ -6,20 +6,24 @@ export const metadata = {
   title: "AW を追加 — iHub",
 };
 
+type Props = {
+  searchParams: Promise<{ return?: string }>;
+};
+
 /**
  * AW 追加 — 入口（チューザー）
  *
- * モックアップ aw-edit.jsx AWAddEntry 準拠。
- * - 暗転バックドロップ + ボトムシート
- * - 「📍 場所から作る」（おすすめ）→ /aw/new/location
- * - 「🎤 イベントから埋める」（ショートカット）→ /aw/new/event
+ * - 「📍 場所から作る」→ /aw/new/location（return クエリ伝搬）
+ * - 「🎤 イベントから埋める」→ /aw/new/event（return クエリ伝搬）
+ * - return=local-mode のとき、サブ画面で AW 保存後に /?openLocalMode=1 に戻る
  */
-export default async function AWNewPage() {
+export default async function AWNewPage({ searchParams }: Props) {
+  const params = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  return <AWAddEntry />;
+  return <AWAddEntry returnTo={params.return} />;
 }
