@@ -219,7 +219,7 @@ export function InventoryView({
                 : "bg-white border border-[#3a324a14]"
             }`}
           >
-            {isGoingOut ? "🚶‍♀️" : "🏠"}
+            {isGoingOut ? "📍" : "🏠"}
           </div>
 
           {/* テキスト */}
@@ -229,17 +229,17 @@ export function InventoryView({
                 isGoingOut ? "text-gray-900" : "text-gray-500"
               }`}
             >
-              {isGoingOut ? "外出中" : "自宅"}
+              {isGoingOut ? "会場で交換可能" : "自宅"}
             </div>
             <div className="mt-0.5 text-[11px] leading-snug text-gray-500">
               {isGoingOut ? (
                 <>
                   持参中の{" "}
                   <b className="text-[#a695d8] tabular-nums">{carryCount}</b>{" "}
-                  点を交換対象
+                  点が交換対象です
                 </>
               ) : (
-                <>マッチング対象外（タップで外出中に切替）</>
+                <>交換は受け付けていません（タップで切替）</>
               )}
             </div>
           </div>
