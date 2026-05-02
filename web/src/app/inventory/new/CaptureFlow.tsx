@@ -4,12 +4,32 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
+import { saveBatchInventoryItems } from "@/app/inventory/actions";
 import { CroppingCanvas, type CropResult } from "./CroppingCanvas";
 import { CropToast } from "./CropToast";
 
 type Master = { id: string; name: string };
+type CharacterMaster = { id: string; name: string; group_id: string };
 
 type Step = "common" | "shoot" | "crop" | "meta";
+
+type Condition = "sealed" | "mint" | "good" | "fair" | "poor";
+
+const CONDITIONS: { value: Condition; label: string }[] = [
+  { value: "sealed", label: "未開封" },
+  { value: "mint", label: "極美" },
+  { value: "good", label: "良好" },
+  { value: "fair", label: "普通" },
+  { value: "poor", label: "難あり" },
+];
+
+type CropMeta = {
+  characterId: string; // "" = 指定なし（共通）
+  title: string;
+  series: string;
+  condition: Condition;
+  quantity: number;
+};
 
 export type UploadedPhoto = {
   url: string; // Supabase Storage の public URL
@@ -22,10 +42,12 @@ export type UploadedPhoto = {
 export function CaptureFlow({
   groups,
   goodsTypes,
+  characters,
   userId,
 }: {
   groups: Master[];
   goodsTypes: Master[];
+  characters: CharacterMaster[];
   userId: string;
 }) {
   const router = useRouter();
@@ -45,14 +67,122 @@ export function CaptureFlow({
   const [toastSignal, setToastSignal] = useState(0);
   const [lastCropThumb, setLastCropThumb] = useState<string | undefined>();
 
+  // Step 4: ラベル設定
+  const [cropMetas, setCropMetas] = useState<CropMeta[]>([]);
+  const [startCarrying, setStartCarrying] = useState(false);
+  const [savePending, setSavePending] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   function handleCropped(crop: CropResult) {
     setCrops((prev) => [...prev, crop]);
+    setCropMetas((prev) => [
+      ...prev,
+      {
+        characterId: "",
+        title: "",
+        series: "",
+        condition: "good",
+        quantity: 1,
+      },
+    ]);
     setLastCropThumb(crop.dataUrl);
     setToastSignal(Date.now());
   }
 
   function removeCrop(index: number) {
     setCrops((prev) => prev.filter((_, i) => i !== index));
+    setCropMetas((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function updateMeta(index: number, patch: Partial<CropMeta>) {
+    setCropMetas((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, ...patch } : m)),
+    );
+  }
+
+  // Step 4 → 一括登録
+  const filteredCharacters = characters.filter(
+    (c) => c.group_id === groupId,
+  );
+  const selectedGroup = groups.find((g) => g.id === groupId);
+  const selectedGoodsType = goodsTypes.find((g) => g.id === goodsTypeId);
+
+  async function handleBatchSave() {
+    if (crops.length === 0) {
+      setSaveError("切り抜きがありません");
+      return;
+    }
+
+    setSavePending(true);
+    setSaveError(null);
+
+    try {
+      // 各切り抜き Blob を Storage にアップロード
+      const items: Parameters<typeof saveBatchInventoryItems>[0]["items"] =
+        [];
+
+      for (let i = 0; i < crops.length; i++) {
+        const crop = crops[i];
+        const meta = cropMetas[i];
+
+        const fileName = `${userId}/${Date.now()}_${i}_${Math.random()
+          .toString(36)
+          .slice(2, 8)}.jpg`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("goods-photos")
+          .upload(fileName, crop.blob, {
+            cacheControl: "3600",
+            contentType: "image/jpeg",
+            upsert: false,
+          });
+
+        if (uploadError) {
+          throw new Error(`アップロード失敗: ${uploadError.message}`);
+        }
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("goods-photos").getPublicUrl(fileName);
+
+        // タイトル：空ならメンバー名 + 種別で自動生成
+        let title = meta.title.trim();
+        if (!title) {
+          const ch = filteredCharacters.find(
+            (c) => c.id === meta.characterId,
+          );
+          title = `${ch?.name ?? selectedGroup?.name ?? ""} ${
+            selectedGoodsType?.name ?? ""
+          }`.trim();
+        }
+
+        items.push({
+          groupId,
+          goodsTypeId,
+          characterId: meta.characterId || null,
+          title,
+          series: meta.series.trim() || undefined,
+          condition: meta.condition,
+          quantity: meta.quantity,
+          photoUrl: publicUrl,
+        });
+      }
+
+      const result = await saveBatchInventoryItems({
+        items,
+        startCarrying,
+      });
+      if (result?.error) {
+        setSaveError(result.error);
+        setSavePending(false);
+        return;
+      }
+
+      router.push("/inventory");
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "保存に失敗しました");
+      setSavePending(false);
+    }
   }
 
   // Step 1 → 2 へ進める条件
@@ -479,35 +609,183 @@ export function CaptureFlow({
   }
 
   // ────────────────────────────────────────
-  // Step 4: ラベル設定（次回実装）
+  // Step 4: ラベル設定
   // ────────────────────────────────────────
   if (step === "meta") {
     return (
-      <div className="space-y-4">
-        <div className="rounded-xl bg-[#f3c5d420] px-4 py-4 text-center">
-          <div className="text-[14px] font-bold text-gray-900">
-            🏷 ラベル設定
-          </div>
-          <p className="mt-2 text-[12px] leading-relaxed text-gray-600">
-            次の iter で実装します。
-            <br />
-            切り抜き {crops.length} 件にキャラ・タイトル・コンディションを設定。
-          </p>
+      <div className="space-y-3 pb-4">
+        <div className="rounded-xl bg-[#a8d4e620] px-4 py-3 text-[12px] leading-relaxed text-gray-700">
+          <span className="font-bold">🏷 各切り抜きにキャラ名などを設定</span>
+          <br />
+          グループ:{" "}
+          <b className="text-gray-900">{selectedGroup?.name}</b> ・ 種別:{" "}
+          <b className="text-gray-900">{selectedGoodsType?.name}</b>
         </div>
-        <button
-          type="button"
-          onClick={() => setStep("crop")}
-          className="flex h-11 w-full items-center justify-center rounded-2xl border border-[#3a324a14] bg-white text-[13px] font-semibold text-gray-700"
-        >
-          ← 切り抜きに戻る
-        </button>
-        <button
-          type="button"
-          onClick={() => router.push("/inventory")}
-          className="flex h-11 w-full items-center justify-center rounded-2xl bg-gray-100 text-[13px] font-semibold text-gray-700"
-        >
-          一旦終了して在庫一覧に戻る
-        </button>
+
+        {/* 切り抜き一覧 */}
+        <div className="space-y-2.5">
+          {crops.map((crop, i) => {
+            const meta = cropMetas[i];
+            if (!meta) return null;
+            return (
+              <div
+                key={i}
+                className="flex gap-3 rounded-2xl border border-[#3a324a14] bg-white p-3"
+              >
+                {/* サムネ */}
+                <div
+                  className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg border border-[#3a324a14] bg-gray-100"
+                  style={{ aspectRatio: "1 / 1" }}
+                >
+                  <img
+                    src={crop.dataUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+
+                {/* メタ入力 */}
+                <div className="flex-1 space-y-1.5 min-w-0">
+                  {/* メンバー */}
+                  <select
+                    value={meta.characterId}
+                    onChange={(e) =>
+                      updateMeta(i, { characterId: e.target.value })
+                    }
+                    className="block w-full rounded-lg border border-[#3a324a14] bg-white px-2.5 py-1.5 text-[12px] text-gray-900 focus:border-[#a695d8] focus:outline-none"
+                  >
+                    <option value="">指定なし（共通）</option>
+                    {filteredCharacters.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* タイトル */}
+                  <input
+                    type="text"
+                    value={meta.title}
+                    onChange={(e) =>
+                      updateMeta(i, { title: e.target.value })
+                    }
+                    placeholder="タイトル（空欄で自動）"
+                    maxLength={100}
+                    className="block w-full rounded-lg border border-[#3a324a14] bg-white px-2.5 py-1.5 text-[12px] text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
+                  />
+
+                  {/* コンディション + 数量 */}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={meta.condition}
+                      onChange={(e) =>
+                        updateMeta(i, {
+                          condition: e.target.value as Condition,
+                        })
+                      }
+                      className="block flex-1 rounded-lg border border-[#3a324a14] bg-white px-2 py-1.5 text-[11px] text-gray-900 focus:border-[#a695d8] focus:outline-none"
+                    >
+                      {CONDITIONS.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateMeta(i, {
+                            quantity: Math.max(1, meta.quantity - 1),
+                          })
+                        }
+                        disabled={meta.quantity <= 1}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#3a324a14] bg-white text-[12px] font-bold text-gray-700 disabled:opacity-30"
+                      >
+                        −
+                      </button>
+                      <div className="min-w-[24px] text-center text-[12px] font-bold tabular-nums text-gray-900">
+                        {meta.quantity}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateMeta(i, {
+                            quantity: Math.min(999, meta.quantity + 1),
+                          })
+                        }
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#3a324a14] bg-white text-[12px] font-bold text-gray-700"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeCrop(i)}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-[10px] text-gray-400 hover:text-red-500"
+                      aria-label="削除"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                      >
+                        <path d="M3 3l8 8M11 3l-8 8" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 持参モード */}
+        <label className="flex items-start gap-2.5 rounded-xl bg-[#a8d4e620] px-4 py-3 text-[12px]">
+          <input
+            type="checkbox"
+            checked={startCarrying}
+            onChange={(e) => setStartCarrying(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[#a695d8] focus:ring-[#a695d8]"
+          />
+          <div className="flex-1">
+            <span className="font-bold text-gray-900">
+              🎒 全部今日から持参中にする
+            </span>
+            <span className="ml-1 text-gray-600">
+              （会場で交換可能な状態にする）
+            </span>
+          </div>
+        </label>
+
+        {saveError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {saveError}
+          </div>
+        )}
+
+        {/* アクションボタン */}
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setStep("crop")}
+            disabled={savePending}
+            className="flex h-12 items-center justify-center rounded-2xl border border-[#3a324a14] bg-white px-5 text-[13px] font-semibold text-gray-700 disabled:opacity-50"
+          >
+            戻る
+          </button>
+          <PrimaryButton
+            type="button"
+            onClick={handleBatchSave}
+            pending={savePending}
+            pendingLabel="登録中..."
+          >
+            {crops.length} 件まとめて登録
+          </PrimaryButton>
+        </div>
       </div>
     );
   }

@@ -23,17 +23,22 @@ export default async function InventoryNewPage() {
   if (!user) redirect("/login");
 
   // 並列取得
-  const [{ data: userOshi }, { data: goodsTypes }] = await Promise.all([
-    supabase
-      .from("user_oshi")
-      .select("group_id, group:groups_master(id, name)")
-      .eq("user_id", user.id)
-      .not("group_id", "is", null),
-    supabase
-      .from("goods_types_master")
-      .select("id, name")
-      .order("display_order", { ascending: true }),
-  ]);
+  const [{ data: userOshi }, { data: goodsTypes }, { data: characters }] =
+    await Promise.all([
+      supabase
+        .from("user_oshi")
+        .select("group_id, group:groups_master(id, name)")
+        .eq("user_id", user.id)
+        .not("group_id", "is", null),
+      supabase
+        .from("goods_types_master")
+        .select("id, name")
+        .order("display_order", { ascending: true }),
+      supabase
+        .from("characters_master")
+        .select("id, name, group_id")
+        .order("display_order", { ascending: true }),
+    ]);
 
   // 重複排除した group 一覧
   const groupMap = new Map<string, { id: string; name: string }>();
@@ -46,6 +51,12 @@ export default async function InventoryNewPage() {
   }
   const groups = Array.from(groupMap.values());
 
+  // 自分の推しグループに紐づくキャラのみ
+  const groupIds = new Set(groups.map((g) => g.id));
+  const filteredCharacters = (characters ?? [])
+    .filter((c) => c.group_id && groupIds.has(c.group_id))
+    .map((c) => ({ id: c.id, name: c.name, group_id: c.group_id! }));
+
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="グッズを登録" backHref="/inventory" />
@@ -53,6 +64,7 @@ export default async function InventoryNewPage() {
         <CaptureFlow
           groups={groups}
           goodsTypes={goodsTypes ?? []}
+          characters={filteredCharacters}
           userId={user.id}
         />
       </div>

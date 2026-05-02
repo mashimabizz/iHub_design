@@ -8,6 +8,71 @@ type ActionResult = { error?: string } | undefined;
 
 const VALID_CONDITIONS = ["sealed", "mint", "good", "fair", "poor"] as const;
 
+// ----------------------------------------------------------------------
+// saveBatchInventoryItems: 複数アイテムを一括登録（撮影フロー用）
+// ----------------------------------------------------------------------
+export async function saveBatchInventoryItems(input: {
+  items: Array<{
+    groupId: string;
+    goodsTypeId: string;
+    characterId?: string | null;
+    title: string;
+    series?: string;
+    condition: "sealed" | "mint" | "good" | "fair" | "poor";
+    quantity: number;
+    photoUrl: string;
+  }>;
+  startCarrying?: boolean;
+}): Promise<ActionResult> {
+  if (!input.items || input.items.length === 0) {
+    return { error: "登録するアイテムがありません" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // バリデーション
+  for (const it of input.items) {
+    if (!it.title || it.title.length > 100) {
+      return { error: "タイトルが不正なアイテムがあります" };
+    }
+    if (!it.goodsTypeId || !it.groupId) {
+      return { error: "グループまたは種別が未指定のアイテムがあります" };
+    }
+    if (!VALID_CONDITIONS.includes(it.condition)) {
+      return { error: "コンディションが不正です" };
+    }
+    if (it.quantity < 1 || it.quantity > 999) {
+      return { error: "数量は 1〜999 で入力してください" };
+    }
+  }
+
+  const rows = input.items.map((it) => ({
+    user_id: user.id,
+    kind: "for_trade" as const,
+    group_id: it.groupId,
+    character_id: it.characterId ?? null,
+    goods_type_id: it.goodsTypeId,
+    title: it.title.trim(),
+    series: it.series?.trim() || null,
+    condition: it.condition,
+    quantity: it.quantity,
+    photo_urls: [it.photoUrl],
+    carrying: input.startCarrying ?? false,
+  }));
+
+  const { error } = await supabase.from("goods_inventory").insert(rows);
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/inventory");
+  return undefined;
+}
+
 /**
  * 譲るグッズを登録（kind='for_trade' 固定）
  * 求める（wish）は別画面 /wishes/new で別 action として扱う
