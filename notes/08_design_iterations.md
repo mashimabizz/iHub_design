@@ -419,6 +419,115 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション61.5：AW 編集に本物の地図を統合（Leaflet + OpenStreetMap + Geolocation + Nominatim）
+
+### 背景・問題意識
+
+iter61 で AW 編集 3 画面を実装したが、地図部分は SVG プレースホルダだった。ユーザーから「めっちゃ側だけつくってるやん。位置から指定する時、ちゃんとリアルの地図を呼び出す感じにしてよ。位置情報をユーザーから取得してさ。」と指摘され、本物の地図機能を実装。
+
+### 技術選定
+
+- **地図ライブラリ**: Leaflet + OpenStreetMap タイル
+  - 無料・APIキー不要・MVP 向き（Mapbox は無料枠あるが将来課金リスク）
+  - `react-leaflet` で React 統合
+- **ジオコーディング**: Nominatim (OSM 公式)
+  - 無料・APIキー不要
+  - 1 req/sec 制限・User-Agent 必須
+  - サーバー API ルート (`/api/geocode`) で proxy（CORS / User-Agent 付与）
+- **位置情報取得**: Browser Geolocation API（標準）
+
+### 変更内容
+
+#### `web/src/app/api/geocode/route.ts`（新規）
+
+- Nominatim プロキシ API
+- `?q=横浜アリーナ` → forward geocoding
+- `?lat=35.5&lon=139.7` → reverse geocoding
+- User-Agent: `iHub/0.1 (https://ihub.tokyo; support@ihub.tokyo)`
+- `next: { revalidate: 3600 }` で 1 時間キャッシュ
+
+#### `web/src/components/map/MapPicker.tsx`（新規）
+
+- `react-leaflet` ベースの client-only コンポーネント
+- OSM タイル + radius circle (lavender) + ドラッグ可能ピン (DivIcon)
+- iHub ブランドカラー (#a695d8) のカスタムピン
+- center 変更を `onCenterChange(lat, lng)` で通知
+- 地図クリック / ピンドラッグで center 更新
+
+#### `web/src/app/aw/new/location/LocationLedForm.tsx`（再実装）
+
+- SVG プレースホルダを完全廃棄、`MapPicker` を組み込み
+- 初回ロード時に `navigator.geolocation.getCurrentPosition` で現在地取得（fallback: 渋谷駅）
+- 検索バーは Nominatim API 経由で 350ms debounce → 結果ドロップダウン表示
+- 結果クリックで地図中心移動 + 会場名自動入力
+- ピン移動時に reverse geocoding で会場名候補を自動入力（ユーザー編集後は上書きしない）
+- 「現在地を使う」ボタンで再度 Geolocation 呼び出し
+- Geolocation エラー（permission denied 等）はトーストで表示
+
+#### `web/src/app/aw/new/event/EventLedForm.tsx`
+
+- SVG MiniMap を `MapPicker` に置き換え（180px 高さ）
+- イベント選択時に Nominatim でその会場座標を自動取得
+- 「現在地を使う」を機能化
+- ピンドラッグ可能（同 venue 内の細かい場所調整用）
+
+#### `web/src/app/aw/actions.ts`
+
+- `saveAW` に `centerLat` / `centerLng` 引数追加
+- バリデーション: 両方揃って範囲内（-90〜90, -180〜180）の時のみ保存
+- `activity_windows.center_lat / center_lng` カラムに格納（既存 schema、iter61 マイグレーション）
+
+#### `web/package.json`
+
+- `leaflet@^1.9.4`, `react-leaflet@^5.0.0`, `@types/leaflet@^1.9.21` を追加
+
+### 動作フロー
+
+1. `/aw/new/location` 開く → 現在地取得トライ（fallback 渋谷駅）
+2. 地図表示・ピン位置の reverse geocoding で会場名自動入力
+3. ユーザーが検索 → Nominatim 結果リスト → クリックで pin 移動
+4. ピンドラッグで微調整可
+5. 半径スライダーで radius circle がリアルタイム更新
+6. 「有効化」で `saveAW({centerLat, centerLng, ...})` 実行 → DB に座標保存
+
+### 影響範囲
+
+- `/aw/new/location`: 完全に本物地図に
+- `/aw/new/event`: MiniMap 部分のみ本物地図に
+- `/api/geocode`: 新規 API ルート
+- `activity_windows.center_lat/lng` に座標が保存されるので、iter63（マッチングロジック）で時空交差計算に直接利用可能になった
+
+### Nominatim 利用ポリシー遵守
+
+- `User-Agent` ヘッダ必須 → サーバー側で付与
+- 1 req/sec 上限 → ブラウザ debounce 350ms + サーバーキャッシュ 1h
+- 商用利用増加時は別ホスト（Stadia Maps / MapTiler）への切替を検討
+
+### 確認方法
+
+1. `npm run dev` で http://localhost:3000/aw/new/location
+2. 初回: ブラウザの位置情報ダイアログ → 許可 / 拒否どちらでも fallback
+3. 検索: 「横浜アリーナ」入力 → ドロップダウン → クリックで pin 移動
+4. ピンドラッグ: venue 名が reverse geocoding で更新
+5. 「有効化」→ DB 確認: `select venue, center_lat, center_lng from activity_windows;`
+
+### 関連ファイル
+
+- `web/src/app/api/geocode/route.ts`（新規）
+- `web/src/components/map/MapPicker.tsx`（新規）
+- `web/src/app/aw/new/location/LocationLedForm.tsx`（再実装）
+- `web/src/app/aw/new/event/EventLedForm.tsx`（部分更新）
+- `web/src/app/aw/actions.ts`（saveAW 拡張）
+- `web/package.json`（依存追加）
+
+### セルフレビュー（CLAUDE.md absolute rule C 適用）
+
+- **A. デザイン整合性**: モックアップは静的 SVG 地図、本実装は Leaflet+OSM。ピンの色・形状・shadow はモックアップに合わせる ✅
+- **B. 仕様整合性**: `activity_windows` の `center_lat / center_lng` カラムを利用、saveAW のバリデーション追加 ✅
+- **C. レビュー記録**: Nominatim 制限 / 商用ホスト切替の note を上記に記録 ✅
+
+---
+
 ## イテレーション61：AW（合流可能枠）画面 — 一覧 + 編集 3 画面 ピクセル準拠実装
 
 ### 背景・問題意識

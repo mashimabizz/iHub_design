@@ -14,6 +14,8 @@ export async function saveAW(input: {
   endAt: string;
   radiusM: number;
   note?: string;
+  centerLat?: number; // -90 〜 90
+  centerLng?: number; // -180 〜 180
 }): Promise<ActionResult> {
   const venue = input.venue.trim();
   if (!venue || venue.length > 100) {
@@ -29,6 +31,26 @@ export async function saveAW(input: {
   }
   if (end <= start) {
     return { error: "終了時刻は開始時刻より後にしてください" };
+  }
+  // 座標は両方揃っている時のみ採用（片方欠けは null 扱い）
+  let centerLat: number | null = null;
+  let centerLng: number | null = null;
+  if (
+    typeof input.centerLat === "number" &&
+    typeof input.centerLng === "number" &&
+    !isNaN(input.centerLat) &&
+    !isNaN(input.centerLng)
+  ) {
+    if (
+      input.centerLat < -90 ||
+      input.centerLat > 90 ||
+      input.centerLng < -180 ||
+      input.centerLng > 180
+    ) {
+      return { error: "座標が不正です" };
+    }
+    centerLat = input.centerLat;
+    centerLng = input.centerLng;
   }
 
   const supabase = await createClient();
@@ -46,6 +68,8 @@ export async function saveAW(input: {
     end_at: end.toISOString(),
     radius_m: input.radiusM,
     note: input.note?.trim() || null,
+    center_lat: centerLat,
+    center_lng: centerLng,
   });
 
   if (error) return { error: error.message };

@@ -1,9 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { saveAW } from "@/app/aw/actions";
+
+// 地図は client-only ロード
+const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center bg-[#a8d4e61a] text-[10px] text-[#3a324a8c]">
+      地図を読み込み中…
+    </div>
+  ),
+});
 
 /**
  * モックアップ aw-edit.jsx AWEditEventLed (276-571) 準拠。
@@ -172,6 +183,9 @@ function isoToLocal(iso: string): string {
   return d.toISOString().slice(0, 16);
 }
 
+// 渋谷駅 fallback
+const FALLBACK_CENTER: [number, number] = [35.6595, 139.7005];
+
 export function EventLedForm() {
   const router = useRouter();
 
@@ -188,6 +202,10 @@ export function EventLedForm() {
   const [closeBefore, setCloseBefore] = useState(15);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 地図 / 座標
+  const [center, setCenter] = useState<[number, number]>(FALLBACK_CENTER);
+  const [resolving, setResolving] = useState(false);
 
   // manual mode datetime values
   const [manualStart, setManualStart] = useState(() => {
@@ -206,6 +224,54 @@ export function EventLedForm() {
 
   const chosenEvent = eventIdx === null ? null : MOCK_EVENTS[eventIdx] ?? null;
   const presets = useMemo(() => buildPresets(chosenEvent), [chosenEvent]);
+
+  // ─── 会場名 → 座標を Nominatim で解決 ───────────────────────
+  useEffect(() => {
+    const venue = chosenEvent?.venue || customName.trim();
+    if (!venue) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(async () => {
+      setResolving(true);
+      try {
+        const res = await fetch(
+          `/api/geocode?q=${encodeURIComponent(venue)}`,
+          { signal: ctrl.signal },
+        );
+        const data = (await res.json()) as Array<{
+          lat: string;
+          lon: string;
+        }>;
+        if (Array.isArray(data) && data.length > 0) {
+          const lat = parseFloat(data[0].lat);
+          const lon = parseFloat(data[0].lon);
+          if (isFinite(lat) && isFinite(lon)) {
+            setCenter([lat, lon]);
+          }
+        }
+      } catch {
+        // ignore
+      } finally {
+        setResolving(false);
+      }
+    }, 300);
+    return () => {
+      ctrl.abort();
+      clearTimeout(t);
+    };
+  }, [chosenEvent, customName]);
+
+  function useCurrentLocation() {
+    if (typeof window === "undefined" || !navigator.geolocation) return;
+    setResolving(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCenter([pos.coords.latitude, pos.coords.longitude]);
+        setResolving(false);
+      },
+      () => setResolving(false),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
 
   const radiusLabel = useMemo(
     () => (radiusM >= 1000 ? `${(radiusM / 1000).toFixed(1)}km` : `${radiusM}m`),
@@ -265,6 +331,8 @@ export function EventLedForm() {
       endAt: isoToLocal(endISO),
       radiusM,
       note: meeting.length ? `現地: ${meeting.join(", ")}` : undefined,
+      centerLat: center[0],
+      centerLng: center[1],
     });
     if (result?.error) {
       setPending(false);
@@ -426,14 +494,28 @@ export function EventLedForm() {
         {/* 位置と範囲 */}
         <FLabel top={18}>位置と範囲</FLabel>
         <div className="overflow-hidden rounded-2xl border-[0.5px] border-[#3a324a14] bg-white">
-          {/* MiniMap */}
-          <MiniMap
-            radiusM={radiusM}
-            venue={chosenEvent?.venue || customName || "（会場未設定）"}
-          />
+          {/* 本物の地図（Leaflet + OSM） */}
+          <div className="relative h-[180px]">
+            <MapPicker
+              center={center}
+              radiusM={radiusM}
+              onCenterChange={(lat, lng) => setCenter([lat, lng])}
+              className="absolute inset-0"
+            />
+            {/* 半径バッジ（地図右上） */}
+            <div className="pointer-events-none absolute right-2.5 top-2.5 z-[900] rounded-full bg-[#a695d8] px-2 py-[3px] text-[10px] font-extrabold tabular-nums text-white shadow-[0_4px_10px_#a695d855]">
+              {radiusLabel}
+            </div>
+            {resolving && (
+              <div className="absolute left-2.5 top-2.5 z-[900] rounded-full bg-black/60 px-2 py-[3px] text-[9.5px] text-white backdrop-blur-md">
+                位置取得中…
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-2 px-3 py-2.5">
             <button
               type="button"
+              onClick={useCurrentLocation}
               className="inline-flex items-center gap-1 rounded-full bg-[#3a324a0f] px-2.5 py-1.5 text-[11px] font-semibold text-[#3a324a]"
             >
               <svg width="11" height="11" viewBox="0 0 11 11">
@@ -449,14 +531,9 @@ export function EventLedForm() {
               </svg>
               現在地を使う
             </button>
-            <button
-              type="button"
-              className="rounded-full bg-[#3a324a0f] px-2.5 py-1.5 text-[11px] font-semibold text-[#3a324a]"
-            >
-              📍 ピン調整
-            </button>
-            <div className="flex-1" />
-            <span className="text-[10px] text-[#3a324a8c]">キャッシュ済</span>
+            <span className="text-[10px] text-[#3a324a8c]">
+              ピンをドラッグで調整
+            </span>
           </div>
           <div className="px-3.5 pb-3.5 pt-1">
             <div className="mb-1.5 flex items-baseline justify-between text-[11px] font-semibold text-[#3a324a8c]">
@@ -788,63 +865,3 @@ function ToggleRow({
   );
 }
 
-function MiniMap({ radiusM, venue }: { radiusM: number; venue: string }) {
-  const r = Math.min(60, 12 + radiusM / 30);
-  const radiusLabel = radiusM >= 1000 ? `${(radiusM / 1000).toFixed(1)}km` : `${radiusM}m`;
-  return (
-    <div
-      className="relative h-[150px] overflow-hidden"
-      style={{
-        background:
-          "repeating-linear-gradient(45deg, #a8d4e61a 0 8px, #a8d4e628 8px 14px)",
-      }}
-    >
-      <svg
-        width="100%"
-        height="100%"
-        viewBox="0 0 240 150"
-        preserveAspectRatio="none"
-        className="absolute inset-0"
-      >
-        <path
-          d="M0 90 Q60 75 120 95 T240 80"
-          stroke="#fff"
-          strokeWidth="7"
-          fill="none"
-          opacity="0.8"
-        />
-        <path
-          d="M70 0 L110 150"
-          stroke="#fff"
-          strokeWidth="5"
-          fill="none"
-          opacity="0.55"
-        />
-        <path
-          d="M180 0 L150 150"
-          stroke="#fff"
-          strokeWidth="3"
-          fill="none"
-          opacity="0.4"
-        />
-      </svg>
-      {/* venue label */}
-      <div className="absolute left-[70px] top-9 rounded-md bg-white/90 px-2 py-[3px] text-[9.5px] font-bold">
-        {venue}
-      </div>
-      {/* radius circle */}
-      <div
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#a695d8] bg-[#a695d826] shadow-[0_0_0_1px_#a695d866]"
-        style={{ width: r * 2.2, height: r * 2.2 }}
-      />
-      {/* pin */}
-      <div className="absolute left-1/2 top-1/2 flex h-[22px] w-[22px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#a695d8] shadow-[0_0_0_4px_#fff,0_4px_10px_#a695d855]">
-        <div className="h-1.5 w-1.5 rounded-full bg-white" />
-      </div>
-      {/* radius label */}
-      <div className="absolute bottom-2.5 right-2.5 rounded-lg bg-black/60 px-2 py-1 text-[10px] font-bold tabular-nums text-white backdrop-blur-md">
-        半径 {radiusLabel}
-      </div>
-    </div>
-  );
-}
