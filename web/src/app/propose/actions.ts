@@ -99,6 +99,9 @@ export async function createProposal(input: {
       message: input.message.trim(),
       message_tone: input.messageTone ?? "standard",
       status: "sent",
+      // iter74: 打診した側は自分の打診内容にデフォルト合意扱い
+      agreed_by_sender: true,
+      agreed_by_receiver: false,
       last_action_at: now.toISOString(),
       expires_at: expires.toISOString(),
       meetup_start_at: input.meetupStartAt,
@@ -195,6 +198,7 @@ export async function reviseProposal(input: {
     : input.meSenderHaveQtys;
 
   // proposal を update（status は negotiating に戻す）
+  // iter74: 修正者は新内容に合意済とみなす、相手は再確認待ち
   const now = new Date();
   const updateFields: Record<string, unknown> = {
     sender_have_ids: newSenderIds,
@@ -208,9 +212,9 @@ export async function reviseProposal(input: {
     meetup_place_name: input.meetupPlaceName.trim(),
     meetup_lat: input.meetupLat,
     meetup_lng: input.meetupLng,
-    status: "negotiating",
-    agreed_by_sender: false,
-    agreed_by_receiver: false,
+    status: "agreement_one_side",
+    agreed_by_sender: isMeSender,
+    agreed_by_receiver: !isMeSender,
     last_action_at: now.toISOString(),
   };
   if (input.message?.trim()) {
