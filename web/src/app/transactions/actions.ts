@@ -110,6 +110,123 @@ export async function updateArrivalStatus(input: {
   return undefined;
 }
 
+/* ─── iter68.1: 複数枚証跡対応 ─────────────────────────────── */
+
+/**
+ * 撮影した 1 枚を proposal_evidence_photos に追加。
+ * 撮影者は approved_by_* も自動で true にする（撮影＝確認済の意思表示）。
+ */
+export async function addEvidencePhoto(input: {
+  proposalId: string;
+  photoUrl: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select("status, sender_id, receiver_id, evidence_photo_url")
+    .eq("id", input.proposalId)
+    .maybeSingle();
+  if (!prop) return { error: "取引が見つかりません" };
+  if (prop.sender_id !== user.id && prop.receiver_id !== user.id)
+    return { error: "参加者ではありません" };
+  if (prop.status !== "agreed")
+    return { error: "合意済の取引のみ撮影できます" };
+
+  // 次の position 計算
+  const { data: maxRow } = await supabase
+    .from("proposal_evidence_photos")
+    .select("position")
+    .eq("proposal_id", input.proposalId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextPos = ((maxRow?.position as number | undefined) ?? 0) + 1;
+
+  const { error } = await supabase.from("proposal_evidence_photos").insert({
+    proposal_id: input.proposalId,
+    photo_url: input.photoUrl,
+    position: nextPos,
+    taken_at: new Date().toISOString(),
+    taken_by: user.id,
+  });
+  if (error) return { error: error.message };
+
+  // 互換性：proposals.evidence_photo_url が空なら最初の写真をミラー（旧ロジック向け）
+  const updateFields: Record<string, unknown> = {
+    evidence_taken_at: new Date().toISOString(),
+    evidence_taken_by: user.id,
+    // 撮影者は自動承認
+    ...(prop.sender_id === user.id
+      ? { approved_by_sender: true }
+      : { approved_by_receiver: true }),
+  };
+  if (!prop.evidence_photo_url) {
+    updateFields.evidence_photo_url = input.photoUrl;
+  }
+  await supabase
+    .from("proposals")
+    .update(updateFields)
+    .eq("id", input.proposalId);
+
+  revalidatePath(`/transactions/${input.proposalId}`);
+  return undefined;
+}
+
+/**
+ * 撮影者が自分の写真を削除（差し替え時）
+ */
+export async function removeEvidencePhoto(input: {
+  photoId: string;
+  proposalId: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("proposal_evidence_photos")
+    .delete()
+    .eq("id", input.photoId)
+    .eq("taken_by", user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath(`/transactions/${input.proposalId}`);
+  return undefined;
+}
+
+/**
+ * 撮影完了通知：チャットに「✓ 取引証跡が届きました（タップで確認へ）」system message を投稿
+ * meta.action='open_approve' でフロントが tap 可能カードとして描画。
+ */
+export async function notifyEvidenceComplete(input: {
+  proposalId: string;
+  photoCount: number;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  await supabase.from("messages").insert({
+    proposal_id: input.proposalId,
+    sender_id: user.id,
+    message_type: "system",
+    body: `✓ 取引証跡が届きました（${input.photoCount}枚）`,
+    meta: { action: "open_approve" },
+  });
+
+  revalidatePath(`/transactions/${input.proposalId}`);
+  return { redirectTo: `/transactions/${input.proposalId}` };
+}
+
 /* ─── iter68-D/E/F: 取引証跡 / 双方承認 / 評価 ─────────────── */
 
 /**

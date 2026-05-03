@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { approveCompletion, flagDispute } from "../../actions";
@@ -11,9 +12,16 @@ export type ApproveRow = {
   letters: string[];
 };
 
+export type ApprovePhoto = {
+  id: string;
+  photoUrl: string;
+  position: number;
+  takenAt: string;
+};
+
 export type ApproveData = {
   proposalId: string;
-  photoUrl: string;
+  photos: ApprovePhoto[];
   photoTakenAt: string | null;
   placeName: string | null;
   rows: ApproveRow[];
@@ -61,17 +69,40 @@ export function ApproveView({ data }: { data: ApproveData }) {
     <div className="relative flex flex-1 flex-col bg-[#fbf9fc]">
       <div className="flex-1 overflow-y-auto px-4 pb-[120px] pt-4">
         <div className="mx-auto max-w-md space-y-3.5">
-          {/* 撮影写真カード */}
-          <div className="relative overflow-hidden rounded-[18px] shadow-[0_8px_24px_rgba(58,50,74,0.15)]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={data.photoUrl}
-              alt="取引証跡"
-              className="block h-auto w-full"
-            />
-            <div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between rounded-[10px] bg-black/55 px-3 py-1.5 text-[10.5px] tabular-nums text-white backdrop-blur-md">
-              <span>{photoMeta}</span>
-              <span>{data.placeName ?? "—"}</span>
+          {/* 撮影写真ギャラリー */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <div className="text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+                取引証跡（{data.photos.length}枚）
+              </div>
+              <Link
+                href={`/transactions/${data.proposalId}/capture`}
+                className="text-[11px] font-bold text-[#a695d8] underline"
+              >
+                追加撮影 / 差し替え →
+              </Link>
+            </div>
+            <div className="space-y-2">
+              {data.photos.map((ph, i) => (
+                <div
+                  key={ph.id}
+                  className="relative overflow-hidden rounded-[18px] shadow-[0_4px_12px_rgba(58,50,74,0.10)]"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={ph.photoUrl}
+                    alt={`取引証跡 #${ph.position}`}
+                    className="block h-auto w-full"
+                  />
+                  <div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between rounded-[10px] bg-black/55 px-3 py-1.5 text-[10.5px] tabular-nums text-white backdrop-blur-md">
+                    <span>
+                      #{ph.position}
+                      {i === 0 && photoMeta !== "—" ? ` · ${photoMeta}` : ""}
+                    </span>
+                    <span>{data.placeName ?? "—"}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 

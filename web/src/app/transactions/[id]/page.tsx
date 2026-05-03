@@ -100,13 +100,19 @@ export default async function TransactionChatPage({
     redirect(`/proposals/${id}`);
   }
 
-  // 撮影済かつ未完了 → 承認画面へ
-  if (p.evidence_photo_url && p.status === "agreed") {
-    redirect(`/transactions/${id}/approve`);
-  }
-  // 完了済 → rate 画面へ（評価未送信なら）
+  // iter68.1: 撮影済→自動 redirect は撤廃。
+  // ユーザーは chat 画面に留まり、system message「✓ 取引証跡が届きました」をタップで approve に遷移。
+  // 完了済かつ未評価のみ rate に redirect（評価のリマインド）
   if (p.status === "completed") {
-    redirect(`/transactions/${id}/rate`);
+    const { data: existingEval } = await supabase
+      .from("user_evaluations")
+      .select("id")
+      .eq("proposal_id", id)
+      .eq("rater_id", user.id)
+      .maybeSingle();
+    if (!existingEval) {
+      redirect(`/transactions/${id}/rate`);
+    }
   }
 
   const isMeSender = p.sender_id === user.id;
@@ -194,7 +200,19 @@ export default async function TransactionChatPage({
       id: user.id,
     },
     hasEvidence: !!p.evidence_photo_url,
+    evidencePhotoCount: 0, // 後で更新
   };
+
+  // 証跡写真（複数枚）
+  const { data: evidencePhotos } = await supabase
+    .from("proposal_evidence_photos")
+    .select("id, photo_url, position, taken_at, taken_by")
+    .eq("proposal_id", id)
+    .order("position", { ascending: true });
+  proposal.evidencePhotoCount = evidencePhotos?.length ?? 0;
+  if (proposal.evidencePhotoCount > 0) {
+    proposal.hasEvidence = true;
+  }
 
   // メッセージ一覧
   const { data: msgs } = await supabase

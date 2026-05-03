@@ -19,6 +19,7 @@
 | **v2.5** | **2026-05-03** | **iter67.7 反映（proposals に cash_offer / cash_amount 列追加：定価交換打診サポート。receiver_have_ids 空時の CHECK 緩和）** |
 | **v2.6** | **2026-05-03** | **iter68-A 反映（messages テーブル新規：proposal_id × sender_id × type ('text'/'photo'/'outfit_photo'/'location'/'arrival_status'/'system') のチャット追記型）** |
 | **v2.7** | **2026-05-03** | **iter68-D/E/F 反映（proposals に evidence_photo_url / evidence_taken_at / evidence_taken_by / approved_by_* / completed_at / status='completed' 追加。user_evaluations テーブル新規（1 取引 1 評価 unique）。Storage chat-photos バケット作成）** |
+| **v2.8** | **2026-05-03** | **iter68.1 反映（proposal_evidence_photos テーブル新規：複数枚証跡対応。proposals.evidence_photo_url は最初の写真の互換ミラーとして残す）** |
 
 ## このドキュメントの位置付け
 

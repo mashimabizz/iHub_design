@@ -23,6 +23,13 @@ type Row = {
   receiver_have_qtys: number[];
 };
 
+type EvidenceRow = {
+  id: string;
+  photo_url: string;
+  position: number;
+  taken_at: string;
+};
+
 type GoodsRow = {
   id: string;
   title: string;
@@ -66,8 +73,23 @@ export default async function ApprovePage({
   const p = row as Row;
   if (p.sender_id !== user.id && p.receiver_id !== user.id) notFound();
 
-  if (!p.evidence_photo_url) redirect(`/transactions/${id}/capture`);
   if (p.status === "completed") redirect(`/transactions/${id}/rate`);
+
+  // 複数枚証跡を fetch
+  const { data: photoRows } = await supabase
+    .from("proposal_evidence_photos")
+    .select("id, photo_url, position, taken_at")
+    .eq("proposal_id", id)
+    .order("position", { ascending: true });
+  const photos = ((photoRows as EvidenceRow[]) ?? []).map((r) => ({
+    id: r.id,
+    photoUrl: r.photo_url,
+    position: r.position,
+    takenAt: r.taken_at,
+  }));
+
+  // 1 枚も無ければ撮影画面に
+  if (photos.length === 0) redirect(`/transactions/${id}/capture`);
 
   // partner
   const isMeSender = p.sender_id === user.id;
@@ -131,7 +153,7 @@ export default async function ApprovePage({
   // 表示は両者を独立行で
   const data: ApproveData = {
     proposalId: p.id,
-    photoUrl: p.evidence_photo_url!,
+    photos,
     photoTakenAt: p.evidence_taken_at ?? null,
     placeName: p.meetup_place_name ?? null,
     rows: [

@@ -1,32 +1,48 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { setEvidencePhoto } from "../../actions";
+import {
+  addEvidencePhoto,
+  notifyEvidenceComplete,
+  removeEvidencePhoto,
+} from "../../actions";
+
+export type EvidencePhoto = {
+  id: string;
+  photoUrl: string;
+  position: number;
+  takenAt: string;
+  isMine: boolean;
+};
 
 /**
- * iter68-D: 取引証跡撮影画面（c-flow.jsx CaptureStep 準拠）
+ * iter68.1: 複数枚撮影 + 修正 + 完了通知
  *
- * - 黒背景＋紫グラデの装飾
- * - 上部：✕ 戻る + オフライン保存 chip
- * - タイトル：取引証跡を撮影 / 両者の交換物を1枚に収めてください
- * - ビューファインダー：紫枠 + 4 隅コーナー + 左右にゴーストカード
- * - 下部：自動メタ chip / 履歴 / シャッター（白い円）/ メニュー
+ * 構成：
+ * - 上部：✕戻る（チャットに戻れる） / オフライン保存 chip
+ * - タイトル：取引証跡を撮影（複数可）
+ * - 既存の撮影写真ギャラリー（横スクロール、自分の写真は ×ボタンで削除可）
+ * - ビューファインダー（撮影ガイド）
+ * - 撮影コントロール：履歴 / シャッター / 「双方承認へ →」
  *
- * 実装：file input camera="environment" でモバイル背面カメラを起動
+ * 「双方承認へ →」を押すと chat に system message を投稿（タップで /approve に遷移可能）
+ * → /transactions/[id] に戻り、ユーザーは chat 画面でその system message から approve に進む
  */
-
 export function CaptureView({
   proposalId,
   myCount,
   theirCount,
   placeName,
+  photos,
 }: {
   proposalId: string;
   myCount: number;
   theirCount: number;
   placeName: string;
+  photos: EvidencePhoto[];
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -40,7 +56,7 @@ export function CaptureView({
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    e.target.value = ""; // 同じファイルを再選択できるようリセット
+    e.target.value = "";
     if (!file) return;
     setError(null);
     setUploading(true);
@@ -57,31 +73,47 @@ export function CaptureView({
         });
       if (uploadErr) throw uploadErr;
 
-      // 公開 URL を取得（バケットは private なので signed URL を使う）
       const { data: signed } = await supabase.storage
         .from("chat-photos")
-        .createSignedUrl(path, 60 * 60 * 24 * 365); // 1 年
+        .createSignedUrl(path, 60 * 60 * 24 * 365);
       const photoUrl = signed?.signedUrl ?? path;
 
-      // server action で proposal を更新
       startTransition(async () => {
-        const r = await setEvidencePhoto({
-          proposalId,
-          photoUrl,
-        });
-        if (r?.error) {
-          setError(r.error);
-        } else if (r?.redirectTo) {
-          router.push(r.redirectTo);
-        }
+        const r = await addEvidencePhoto({ proposalId, photoUrl });
+        if (r?.error) setError(r.error);
+        else router.refresh();
         setUploading(false);
       });
-    } catch (e) {
+    } catch (err) {
       setUploading(false);
-      setError(
-        e instanceof Error ? e.message : "アップロードに失敗しました",
-      );
+      setError(err instanceof Error ? err.message : "アップロードに失敗しました");
     }
+  }
+
+  function handleDelete(photoId: string) {
+    if (!confirm("この写真を削除しますか？")) return;
+    setError(null);
+    startTransition(async () => {
+      const r = await removeEvidencePhoto({ photoId, proposalId });
+      if (r?.error) setError(r.error);
+      else router.refresh();
+    });
+  }
+
+  function handleProceed() {
+    if (photos.length === 0) {
+      setError("少なくとも 1 枚は撮影してください");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const r = await notifyEvidenceComplete({
+        proposalId,
+        photoCount: photos.length,
+      });
+      if (r?.error) setError(r.error);
+      else if (r?.redirectTo) router.push(r.redirectTo);
+    });
   }
 
   const dt = new Date();
@@ -89,7 +121,6 @@ export function CaptureView({
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-[#0a0810] text-white">
-      {/* viewfinder bg */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -109,26 +140,29 @@ export function CaptureView({
 
       {/* status header */}
       <div className="absolute left-0 right-0 top-12 z-10 flex items-center justify-between px-[18px]">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          aria-label="閉じる"
+        <Link
+          href={`/transactions/${proposalId}`}
+          aria-label="チャットに戻る"
           className="flex h-9 w-9 items-center justify-center rounded-full bg-white/12 backdrop-blur-md"
         >
           <svg width="14" height="14" viewBox="0 0 14 14">
             <path
-              d="M2 2l10 10M12 2L2 12"
+              d="M8 2L3 7l5 5"
               stroke="#fff"
               strokeWidth="2"
+              fill="none"
               strokeLinecap="round"
+              strokeLinejoin="round"
             />
           </svg>
-        </button>
+        </Link>
         <div className="inline-flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-[11.5px] font-semibold backdrop-blur-md">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
           オフライン保存
         </div>
-        <div className="h-9 w-9" />
+        <div className="text-[11px] font-bold text-white/70 tabular-nums">
+          {photos.length} 枚
+        </div>
       </div>
 
       {/* title */}
@@ -137,15 +171,30 @@ export function CaptureView({
           取引証跡を撮影
         </div>
         <div className="mt-1 text-[11.5px] text-white/70">
-          両者の交換物を1枚に収めてください
+          両者の交換物を1枚に収めてください（複数枚可）
         </div>
       </div>
+
+      {/* ギャラリー（既存写真の横スクロール） */}
+      {photos.length > 0 && (
+        <div className="absolute left-0 right-0 top-[140px] z-10 px-3">
+          <div className="flex gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden">
+            {photos.map((ph) => (
+              <PhotoChip
+                key={ph.id}
+                ph={ph}
+                onDelete={ph.isMine ? () => handleDelete(ph.id) : undefined}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Viewfinder split frame */}
       <div
         className="absolute z-[1] flex overflow-hidden rounded-[18px] border-2 border-[#a695d8]"
         style={{
-          top: 170,
+          top: photos.length > 0 ? 220 : 180,
           left: 30,
           right: 30,
           bottom: 220,
@@ -153,7 +202,6 @@ export function CaptureView({
             "0 0 0 1px rgba(166,149,216,0.33), 0 0 60px rgba(166,149,216,0.25)",
         }}
       >
-        {/* left: their items */}
         <div
           className="relative flex flex-1 flex-col items-center justify-center gap-2"
           style={{
@@ -178,13 +226,11 @@ export function CaptureView({
             相手の{theirCount}点
           </div>
         </div>
-        {/* divider */}
         <div className="relative w-0 border-l border-dashed border-white/40">
           <div className="absolute left-1/2 top-1/2 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-[12px] font-extrabold text-[#a695d8] shadow-[0_0_0_4px_rgba(166,149,216,0.33)]">
             ↔
           </div>
         </div>
-        {/* right: my items */}
         <div
           className="relative flex flex-1 flex-col items-center justify-center gap-2"
           style={{
@@ -210,7 +256,6 @@ export function CaptureView({
           </div>
         </div>
 
-        {/* corner marks */}
         {(
           [
             { top: -2, left: -2, br: "4px 0 0 0", border: "3px 0 0 3px" },
@@ -266,29 +311,23 @@ export function CaptureView({
 
       {/* Capture controls */}
       <div className="absolute bottom-[60px] left-0 right-0 z-10 flex items-center justify-around px-8">
-        <button
-          type="button"
-          onClick={() => router.push(`/transactions/${proposalId}`)}
-          aria-label="履歴"
+        {/* チャットに戻る */}
+        <Link
+          href={`/transactions/${proposalId}`}
+          aria-label="チャットに戻る"
           className="flex h-11 w-11 items-center justify-center rounded-full bg-white/14"
         >
           <svg width="18" height="18" viewBox="0 0 18 18">
-            <circle
-              cx="9"
-              cy="9"
-              r="7"
+            <path
+              d="M3 9h12M9 4l-5 5 5 5"
               stroke="#fff"
               strokeWidth="1.5"
               fill="none"
-            />
-            <path
-              d="M9 5v4l3 2"
-              stroke="#fff"
-              strokeWidth="1.5"
               strokeLinecap="round"
+              strokeLinejoin="round"
             />
           </svg>
-        </button>
+        </Link>
         <button
           type="button"
           onClick={handleShutter}
@@ -296,22 +335,19 @@ export function CaptureView({
           aria-label="撮影"
           className="h-[76px] w-[76px] rounded-full border-[4px] border-white/45 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.4)] active:scale-[0.95] disabled:opacity-50"
         />
+        {/* 双方承認へ進む */}
         <button
           type="button"
-          aria-label="メニュー"
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/14"
-          onClick={() =>
-            alert("撮影オプションは次イテで実装予定です")
-          }
+          onClick={handleProceed}
+          disabled={pending || photos.length === 0}
+          aria-label="完了して双方承認へ"
+          className={`flex h-11 items-center justify-center rounded-full px-3 text-[11.5px] font-extrabold tracking-[0.4px] backdrop-blur-md ${
+            photos.length === 0
+              ? "bg-white/14 text-white/55"
+              : "bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] text-white shadow-[0_4px_14px_rgba(166,149,216,0.4)]"
+          }`}
         >
-          <svg width="18" height="18" viewBox="0 0 18 18">
-            <path
-              d="M3 6h12M3 12h12"
-              stroke="#fff"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
+          完了 →
         </button>
       </div>
 
@@ -324,6 +360,40 @@ export function CaptureView({
             </span>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function PhotoChip({
+  ph,
+  onDelete,
+}: {
+  ph: EvidencePhoto;
+  onDelete?: () => void;
+}) {
+  return (
+    <div className="relative flex-shrink-0">
+      <div className="h-16 w-12 overflow-hidden rounded-[6px] border-2 border-white/55 shadow-[0_4px_10px_rgba(0,0,0,0.4)]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={ph.photoUrl}
+          alt={`証跡 #${ph.position}`}
+          className="block h-full w-full object-cover"
+        />
+      </div>
+      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-black/65 px-1.5 text-[8.5px] font-bold text-white">
+        #{ph.position}
+      </span>
+      {onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="削除"
+          className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-extrabold leading-none text-white shadow-md"
+        >
+          ✕
+        </button>
       )}
     </div>
   );

@@ -419,6 +419,142 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション68.1：C-2 大幅 UX 改善 + 証跡複数枚 + 戻る導線
+
+### 背景
+
+iter68-B〜F を実機確認したオーナーから複数フィードバック：
+
+> ・待ち合わせ場所の地図がめっちゃ小さい → タップで拡大ポップアップ
+> ・交換内容を画像で見せて。1 行超過時はタップで詳細ポップアップ
+> ・メッセージ横の ＋ ボタンの「向かう/到着」3 サイクルは使いにくい → クイックアクション行に「向かっています / 到着しました」2 個を追加
+> ・服装写真シェアセクションが画面占有しすぎ → コンパクト 1 行に
+> ・証跡は複数枚撮れるように、修正もできるように
+> ・撮影したら前のチャットに戻れない → 撮影完了したら自動で「✓ 取引証跡が届きました」system message が投稿され、タップで /approve に遷移する流れに
+
+### 変更内容
+
+#### A. DB マイグレーション（`20260503240000_proposal_evidence_photos.sql`）
+
+`proposal_evidence_photos` テーブル新設：
+- `proposal_id × position` で複数枚管理
+- `taken_by` ＋ unique(proposal_id, position) で撮影順保持
+- RLS：参加者 read/insert、撮影者本人のみ delete
+- 旧 `proposals.evidence_photo_url` は **互換ミラー** として残す（最初の写真の URL）
+
+#### B. server actions 拡張
+
+**新規**：
+- `addEvidencePhoto(proposalId, photoUrl)` — 1 枚追加 + 撮影者は自動承認 + position 自動採番
+- `removeEvidencePhoto(photoId, proposalId)` — 撮影者本人のみ削除可
+- `notifyEvidenceComplete(proposalId, photoCount)` — 撮影完了をチャットに system message として投稿（meta.action='open_approve' で tap 可能カードに）
+
+**旧 `setEvidencePhoto`** は撤廃して上記に置き換え。
+
+#### C. C-2 ChatView 改修（コンパクト + リッチ）
+
+**取引内容カード**：
+- アイテムを **画像（ItemThumb）** で表示（写真 or イニシャル + 数量バッジ ×N）
+- PREVIEW_MAX=2 件まで横並び、超過は「+N」で省略
+- カード全体タップで `TradeDetailModal`（ボトムシート）が開く
+  - 拡大版アイテム（48×64px）+ 名前 + 種別を grid 表示
+  - 「📍 待ち合わせ場所を地図で見る」リンク
+- 待ち合わせ部分の mini map を **44×68px** に縮小、タップで `MapModal`（中央 360px 大画面）
+
+**地図モーダル `MapModal`**：
+- 黒背景 + 92% width 白カード
+- 360px 高で大きく地図表示、ピン操作不可（read-only）
+- 待ち合わせ日時 + 場所表示
+- 「地図アプリで開く →」リンク
+
+**服装写真シェア → コンパクト 1 行**：
+- 「👕 服装写真　あなた：未シェア / @相手：✓共有済　[📷撮影]」
+- 紫枠の薄背景 + 1 行 + クリッカブル
+- 旧グラデバナー（80px height）→ 30px に縮小
+
+**クイックアクション行（5 chip 横スクロール）**：
+- 現在地を送る（lavender）
+- **向かっています**（lavender、active 時に紫塗り）← 新規
+- **到着しました**（emerald、active 時に緑塗り）← 新規
+- 服装写真（pink）
+- 写真添付（neutral）
+- ＋ メニュートグル削除（クイックアクションに統合）
+
+**system message 拡張**：
+- `meta.action='open_approve'` を持つ system message は **タップ可能カード**として描画
+  - 紫枠 + 薄グラデ背景
+  - 「✓ 取引証跡が届きました（N枚） — タップで取引完了の確認画面へ →」
+  - クリックで `/approve` に遷移
+
+#### D. page.tsx：強制 redirect 撤廃
+
+**旧**：撮影済み → `/approve` 強制 redirect。撮影後にチャットに戻れない問題。
+
+**新**：
+- 撮影済みでもチャット画面に留まれる（再撮影 / メッセージ送信可）
+- system message からタップで `/approve` へ任意遷移
+- 完了済かつ未評価のときのみ `/rate` に redirect（評価リマインド）
+
+#### E. CaptureView（複数枚 + 戻る）
+
+**追加**：
+- 上部右端に「N 枚」カウンタ
+- 既存写真の **ギャラリー**（横スクロール、自分の写真は ✕ で削除可）
+- ビューファインダーをギャラリー有無で位置調整
+- 撮影コントロールに **「完了 →」** ボタン（紫グラデ pill）
+  - タップで `notifyEvidenceComplete` → chat に system message 投稿 → `/transactions/[id]` に戻る
+  - チャットの「✓ 取引証跡が届きました」をタップで `/approve` に進む
+- 撮影コントロールの「履歴」を **「←」（チャットに戻る）** に置換
+- 上部 ✕ も `Link` でチャット画面へ
+- 1 枚も無い状態で「完了」は disabled + グレーアウト
+
+#### F. ApproveView（複数枚ギャラリー）
+
+- props を `photoUrl` (single) → `photos: ApprovePhoto[]` (gallery) に変更
+- 写真はカード化して縦に並べる（# 番号 + メタストリップ）
+- 上部に「**追加撮影 / 差し替え →**」リンク（`/capture` へ戻る）
+- page.tsx で `proposal_evidence_photos` を fetch、0 枚時は capture に redirect
+
+### 影響範囲
+
+- DB：新テーブル `proposal_evidence_photos` 追加
+- 取引チャット画面：UI 大幅刷新（コンパクト化 + 画像化 + モーダル群）
+- 撮影画面：複数枚対応、戻る導線、完了通知
+- 承認画面：複数枚ギャラリー
+- フローの強制 redirect が緩和され、ユーザーが自由に行き来できる
+
+### 設計判断
+
+- **「✓ 取引証跡が届きました」はチャットに残る system message として投稿**：履歴に残る + 後から再 tap 可能 + 相手にも伝わる
+- **複数枚は position で順序保持**：1 枚目がメイン（互換のため `proposals.evidence_photo_url` にミラー）
+- **削除権限は撮影者本人のみ**：別の参加者が勝手に消せない
+- **モーダル群は ChatView 内に分離コンポーネント化**：再利用しやすく、レビューしやすい
+- **クイックアクションを 5 chip に**：「向かう/到着」を独立 chip にすることで、＋ メニュー不要に。視認性向上
+
+### TODO
+
+- iter69-A：服装写真 / 通常写真 の Storage upload UI（chat-photos バケットは既存）
+- iter69-B：QR ジェネレーター
+- iter69-C：dispute 本実装
+- iter69-D：期限自動切替 cron
+- iter69-E：Supabase Realtime（5 秒 polling 撤廃）
+
+### 関連ファイル
+
+**Migration**：
+- `supabase/migrations/20260503240000_proposal_evidence_photos.sql`
+
+**Server actions**：
+- `web/src/app/transactions/actions.ts`（addEvidencePhoto / removeEvidencePhoto / notifyEvidenceComplete）
+
+**ルート**：
+- `web/src/app/transactions/[id]/page.tsx`（redirect 緩和、複数 evidence fetch）
+- `web/src/app/transactions/[id]/ChatView.tsx`（全面 UX 刷新、5 モーダルコンポーネント追加）
+- `web/src/app/transactions/[id]/capture/page.tsx` + `CaptureView.tsx`（複数枚、戻る、完了通知）
+- `web/src/app/transactions/[id]/approve/page.tsx` + `ApproveView.tsx`（ギャラリー化、差し替えリンク）
+
+---
+
 ## イテレーション68-B〜F：C-2 デザイン整合性修正 + C-3 撮影/承認/評価フル実装
 
 ### 背景
