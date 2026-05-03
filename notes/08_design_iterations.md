@@ -419,6 +419,70 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67.5：listing 作成 UI 微調整 + wish exchange_type 再削除
+
+### 背景
+
+iter67.4 着手後、オーナーから運用視点の細かい指摘：
+
+> 1. 個別募集の際、譲るグッズのグループと種別は、自分が持っている在庫のものから選べるようにしてください。
+> 2. 注意書きとして、譲るグッズで複数選ぶ場合は「同じシリーズ」のものに限定してくださいみたいなことを書いて。そうじゃないと同種交換、異種交換の判断がぶれてしまう。
+> 3. 求めるものについても、上記の譲るグッズのグループと種別が更新されたらリセットされちゃうので、ちゃんとタイムリーに更新されるように。
+> 4. 通常の Wish を登録する時、交換タイプは選択不要にしてください。この情報は個別募集でいきるので。
+
+### 変更内容
+
+#### A. listing 作成 dropdown を **在庫実体** から
+- `/listings/new/page.tsx`：master テーブルからの取得を廃止
+  - `inventoryRows` から `inventoryGroups`、`inventoryGoodsTypes` を抽出（重複排除 + 五十音ソート）
+  - `wishRows` から `wishGroups`、`wishGoodsTypes` を抽出
+  - 譲側 dropdown は `inventoryGroups` / `inventoryGoodsTypes`、求側選択肢 dropdown は `wishGroups` / `wishGoodsTypes`
+
+→ 在庫が無い group/goods_type は dropdown に出ない。「選んだのに該当アイテム 0 件」の不整合が消える。
+
+#### B. 同シリーズ注意書き
+- 譲るグッズセクションに紫枠の注意 box：
+  「⚠️ 譲るグッズで **複数選ぶ場合は同じシリーズ**（同じツアー・同じアルバム等）に限定してください。シリーズが混在すると、求側の **同種 / 異種** 判定が曖昧になります。」
+
+「シリーズ」は DB スキーマ上の項目ではなく、ユーザーの自己判断による絞り込み（同種/異種判定の精度を保つため）。あくまでガイダンス。
+
+#### C. 求側選択肢の追従（customized フラグ）
+
+`WishOption` に `groupCustomized: boolean` と `goodsTypeCustomized: boolean` を追加：
+- **新規追加**：customized=false でスタート（譲側追従モード）
+- **ユーザーが手動で変更**：customized=true（譲側追従しない）
+- **譲側 group/goods_type 変更時**：
+  - customized=false の選択肢は新値に追従 + selected wish リセット
+  - customized=true の選択肢はそのまま維持
+
+これで：「最初は譲側コピー、その後譲側変えても自動更新」「意図的にカスタムした選択肢は守られる」両立。
+
+#### D. wish 作成 UI の exchange_type 再削除
+- `/wishes/new` フォームから交換タイプ 3 ボタンを撤去（iter67.3 で復活したものを再削除）
+- `/wishes` 一覧の exchange_type chip も削除
+- DB 列 `goods_inventory.exchange_type` は残すが、UI からは触れず default `'any'` で記録
+- 個別募集（listing）の **選択肢ごとに** exchange_type を指定する設計に統一されたため、wish レベルでは不要
+
+### 影響範囲
+
+- `/listings/new`：dropdown が在庫由来に絞られる + 同シリーズ警告 + 譲側変更時の自動追従
+- `/wishes/new`：交換タイプ ボタン消失（priority/flex/exchange_type 全部廃止 → 推し・グッズ・数量・メモのみ）
+- `/wishes` 一覧：exchange_type chip 消失
+
+### 設計判断
+
+- **dropdown の master 由来 vs 在庫由来**：在庫に無い group を選ばせて空表示するのは UX 悪、在庫由来に統一
+- **「シリーズ」は DB 化しない**：シリーズは流動的（次のツアーで増える、コラボ系で曖昧）。MVP では DB 構造で持たず UI 警告だけ
+- **customized フラグは UI のみ**：DB に保存しない。submit 時には反映されないので、毎回 form 再オープン時にはリセット
+- **exchange_type を wish から消す方針**：iter67.4 で per-option 設計が確立したので、wish 重複は避ける
+
+### 関連ファイル
+
+- `web/src/app/listings/new/{page.tsx, ListingNewForm.tsx}`
+- `web/src/app/wishes/{new/WishNewForm.tsx, WishView.tsx}`
+
+---
+
 ## イテレーション67.4：listings の求側を「複数選択肢」モデルに再設計
 
 ### 背景

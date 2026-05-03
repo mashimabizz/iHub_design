@@ -39,6 +39,9 @@ type WishOption = {
   position: number;
   groupId: string | null;
   goodsTypeId: string | null;
+  /** false なら譲側 group/goods_type の変更に追従（auto-sync） */
+  groupCustomized: boolean;
+  goodsTypeCustomized: boolean;
   selected: SelectedItem[];
   logic: ListingLogic;
   exchangeType: ListingExchangeType;
@@ -61,13 +64,19 @@ const EXCHANGE_OPTIONS: {
 export function ListingNewForm({
   inventoryItems,
   wishItems,
-  groups,
-  goodsTypes,
+  inventoryGroups,
+  inventoryGoodsTypes,
+  wishGroups,
+  wishGoodsTypes,
 }: {
   inventoryItems: InventoryOpt[];
   wishItems: WishOpt[];
-  groups: { id: string; name: string }[];
-  goodsTypes: { id: string; name: string }[];
+  /** 譲側 dropdown：自分の在庫 (kind=for_trade) に登録のあるもののみ */
+  inventoryGroups: { id: string; name: string }[];
+  inventoryGoodsTypes: { id: string; name: string }[];
+  /** 求側選択肢 dropdown：自分の wish (kind=wanted) に登録のあるもののみ */
+  wishGroups: { id: string; name: string }[];
+  wishGoodsTypes: { id: string; name: string }[];
 }) {
   const router = useRouter();
 
@@ -83,6 +92,8 @@ export function ListingNewForm({
       position: 1,
       groupId: null,
       goodsTypeId: null,
+      groupCustomized: false,
+      goodsTypeCustomized: false,
       selected: [],
       logic: "or",
       exchangeType: "any",
@@ -108,14 +119,30 @@ export function ListingNewForm({
     );
   }, [inventoryItems, haveGroupId, haveGoodsTypeId]);
 
-  /* group/goods_type を変えると選択リセット */
+  /**
+   * 譲側 group 変更：
+   * - 譲側選択リセット
+   * - 求側オプションのうち、groupCustomized=false のものは新 group に追従 + selected リセット
+   */
   function changeHaveGroup(id: string | null) {
     setHaveGroupId(id);
     setSelectedHaves([]);
+    setOptions((prev) =>
+      prev.map((o) => {
+        if (o.groupCustomized || o.isCashOffer) return o;
+        return { ...o, groupId: id, selected: [] };
+      }),
+    );
   }
   function changeHaveGoodsType(id: string | null) {
     setHaveGoodsTypeId(id);
     setSelectedHaves([]);
+    setOptions((prev) =>
+      prev.map((o) => {
+        if (o.goodsTypeCustomized || o.isCashOffer) return o;
+        return { ...o, goodsTypeId: id, selected: [] };
+      }),
+    );
   }
 
   /* ─ 操作 ─ */
@@ -142,9 +169,12 @@ export function ListingNewForm({
       ...prev,
       {
         position: prev.length + 1,
-        // デフォルトは譲るグッズで設定したもの
+        // デフォルトは譲るグッズで設定したもの。customized=false なので
+        // 譲側 group/goods_type 変更時に追従する
         groupId: haveGroupId,
         goodsTypeId: haveGoodsTypeId,
+        groupCustomized: false,
+        goodsTypeCustomized: false,
         selected: [],
         logic: "or",
         exchangeType: "any",
@@ -276,15 +306,22 @@ export function ListingNewForm({
           <SelectField
             label="グループ"
             value={haveGroupId}
-            options={groups}
+            options={inventoryGroups}
             onChange={changeHaveGroup}
           />
           <SelectField
             label="種別"
             value={haveGoodsTypeId}
-            options={goodsTypes}
+            options={inventoryGoodsTypes}
             onChange={changeHaveGoodsType}
           />
+        </div>
+
+        {/* 同シリーズ注意書き：同種/異種判定の精度のため */}
+        <div className="mb-2 rounded-[10px] bg-[#a695d80a] px-3 py-2 text-[10.5px] leading-snug text-[#3a324a]">
+          ⚠️ 譲るグッズで <b>複数選ぶ場合は同じシリーズ</b>
+          （同じツアー・同じアルバム等）に限定してください。シリーズが混在すると、
+          求側の <b>同種 / 異種</b> 判定が曖昧になります。
         </div>
 
         {!haveGroupId || !haveGoodsTypeId ? (
@@ -339,8 +376,8 @@ export function ListingNewForm({
               key={idx}
               option={opt}
               index={idx}
-              groups={groups}
-              goodsTypes={goodsTypes}
+              groups={wishGroups}
+              goodsTypes={wishGoodsTypes}
               wishItems={wishItems}
               onPatch={(patch) => patchOption(idx, patch)}
               onToggleWish={(wishId) => toggleOptionWish(idx, wishId)}
@@ -488,7 +525,12 @@ function OptionEditor({
                 value={option.groupId}
                 options={groups}
                 onChange={(v) =>
-                  onPatch({ groupId: v, selected: [] })
+                  // ユーザーが手動で変更 → groupCustomized=true で固定（譲側追従しない）
+                  onPatch({
+                    groupId: v,
+                    groupCustomized: true,
+                    selected: [],
+                  })
                 }
               />
               <SelectField
@@ -496,7 +538,11 @@ function OptionEditor({
                 value={option.goodsTypeId}
                 options={goodsTypes}
                 onChange={(v) =>
-                  onPatch({ goodsTypeId: v, selected: [] })
+                  onPatch({
+                    goodsTypeId: v,
+                    goodsTypeCustomized: true,
+                    selected: [],
+                  })
                 }
               />
             </div>

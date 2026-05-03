@@ -15,13 +15,9 @@ export default async function ListingNewPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 自分の active な譲 + active な wish + マスタを並列 fetch
-  const [
-    { data: inventoryRows },
-    { data: wishRows },
-    { data: groupsData },
-    { data: goodsTypesData },
-  ] = await Promise.all([
+  // 自分の active な譲 + active な wish を並列 fetch
+  // groups/goods_types の選択肢は **在庫から実際に登録されているもの** に限定する（iter67.4 改修）
+  const [{ data: inventoryRows }, { data: wishRows }] = await Promise.all([
     supabase
       .from("goods_inventory")
       .select(
@@ -40,11 +36,6 @@ export default async function ListingNewPage() {
       .eq("kind", "wanted")
       .neq("status", "archived")
       .order("created_at", { ascending: false }),
-    supabase.from("groups_master").select("id, name").order("name"),
-    supabase
-      .from("goods_types_master")
-      .select("id, name")
-      .order("name"),
   ]);
 
   // メンバー名 → hue ハッシュ
@@ -99,6 +90,47 @@ export default async function ListingNewPage() {
     goodsTypeName: pickName(r.goods_type),
   }));
 
+  // ─── 在庫由来の groups / goods_types を抽出（重複排除） ───
+  // 譲側 dropdown は inventoryItems から、求側選択肢は wishItems から
+  function uniqueOptions<T extends { id: string; name: string }>(
+    src: { id: string | null; name: string | null }[],
+  ): T[] {
+    const seen = new Map<string, T>();
+    for (const o of src) {
+      if (o.id && o.name && !seen.has(o.id)) {
+        seen.set(o.id, { id: o.id, name: o.name } as T);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "ja"),
+    );
+  }
+
+  const inventoryGroups = uniqueOptions<{ id: string; name: string }>(
+    (inventoryRows ?? []).map((r) => ({
+      id: (r as { group_id?: string }).group_id ?? null,
+      name: pickName(r.group),
+    })),
+  );
+  const inventoryGoodsTypes = uniqueOptions<{ id: string; name: string }>(
+    (inventoryRows ?? []).map((r) => ({
+      id: (r as { goods_type_id?: string }).goods_type_id ?? null,
+      name: pickName(r.goods_type),
+    })),
+  );
+  const wishGroups = uniqueOptions<{ id: string; name: string }>(
+    (wishRows ?? []).map((r) => ({
+      id: (r as { group_id?: string }).group_id ?? null,
+      name: pickName(r.group),
+    })),
+  );
+  const wishGoodsTypes = uniqueOptions<{ id: string; name: string }>(
+    (wishRows ?? []).map((r) => ({
+      id: (r as { goods_type_id?: string }).goods_type_id ?? null,
+      name: pickName(r.goods_type),
+    })),
+  );
+
   // 何もないと作成不能 → 案内表示
   if (inventoryItems.length === 0 || wishItems.length === 0) {
     return (
@@ -147,10 +179,10 @@ export default async function ListingNewPage() {
         <ListingNewForm
           inventoryItems={inventoryItems}
           wishItems={wishItems}
-          groups={(groupsData ?? []) as { id: string; name: string }[]}
-          goodsTypes={
-            (goodsTypesData ?? []) as { id: string; name: string }[]
-          }
+          inventoryGroups={inventoryGroups}
+          inventoryGoodsTypes={inventoryGoodsTypes}
+          wishGroups={wishGroups}
+          wishGoodsTypes={wishGoodsTypes}
         />
       </div>
     </main>
