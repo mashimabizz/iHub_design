@@ -43,9 +43,20 @@ export type Match = {
   /** 個別募集経由のマッチか（自分側 or 相手側いずれかの listing が成立） */
   viaListing: boolean;
   /**
-   * iter71-F: 「双方向 listing マッチ」フラグ。
-   * 自分の個別募集と相手の個別募集が **両方** 成立した場合のみ true。
-   * UI では「✨ 相手の個別募集にもマッチ！」バッジ等で強調。
+   * iter72-B: 個別募集マッチの種類を細分化。
+   *   - "both": 自分の listing と相手の listing が両方成立（A パターン：完璧な双方向）
+   *   - "mine_only": 自分の listing だけ成立（相手は通常在庫で応える）
+   *   - "partner_only": 相手の listing だけ成立（**自分は通常在庫を駆使して応える** → B パターン）
+   *   - "none": listing 経由マッチではない（普通の wish ↔ 譲）
+   *
+   * UI:
+   *   - "both" → ✨ 相手の個別募集にもマッチ！（強調）
+   *   - "partner_only" → 📦 相手の個別募集に応えられます（応えて打診 CTA）
+   *   - "mine_only" → 📦 あなたの個別募集に相手が応えられます
+   */
+  listingMatchKind: "both" | "mine_only" | "partner_only" | "none";
+  /**
+   * iter71-F: 「双方向 listing マッチ」フラグ（後方互換）。listingMatchKind === "both" と同義。
    */
   bothSidesListingMatch: boolean;
   /**
@@ -287,27 +298,29 @@ export function matchPair(input: {
 
   if (myGivesMap.size === 0 && theirGivesMap.size === 0) return null;
 
-  // iter71-F: 双方向 listing マッチ（両者の個別募集が同時に成立）
-  const bothSidesListingMatch =
-    myMatchedListings.length > 0 && partnerMatchedListings.length > 0;
-  const oneSideListingOnly =
-    viaListing &&
-    !bothSidesListingMatch &&
-    (myMatchedListings.length > 0 || partnerMatchedListings.length > 0);
+  // iter72-B: listing マッチの種類を細分化
+  const hasMyListing = myMatchedListings.length > 0;
+  const hasPartnerListing = partnerMatchedListings.length > 0;
+  const listingMatchKind: Match["listingMatchKind"] =
+    hasMyListing && hasPartnerListing
+      ? "both"
+      : hasMyListing
+        ? "mine_only"
+        : hasPartnerListing
+          ? "partner_only"
+          : "none";
+  const bothSidesListingMatch = listingMatchKind === "both";
 
   let matchType: Match["matchType"];
   if (myGivesMap.size > 0 && theirGivesMap.size > 0) {
     // iter71-F: 「個別募集片側だけ + 反対側は通常マッチ」のケースは
-    // perfect 扱いにせず、片方向に格下げ
-    //  → 個別募集マッチは「双方向」のときだけ complete として表示
-    if (oneSideListingOnly) {
-      // 自分の listing だけマッチ → 「相手が私のものを欲しがっている」寄り
-      // 相手の listing だけマッチ → 「私が相手のものを欲しがっている」寄り
-      if (myMatchedListings.length > 0) {
-        matchType = "they_want_you";
-      } else {
-        matchType = "you_want_them";
-      }
+    // perfect 扱いにせず、片方向に格下げ。「双方向 listing」のみ complete。
+    if (listingMatchKind === "mine_only") {
+      // 自分の listing だけマッチ → 相手が私のものを欲しがっている寄り
+      matchType = "they_want_you";
+    } else if (listingMatchKind === "partner_only") {
+      // 相手の listing だけマッチ → 私が相手の listing に応えられる寄り
+      matchType = "you_want_them";
     } else {
       matchType = "complete";
     }
@@ -323,6 +336,7 @@ export function matchPair(input: {
     myGives: Array.from(myGivesMap.values()),
     theirGives: Array.from(theirGivesMap.values()),
     viaListing,
+    listingMatchKind,
     bothSidesListingMatch,
     myMatchedListings:
       myMatchedListings.length > 0 ? myMatchedListings : undefined,

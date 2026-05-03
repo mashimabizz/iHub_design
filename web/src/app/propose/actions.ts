@@ -194,93 +194,6 @@ export async function reviseProposal(input: {
     ? input.meReceiverHaveQtys
     : input.meSenderHaveQtys;
 
-  // ─ diff 算出（aggregated id → qty で比較） ─
-  function buildMap(ids: string[], qtys: number[]): Map<string, number> {
-    const m = new Map<string, number>();
-    for (let i = 0; i < ids.length; i++) {
-      m.set(ids[i], (m.get(ids[i]) ?? 0) + (qtys[i] ?? 1));
-    }
-    return m;
-  }
-  const oldSender = buildMap(
-    (prop.sender_have_ids as string[]) ?? [],
-    (prop.sender_have_qtys as number[]) ?? [],
-  );
-  const oldReceiver = buildMap(
-    (prop.receiver_have_ids as string[]) ?? [],
-    (prop.receiver_have_qtys as number[]) ?? [],
-  );
-  const newSender = buildMap(newSenderIds, newSenderQtys);
-  const newReceiver = buildMap(newReceiverIds, newReceiverQtys);
-
-  function diffSummary(
-    oldM: Map<string, number>,
-    newM: Map<string, number>,
-  ): { added: { id: string; qty: number }[]; removed: { id: string; qty: number }[] } {
-    const added: { id: string; qty: number }[] = [];
-    const removed: { id: string; qty: number }[] = [];
-    const ids = new Set([...oldM.keys(), ...newM.keys()]);
-    for (const id of ids) {
-      const o = oldM.get(id) ?? 0;
-      const n = newM.get(id) ?? 0;
-      if (n > o) added.push({ id, qty: n - o });
-      if (o > n) removed.push({ id, qty: o - n });
-    }
-    return { added, removed };
-  }
-  const senderDiff = diffSummary(oldSender, newSender);
-  const receiverDiff = diffSummary(oldReceiver, newReceiver);
-
-  // 商品名解決（diff 表示用）
-  const allIds = Array.from(
-    new Set(
-      [
-        ...senderDiff.added,
-        ...senderDiff.removed,
-        ...receiverDiff.added,
-        ...receiverDiff.removed,
-      ].map((x) => x.id),
-    ),
-  );
-  const titleById = new Map<string, string>();
-  if (allIds.length > 0) {
-    const { data: invs } = await supabase
-      .from("goods_inventory")
-      .select(
-        "id, title, character:characters_master(name), group:groups_master(name)",
-      )
-      .in("id", allIds);
-    if (invs) {
-      for (const r of invs as {
-        id: string;
-        title: string;
-        character: { name: string } | { name: string }[] | null;
-        group: { name: string } | { name: string }[] | null;
-      }[]) {
-        const ch = Array.isArray(r.character) ? r.character[0] : r.character;
-        const gr = Array.isArray(r.group) ? r.group[0] : r.group;
-        titleById.set(r.id, ch?.name ?? gr?.name ?? r.title);
-      }
-    }
-  }
-  function listText(items: { id: string; qty: number }[]): string {
-    if (items.length === 0) return "—";
-    return items
-      .map((x) => `${titleById.get(x.id) ?? x.id} ×${x.qty}`)
-      .join(" / ");
-  }
-
-  // 待ち合わせ・cash の差分
-  const meetupChanged =
-    prop.meetup_start_at !== input.meetupStartAt ||
-    prop.meetup_end_at !== input.meetupEndAt ||
-    (prop.meetup_place_name ?? "") !== input.meetupPlaceName.trim() ||
-    prop.meetup_lat !== input.meetupLat ||
-    prop.meetup_lng !== input.meetupLng;
-  const cashChanged =
-    !!prop.cash_offer !== !!input.cashOffer ||
-    (prop.cash_amount ?? null) !== (input.cashAmount ?? null);
-
   // proposal を update（status は negotiating に戻す）
   const now = new Date();
   const updateFields: Record<string, unknown> = {
@@ -309,38 +222,11 @@ export async function reviseProposal(input: {
     .eq("id", input.id);
   if (error) return { error: error.message };
 
-  // diff 内容を system message に
-  const lines: string[] = [];
-  lines.push(`✎ 打診内容が修正されました（修正者：あなた以外なら相手）`);
-  if (senderDiff.added.length > 0 || senderDiff.removed.length > 0) {
-    lines.push(
-      `[出すもの] +${listText(senderDiff.added)} / -${listText(senderDiff.removed)}`,
-    );
-  }
-  if (receiverDiff.added.length > 0 || receiverDiff.removed.length > 0) {
-    lines.push(
-      `[受け取るもの] +${listText(receiverDiff.added)} / -${listText(receiverDiff.removed)}`,
-    );
-  }
-  if (cashChanged) {
-    lines.push(
-      `[定価交換] ${prop.cash_offer ? `¥${prop.cash_amount?.toLocaleString()}` : "なし"} → ${input.cashOffer ? `¥${input.cashAmount?.toLocaleString()}` : "なし"}`,
-    );
-  }
-  if (meetupChanged) {
-    lines.push(
-      `[待ち合わせ] ${prop.meetup_place_name ?? "—"} → ${input.meetupPlaceName}`,
-    );
-  }
-  if (input.message?.trim()) {
-    lines.push(`💬 「${input.message.trim().slice(0, 80)}${input.message.trim().length > 80 ? "…" : ""}」`);
-  }
-
   await supabase.from("messages").insert({
     proposal_id: input.id,
     sender_id: user.id,
     message_type: "system",
-    body: lines.join("\n"),
+    body: "打診内容が修正されました",
     meta: { action: "revise", revised_by: user.id },
   });
 

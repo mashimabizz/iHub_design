@@ -202,6 +202,7 @@ function matchToCard(
     myMatchedListings: myMatched,
     partnerMatchedListings: partnerMatched,
     bothSidesListingMatch: m.bothSidesListingMatch,
+    listingMatchKind: m.listingMatchKind,
     distanceText,
     myInventoryQty,
   };
