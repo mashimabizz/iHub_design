@@ -144,7 +144,7 @@ export function ProfileView({
           </Row>
         </Section>
 
-        {/* あなたの活動 */}
+        {/* あなたの活動（AW はホーム経由のみ、ここからは削除）*/}
         <Section label="あなたの活動">
           <Row>
             <RowItem
@@ -152,24 +152,12 @@ export function ProfileView({
               title="取引履歴"
               sub={
                 tradeCount > 0
-                  ? `${tradeCount}件 · 取引完了 (まだ詳細画面は準備中)`
+                  ? `${tradeCount}件 · 取引完了`
                   : "まだ取引なし"
               }
               comingSoon
             />
           </Row>
-          <Link href="/" className="block">
-            <RowItem
-              icon="📅"
-              title="自分の AW（合流可能枠）"
-              sub={
-                awCount > 0
-                  ? `${awCount}件設定中 · ホーム > 現地交換モードで管理`
-                  : "未設定 · ホームの「現地交換モード」で設定"
-              }
-              chevron
-            />
-          </Link>
         </Section>
 
         {/* アイデンティティ */}
@@ -226,7 +214,7 @@ export function ProfileView({
             <button
               type="button"
               disabled
-              className="block w-full text-center text-[11.5px] font-semibold text-[#d4866b] opacity-60"
+              className="block w-full px-3.5 py-3 text-center text-[11.5px] font-semibold text-[#d4866b] opacity-60"
             >
               アカウント削除（準備中）
             </button>
@@ -291,12 +279,17 @@ function Section({
 
 function Row({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-b border-[#3a324a0f] px-3.5 py-3 last:border-0">
-      {children}
-    </div>
+    <div className="border-b border-[#3a324a0f] last:border-0">{children}</div>
   );
 }
 
+/**
+ * 統一規格の Row 内コンテンツ:
+ *   - icon: 32x32 の固定四角ボックス（中央揃え、絵文字/シンボル何でも同サイズ）
+ *   - title + sub の左揃え
+ *   - 右端: chevron or 「準備中」chip（大きさ固定）
+ *   - 全体は items-center、padding 固定（14px 14px）
+ */
 function RowItem({
   icon,
   title,
@@ -314,30 +307,36 @@ function RowItem({
 }) {
   return (
     <div
-      className={`flex items-center gap-2.5 ${
+      className={`flex items-center gap-3 px-3.5 py-3 ${
         comingSoon ? "opacity-60" : ""
       }`}
     >
-      <span className="w-6 text-center text-[18px]">{icon}</span>
-      <div className="flex-1 min-w-0">
-        <div className="text-[12.5px] font-bold">{title}</div>
+      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center text-[18px] leading-none">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-bold leading-tight">{title}</div>
         {sub && (
           <div
-            className="mt-0.5 text-[10.5px]"
+            className="mt-0.5 text-[10.5px] leading-snug"
             style={{ color: subColor ?? "#3a324a8c" }}
           >
             {sub}
           </div>
         )}
       </div>
-      {chevron && (
-        <span className="text-[14px] font-bold text-[#a695d8]">›</span>
-      )}
-      {comingSoon && (
-        <span className="rounded-full bg-[#3a324a08] px-2 py-0.5 text-[9.5px] font-bold text-[#3a324a8c]">
-          準備中
-        </span>
-      )}
+      <div className="flex w-[44px] flex-shrink-0 items-center justify-end">
+        {chevron && (
+          <span className="text-[16px] font-bold leading-none text-[#a695d8]">
+            ›
+          </span>
+        )}
+        {comingSoon && (
+          <span className="rounded-full bg-[#3a324a08] px-2 py-0.5 text-[9.5px] font-bold text-[#3a324a8c]">
+            準備中
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -345,7 +344,7 @@ function RowItem({
 function LogoutRow() {
   const [pending, startTransition] = useTransition();
   return (
-    <div className="border-b border-[#3a324a0f] px-3.5 py-3 last:border-0">
+    <div className="border-b border-[#3a324a0f] last:border-0">
       <form
         action={() => {
           startTransition(async () => {
@@ -356,7 +355,7 @@ function LogoutRow() {
         <button
           type="submit"
           disabled={pending}
-          className="block w-full text-center text-[12.5px] font-semibold text-[#3a324a8c] disabled:opacity-50"
+          className="block w-full px-3.5 py-3 text-center text-[12.5px] font-semibold text-[#3a324a8c] disabled:opacity-50"
         >
           {pending ? "ログアウト中…" : "ログアウト"}
         </button>

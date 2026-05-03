@@ -117,7 +117,8 @@ function GroupCard({
         alert(r.error);
         return;
       }
-      setShowAddChars(false);
+      // パネルは開いたまま。router.refresh で候補から該当キャラが消えるので
+      // 続けて他のキャラも選べる。すべて追加し終わると候補空 → 案内表示。
       router.refresh();
     });
   }

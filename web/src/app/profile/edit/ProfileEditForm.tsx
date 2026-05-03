@@ -14,6 +14,56 @@ const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: "no_answer", label: "回答しない" },
 ];
 
+const PREFECTURES = [
+  "北海道",
+  "青森県",
+  "岩手県",
+  "宮城県",
+  "秋田県",
+  "山形県",
+  "福島県",
+  "茨城県",
+  "栃木県",
+  "群馬県",
+  "埼玉県",
+  "千葉県",
+  "東京都",
+  "神奈川県",
+  "新潟県",
+  "富山県",
+  "石川県",
+  "福井県",
+  "山梨県",
+  "長野県",
+  "岐阜県",
+  "静岡県",
+  "愛知県",
+  "三重県",
+  "滋賀県",
+  "京都府",
+  "大阪府",
+  "兵庫県",
+  "奈良県",
+  "和歌山県",
+  "鳥取県",
+  "島根県",
+  "岡山県",
+  "広島県",
+  "山口県",
+  "徳島県",
+  "香川県",
+  "愛媛県",
+  "高知県",
+  "福岡県",
+  "佐賀県",
+  "長崎県",
+  "熊本県",
+  "大分県",
+  "宮崎県",
+  "鹿児島県",
+  "沖縄県",
+];
+
 export function ProfileEditForm({
   initial,
 }: {
@@ -141,15 +191,19 @@ export function ProfileEditForm({
           </div>
         </Field>
 
-        <Field label="主な活動エリア" hint="（任意）">
-          <input
-            type="text"
+        <Field label="主な活動エリア（都道府県）" hint="（任意）">
+          <select
             value={primaryArea}
             onChange={(e) => setPrimaryArea(e.target.value)}
-            maxLength={50}
-            placeholder="例: 東京・神奈川"
-            className="block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
-          />
+            className="block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 focus:border-[#a695d8] focus:outline-none"
+          >
+            <option value="">指定なし</option>
+            {PREFECTURES.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
         </Field>
       </Section>
 
