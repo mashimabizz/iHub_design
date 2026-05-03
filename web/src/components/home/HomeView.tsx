@@ -149,7 +149,18 @@ export function HomeView({
   const chosenAW = currentAW;
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
+    <main className="relative flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
+      {/* モード切替・適用中のローディングオーバーレイ */}
+      {pending && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-[0_10px_30px_rgba(58,50,74,0.25)]">
+            <span className="block h-5 w-5 animate-spin rounded-full border-[3px] border-[#a695d8] border-t-transparent" />
+            <span className="text-[13px] font-bold text-[#3a324a]">
+              マッチング条件を更新中…
+            </span>
+          </div>
+        </div>
+      )}
       {/* Sync strip */}
       <div className="flex items-center gap-2 border-b border-[#3a324a14] bg-white px-5 py-2 text-[11px]">
         <span
