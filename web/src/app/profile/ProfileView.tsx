@@ -144,8 +144,18 @@ export function ProfileView({
           </Row>
         </Section>
 
-        {/* あなたの活動（AW はホーム経由のみ、ここからは削除）*/}
+        {/* あなたの活動 */}
         <Section label="あなたの活動">
+          <Link href="/schedules" className="block">
+            <Row>
+              <RowItem
+                icon="📅"
+                title="スケジュール"
+                sub="自分の予定（AW とは別）"
+                chevron
+              />
+            </Row>
+          </Link>
           <Row>
             <RowItem
               icon="📋"
