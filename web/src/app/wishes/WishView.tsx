@@ -150,7 +150,10 @@ export function WishView({ items }: { items: WishItem[] }) {
                       : "border-[#3a324a14]"
                   }`}
                 >
-                  <div className="flex gap-3 p-3.5">
+                  <Link
+                    href={`/inventory/${w.id}`}
+                    className="block flex gap-3 p-3.5 active:scale-[0.99]"
+                  >
                     {/* サムネ */}
                     <div className="relative flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[10px] border border-[#3a324a14] bg-[linear-gradient(135deg,#a695d833,#a8d4e633)]">
                       <span className="text-[11px] font-extrabold text-[#a695d8]">
@@ -178,7 +181,11 @@ export function WishView({ items }: { items: WishItem[] }) {
                         </div>
                         <button
                           type="button"
-                          onClick={() => handleDelete(w.id)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDelete(w.id);
+                          }}
                           className="flex-shrink-0 text-[10px] text-gray-400 hover:text-red-500"
                         >
                           削除
@@ -223,7 +230,7 @@ export function WishView({ items }: { items: WishItem[] }) {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </Link>
                 </div>
               );
             })
