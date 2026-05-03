@@ -151,6 +151,15 @@ export async function applyLocalModeAW(input: {
     awId = created.id;
   }
 
+  // iter86: 整合性 — 現地モードの AW は単一なので、それ以外の自分の
+  // status='enabled' な AW を 'disabled' にしてゴースト AW を防ぐ
+  await supabase
+    .from("activity_windows")
+    .update({ status: "disabled" })
+    .eq("user_id", user.id)
+    .eq("status", "enabled")
+    .neq("id", awId);
+
   // settings に aw_id とラジウス・最終位置を反映
   const settingsFields: Record<string, unknown> = {
     user_id: user.id,
@@ -173,6 +182,10 @@ export async function applyLocalModeAW(input: {
 
 /**
  * 広域モードに戻す（enabled=false）
+ *
+ * iter86: AW（activity_windows）も 'disabled' にする。
+ * 現地モード OFF 時に自分の AW が enabled で残ると、他者の現地マッチや
+ * カレンダー overlay に意図せず引っ掛かるため。
  */
 export async function disableLocalMode(): Promise<ActionResult> {
   const supabase = await createClient();
@@ -187,8 +200,15 @@ export async function disableLocalMode(): Promise<ActionResult> {
       { user_id: user.id, enabled: false },
       { onConflict: "user_id" },
     );
-
   if (error) return { error: error.message };
+
+  // 自分の enabled な AW を全て disabled に
+  await supabase
+    .from("activity_windows")
+    .update({ status: "disabled" })
+    .eq("user_id", user.id)
+    .eq("status", "enabled");
+
   revalidatePath("/");
   return undefined;
 }
