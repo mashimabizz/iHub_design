@@ -27,6 +27,7 @@ type RawRow = {
   expires_at: string | null;
   created_at: string;
   last_action_at: string | null;
+  completed_at: string | null;
 };
 
 type GoodsRow = {
@@ -66,13 +67,31 @@ export default async function TransactionsPage() {
       `id, sender_id, receiver_id, status, cash_offer, cash_amount,
        sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
        meetup_start_at, meetup_end_at, meetup_place_name,
-       expires_at, created_at, last_action_at`,
+       expires_at, created_at, last_action_at, completed_at`,
     )
     .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
     .neq("status", "draft")
     .order("last_action_at", { ascending: false });
 
   const list = (rows as RawRow[]) ?? [];
+
+  // iter76-D: 自分が付けた評価（stars）を proposals に紐づけ
+  const completedIds = list
+    .filter((r) => r.status === "completed")
+    .map((r) => r.id);
+  const myEvalByProposalId = new Map<string, number>();
+  if (completedIds.length > 0) {
+    const { data: evals } = await supabase
+      .from("user_evaluations")
+      .select("proposal_id, stars")
+      .eq("rater_id", user.id)
+      .in("proposal_id", completedIds);
+    if (evals) {
+      for (const e of evals) {
+        myEvalByProposalId.set(e.proposal_id as string, e.stars as number);
+      }
+    }
+  }
 
   // 相手 user
   const partnerIds = Array.from(
@@ -174,6 +193,8 @@ export default async function TransactionsPage() {
       expiresAt: r.expires_at,
       createdAt: r.created_at,
       lastActionAt: r.last_action_at,
+      completedAt: r.completed_at,
+      myStars: myEvalByProposalId.get(r.id) ?? null,
     };
   });
 
