@@ -97,7 +97,6 @@ export function ChatView({
   const [draft, setDraft] = useState("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [qrOpen, setQrOpen] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -172,7 +171,6 @@ export function ChatView({
       <ChatHeaderBar
         proposal={proposal}
         partnerArrival={partnerArrival}
-        onQrTap={() => setQrOpen(true)}
       />
 
       {/* 上部固定：取引内容カード（コンパクト・画像表示） + 服装写真ステータス（1 行） */}
@@ -269,7 +267,7 @@ export function ChatView({
               placeholder="メッセージ…"
               rows={1}
               maxLength={2000}
-              className="block max-h-32 min-h-[36px] flex-1 resize-none rounded-[18px] border-[0.5px] border-[#3a324a14] bg-white px-3 py-2 text-[13px] text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
+              className="block max-h-32 min-h-[36px] flex-1 resize-none rounded-[18px] border-[0.5px] border-[#3a324a14] bg-white px-3 py-2 text-[16px] text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
               onKeyDown={(e) => {
                 if (
                   e.key === "Enter" &&
@@ -301,12 +299,6 @@ export function ChatView({
         </div>
       </div>
 
-      {qrOpen && (
-        <QrModal
-          handle={proposal.partner.handle}
-          onClose={() => setQrOpen(false)}
-        />
-      )}
       {tradeOpen && (
         <TradeDetailModal
           proposal={proposal}
@@ -336,11 +328,9 @@ export function ChatView({
 function ChatHeaderBar({
   proposal,
   partnerArrival,
-  onQrTap,
 }: {
   proposal: ChatProposal;
   partnerArrival: "enroute" | "arrived" | "left" | null;
-  onQrTap: () => void;
 }) {
   const arrivedColor =
     partnerArrival === "arrived"
@@ -380,14 +370,6 @@ function ChatHeaderBar({
           )}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onQrTap}
-        className="inline-flex items-center gap-1 rounded-full bg-[#a695d81a] px-2.5 py-1.5 text-[11.5px] font-bold text-[#a695d8] active:scale-[0.97]"
-      >
-        <QrIcon />
-        QR
-      </button>
     </div>
   );
 }
@@ -1069,50 +1051,6 @@ function MapModal({
   );
 }
 
-/* ─── QR モーダル ─── */
-
-function QrModal({
-  handle,
-  onClose,
-}: {
-  handle: string;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 px-6"
-      onClick={onClose}
-    >
-      <div
-        className="relative mx-auto w-full max-w-[320px] rounded-[16px] bg-white p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="閉じる"
-          className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-[#3a324a08] text-[#3a324a8c]"
-        >
-          ✕
-        </button>
-        <div className="mb-2 text-center text-[14px] font-bold text-[#3a324a]">
-          QR で本人確認
-        </div>
-        <div className="mb-3 text-center text-[10.5px] leading-relaxed text-[#3a324a8c]">
-          相手の QR をカメラで読み取るか、自分の QR を見せて
-          @{handle} 本人であることを確認しましょう。
-        </div>
-        <div className="mx-auto flex h-[160px] w-[160px] items-center justify-center rounded-[12px] border border-[#3a324a14] bg-[#fbf9fc] text-[10px] text-[#3a324a8c]">
-          QR 機能は次イテで実装予定
-        </div>
-        <div className="mt-3 rounded-[10px] bg-[#3a324a08] px-3 py-2 text-center text-[10.5px] text-[#3a324a8c]">
-          相手：@{handle}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ─── icons ─── */
 
 function MapPin() {
@@ -1162,45 +1100,6 @@ function CameraIconWhite() {
     </svg>
   );
 }
-function QrIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10">
-      <rect
-        x="1"
-        y="1"
-        width="3"
-        height="3"
-        rx="0.5"
-        stroke="#a695d8"
-        strokeWidth="1"
-        fill="none"
-      />
-      <rect
-        x="6"
-        y="1"
-        width="3"
-        height="3"
-        rx="0.5"
-        stroke="#a695d8"
-        strokeWidth="1"
-        fill="none"
-      />
-      <rect
-        x="1"
-        y="6"
-        width="3"
-        height="3"
-        rx="0.5"
-        stroke="#a695d8"
-        strokeWidth="1"
-        fill="none"
-      />
-      <rect x="6" y="6" width="1" height="1" fill="#a695d8" />
-      <rect x="8" y="8" width="1" height="1" fill="#a695d8" />
-    </svg>
-  );
-}
-
 /* ─── helpers ─── */
 
 function formatRange(startIso: string, endIso: string): string {
