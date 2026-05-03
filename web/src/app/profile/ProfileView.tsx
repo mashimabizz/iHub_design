@@ -215,7 +215,7 @@ export function ProfileView({
         </Section>
 
         {/* 設定・サポート */}
-        <Section label="設定・サポート" hint="準備中">
+        <Section label="設定・サポート">
           <Row>
             <RowItem icon="⚙" title="設定" sub="アプリ全体の設定" comingSoon />
           </Row>
@@ -225,6 +225,28 @@ export function ProfileView({
           <Row>
             <RowItem icon="?" title="ヘルプ・問い合わせ" sub="FAQ・運営連絡" comingSoon />
           </Row>
+        </Section>
+
+        {/* iter83: 法的画面リンク */}
+        <Section label="規約・法的情報">
+          <RowLink
+            href="/legal/terms"
+            icon="📄"
+            title="利用規約"
+            sub="サービス利用条件"
+          />
+          <RowLink
+            href="/legal/privacy"
+            icon="🔐"
+            title="プライバシーポリシー"
+            sub="個人情報の取扱い"
+          />
+          <RowLink
+            href="/legal/notice"
+            icon="📜"
+            title="特定商取引法に基づく表記"
+            sub="運営事業者情報"
+          />
         </Section>
 
         {/* Logout / Delete */}
@@ -300,6 +322,29 @@ function Section({
 function Row({ children }: { children: React.ReactNode }) {
   return (
     <div className="border-b border-[#3a324a0f] last:border-0">{children}</div>
+  );
+}
+
+/**
+ * iter83: クリック可能な行（Row + RowItem の chevron 付き Link）
+ */
+function RowLink({
+  href,
+  icon,
+  title,
+  sub,
+}: {
+  href: string;
+  icon: string;
+  title: string;
+  sub?: string;
+}) {
+  return (
+    <Row>
+      <Link href={href} className="block active:scale-[0.99]">
+        <RowItem icon={icon} title={title} sub={sub} chevron />
+      </Link>
+    </Row>
   );
 }
 
