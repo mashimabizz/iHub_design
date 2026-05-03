@@ -7,6 +7,11 @@ export const metadata = {
   title: "ユーザーのプロフィール — iHub",
 };
 
+function pickOne<T>(v: T | T[] | null): T | null {
+  if (!v) return null;
+  return Array.isArray(v) ? (v[0] ?? null) : v;
+}
+
 export default async function UserPublicPage({
   params,
 }: {
@@ -79,6 +84,53 @@ export default async function UserPublicPage({
     .select("id", { count: "exact", head: true })
     .or(`sender_id.eq.${id},receiver_id.eq.${id}`)
     .eq("status", "completed");
+
+  // iter97: 譲るグッズ一覧（kind='for_trade', status='active'）
+  // マイ在庫と同じカード形式で表示するため、必要なフィールドを fetch
+  const { data: invRows } = await supabase
+    .from("goods_inventory")
+    .select(
+      "id, title, quantity, hue, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+    )
+    .eq("user_id", id)
+    .eq("kind", "for_trade")
+    .eq("status", "active")
+    .order("created_at", { ascending: false });
+
+  type InvRow = {
+    id: string;
+    title: string;
+    quantity: number;
+    hue: number | null;
+    photo_urls: string[] | null;
+    group: { name: string } | { name: string }[] | null;
+    character: { name: string } | { name: string }[] | null;
+    goods_type: { name: string } | { name: string }[] | null;
+  };
+
+  function nameToHue(name: string): number {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = (hash << 5) - hash + name.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash) % 360;
+  }
+
+  const inventoryItems = ((invRows as InvRow[]) ?? []).map((r) => {
+    const grp = pickOne(r.group);
+    const ch = pickOne(r.character);
+    const gt = pickOne(r.goods_type);
+    const memberName = ch?.name ?? grp?.name ?? "?";
+    return {
+      id: r.id,
+      memberName,
+      goodsType: gt?.name ?? "?",
+      qty: r.quantity,
+      hue: r.hue ?? nameToHue(memberName),
+      photoUrl: (r.photo_urls && r.photo_urls[0]) ?? null,
+    };
+  });
 
   // 公開中の listings 数 + サマリ（最大 5 件）
   const { data: listings } = await supabase
@@ -153,6 +205,7 @@ export default async function UserPublicPage({
     ratingAvg,
     ratingCount,
     completedTradeCount: completedCount ?? 0,
+    inventoryItems,
     activeListingsCount: (listings ?? []).length,
     activeListingsPreview: (listings ?? []).map((l) => ({
       id: l.id as string,

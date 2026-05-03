@@ -618,19 +618,18 @@ function ChatHeaderBar({
         ? "移動中"
         : "未到着";
 
+  // iter97: ヘッダー全体をひとつの Link でラップし、相手プロフへの導線を明示。
+  // 右端に chevron を表示して「タップで開く」ことを示す。
   return (
-    <div className="flex items-center gap-2.5 border-b border-[#3a324a14] bg-white px-3.5 py-2">
-      <Link
-        href={`/users/${proposal.partner.id}`}
-        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[13px] font-bold text-[#a695d8]"
-        aria-label="相手のプロフィール"
-      >
+    <Link
+      href={`/users/${proposal.partner.id}`}
+      aria-label={`@${proposal.partner.handle} のプロフィールを開く`}
+      className="flex items-center gap-2.5 border-b border-[#3a324a14] bg-white px-3.5 py-2 transition-colors active:bg-[#a695d80a]"
+    >
+      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[13px] font-bold text-[#a695d8]">
         {proposal.partner.displayName[0] || "?"}
-      </Link>
-      <Link
-        href={`/users/${proposal.partner.id}`}
-        className="min-w-0 flex-1"
-      >
+      </div>
+      <div className="min-w-0 flex-1">
         <div className="text-[13.5px] font-bold text-[#3a324a]">
           @{proposal.partner.handle}
         </div>
@@ -658,8 +657,14 @@ function ChatHeaderBar({
             </>
           )}
         </div>
-      </Link>
-    </div>
+      </div>
+      <span
+        className="flex-shrink-0 text-[12px] font-bold text-[#3a324a4d]"
+        aria-hidden="true"
+      >
+        ›
+      </span>
+    </Link>
   );
 }
 

@@ -2,19 +2,33 @@
 
 /**
  * iter81: パートナーの公開プロフィール画面
+ * iter97: 「譲るグッズ」一覧をマイ在庫と同じ ItemCard 形式で追加。
+ *         チャットヘッダー → このプロフ画面で、相手のグッズが一目で分かる導線。
  *
  * iHub/hub-screens.jsx の ProfileHub の hero 構造を参考に、
- * 受信側打診画面 (ProposalDetailView) や マッチカードから「プロフ」ボタンで遷移。
+ * 受信側打診画面 (ProposalDetailView) や マッチカード、
+ * チャットヘッダーから遷移。
  *
  * 表示：
  * - hero card：avatar 大 / handle / display_name / primary_area
- *   ★ ・ 取引数 ・ 公開募集数 のメトリクス
+ *   ★ ・ 取引数 ・ 譲るグッズ数 のメトリクス
  * - 「打診を始める」CTA（自分の場合は表示しない、page.tsx で /profile に redirect 済み）
+ * - iter97: 譲るグッズ一覧（マイ在庫と同じ ItemCard・3 列グリッド・閲覧専用）
  * - 公開中の個別募集 一覧（最大 5 件、譲：group×goodsType / 求：選択肢ごと）
  * - 最近の評価コメント（最大 5 件）
  */
 
 import Link from "next/link";
+import { ItemCard, type ItemCardData } from "@/app/inventory/ItemCard";
+
+export type PartnerInventoryItem = {
+  id: string;
+  memberName: string;
+  goodsType: string;
+  qty: number;
+  hue: number;
+  photoUrl: string | null;
+};
 
 export type UserProfileData = {
   id: string;
@@ -25,6 +39,8 @@ export type UserProfileData = {
   ratingAvg: number | null;
   ratingCount: number;
   completedTradeCount: number;
+  /** iter97: 譲るグッズ一覧（kind='for_trade', status='active'） */
+  inventoryItems: PartnerInventoryItem[];
   activeListingsCount: number;
   activeListingsPreview: {
     id: string;
@@ -90,8 +106,9 @@ export function UserProfileView({ profile }: { profile: UserProfileData }) {
               l: "評価",
             },
             { v: String(profile.completedTradeCount), l: "取引" },
-            { v: String(profile.activeListingsCount), l: "公開募集" },
-            { v: String(profile.recentComments.length), l: "コメント" },
+            // iter97: 「譲るグッズ」を主要メトリクスに昇格
+            { v: String(profile.inventoryItems.length), l: "譲" },
+            { v: String(profile.activeListingsCount), l: "個別募集" },
           ].map((s, i) => (
             <div
               key={s.l}
@@ -120,6 +137,35 @@ export function UserProfileView({ profile }: { profile: UserProfileData }) {
       >
         💬 このユーザーに打診する →
       </Link>
+
+      {/* iter97: 譲るグッズ一覧（マイ在庫と同じ ItemCard を使った 3 列グリッド・閲覧専用） */}
+      <Section
+        label="譲るグッズ"
+        hint={`${profile.inventoryItems.length} 件`}
+      >
+        {profile.inventoryItems.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
+            譲る候補のグッズはまだありません
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-2.5">
+            {profile.inventoryItems.map((it) => {
+              const card: ItemCardData = {
+                id: it.id,
+                memberName: it.memberName,
+                goodsType: it.goodsType,
+                series: null,
+                qty: it.qty,
+                hue: it.hue,
+                carrying: false,
+                photoUrl: it.photoUrl,
+                isPending: false,
+              };
+              return <ItemCard key={it.id} item={card} />;
+            })}
+          </div>
+        )}
+      </Section>
 
       {/* 公開中の個別募集 */}
       <Section
