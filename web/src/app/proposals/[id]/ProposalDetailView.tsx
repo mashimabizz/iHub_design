@@ -36,6 +36,7 @@ export type ProposalDetail = {
     | "negotiating"
     | "agreement_one_side"
     | "agreed"
+    | "completed"
     | "rejected"
     | "expired"
     | "cancelled";
@@ -62,6 +63,14 @@ export type ProposalDetail = {
     displayName: string;
     primaryArea: string | null;
   };
+  /** iter77-B: 自動添付情報 */
+  partnerRatingAvg: number | null;
+  partnerRatingCount: number;
+  partnerTradeCount: number;
+  /** 提案された待ち合わせ時間が自分の AW と重なるか */
+  matchAw: boolean;
+  /** 相手の最新の服装写真（合意済以降にアップされたもの） */
+  partnerOutfitPhotoUrl: string | null;
 };
 
 const STATUS_LABEL: Record<ProposalDetail["status"], string> = {
@@ -69,6 +78,7 @@ const STATUS_LABEL: Record<ProposalDetail["status"], string> = {
   negotiating: "ネゴ中",
   agreement_one_side: "一方合意",
   agreed: "合意済",
+  completed: "完了",
   rejected: "拒否",
   expired: "期限切れ",
   cancelled: "取消",
@@ -79,6 +89,7 @@ const STATUS_COLOR: Record<ProposalDetail["status"], string> = {
   negotiating: "bg-[#f3c5d4] text-[#3a324a]",
   agreement_one_side: "bg-[#a695d8] text-white",
   agreed: "bg-emerald-500 text-white",
+  completed: "bg-emerald-500 text-white",
   rejected: "bg-[#3a324a14] text-[#3a324a8c]",
   expired: "bg-[#3a324a14] text-[#3a324a8c]",
   cancelled: "bg-[#3a324a14] text-[#3a324a8c]",
@@ -122,7 +133,7 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
 
   return (
     <div className="space-y-4">
-      {/* ヘッダーカード */}
+      {/* ヘッダーカード（送信者プロフィール） */}
       <section className="rounded-2xl border border-[#3a324a14] bg-white p-3.5">
         <div className="mb-2 flex items-center gap-2">
           <span
@@ -135,6 +146,13 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
               💴 定価交換
             </span>
           )}
+          <span
+            className={`rounded-[3px] px-1.5 py-[1px] text-[9px] font-bold tracking-[0.3px] text-white ${
+              detail.isReceiver ? "bg-[#a695d8]" : "bg-[#a8d4e6]"
+            }`}
+          >
+            {detail.isReceiver ? "←受信" : "送信→"}
+          </span>
           <div className="flex-1" />
           {detail.expiresAt && (
             <ExpiresLabel iso={detail.expiresAt} status={detail.status} />
@@ -142,88 +160,140 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[15px] font-bold text-[#a695d8]">
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#f3c5d455,#a695d855)] text-[15px] font-extrabold text-[#3a324a]">
             {detail.partner.displayName[0] || "?"}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-bold text-[#3a324a]">
+            <div className="text-[14px] font-extrabold text-[#3a324a]">
               @{detail.partner.handle}
             </div>
-            <div className="mt-0.5 text-[10.5px] text-[#3a324a8c]">
-              {detail.isReceiver ? "← 受信" : "→ 送信"}
-              {detail.partner.primaryArea
-                ? ` ・${detail.partner.primaryArea}`
-                : ""}
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10.5px] text-[#3a324a8c]">
+              {detail.partnerRatingAvg !== null ? (
+                <span className="font-bold text-[#3a324a]">
+                  ★{detail.partnerRatingAvg.toFixed(1)}
+                  <span className="ml-0.5 text-[9.5px] text-[#3a324a8c]">
+                    ({detail.partnerRatingCount})
+                  </span>
+                </span>
+              ) : (
+                <span className="text-[#3a324a8c]">★— (新規)</span>
+              )}
+              <span>·</span>
+              <span>取引 {detail.partnerTradeCount}回</span>
+              {detail.partner.primaryArea && (
+                <>
+                  <span>·</span>
+                  <span>{detail.partner.primaryArea}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
       </section>
 
-      {/* 交換内容 */}
-      <Section label="交換内容">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2 rounded-2xl border border-[#3a324a14] bg-white p-3">
-          <ItemColumn
-            label={detail.isReceiver ? "相手の譲（→ あなた）" : "あなたの譲（→ 相手）"}
-            items={detail.senderItems}
-            align="left"
-            accent="have"
-          />
-          <div className="flex flex-col items-center gap-1 pt-4">
-            <ArrowDot color="#a695d8" dir="right" />
-            <ArrowDot color="#a8d4e6" dir="left" />
+      {/* iter77-B: 提案内容を統合カード化（紫グラデ・「📩 提案内容」バッジ・待ち合わせ内包） */}
+      <section
+        className="overflow-hidden rounded-[16px] border-[1.5px] border-[#a695d840] p-4"
+        style={{
+          background:
+            "linear-gradient(135deg, rgba(166,149,216,0.10), rgba(168,212,230,0.10))",
+        }}
+      >
+        <div className="mb-2.5 text-[9.5px] font-extrabold tracking-[0.5px] text-[#a695d8]">
+          📩 提案内容
+        </div>
+
+        {/* 受け取る */}
+        <div className="mb-3">
+          <div className="mb-1.5 text-[10.5px] font-bold text-[#3a324a8c]">
+            あなたが受け取る
           </div>
-          {detail.cashOffer ? (
-            <div className="text-right">
-              <div className="mb-1.5 text-[9.5px] font-bold tracking-[0.6px] text-[#3a324a8c]">
-                {detail.isReceiver
-                  ? "あなたの提示（→ 相手）"
-                  : "相手の提示（→ あなた）"}
+          {detail.cashOffer && detail.isReceiver ? (
+            <div className="rounded-md border border-[#7a9a8a55] bg-[#7a9a8a14] p-2.5">
+              <div className="text-[9.5px] font-bold text-[#7a9a8a]">
+                💴 定価交換
               </div>
-              <div className="rounded-md border border-[#7a9a8a55] bg-[#7a9a8a14] p-2 text-right">
-                <div className="text-[9.5px] font-bold text-[#7a9a8a]">
-                  💴 定価交換
-                </div>
-                <div className="mt-0.5 text-[14px] font-extrabold tabular-nums text-[#3a324a]">
-                  ¥{detail.cashAmount?.toLocaleString() ?? "—"}
-                </div>
+              <div className="mt-0.5 text-[15px] font-extrabold tabular-nums text-[#3a324a]">
+                ¥{detail.cashAmount?.toLocaleString() ?? "—"}
               </div>
             </div>
           ) : (
-            <ItemColumn
-              label={
-                detail.isReceiver
-                  ? "あなたの譲（→ 相手）"
-                  : "相手の譲（→ あなた）"
+            <ItemList
+              items={
+                detail.isReceiver ? detail.senderItems : detail.receiverItems
               }
-              items={detail.receiverItems}
-              align="right"
+              accent="have"
+            />
+          )}
+        </div>
+
+        <div className="my-1.5 flex items-center justify-center text-[#a695d8]">
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <path
+              d="M5 8h12M14 4l4 4-4 4M17 14H5M8 18l-4-4 4-4"
+              stroke="#a695d8"
+              strokeWidth="1.6"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+
+        {/* 出す */}
+        <div className="mb-3">
+          <div className="mb-1.5 text-[10.5px] font-bold text-[#3a324a8c]">
+            あなたが出す
+          </div>
+          {detail.cashOffer && detail.isSender ? (
+            <div className="rounded-md border border-[#7a9a8a55] bg-[#7a9a8a14] p-2.5">
+              <div className="text-[9.5px] font-bold text-[#7a9a8a]">
+                💴 定価交換
+              </div>
+              <div className="mt-0.5 text-[15px] font-extrabold tabular-nums text-[#3a324a]">
+                ¥{detail.cashAmount?.toLocaleString() ?? "—"}
+              </div>
+            </div>
+          ) : (
+            <ItemList
+              items={
+                detail.isReceiver ? detail.receiverItems : detail.senderItems
+              }
               accent="wish"
             />
           )}
         </div>
-      </Section>
 
-      {/* 待ち合わせ */}
-      <Section label="待ち合わせ">
-        <div className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-white">
-          <div className="px-3 py-2.5">
-            <div className="text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-              日時
-            </div>
-            <div className="mt-0.5 text-[13px] font-bold tabular-nums text-[#3a324a]">
+        {/* 待ち合わせ（提案内包） */}
+        <div className="mt-3 overflow-hidden rounded-[10px] border border-[#a695d833] bg-white/70">
+          <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1 pt-2.5">
+            <span className="rounded-full bg-white px-2 py-[2px] text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
+              📍 待ち合わせ
+            </span>
+            {detail.matchAw && (
+              <span
+                className="rounded-full px-2 py-[2px] text-[9px] font-extrabold tracking-[0.3px] text-white"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #a695d8, #f3c5d4)",
+                }}
+              >
+                ★ あなたのAWと一致
+              </span>
+            )}
+          </div>
+          <div className="px-3 pb-2.5">
+            <div className="text-[14px] font-extrabold tabular-nums text-[#3a324a]">
               {detail.meetupStartAt && detail.meetupEndAt
                 ? formatRange(detail.meetupStartAt, detail.meetupEndAt)
                 : "—"}
             </div>
-            <div className="mt-2 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-              場所
-            </div>
-            <div className="text-[13px] font-bold text-[#3a324a]">
+            <div className="text-[12px] font-bold text-[#3a324a]">
               📍 {detail.meetupPlaceName ?? "—"}
             </div>
           </div>
           {detail.meetupLat != null && detail.meetupLng != null && (
-            <div className="h-[160px] w-full border-t border-[#3a324a14]">
+            <div className="h-[140px] w-full border-t border-[#3a324a14]">
               <MapPicker
                 center={[detail.meetupLat, detail.meetupLng]}
                 radiusM={120}
@@ -233,7 +303,7 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
             </div>
           )}
         </div>
-      </Section>
+      </section>
 
       {/* メッセージ */}
       <Section
@@ -253,30 +323,49 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
         </pre>
       </Section>
 
-      {/* その他 */}
-      <Section label="その他">
-        <div className="space-y-1 rounded-2xl border border-[#3a324a14] bg-white px-3 py-3 text-[11.5px]">
-          <div>
-            スケジュール共有：
-            <span
-              className={`ml-1 font-bold ${
-                detail.exposeCalendar ? "text-[#a695d8]" : "text-[#3a324a8c]"
-              }`}
-            >
-              {detail.exposeCalendar ? "ON" : "OFF"}
-            </span>
-          </div>
+      {/* iter77-B: 自動添付情報 */}
+      <Section label="自動添付情報">
+        <div className="rounded-2xl border border-[#3a324a14] bg-white px-3 py-1">
+          <AttachRow
+            label="評価サマリ"
+            value={
+              detail.partnerRatingAvg !== null
+                ? `★${detail.partnerRatingAvg.toFixed(1)} ・ 取引${detail.partnerTradeCount}回`
+                : `★— (新規) ・ 取引${detail.partnerTradeCount}回`
+            }
+          />
+          <AttachRow
+            label="相手の服装写真"
+            value={
+              detail.partnerOutfitPhotoUrl
+                ? "共有済（取引チャットで確認）"
+                : "未共有（合意後に共有）"
+            }
+          />
+          <AttachRow
+            label="スケジュール共有"
+            value={detail.exposeCalendar ? "ON" : "OFF"}
+            tone={detail.exposeCalendar ? "lavender" : "mute"}
+            isLast={!detail.listingId && !detail.rejectedTemplate}
+          />
           {detail.listingId && (
-            <div className="text-[#3a324a8c]">
-              個別募集経由（listing #{detail.listingId.slice(0, 8)}）
-            </div>
+            <AttachRow
+              label="個別募集経由"
+              value={`listing #${detail.listingId.slice(0, 8)}`}
+              tag="@iHub"
+              isLast={!detail.rejectedTemplate}
+            />
           )}
           {detail.rejectedTemplate && (
-            <div className="text-[#d9826b]">
-              拒否理由：
-              {REJECT_TEMPLATES.find((t) => t.id === detail.rejectedTemplate)
-                ?.label ?? detail.rejectedTemplate}
-            </div>
+            <AttachRow
+              label="拒否理由"
+              value={
+                REJECT_TEMPLATES.find((t) => t.id === detail.rejectedTemplate)
+                  ?.label ?? detail.rejectedTemplate
+              }
+              tone="warn"
+              isLast
+            />
           )}
         </div>
       </Section>
@@ -287,38 +376,33 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
         </div>
       )}
 
-      {/* 受信者向け CTA */}
+      {/* iter77-B: 受信者向け CTA — モックアップ準拠で縦 3 つ */}
       {canRespond && !rejectMode && (
         <div className="space-y-2">
           <button
             type="button"
             disabled={pending}
             onClick={() => handleAction("accept")}
-            className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-sm font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] disabled:opacity-50"
+            className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[15px] text-center text-[14px] font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] disabled:opacity-50"
           >
-            ✓ この内容で承諾する
+            ✓ 承諾する
           </button>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => handleAction("negotiate")}
-              className="block w-full rounded-[14px] border-[1.5px] border-[#a695d855] bg-white px-4 py-3 text-center text-[13px] font-bold text-[#a695d8] disabled:opacity-50"
-            >
-              ネゴ（条件相談）
-            </button>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => setRejectMode(true)}
-              className="block w-full rounded-[14px] border border-[#3a324a14] bg-white px-4 py-3 text-center text-[13px] font-bold text-[#3a324a8c] disabled:opacity-50"
-            >
-              拒否
-            </button>
-          </div>
-          <p className="px-1 text-center text-[10.5px] leading-snug text-[#3a324a8c]">
-            ネゴ：日時 / 数量 / 提示物の調整を打診相手と相談（C-1.5、次イテレーションで実装）
-          </p>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => handleAction("negotiate")}
+            className="block w-full rounded-[14px] border-[1.5px] border-[#a695d8] bg-white px-6 py-[14px] text-center text-[14px] font-bold tracking-[0.3px] text-[#a695d8] disabled:opacity-50"
+          >
+            反対提案する（ネゴ）
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => setRejectMode(true)}
+            className="block w-full px-6 py-3 text-center text-[13px] font-semibold text-[#3a324a8c] disabled:opacity-50"
+          >
+            拒否する
+          </button>
         </div>
       )}
 
@@ -443,130 +527,117 @@ function Section({
   );
 }
 
-function ItemColumn({
-  label,
+/**
+ * iter77-B: モックアップ風の縦リスト（アイテム名 + qty バッジ）
+ */
+function ItemList({
   items,
-  align,
   accent,
+}: {
+  items: ProposalItem[];
+  accent: "have" | "wish";
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed border-[#3a324a14] bg-white/40 px-3 py-2 text-[11px] italic text-[#3a324a4d]">
+        —
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1.5">
+      {items.map((it) => {
+        const hue =
+          Math.abs(
+            [...it.label].reduce((s, c) => s + c.charCodeAt(0), 0) ?? 0,
+          ) % 360;
+        const stripeBg = `repeating-linear-gradient(135deg, hsl(${hue}, 35%, 78%) 0 5px, hsl(${hue}, 35%, 70%) 5px 10px)`;
+        const initialShadow = `0 1px 3px hsla(${hue}, 30%, 30%, 0.5)`;
+        const hasPhoto = !!it.photoUrl;
+        return (
+          <div
+            key={it.id}
+            className="flex items-center gap-2.5 rounded-[10px] bg-white/70 px-2.5 py-1.5"
+          >
+            <div
+              className={`relative flex h-[40px] w-[28px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[5px] border ${
+                accent === "have" ? "border-[#a8d4e6]" : "border-[#f3c5d4]"
+              }`}
+              style={{ background: hasPhoto ? "#3a324a" : stripeBg }}
+            >
+              {hasPhoto && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={it.photoUrl!}
+                  alt={it.label}
+                  className="absolute inset-0 h-full w-full object-cover"
+                  loading="lazy"
+                />
+              )}
+              {!hasPhoto && (
+                <span
+                  className="text-[14px] font-extrabold text-white/95"
+                  style={{ textShadow: initialShadow }}
+                >
+                  {it.label[0] || "?"}
+                </span>
+              )}
+            </div>
+            <span className="min-w-0 flex-1 truncate text-[13px] font-bold text-[#3a324a]">
+              {it.label}
+              {it.goodsTypeName && (
+                <span className="ml-1.5 text-[10.5px] font-medium text-[#3a324a8c]">
+                  {it.goodsTypeName}
+                </span>
+              )}
+            </span>
+            <span className="flex-shrink-0 text-[13px] font-extrabold tabular-nums text-[#a695d8]">
+              ×{it.qty}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * iter77-B: 自動添付情報の 1 行（ラベル ・ 値 ・ 任意でタグ）
+ */
+function AttachRow({
+  label,
+  value,
+  tag,
+  tone = "ink",
+  isLast,
 }: {
   label: string;
-  items: ProposalItem[];
-  align: "left" | "right";
-  accent: "have" | "wish";
+  value: string;
+  tag?: string;
+  tone?: "ink" | "lavender" | "warn" | "mute";
+  isLast?: boolean;
 }) {
-  return (
-    <div>
-      <div
-        className={`mb-1.5 px-1 text-[9.5px] font-bold tracking-[0.6px] text-[#3a324a8c] ${
-          align === "right" ? "text-right" : "text-left"
-        }`}
-      >
-        {label}（{items.length}）
-      </div>
-      <div
-        className={`flex flex-wrap gap-1.5 ${
-          align === "right" ? "justify-end" : "justify-start"
-        }`}
-      >
-        {items.length === 0 ? (
-          <span className="px-1 text-[10px] italic text-[#3a324a4d]">—</span>
-        ) : (
-          items.map((it) => <Tcg key={it.id} item={it} accent={accent} />)
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Tcg({
-  item,
-  accent,
-}: {
-  item: ProposalItem;
-  accent: "have" | "wish";
-}) {
-  const hue =
-    Math.abs(
-      [...item.label].reduce((s, c) => s + c.charCodeAt(0), 0) ?? 0,
-    ) % 360;
-  const stripeBg = `repeating-linear-gradient(135deg, hsl(${hue}, 28%, 86%) 0 5px, hsl(${hue}, 28%, 78%) 5px 10px)`;
-  const initialShadow = `0 1px 3px hsla(${hue}, 30%, 30%, 0.5)`;
-  const hasPhoto = !!item.photoUrl;
-
+  const valueColor =
+    tone === "lavender"
+      ? "text-[#a695d8]"
+      : tone === "warn"
+        ? "text-[#d9826b]"
+        : tone === "mute"
+          ? "text-[#3a324a8c]"
+          : "text-[#3a324a]";
   return (
     <div
-      className={`relative overflow-hidden rounded-md border shadow-[0_1px_3px_rgba(58,50,74,0.15)] ${
-        accent === "have" ? "border-[#a8d4e6]" : "border-[#f3c5d4]"
+      className={`flex items-center gap-2 py-1.5 text-[11.5px] ${
+        isLast ? "" : "border-b border-[#3a324a08]"
       }`}
-      style={{
-        width: 36,
-        height: 48,
-        background: hasPhoto ? "#3a324a" : stripeBg,
-      }}
-      title={`${item.label} ×${item.qty}`}
     >
-      {hasPhoto && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={item.photoUrl!}
-          alt={item.label}
-          className="absolute inset-0 h-full w-full object-cover"
-          loading="lazy"
-        />
+      <span className="w-[110px] flex-shrink-0 text-[#3a324a8c]">{label}</span>
+      <span className={`flex-1 font-bold ${valueColor}`}>{value}</span>
+      {tag && (
+        <span className="rounded-full bg-[#a695d814] px-2 py-[2px] text-[9px] font-extrabold text-[#a695d8]">
+          {tag}
+        </span>
       )}
-      {!hasPhoto && (
-        <div
-          className="absolute inset-0 flex items-center justify-center text-[16px] font-extrabold text-white/95"
-          style={{ textShadow: initialShadow }}
-        >
-          {item.label[0] || "?"}
-        </div>
-      )}
-      {item.qty > 1 && (
-        <div className="absolute right-0.5 top-0.5 rounded-sm bg-black/55 px-1 text-[8px] font-extrabold leading-tight text-white">
-          ×{item.qty}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ArrowDot({
-  color,
-  dir,
-}: {
-  color: string;
-  dir: "left" | "right";
-}) {
-  return (
-    <div
-      className="flex h-5 w-5 items-center justify-center rounded-full text-white"
-      style={{
-        background: color,
-        boxShadow: `0 2px 5px ${color}80`,
-      }}
-    >
-      <svg width="10" height="10" viewBox="0 0 10 10">
-        {dir === "right" ? (
-          <path
-            d="M2 5h6m-2-2l2 2-2 2"
-            stroke="#fff"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-        ) : (
-          <path
-            d="M8 5H2m2-2L2 5l2 2"
-            stroke="#fff"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-        )}
-      </svg>
     </div>
   );
 }

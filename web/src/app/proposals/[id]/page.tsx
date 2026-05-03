@@ -94,6 +94,56 @@ export default async function ProposalDetailPage({
     .eq("id", partnerId)
     .maybeSingle();
 
+  // iter77-B: 相手の評価サマリ / 取引回数 / AW 一致判定 / 直近の服装写真
+  const [
+    { data: ratingsRows },
+    { count: completedTradesCount },
+    { data: partnerAws },
+    { data: latestOutfitMsg },
+  ] = await Promise.all([
+    supabase.from("user_evaluations").select("stars").eq("ratee_id", partnerId),
+    supabase
+      .from("proposals")
+      .select("id", { count: "exact", head: true })
+      .or(`sender_id.eq.${partnerId},receiver_id.eq.${partnerId}`)
+      .eq("status", "completed"),
+    // 自分の AW（受信者なら自分側、送信者でも自分の AW）と提案 meetup の重なり判定用
+    p.meetup_start_at && p.meetup_end_at
+      ? supabase
+          .from("activity_windows")
+          .select("id, start_at, end_at")
+          .eq("user_id", user.id)
+          .eq("status", "enabled")
+          .lte("start_at", p.meetup_end_at)
+          .gte("end_at", p.meetup_start_at)
+          .limit(1)
+      : Promise.resolve({ data: null }),
+    // 相手の最新の服装写真（合意済以降のチャットから抽出）
+    supabase
+      .from("messages")
+      .select("photo_url, created_at")
+      .eq("proposal_id", p.id)
+      .eq("sender_id", partnerId)
+      .eq("message_type", "outfit_photo")
+      .order("created_at", { ascending: false })
+      .limit(1),
+  ]);
+
+  const starValues = (ratingsRows ?? []).map(
+    (r: { stars: number }) => r.stars,
+  );
+  const ratingAvg =
+    starValues.length > 0
+      ? starValues.reduce((a, b) => a + b, 0) / starValues.length
+      : null;
+  const ratingCount = starValues.length;
+  const tradeCount = completedTradesCount ?? 0;
+  const matchAw = (partnerAws?.length ?? 0) > 0;
+  const partnerOutfitPhoto =
+    latestOutfitMsg && latestOutfitMsg.length > 0
+      ? (latestOutfitMsg[0].photo_url as string | null)
+      : null;
+
   // 提示物アイテムの詳細を fetch
   const allInvIds = [
     ...p.sender_have_ids,
@@ -176,6 +226,11 @@ export default async function ProposalDetailPage({
       displayName: partner?.display_name ?? "?",
       primaryArea: partner?.primary_area ?? null,
     },
+    partnerRatingAvg: ratingAvg,
+    partnerRatingCount: ratingCount,
+    partnerTradeCount: tradeCount,
+    matchAw,
+    partnerOutfitPhotoUrl: partnerOutfitPhoto,
   };
 
   return (
