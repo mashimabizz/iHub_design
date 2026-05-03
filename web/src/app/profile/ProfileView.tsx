@@ -17,7 +17,8 @@ type Props = {
     groupName: string;
     members: { id: string; name: string }[];
   }[];
-  awCount: number;
+  awCount: number; // iter86: 現地モード切替時のみ設定する単一 AW（残置のため互換用）
+  listingsCount: number;
   tradeCount: number;
 };
 
@@ -41,7 +42,8 @@ const GENDER_LABEL: Record<string, string> = {
 export function ProfileView({
   profile,
   oshiGroups,
-  awCount,
+  awCount: _awCount,
+  listingsCount,
   tradeCount,
 }: Props) {
   const initial = (profile.displayName || profile.handle || "?")
@@ -56,7 +58,7 @@ export function ProfileView({
         }`,
     )
     .join(" ／ ");
-  const isVerified = !!profile.emailVerifiedAt;
+  // iter86: 本人確認 UI 削除に伴い isVerified は未使用
   const subText = [
     profile.gender ? GENDER_LABEL[profile.gender] ?? "" : "",
     profile.primaryArea ?? "",
@@ -126,23 +128,11 @@ export function ProfileView({
             <DividerV />
             <Stat value={String(tradeCount)} label="取引" />
             <DividerV />
-            <Stat value="—" label="コレ" />
-            <DividerV />
-            <Stat value={String(awCount)} label="AW予定" />
+            <Stat value={String(listingsCount)} label="公開募集" />
           </div>
         </div>
 
-        {/* コレクションサマリ */}
-        <Section label="コレクションサマリ" hint="準備中">
-          <Row>
-            <RowItem
-              icon="📚"
-              title="wish 進捗（コレクション機能）"
-              sub="次の iter で実装予定"
-              comingSoon
-            />
-          </Row>
-        </Section>
+        {/* iter86: wish 進捗（コレクションサマリ）は削除 */}
 
         {/* あなたの活動 */}
         <Section label="あなたの活動">
@@ -202,16 +192,7 @@ export function ProfileView({
               chevron
             />
           </Link>
-          <Row>
-            <RowItem
-              icon={isVerified ? "✓" : "!"}
-              title="本人確認"
-              sub={
-                isVerified ? "● メール認証済" : "メール未認証"
-              }
-              subColor={isVerified ? "#6bb39a" : "#d4866b"}
-            />
-          </Row>
+          {/* iter86: 本人確認の行は削除（新規登録時にメール認証が完了している前提） */}
         </Section>
 
         {/* 設定・サポート */}

@@ -30,12 +30,15 @@ export default async function ProfilePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 並列：プロフ + 推し + AW件数 + 取引件数 (mock)
+  // 並列：プロフ + 推し + AW件数 + 取引件数 + 公開募集数
+  // iter86: AW は現地モード切替時のみ設定する単一値（複数登録は廃止）。
+  // awCount は ProfileView に互換用フィールドとして渡し続けるが UI 上は非表示。
   const [
     { data: profile },
     { data: oshi },
     { count: awCount },
     { count: tradeCount },
+    { count: listingsCount },
   ] = await Promise.all([
     supabase
       .from("users")
@@ -57,10 +60,15 @@ export default async function ProfilePage() {
       .eq("user_id", user.id)
       .eq("status", "enabled"),
     supabase
-      .from("deals")
+      .from("proposals")
       .select("id", { count: "exact", head: true })
-      .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
       .eq("status", "completed"),
+    supabase
+      .from("listings")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("status", "active"),
   ]);
 
   // 推しグループでまとめる
@@ -105,6 +113,7 @@ export default async function ProfilePage() {
         oshiGroups={oshiSummary}
         awCount={awCount ?? 0}
         tradeCount={tradeCount ?? 0}
+        listingsCount={listingsCount ?? 0}
       />
       <BottomNav />
     </>
