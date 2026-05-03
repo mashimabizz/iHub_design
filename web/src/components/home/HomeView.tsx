@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { logout } from "@/app/auth/actions";
-import { MatchCard, type MockMatchCard } from "./MatchCard";
+import {
+  MatchCard,
+  type MatchCardData,
+  type MiniItem,
+} from "./MatchCard";
+import type { MatchInv } from "@/lib/matching";
 import {
   disableLocalMode,
   enableLocalMode,
@@ -13,7 +18,7 @@ import {
   type SimpleAW,
   type SimpleItem,
 } from "./LocalModeSheet";
-import { buildLabel, type Match } from "@/lib/matching";
+import { type Match } from "@/lib/matching";
 
 const TABS = [
   { id: 0, label: "完全マッチ" },
@@ -22,23 +27,35 @@ const TABS = [
   { id: 3, label: "探索" },
 ];
 
-/** Match を MatchCard 用の MockMatchCard 形式に変換 */
-function matchToCard(m: Match): MockMatchCard {
-  // 推し（グループ）と member 名の集約
-  const oshiSet = new Set<string>();
-  const memberSet = new Set<string>();
-  [...m.myGives, ...m.theirGives].forEach((it) => {
-    if (it.groupName) oshiSet.add(it.groupName);
-    if (it.characterName) memberSet.add(it.characterName);
-  });
+// メンバー名 / グループ名 → hue (色相) ハッシュ
+function nameToHue(name: string): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
+function toMini(inv: MatchInv): MiniItem {
+  const label = inv.characterName ?? inv.groupName ?? inv.title ?? "?";
+  return {
+    id: inv.id,
+    label,
+    goodsTypeName: inv.goodsTypeName,
+    photoUrl: inv.photoUrl,
+    hue: nameToHue(label),
+  };
+}
+
+/** Match を MatchCard 用データに変換 */
+function matchToCard(m: Match): MatchCardData {
   return {
     id: `match-${m.partner.id}`,
     userName: m.partner.displayName || m.partner.handle,
     userHandle: m.partner.handle,
-    oshiName: Array.from(oshiSet).join(", ") || "—",
-    memberName: Array.from(memberSet).join(", ") || "",
-    givesLabel: buildLabel(m.theirGives),
-    wantsLabel: buildLabel(m.myGives),
+    myGives: m.myGives.map(toMini),
+    theirGives: m.theirGives.map(toMini),
     matchType: m.matchType,
     distance: m.partner.primaryArea || "広域",
     exchangeType: "any",
@@ -70,7 +87,7 @@ export function HomeView({
       1: all.filter((c) => c.matchType === "they_want_you"),
       2: all.filter((c) => c.matchType === "you_want_them"),
       3: all, // 探索: 全部
-    } as Record<number, MockMatchCard[]>;
+    } as Record<number, MatchCardData[]>;
   }, [matches]);
   const cards = cardsByTab[tab] ?? [];
 
