@@ -69,6 +69,8 @@ export type ChatProposal = {
   /** iter78-E: 期限・延長関連 */
   expiresAt: string | null;
   extensionCount: number;
+  /** iter79-C: 申告中の dispute（open のもの） */
+  openDispute: { id: string; ticketNo: string } | null;
 };
 
 export type ChatMessage = {
@@ -303,6 +305,26 @@ export function ChatView({
       {/* 上部固定：取引内容カード（コンパクト・画像表示） + 合意バー or 服装写真 */}
       <div className="flex-shrink-0 bg-[#fbf9fc]">
         <div className="mx-auto max-w-md px-3.5 pt-2.5">
+          {/* iter79-C: 申告中なら警告バナー */}
+          {proposal.openDispute && (
+            <Link
+              href={`/disputes/${proposal.openDispute.id}`}
+              className="mb-1.5 flex items-center gap-2 rounded-[10px] border border-[#d9826b40] bg-[#fff5f0] px-3 py-2"
+            >
+              <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[#d9826b] text-[10px] font-extrabold text-white">
+                !
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-bold text-[#d9826b]">
+                  申告 {proposal.openDispute.ticketNo} ・ 仲裁中
+                </div>
+                <div className="text-[9.5px] text-[#3a324a8c]">
+                  ステータス確認はタップ
+                </div>
+              </div>
+              <span className="text-[10px] text-[#d9826b]">›</span>
+            </Link>
+          )}
           <DealCard
             proposal={proposal}
             onTap={() => setTradeOpen(true)}

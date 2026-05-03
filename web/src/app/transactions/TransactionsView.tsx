@@ -40,6 +40,8 @@ export type TransactionRow = {
   completedAt: string | null;
   /** iter76-D: 自分が付けた評価（1〜5） */
   myStars: number | null;
+  /** iter79-C: 進行中の dispute（あれば ID と ticket_no） */
+  openDispute: { id: string; ticketNo: string } | null;
 };
 
 type TabId = "pending" | "ongoing" | "past";
@@ -293,38 +295,65 @@ function OngoingCard({ t }: { t: TransactionRow }) {
 
   return (
     <Link
-      href={`/transactions/${t.id}`}
-      className="block overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] transition-all active:scale-[0.99]"
+      href={
+        t.openDispute ? `/disputes/${t.openDispute.id}` : `/transactions/${t.id}`
+      }
+      className={`block overflow-hidden rounded-2xl border bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] transition-all active:scale-[0.99] ${
+        t.openDispute
+          ? "border-[#d9826b55]"
+          : "border-[#3a324a14]"
+      }`}
     >
       <div className="flex items-start gap-2.5 px-3.5 py-3">
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[15px] font-bold text-[#a695d8]">
-          {t.partnerDisplayName[0] || "?"}
+        <div
+          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] text-[15px] font-bold ${
+            t.openDispute
+              ? "bg-[#d9826b22] text-[#d9826b]"
+              : "bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[#a695d8]"
+          }`}
+        >
+          {t.openDispute ? "!" : t.partnerDisplayName[0] || "?"}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[13.5px] font-bold text-[#3a324a]">
-            @{t.partnerHandle}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[13.5px] font-bold text-[#3a324a]">
+              @{t.partnerHandle}
+            </span>
+            {t.openDispute && (
+              <span className="rounded-[3px] bg-[#d9826b] px-1.5 py-[1px] text-[9px] font-extrabold tracking-[0.3px] text-white">
+                申告中
+              </span>
+            )}
           </div>
           <div className="mt-0.5 truncate text-[11.5px] text-[#3a324a]">
             {t.myReceiveSummary}{" "}
             <span className="text-[#3a324a8c]">⇄</span> {t.myGiveSummary}
           </div>
-          <div className="mt-0.5 truncate text-[10.5px] text-[#3a324a8c]">
-            {t.meetupPlaceName ? `${t.meetupPlaceName}・` : ""}
-            <span className="tabular-nums">{meetupSummary}</span>
-          </div>
-          {countdown && (
-            <div
-              className={`mt-1 inline-flex items-center gap-1 text-[10.5px] font-bold ${
-                isImminent ? "text-emerald-600" : "text-[#3a324a8c]"
-              }`}
-            >
-              <span
-                className={`inline-block h-1.5 w-1.5 rounded-full ${
-                  isImminent ? "bg-emerald-500" : "bg-[#3a324a4d]"
-                }`}
-              />
-              {countdown}
+          {t.openDispute ? (
+            <div className="mt-0.5 truncate text-[10.5px] font-bold text-[#d9826b]">
+              {t.openDispute.ticketNo} ・ 仲裁中（タップで詳細）
             </div>
+          ) : (
+            <>
+              <div className="mt-0.5 truncate text-[10.5px] text-[#3a324a8c]">
+                {t.meetupPlaceName ? `${t.meetupPlaceName}・` : ""}
+                <span className="tabular-nums">{meetupSummary}</span>
+              </div>
+              {countdown && (
+                <div
+                  className={`mt-1 inline-flex items-center gap-1 text-[10.5px] font-bold ${
+                    isImminent ? "text-emerald-600" : "text-[#3a324a8c]"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${
+                      isImminent ? "bg-emerald-500" : "bg-[#3a324a4d]"
+                    }`}
+                  />
+                  {countdown}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

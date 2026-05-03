@@ -573,29 +573,7 @@ export async function approveCompletion(input: {
     : undefined;
 }
 
-/**
- * 「相違あり」フラグ：今は dispute へのプレースホルダー（次イテで本実装）
- */
-export async function flagDispute(input: {
-  proposalId: string;
-}): Promise<ActionResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  // system message として記録
-  await supabase.from("messages").insert({
-    proposal_id: input.proposalId,
-    sender_id: user.id,
-    message_type: "system",
-    body: "相違あり：取引内容に問題があると報告されました（dispute フローは次イテで実装予定）",
-  });
-
-  revalidatePath(`/transactions/${input.proposalId}`);
-  return undefined;
-}
+// iter79-C: 旧 flagDispute は削除。/disputes/new フォーム + submitDispute に置き換え。
 
 /**
  * 評価送信：1 取引につき 1 件まで（DB unique 制約）

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { approveCompletion, flagDispute } from "../../actions";
+import { approveCompletion } from "../../actions";
 
 export type ApproveRow = {
   side: "me" | "them";
@@ -45,19 +45,9 @@ export function ApproveView({ data }: { data: ApproveData }) {
     });
   }
 
+  // iter79-C: 「相違あり」→ /disputes/new フォームに遷移
   function handleDispute() {
-    if (
-      !confirm(
-        "「相違あり」を選ぶと dispute フローへの記録が残ります。続行しますか？",
-      )
-    )
-      return;
-    setError(null);
-    startTransition(async () => {
-      const r = await flagDispute({ proposalId: data.proposalId });
-      if (r?.error) setError(r.error);
-      else router.refresh();
-    });
+    router.push(`/disputes/new?proposalId=${data.proposalId}`);
   }
 
   const dt = data.photoTakenAt ? new Date(data.photoTakenAt) : null;

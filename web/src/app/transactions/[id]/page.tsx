@@ -222,7 +222,22 @@ export default async function TransactionChatPage({
     iAmReceiver: !isMeSender,
     expiresAt: p.expires_at,
     extensionCount: p.extension_count ?? 0,
+    openDispute: null, // 後で更新
   };
+
+  // iter79-C: open dispute（同 proposal）を fetch して proposal に注入
+  const { data: openDisputeRow } = await supabase
+    .from("disputes")
+    .select("id, ticket_no, status")
+    .eq("proposal_id", p.id)
+    .neq("status", "closed")
+    .maybeSingle();
+  if (openDisputeRow) {
+    proposal.openDispute = {
+      id: openDisputeRow.id as string,
+      ticketNo: openDisputeRow.ticket_no as string,
+    };
+  }
 
   // 証跡写真（複数枚）
   const { data: evidencePhotos } = await supabase

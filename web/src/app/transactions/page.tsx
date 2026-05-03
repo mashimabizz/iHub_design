@@ -97,6 +97,30 @@ export default async function TransactionsPage() {
     }
   }
 
+  // iter79-C: 進行中（open）の dispute を proposal 別に紐づけ
+  const openDisputeByProposalId = new Map<
+    string,
+    { id: string; ticketNo: string }
+  >();
+  if (list.length > 0) {
+    const { data: disputes } = await supabase
+      .from("disputes")
+      .select("id, proposal_id, ticket_no, status")
+      .in(
+        "proposal_id",
+        list.map((r) => r.id),
+      )
+      .neq("status", "closed");
+    if (disputes) {
+      for (const d of disputes) {
+        openDisputeByProposalId.set(d.proposal_id as string, {
+          id: d.id as string,
+          ticketNo: d.ticket_no as string,
+        });
+      }
+    }
+  }
+
   // 相手 user
   const partnerIds = Array.from(
     new Set(
@@ -199,6 +223,7 @@ export default async function TransactionsPage() {
       lastActionAt: r.last_action_at,
       completedAt: r.completed_at,
       myStars: myEvalByProposalId.get(r.id) ?? null,
+      openDispute: openDisputeByProposalId.get(r.id) ?? null,
     };
   });
 
