@@ -186,7 +186,7 @@ export function InventoryView({
       {/* スワイプコンテナ（横スクロール + scroll snap） */}
       <div
         ref={scrollRef}
-        className="flex flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
+        className="mx-auto flex w-full max-w-md flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: "none" }}
       >
         {SUB_IDS.map((subId) => (
