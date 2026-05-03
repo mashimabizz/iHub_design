@@ -1,0 +1,145 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+
+type ActionResult = { error?: string; proposalId?: string } | undefined;
+
+export async function createProposal(input: {
+  receiverId: string;
+  matchType: "perfect" | "forward" | "backward";
+  senderHaveIds: string[];
+  senderHaveQtys: number[];
+  receiverHaveIds: string[];
+  receiverHaveQtys: number[];
+  message: string;
+  messageTone?: "standard" | "casual" | "polite";
+  meetupType: "now" | "scheduled";
+  meetupNowMinutes?: 5 | 10 | 15 | 30;
+  meetupScheduledCustom?: {
+    date: string;
+    time: string;
+    placeName: string;
+  };
+  exposeCalendar: boolean;
+  listingId?: string | null;
+}): Promise<ActionResult> {
+  if (!input.receiverId) return { error: "受信者が不明です" };
+  if (input.senderHaveIds.length === 0)
+    return { error: "あなたが出すアイテムを選んでください" };
+  if (input.receiverHaveIds.length === 0)
+    return { error: "受け取るアイテムを選んでください" };
+  if (input.senderHaveIds.length !== input.senderHaveQtys.length)
+    return { error: "数量配列の長さが不一致" };
+  if (input.receiverHaveIds.length !== input.receiverHaveQtys.length)
+    return { error: "数量配列の長さが不一致" };
+  if (!input.message.trim()) return { error: "メッセージを入力してください" };
+
+  if (input.meetupType === "now") {
+    if (
+      !input.meetupNowMinutes ||
+      ![5, 10, 15, 30].includes(input.meetupNowMinutes)
+    ) {
+      return { error: "合流時間（5/10/15/30 分）を選んでください" };
+    }
+  } else {
+    const c = input.meetupScheduledCustom;
+    if (!c?.date || !c?.time || !c?.placeName?.trim()) {
+      return { error: "日時と場所を入力してください" };
+    }
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  if (user.id === input.receiverId)
+    return { error: "自分自身には打診できません" };
+
+  // last_action_at = now, expires_at = +7 days
+  const now = new Date();
+  const expires = new Date(now.getTime() + 7 * 24 * 60 * 60_000);
+
+  const { data, error } = await supabase
+    .from("proposals")
+    .insert({
+      sender_id: user.id,
+      receiver_id: input.receiverId,
+      match_type: input.matchType,
+      sender_have_ids: input.senderHaveIds,
+      sender_have_qtys: input.senderHaveQtys,
+      receiver_have_ids: input.receiverHaveIds,
+      receiver_have_qtys: input.receiverHaveQtys,
+      message: input.message.trim(),
+      message_tone: input.messageTone ?? "standard",
+      status: "sent",
+      last_action_at: now.toISOString(),
+      expires_at: expires.toISOString(),
+      meetup_type: input.meetupType,
+      meetup_now_minutes:
+        input.meetupType === "now" ? input.meetupNowMinutes : null,
+      meetup_scheduled_custom:
+        input.meetupType === "scheduled"
+          ? input.meetupScheduledCustom
+          : null,
+      expose_calendar: input.exposeCalendar,
+      listing_id: input.listingId ?? null,
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) return { error: error?.message ?? "送信に失敗しました" };
+
+  revalidatePath("/");
+  revalidatePath("/proposals");
+  return { proposalId: data.id };
+}
+
+export async function respondToProposal(input: {
+  id: string;
+  action: "accept" | "reject" | "negotiate";
+  rejectedTemplate?: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: proposal } = await supabase
+    .from("proposals")
+    .select("status, receiver_id, sender_id")
+    .eq("id", input.id)
+    .maybeSingle();
+  if (!proposal) return { error: "打診が見つかりません" };
+  if (proposal.receiver_id !== user.id)
+    return { error: "受信者ではありません" };
+  if (!["sent", "negotiating"].includes(proposal.status))
+    return { error: "この打診はもう応答できません" };
+
+  let newStatus: string;
+  if (input.action === "accept") newStatus = "agreed";
+  else if (input.action === "reject") newStatus = "rejected";
+  else newStatus = "negotiating";
+
+  const updateFields: Record<string, unknown> = {
+    status: newStatus,
+    last_action_at: new Date().toISOString(),
+  };
+  if (input.action === "reject" && input.rejectedTemplate)
+    updateFields.rejected_template = input.rejectedTemplate;
+  if (input.action === "accept") updateFields.agreed_by_receiver = true;
+
+  const { error } = await supabase
+    .from("proposals")
+    .update(updateFields)
+    .eq("id", input.id);
+
+  if (error) return { error: error.message };
+  revalidatePath("/proposals");
+  revalidatePath(`/proposals/${input.id}`);
+  return undefined;
+}

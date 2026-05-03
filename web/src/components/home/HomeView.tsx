@@ -52,6 +52,7 @@ function toMini(inv: MatchInv): MiniItem {
 function matchToCard(m: Match): MatchCardData {
   return {
     id: `match-${m.partner.id}`,
+    partnerId: m.partner.id,
     userName: m.partner.displayName || m.partner.handle,
     userHandle: m.partner.handle,
     myGives: m.myGives.map(toMini),

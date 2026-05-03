@@ -419,6 +419,86 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67：打診（C-0/C-1）と個人スケジュール
+
+### 背景
+
+iter66 で実マッチング演算が動き出し、ホームに本物のマッチカードが並ぶようになった。次に必要なのは「打診を実際に送れる」こと。
+オーナー選択：
+- **Q1=C（フル装備の C-0）** … 在庫多選択 + qty stepper + メッセージトーン + カレンダー公開
+- **Q2=Yes** … 待ち合わせは打診時に決める。AW から選ぶのはやめる（AW はマッチング演算専用）。代わりに **個人カレンダー（スケジュール）** を新設して打診相手にだけ公開できるようにする
+- **Q3=案1** … `proposals` テーブルは modal-rich にしてフラグ列を充実させる方針
+- **Q4=Yes** … 個別募集（listings）からの打診も同じフローを通る
+
+### 変更内容
+
+#### A. DB マイグレーション（`supabase/migrations/20260503160000_add_proposals_and_schedules.sql`）
+
+- **`proposals`**：sender / receiver / match_type / sender_have_ids[] / sender_have_qtys[] / receiver_have_ids[] / receiver_have_qtys[] / message / message_tone / status (`sent`/`negotiating`/`agreed`/`rejected`/`expired`) / agreed_by_sender / agreed_by_receiver / last_action_at / expires_at / extension_count / rejected_template / **meetup_type** (`now`/`scheduled`) / meetup_now_minutes / **meetup_scheduled_custom**(JSONB: date/time/placeName) / expose_calendar / listing_id
+  - **重要**：`meetup_scheduled_aw_id` は **入れない**。AW はマッチング演算専用に分離。
+  - RLS：sender / receiver のどちらか一方のみが SELECT/UPDATE 可
+- **`schedules`**：id / user_id / title / start_at / end_at / all_day / note
+  - RLS：自分のスケジュールは自由に CRUD。`expose_calendar = true` で打診相手は SELECT 可
+
+#### B. 個人スケジュール `/schedules`
+
+`web/src/app/schedules/`：一覧（今後 / 過去で分割）／新規（`/new`）／編集（`/[id]`）／削除。
+`ScheduleForm.tsx` で終日トグル・datetime-local 入力。
+
+`profile/ProfileView.tsx` の「あなたの活動」に **「📅 スケジュール」** リンクを追加（自分の AW 動線は削除済み）。
+
+#### C. 打診 C-0 `/propose/[partnerId]`
+
+- **server**（`page.tsx`）：自分・相手の inventory（kind=for_trade, status=active）と wishes（kind=wanted, !=archived）を並列 fetch、`isHit()` で wishMatch フラグを付与してクライアントへ
+- **server action**（`actions.ts`）：
+  - `createProposal()` — 全フィールド検証 → `proposals` INSERT、`expires_at = now + 7d`、status='sent'。`/proposals` `/` を revalidate
+  - `respondToProposal()` — accept / reject / negotiate（受信者用）
+- **client wizard**（`ProposeFlow.tsx`、3 ステップ単一コンポーネント）：
+  - **STEP 1 / 提示物選択**：3 タブ
+    - mine / theirs：チェックボックス多選択 + qty stepper + 「★ wish 一致」バッジ + サムネ（写真 or character/group ID から hash で hue 決定）
+    - meetup：「🚀 いますぐ（5/10/15/30 分）」or 「📅 日時指定（日付 + 時刻 + 場所、AW 選択は無し）」
+    - matchType に応じた pre-check（perfect=両側 wishMatch、forward=mine wishMatch、backward=theirs wishMatch）
+  - **STEP 2 / メッセージ**：標準 / カジュアル / 丁寧 トーン切替で **テンプレ自動生成**（partnerHandle / 自分の譲 / 受け取る / 待ち合わせ を埋め込み）。手で編集も OK。**スケジュール共有**チェックボックス
+  - **STEP 3 / 送信確認**：交換内容グリッド + 待ち合わせ + メッセージ全文 + 「📨 この内容で打診を送信」CTA → 成功で `/` へ（取引タブはまだ無いので暫定）
+
+#### D. マッチカード配線（`MatchCard.tsx` + `HomeView.tsx`）
+
+`MatchCardData` に `partnerId` を追加し、`matchToCard()` で `m.partner.id` を埋め込み。
+「打診する」ボタンを `<Link href="/propose/${partnerId}?matchType=${matchType}">` に変更。
+
+### 影響範囲
+
+- 新ルート：`/propose/[partnerId]`（C-0 ウィザード）
+- 新ルート：`/schedules`、`/schedules/new`、`/schedules/[id]`
+- ホーム → マッチカード → 打診 → 提示物選択 → メッセージ → 確認 → 送信 → ホーム
+- DB：`proposals`, `schedules` 2 テーブル新設
+- プロフ：「📅 スケジュール」エントリ追加
+
+### 設計判断（重要）
+
+- **AW と個人スケジュールは分離**。AW = 「この時間ここに**いる**」マッチング演算用。個人スケジュール = 「この時間 **忙しい**」打診相手向けの予定共有。打診時に AW を流用しない（オーナー指示）
+- 待ち合わせは打診時に **fix される**（iter33 の方針継続）。打診を承諾した瞬間に日時・場所が確定する
+- カレンダー公開は **全予定一括 ON/OFF**（個別共有は MVP では持たない）
+- 取引画面（フッタータブ）は未着手。打診送信後の遷移は暫定 `/`、後で `/transactions` 等に差し替え
+
+### 次（iter67-D 以降）
+
+- `/proposals/[id]`（受信表示）：accept / reject / negotiate ボタン、相手の expose_calendar が ON ならスケジュール overlay
+- C-1.5 ネゴチャット
+- C-2 取引チャット / C-3 完了
+- フッターに「取引」タブ追加
+
+### 関連ファイル
+
+- `supabase/migrations/20260503160000_add_proposals_and_schedules.sql`
+- `web/src/app/schedules/{page.tsx,SchedulesView.tsx,actions.ts,ScheduleForm.tsx,new/page.tsx,[id]/page.tsx}`
+- `web/src/app/propose/{actions.ts,[partnerId]/page.tsx,[partnerId]/ProposeFlow.tsx}`
+- `web/src/components/home/MatchCard.tsx`（partnerId 追加 + Link 化）
+- `web/src/components/home/HomeView.tsx`（matchToCard で partnerId 埋め込み）
+- `web/src/app/profile/ProfileView.tsx`（スケジュール導線追加）
+
+---
+
 ## イテレーション66：実マッチング演算（mock 撤去）
 
 ### 背景

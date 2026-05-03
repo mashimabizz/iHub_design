@@ -4,8 +4,10 @@
  * - ヘッダー: アバター + @handle + 距離 + マッチタイプ pill
  * - Trade preview: 左=相手の譲（私が受け取る）/ 中央=矢印 / 右=私の譲（相手が受け取る）
  * - 各アイテムは aspect-3/4 のミニカード（写真 or イニシャル）
- * - CTA: 打診する / スキップ
+ * - CTA: 打診する → /propose/[partnerId]?matchType=...
  */
+
+import Link from "next/link";
 
 export type MiniItem = {
   id: string;
@@ -17,6 +19,7 @@ export type MiniItem = {
 
 export type MatchCardData = {
   id: string;
+  partnerId: string;
   userName: string;
   userHandle: string;
   myGives: MiniItem[]; // 私の譲（=相手が欲しい・私が出す）
@@ -125,12 +128,12 @@ export function MatchCard({ card }: { card: MatchCardData }) {
 
       {/* CTA */}
       <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          className="flex-1 rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-2.5 text-[13px] font-bold tracking-[0.4px] text-white shadow-[0_4px_12px_rgba(166,149,216,0.4)] transition-all duration-150 active:scale-[0.97]"
+        <Link
+          href={`/propose/${card.partnerId}?matchType=${card.matchType}`}
+          className="flex-1 rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-2.5 text-center text-[13px] font-bold tracking-[0.4px] text-white shadow-[0_4px_12px_rgba(166,149,216,0.4)] transition-all duration-150 active:scale-[0.97]"
         >
           打診する
-        </button>
+        </Link>
         <button
           type="button"
           className="rounded-xl border border-[#a695d855] bg-white px-3.5 py-2.5 text-[12px] font-semibold text-gray-700 transition-all active:scale-[0.97]"

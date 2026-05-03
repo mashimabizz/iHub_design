@@ -12,6 +12,7 @@
 |---|---|---|
 | v1.0 | 2026-04-27 | 初版（マスタ階層、availability_windows、proposals 等） |
 | **v2.0** | **2026-05-01** | **iter24/29/33/34 反映（meetup, outfit, location_share, 状態名統一、deals リネーム）** |
+| **v2.1** | **2026-05-03** | **iter67 反映（schedules 新設、proposals.message_tone 追加、meetup_scheduled_aw_id 廃止、expose_calendar の対象を AW → schedules に変更）** |
 
 ## このドキュメントの位置付け
 
@@ -285,6 +286,29 @@ iter33 で AW自動登録機能追加（C-0 待ち合わせタブから）。
 - ユーザー作成タグの即公開 vs 運営承認後公開
 - 重複検出（同名・同会場・同時間）の自動マージ運用
 
+### `schedules`（個人スケジュール）— 新規（iter67）
+
+AW とは **別エンティティ**。AW = 「この時間ここに**いる**」（マッチング演算用）／ schedules = 「この時間 **忙しい**」（打診相手にだけ任意公開する個人予定）。
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `user_id` | uuid | → users |
+| `title` | text | 予定名（例「出張」「友人ランチ」） |
+| `start_at` | timestamptz | 開始 |
+| `end_at` | timestamptz | 終了（CHECK: end_at > start_at） |
+| `all_day` | bool default false | 終日フラグ |
+| `note` | text nullable | 補足メモ（500 文字まで） |
+| `created_at` / `updated_at` | timestamptz | |
+
+RLS：
+- 自分のスケジュールは自由に SELECT/INSERT/UPDATE/DELETE
+- `proposals.expose_calendar = true` かつ自分が `sender_id` の打診相手 (`receiver_id`) は SELECT 可（取引完了 status=`agreed`/`rejected`/`expired` で閲覧停止）
+
+⚠️ 要確認：
+- 招待受諾型のスケジュール（複数人参加）を将来サポートするか
+- 繰返し予定（毎週月曜など）を持たせるか
+
 ---
 
 ## 5. 打診（Proposal）・ネゴ・メッセージ
@@ -311,11 +335,12 @@ iter28（match_type）/ iter29（数量）/ iter30（7日期限）/ iter32（合
 | `expires_at` | timestamptz | iter30、自動計算（last_action_at + 7days） |
 | `extension_count` | int default 0 | iter30、+7日延長回数 |
 | `rejected_template` | text nullable | 旧定型文選択 |
+| `message_tone` | text | iter67、`standard`/`casual`/`polite`（メッセージのトーン選択を記録、デフォルト 'standard'） |
 | `meetup_type` | text | iter33、`now` / `scheduled`（必須） |
 | `meetup_now_minutes` | int nullable | iter33、5/10/15/30 (`meetup_type='now'`時のみ) |
-| `meetup_scheduled_aw_id` | uuid nullable | → availability_windows（AWから選択した場合） |
-| `meetup_scheduled_custom` | jsonb nullable | iter33、`{date, time, lat, lng, place_name, register_as_aw: bool}`（カスタム日時の場合）。**iter39 確定：MVPは JSONB で固定。将来検索性が必要になったら別テーブル `proposal_meetups` に切り出し可**。 |
-| `expose_calendar` | bool default false | iter65（Phase D）。送信者が自分の AW を相手に **重ね見** で公開する任意フラグ。受信側は overlay UI で時空交差を確認できる。取引完了で自動的に閲覧不可（RLS） |
+| ~~`meetup_scheduled_aw_id`~~ | — | **iter67 で廃止**。AW はマッチング演算専用に分離。打診の日時指定は `meetup_scheduled_custom` のみで保持 |
+| `meetup_scheduled_custom` | jsonb nullable | iter33→iter67 改訂、`{date, time, placeName}` のみ（lat/lng/register_as_aw は iter67 で削除）。`meetup_type='scheduled'`の時に必須 |
+| `expose_calendar` | bool default false | iter67 で再定義：送信者が自分の **個人スケジュール（schedules）** を相手に公開する ON/OFF。受信側は受信表示画面で送信者の予定を見られる（取引完了で自動的に RLS 不可）。AW は対象外 |
 | `listing_id` | uuid nullable | iter64、個別募集 (`listings`) 経由の打診ならその id。直接打診なら null |
 | `created_at` / `updated_at` | timestamptz | |
 
