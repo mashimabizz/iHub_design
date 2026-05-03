@@ -109,7 +109,10 @@
 | **保存検索** | saved search | カスタム検索条件を保存・繰り返し利用 | iter23 |
 | **広域マッチ** | global match、時空無制限 | 譲 × wish のみで全国マッチ。AW 不要。ホームのデフォルト（iter62〜） | notes/18 §B |
 | **現地マッチ** | local match、時空マッチ | AW + 携帯グッズ + 選択 wish で時空交差した相手のみ表示（iter63〜） | notes/18 §B |
-| **個別募集** | pinpoint listing（DB のみ） | 譲 1 + wish 1 + 比率 + 優先度 + タグ。「listing」は UI に出さない（iter64〜） | notes/18 §B |
+| **個別募集** | pinpoint listing（DB のみ） | 譲 N + wish M + AND/OR ロジック + 数量。「listing」は UI に出さない（iter64〜、iter67.3 で N×M マトリクス化） | notes/18 §B |
+| **AND 条件（個別募集）** | listing AND | 複数アイテムを **全部セット** で扱う条件 | iter67.3 |
+| **OR 条件（個別募集）** | listing OR | 複数アイテムから **いずれか1つ** を選ぶ条件 | iter67.3 |
+| **比率（個別募集）** | qty / ratio | 各アイテムの数量で表現（別概念は持たない）。AND は群全体で固定、OR は候補ごとに変えられる | iter67.3 |
 | **同種交換** | same-kind swap | 同じ goods_type 同士の交換。**自己申告タグのみ、システム判定なし** | notes/18 §A-1 |
 | **異種交換** | cross-kind swap | 異なる goods_type 同士の交換。タグのみ | notes/18 §A-1 |
 | **混合交換** | any、どちらでも | 同種・異種を問わない（デフォルト） | notes/18 §A-1 |

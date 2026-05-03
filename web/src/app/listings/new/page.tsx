@@ -127,8 +127,8 @@ export default async function ListingNewPage() {
       <HeaderBack title="個別募集を追加" backHref="/listings" />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-8 pt-5">
         <p className="mb-4 text-[12px] leading-relaxed text-gray-500">
-          譲るグッズ × 求める wish のセットに、比率と優先度をつけて
-          ピンポイントの交換条件を募集します。
+          譲るグッズと求める wish をそれぞれ複数選び、AND/OR と数量を組み合わせて
+          ピンポイントの交換条件を作ります。
         </p>
         <ListingNewForm
           inventoryItems={inventoryItems}

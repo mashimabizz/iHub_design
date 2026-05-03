@@ -50,6 +50,19 @@ function toMini(inv: MatchInv): MiniItem {
 
 /** Match を MatchCard 用データに変換 */
 function matchToCard(m: Match): MatchCardData {
+  // listing が AND セット形式かを判定（バッジ用）
+  const setListing = m.matchedListings?.some(
+    (ml) => ml.haveLogic === "and" || ml.wishLogic === "and",
+  );
+  const orListing = m.matchedListings?.some(
+    (ml) => ml.haveLogic === "or" || ml.wishLogic === "or",
+  );
+  const listingBadge: MatchCardData["listingBadge"] = setListing
+    ? "set"
+    : orListing
+      ? "any"
+      : null;
+
   return {
     id: `match-${m.partner.id}`,
     partnerId: m.partner.id,
@@ -60,6 +73,7 @@ function matchToCard(m: Match): MatchCardData {
     matchType: m.matchType,
     distance: m.partner.primaryArea || "広域",
     exchangeType: "any",
+    listingBadge,
   };
 }
 

@@ -2,7 +2,12 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BottomNav } from "@/components/home/BottomNav";
-import { ListingsView, type ListingItem, type ListingWishItem } from "./ListingsView";
+import {
+  ListingsView,
+  type ListingItem,
+  type ListingHaveItem,
+  type ListingWishItem,
+} from "./ListingsView";
 
 export const metadata = {
   title: "個別募集 — iHub",
@@ -10,35 +15,22 @@ export const metadata = {
 
 type ListingRow = {
   id: string;
-  inventory_id: string;
+  have_ids: string[] | null;
+  have_qtys: number[] | null;
+  have_logic: "and" | "or";
   wish_ids: string[] | null;
-  exchange_type: "same_kind" | "cross_kind" | "any";
-  ratio_give: number;
-  ratio_receive: number;
+  wish_qtys: number[] | null;
+  wish_logic: "and" | "or";
   status: "active" | "paused" | "matched" | "closed";
   note: string | null;
   created_at: string;
-  inventory:
-    | {
-        title: string;
-        photo_urls: string[] | null;
-        group: { name: string } | { name: string }[] | null;
-        character: { name: string } | { name: string }[] | null;
-        goods_type: { name: string } | { name: string }[] | null;
-      }
-    | {
-        title: string;
-        photo_urls: string[] | null;
-        group: { name: string } | { name: string }[] | null;
-        character: { name: string } | { name: string }[] | null;
-        goods_type: { name: string } | { name: string }[] | null;
-      }[]
-    | null;
 };
 
-type WishRow = {
+type InvRow = {
   id: string;
   title: string;
+  photo_urls: string[] | null;
+  exchange_type: "same_kind" | "cross_kind" | "any";
   group: { name: string } | { name: string }[] | null;
   character: { name: string } | { name: string }[] | null;
   goods_type: { name: string } | { name: string }[] | null;
@@ -56,12 +48,11 @@ export default async function ListingsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 個別募集 + 関連譲を fetch
+  // 個別募集を fetch（譲・求は別 query で in-clause）
   const { data: rows } = await supabase
     .from("listings")
     .select(
-      `id, inventory_id, wish_ids, exchange_type, ratio_give, ratio_receive, status, note, created_at,
-       inventory:goods_inventory!listings_inventory_id_fkey(title, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name))`,
+      `id, have_ids, have_qtys, have_logic, wish_ids, wish_qtys, wish_logic, status, note, created_at`,
     )
     .eq("user_id", user.id)
     .neq("status", "closed")
@@ -69,56 +60,72 @@ export default async function ListingsPage() {
 
   const listingRows = (rows as ListingRow[]) ?? [];
 
-  // 全 wish_ids を flatten して in-clause で一括取得
+  // 全 have_ids / wish_ids を flatten して一括取得
+  const allHaveIds = Array.from(
+    new Set(listingRows.flatMap((r) => r.have_ids ?? [])),
+  );
   const allWishIds = Array.from(
     new Set(listingRows.flatMap((r) => r.wish_ids ?? [])),
   );
-  let wishById = new Map<string, ListingWishItem>();
-  if (allWishIds.length > 0) {
-    const { data: wishRows } = await supabase
+  const allInvIds = Array.from(new Set([...allHaveIds, ...allWishIds]));
+
+  let invById = new Map<string, InvRow>();
+  if (allInvIds.length > 0) {
+    const { data: invRows } = await supabase
       .from("goods_inventory")
       .select(
-        "id, title, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+        "id, title, photo_urls, exchange_type, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
       )
-      .in("id", allWishIds);
-    if (wishRows) {
-      const list = wishRows as WishRow[];
-      wishById = new Map(
-        list.map((w) => [
-          w.id,
-          {
-            id: w.id,
-            title: w.title,
-            groupName: pickOne(w.group)?.name ?? null,
-            characterName: pickOne(w.character)?.name ?? null,
-            goodsTypeName: pickOne(w.goods_type)?.name ?? null,
-          } satisfies ListingWishItem,
-        ]),
-      );
+      .in("id", allInvIds);
+    if (invRows) {
+      invById = new Map((invRows as InvRow[]).map((r) => [r.id, r]));
     }
   }
 
-  const items: ListingItem[] = listingRows.map((r) => {
-    const inv = pickOne(r.inventory);
-    const wishes: ListingWishItem[] = (r.wish_ids ?? [])
-      .map((id) => wishById.get(id))
-      .filter((w): w is ListingWishItem => !!w);
+  function toHave(id: string, qty: number): ListingHaveItem | null {
+    const r = invById.get(id);
+    if (!r) return null;
     return {
       id: r.id,
-      inventory: inv
-        ? {
-            title: inv.title,
-            photoUrl:
-              (inv.photo_urls && inv.photo_urls[0]) ?? null,
-            groupName: pickOne(inv.group)?.name ?? null,
-            characterName: pickOne(inv.character)?.name ?? null,
-            goodsTypeName: pickOne(inv.goods_type)?.name ?? null,
-          }
-        : null,
-      wishes,
+      title: r.title,
+      qty,
+      photoUrl: (r.photo_urls && r.photo_urls[0]) ?? null,
+      groupName: pickOne(r.group)?.name ?? null,
+      characterName: pickOne(r.character)?.name ?? null,
+      goodsTypeName: pickOne(r.goods_type)?.name ?? null,
+    };
+  }
+  function toWish(id: string, qty: number): ListingWishItem | null {
+    const r = invById.get(id);
+    if (!r) return null;
+    return {
+      id: r.id,
+      title: r.title,
+      qty,
       exchangeType: r.exchange_type,
-      ratioGive: r.ratio_give,
-      ratioReceive: r.ratio_receive,
+      groupName: pickOne(r.group)?.name ?? null,
+      characterName: pickOne(r.character)?.name ?? null,
+      goodsTypeName: pickOne(r.goods_type)?.name ?? null,
+    };
+  }
+
+  const items: ListingItem[] = listingRows.map((r) => {
+    const haveIds = r.have_ids ?? [];
+    const haveQtys = r.have_qtys ?? [];
+    const wishIds = r.wish_ids ?? [];
+    const wishQtys = r.wish_qtys ?? [];
+    const haves = haveIds
+      .map((id, i) => toHave(id, haveQtys[i] ?? 1))
+      .filter((x): x is ListingHaveItem => !!x);
+    const wishes = wishIds
+      .map((id, i) => toWish(id, wishQtys[i] ?? 1))
+      .filter((x): x is ListingWishItem => !!x);
+    return {
+      id: r.id,
+      haves,
+      haveLogic: r.have_logic,
+      wishes,
+      wishLogic: r.wish_logic,
       status: r.status,
       note: r.note,
     };

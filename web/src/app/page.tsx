@@ -167,10 +167,12 @@ export default async function Home({ searchParams }: Props) {
       .eq("user_id", user.id)
       .eq("kind", "wanted")
       .neq("status", "archived"),
-    // 自分の active な listings
+    // 自分の active な listings（iter67.3 で N×M × AND/OR 化）
     supabase
       .from("listings")
-      .select("inventory_id, wish_ids")
+      .select(
+        "id, have_ids, have_qtys, have_logic, wish_ids, wish_qtys, wish_logic",
+      )
       .eq("user_id", user.id)
       .eq("status", "active"),
 
@@ -215,8 +217,13 @@ export default async function Home({ searchParams }: Props) {
     .map(toMatchInv)
     .filter((x): x is MatchInv => !!x);
   const myListingsForMatch = (myListings ?? []).map((l) => ({
-    inventoryId: l.inventory_id as string,
+    id: l.id as string,
+    haveIds: (l.have_ids as string[]) ?? [],
+    haveQtys: (l.have_qtys as number[]) ?? [],
+    haveLogic: (l.have_logic as "and" | "or") ?? "and",
     wishIds: (l.wish_ids as string[]) ?? [],
+    wishQtys: (l.wish_qtys as number[]) ?? [],
+    wishLogic: (l.wish_logic as "and" | "or") ?? "or",
   }));
 
   // パートナー単位にグループ化

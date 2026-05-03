@@ -27,6 +27,8 @@ export type MatchCardData = {
   matchType: "complete" | "they_want_you" | "you_want_them";
   distance: string; // 「広域」 or 都道府県
   exchangeType?: "same_kind" | "cross_kind" | "any";
+  /** 個別募集経由のマッチ：'set' = AND バンドル / 'any' = OR 候補 / null = 通常マッチ */
+  listingBadge?: "set" | "any" | null;
 };
 
 const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
@@ -114,15 +116,30 @@ export function MatchCard({ card }: { card: MatchCardData }) {
         />
       </div>
 
-      {/* 交換タイプタグ */}
-      {card.exchangeType && card.exchangeType !== "any" && (
-        <div className="mt-2 flex items-center gap-1.5">
-          <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
-            {EXCHANGE_LABEL[card.exchangeType]}
-          </span>
-          <span className="text-[9.5px] text-gray-500">
-            ※ 相手の自己申告
-          </span>
+      {/* listing バッジ + 交換タイプタグ */}
+      {(card.listingBadge ||
+        (card.exchangeType && card.exchangeType !== "any")) && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {card.listingBadge === "set" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#a695d8] px-2 py-0.5 text-[10px] font-bold text-white">
+              📦 セット
+            </span>
+          )}
+          {card.listingBadge === "any" && (
+            <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
+              いずれか OK
+            </span>
+          )}
+          {card.exchangeType && card.exchangeType !== "any" && (
+            <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
+              {EXCHANGE_LABEL[card.exchangeType]}
+            </span>
+          )}
+          {card.listingBadge && (
+            <span className="text-[9.5px] text-gray-500">
+              ※ 個別募集経由
+            </span>
+          )}
         </div>
       )}
 

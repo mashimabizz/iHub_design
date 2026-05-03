@@ -419,6 +419,121 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67.3：listings を「N×M × AND/OR」に拡張、wish exchange_type 復活
+
+### 背景
+
+オーナーから iter67.2 のあとに整理の続き：
+
+> マッチについてですが…一つの譲に対して、ユーザーが個別募集で指定したものがあると思うので、それがマッチングのパネルにうまく表現できたらなと思っている。今の機能では、個別募集でしているす WISH が、AND 条件なのか OR 条件なのか指定ができないので、それは実装したい。
+>
+> 譲るものが複数あって、それが AND か OR かで話していたけど、私は WISH も同じ場合があると思うんですね…1 対複数または複数対 1 でも、OR 条件であれば比率を設定できればいい。AND 条件であれば、比率を考えるとややこしい。
+>
+> マッチングパネルにすべてを表現する必要はない。パネルには譲と求の組み合わせだけ、タップしたらポップアップで詳細の関係図を出す。
+>
+> Wish で設定するものには必ず同種か異種か同異種かを設定できるように。
+
+### データモデルの方針（合意済み）
+
+**listings：「N×M × AND/OR」マトリクス**
+
+| 列 | 意味 |
+|---|---|
+| `have_ids[]` | 譲側のインベントリ（複数可） |
+| `have_qtys[]` | 各譲の数量（≒比率を内包） |
+| `have_logic` | 'and' or 'or'（複数のとき意味あり） |
+| `wish_ids[]` | 求側のウィッシュ（複数可） |
+| `wish_qtys[]` | 各 wish の数量 |
+| `wish_logic` | 'and' or 'or' |
+
+**「比率」概念は別カラムで持たない** — `qty` がそのまま比率を表現。
+**OR × OR × 両側 ≥2 アイテムは禁止**（誰がどれを選ぶか曖昧、組合せ爆発）。
+
+**listings.exchange_type は廃止**（per-wish の `goods_inventory.exchange_type` が source of truth）。
+
+**wish レベルで exchange_type を必須に復活**（iter65.6 で廃止 → iter67.3 で戻す）。
+
+### 変更内容
+
+#### A. DB マイグレーション（`supabase/migrations/20260503180000_listings_and_or_matrix.sql`）
+
+- 旧列削除：`inventory_id`、`exchange_type`、`ratio_give`、`ratio_receive`、`priority`
+- 新列追加：`have_ids[]`、`have_qtys[]`、`have_logic`、`wish_qtys[]`、`wish_logic`
+- 制約：
+  - have/wish の ids[] と qtys[] の長さ一致 + 1 以上
+  - all qty >= 1（trigger 内検証）
+  - **OR × OR 両側 ≥2 アイテム 禁止**（CHECK）
+  - have_ids 全件が `kind=for_trade` で listing 所有者と一致
+  - wish_ids 全件が `kind=wanted` で listing 所有者と一致
+- インデックス：`have_ids` GIN
+- 既存データは delete（dev のみ・運用前）
+
+#### B. matching.ts：AND/OR 対応
+
+- `ListingForMatch` 型を新スキーマに変更（haveIds[]、wishIds[]、qtys[]、logic）
+- `Match` 型に `matchedListings?: MatchedListingInfo[]` 追加（UI 用）
+- `evaluateListingMatch()` 新関数：
+  - wish_logic = AND ⇒ 全 wish_ids が「相手の譲群のいずれか」にヒット必要
+  - wish_logic = OR ⇒ 1 件以上で OK
+  - have_logic = AND ⇒ 全 have_ids を trade に出す
+  - have_logic = OR ⇒ 1 件のみ仮表示（MVP）
+- 数量 (qty) はマッチ判定では未使用（タグ表示のみ）。実数量は打診で個別調整
+
+#### C. 個別募集 `/listings`：actions / page / View 全面更新
+
+- `actions.ts`：input 形式を `haveIds[]/haveQtys[]/haveLogic/wishIds[]/wishQtys[]/wishLogic`、validateMatrix 関数で OR×OR ガード
+- `page.tsx`：have_ids[] と wish_ids[] を flatten して in-clause で goods_inventory を一括取得
+- `ListingsView.tsx`：上下 2 ブロック（譲群 / 求群）。各群に「全部 AND」or「いずれか OR」バッジ。アイテムは chip 表示で `×qty` バッジ + wish 側のみ exchange_type chip（同種/異種）
+
+#### D. 個別募集作成 `/listings/new/ListingNewForm.tsx` 全面リファクタ
+
+- 譲側：3 列のパネルカードで複数選択 + 各カードに ＋/− qty stepper 内蔵
+- 求側：chip で複数選択 + 各 chip に ＋/− qty stepper
+- 譲・求それぞれが ≥2 のとき AND/OR トグル表示
+- OR × OR ガード（UI 警告 + submit 拒否）
+- 譲・求ともに「推し / 種別」フィルタ chip 行
+
+#### E. wish 作成/表示で exchange_type 復活
+
+- `WishNewForm.tsx`：交換タイプ 3 ボタン（**同異種** / 同種のみ / 異種のみ）。デフォルト同異種。説明：「システムは弾きません（マッチング表示用のタグ）」
+- `WishView.tsx`：wish カード内に exchange_type chip を表示
+
+#### F. マッチカード：listing 経由の「セット / いずれか」バッジ
+
+- `MatchCardData` に `listingBadge?: 'set' | 'any' | null` を追加
+- `HomeView.matchToCard()` で `Match.matchedListings` を見て：
+  - haveLogic=AND or wishLogic=AND が含まれる → `'set'`
+  - その他の listing 経由 → `'any'`
+- `MatchCard` 表示：
+  - `'set'` → 紫背景の「📦 セット」ピル
+  - `'any'` → 透明枠の「いずれか OK」ピル
+  - 「※ 個別募集経由」注記
+
+### TODO（次の iter）
+
+- iter67.3-G **詳細モーダル**：マッチカードタップで開く SVG ベースの関係図（実線=AND / 点線=OR / 数量バッジ） — オーナーの本来希望は線で繋ぐ表現。本実装で foundation は揃っているので別タスク
+- iter67-D：受信表示 `/proposals/[id]`
+
+### 設計判断
+
+- **比率 = qty**：別概念にしない。OR の場合は候補ごとに違う qty を持てる。AND は群全体の数量が固定
+- **MVP では数量はマッチ判定に使わない**（タグ表示のみ）。実数量は打診時に個別調整（プロポーザル送信フォームで stepper）
+- **listings.exchange_type は廃止**。wish レベルが source of truth
+- **OR × OR 両側 ≥2 は禁止**（DB CHECK + UI 警告）
+
+### 関連ファイル
+
+- `supabase/migrations/20260503180000_listings_and_or_matrix.sql`（新規）
+- `web/src/lib/matching.ts`（型 + matchPair + evaluateListingMatch）
+- `web/src/app/listings/{actions.ts, page.tsx, ListingsView.tsx, new/ListingNewForm.tsx}`
+- `web/src/app/page.tsx`（listings select の列名更新）
+- `web/src/app/wishes/new/WishNewForm.tsx`（exchange_type 復活）
+- `web/src/app/wishes/WishView.tsx`（exchange_type chip）
+- `web/src/components/home/MatchCard.tsx`（listingBadge）
+- `web/src/components/home/HomeView.tsx`（matchToCard）
+
+---
+
 ## イテレーション67.1：打診 C-0 改修＋ホームヘッダー整理
 
 ### 背景

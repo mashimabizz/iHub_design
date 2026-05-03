@@ -4,9 +4,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { deleteListing, updateListing } from "./actions";
 
+export type ListingHaveItem = {
+  id: string;
+  title: string;
+  qty: number;
+  photoUrl: string | null;
+  groupName: string | null;
+  characterName: string | null;
+  goodsTypeName: string | null;
+};
+
 export type ListingWishItem = {
   id: string;
   title: string;
+  qty: number;
+  exchangeType: "same_kind" | "cross_kind" | "any";
   groupName: string | null;
   characterName: string | null;
   goodsTypeName: string | null;
@@ -14,25 +26,18 @@ export type ListingWishItem = {
 
 export type ListingItem = {
   id: string;
-  inventory: {
-    title: string;
-    photoUrl: string | null;
-    groupName: string | null;
-    characterName: string | null;
-    goodsTypeName: string | null;
-  } | null;
+  haves: ListingHaveItem[];
+  haveLogic: "and" | "or";
   wishes: ListingWishItem[];
-  exchangeType: "same_kind" | "cross_kind" | "any";
-  ratioGive: number;
-  ratioReceive: number;
+  wishLogic: "and" | "or";
   status: "active" | "paused" | "matched" | "closed";
   note: string | null;
 };
 
 const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
-  same_kind: "同種のみ",
-  cross_kind: "異種のみ",
-  any: "どちらでも",
+  same_kind: "同種",
+  cross_kind: "異種",
+  any: "同異種",
 };
 
 export function ListingsView({ items }: { items: ListingItem[] }) {
@@ -78,7 +83,6 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
       {items.map((it) => {
         const isActive = it.status === "active";
         const isPaused = it.status === "paused";
-        const inv = it.inventory;
         return (
           <div
             key={it.id}
@@ -88,6 +92,7 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
                 : "border-[#3a324a14] opacity-70"
             }`}
           >
+            {/* status 帯 */}
             <div className="flex items-center gap-2.5 px-3.5 pt-3">
               <span
                 className={`rounded-full px-2 py-[3px] text-[9.5px] font-extrabold tracking-[0.5px] ${
@@ -104,9 +109,6 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
                     ? "一時停止"
                     : it.status.toUpperCase()}
               </span>
-              <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
-                {EXCHANGE_LABEL[it.exchangeType]}
-              </span>
               <div className="flex-1" />
               <button
                 type="button"
@@ -117,76 +119,30 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
               </button>
             </div>
 
-            {/* 譲 */}
-            <div className="mt-2.5 flex gap-3 px-3.5">
-              {inv?.photoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={inv.photoUrl}
-                  alt=""
-                  className="h-16 w-16 flex-shrink-0 rounded-lg object-cover"
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-[#a8d4e6]">
-                  譲
-                </div>
-                <div className="mt-0.5 truncate text-[13px] font-bold text-gray-900">
-                  {inv
-                    ? inv.characterName ?? inv.groupName ?? inv.title
-                    : "（在庫なし）"}
-                </div>
-                <div className="text-[11px] text-gray-500">
-                  {inv?.goodsTypeName ?? ""}
-                </div>
-              </div>
+            {/* 譲群 */}
+            <Side
+              kind="have"
+              items={it.haves}
+              logic={it.haveLogic}
+              colorAccent="#a8d4e6"
+              labelText="譲"
+            />
+
+            <div className="mx-3.5 my-1 flex items-center justify-center text-[14px] font-bold text-[#3a324a8c]">
+              ↔
             </div>
 
-            {/* 比率 */}
-            <div className="mx-3.5 mt-2 flex items-center justify-center gap-1 rounded-lg bg-[#a695d80a] py-1.5">
-              <span className="text-[14px] font-extrabold tabular-nums text-[#a695d8]">
-                {it.ratioGive}
-              </span>
-              <span className="text-[10px] font-bold text-[#3a324a8c]">譲</span>
-              <span className="mx-2 text-[14px] font-bold text-[#3a324a8c]">
-                ↔
-              </span>
-              <span className="text-[14px] font-extrabold tabular-nums text-[#a695d8]">
-                {it.ratioReceive}
-              </span>
-              <span className="text-[10px] font-bold text-[#3a324a8c]">受</span>
-            </div>
-
-            {/* wish 一覧（複数） */}
-            <div className="mt-2 px-3.5 pb-2.5">
-              <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-[#f3c5d4]">
-                受（求）· {it.wishes.length} 件
-              </div>
-              {it.wishes.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-[#3a324a14] bg-[#fbf9fc] p-2 text-center text-[11px] text-gray-500">
-                  wish なし
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {it.wishes.map((w) => (
-                    <span
-                      key={w.id}
-                      className="inline-flex items-center gap-1 rounded-full border border-[#f3c5d455] bg-[#f3c5d40f] px-2.5 py-1 text-[11px] font-bold text-[#3a324a]"
-                    >
-                      {w.characterName ?? w.groupName ?? w.title}
-                      {w.goodsTypeName && (
-                        <span className="text-[9.5px] font-semibold text-[#3a324a8c]">
-                          · {w.goodsTypeName}
-                        </span>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* 求群 */}
+            <Side
+              kind="wish"
+              items={it.wishes}
+              logic={it.wishLogic}
+              colorAccent="#f3c5d4"
+              labelText="求"
+            />
 
             {it.note && (
-              <div className="mx-3.5 mb-2 rounded-lg bg-[#3a324a06] px-2.5 py-1.5 text-[11px] text-[#3a324a]">
+              <div className="mx-3.5 my-2 rounded-lg bg-[#3a324a06] px-2.5 py-1.5 text-[11px] text-[#3a324a]">
                 {it.note}
               </div>
             )}
@@ -205,5 +161,91 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
         );
       })}
     </div>
+  );
+}
+
+function Side({
+  kind,
+  items,
+  logic,
+  colorAccent,
+  labelText,
+}: {
+  kind: "have" | "wish";
+  items: ListingHaveItem[] | ListingWishItem[];
+  logic: "and" | "or";
+  colorAccent: string;
+  labelText: string;
+}) {
+  const isMulti = items.length > 1;
+  const logicLabel = logic === "and" ? "全部 AND" : "いずれか OR";
+
+  return (
+    <div className="px-3.5 pt-2">
+      <div className="mb-1.5 flex items-baseline gap-2">
+        <span
+          className="text-[10px] font-bold uppercase tracking-wider"
+          style={{ color: colorAccent }}
+        >
+          {labelText} ({items.length})
+        </span>
+        {isMulti && (
+          <span
+            className={`rounded-full px-1.5 py-[1px] text-[9.5px] font-extrabold ${
+              logic === "and"
+                ? "bg-[#a695d8] text-white"
+                : "border border-[#a695d855] bg-white text-[#a695d8]"
+            }`}
+          >
+            {logicLabel}
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((it) => (
+          <ItemChip key={it.id} item={it} kind={kind} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ItemChip({
+  item,
+  kind,
+}: {
+  item: ListingHaveItem | ListingWishItem;
+  kind: "have" | "wish";
+}) {
+  const name = item.characterName ?? item.groupName ?? item.title;
+  const exchangeType =
+    kind === "wish"
+      ? (item as ListingWishItem).exchangeType
+      : null;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+        kind === "have"
+          ? "border border-[#a8d4e655] bg-[#a8d4e60f] text-[#3a324a]"
+          : "border border-[#f3c5d455] bg-[#f3c5d40f] text-[#3a324a]"
+      }`}
+    >
+      {name}
+      {item.goodsTypeName && (
+        <span className="text-[9.5px] font-semibold text-[#3a324a8c]">
+          · {item.goodsTypeName}
+        </span>
+      )}
+      <span className="ml-0.5 rounded-sm bg-[#3a324a14] px-1 text-[9.5px] font-extrabold tabular-nums text-[#3a324a]">
+        ×{item.qty}
+      </span>
+      {exchangeType && exchangeType !== "any" && (
+        <span className="ml-0.5 text-[9px] font-bold text-[#a695d8]">
+          {EXCHANGE_LABEL[exchangeType]}
+        </span>
+      )}
+    </span>
   );
 }

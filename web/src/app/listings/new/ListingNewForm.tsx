@@ -3,10 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
-import {
-  createListing,
-  type ListingExchangeType,
-} from "@/app/listings/actions";
+import { createListing, type ListingLogic } from "@/app/listings/actions";
 
 type InventoryOpt = {
   id: string;
@@ -21,23 +18,21 @@ type InventoryOpt = {
 type WishOpt = {
   id: string;
   title: string;
-  exchangeType?: ListingExchangeType;
+  exchangeType?: "same_kind" | "cross_kind" | "any";
   groupName: string | null;
   characterName: string | null;
   goodsTypeName: string | null;
 };
 
-const EXCHANGE_OPTS: {
-  value: ListingExchangeType;
-  label: string;
-  sub: string;
-}[] = [
-  { value: "any", label: "どちらでも", sub: "同種・異種を問わない" },
-  { value: "same_kind", label: "同種のみ", sub: "同じ種別での交換" },
-  { value: "cross_kind", label: "異種のみ", sub: "別の種別との交換" },
-];
+type Selected = { id: string; qty: number };
 
 const ALL = "すべて";
+
+const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
+  same_kind: "同種",
+  cross_kind: "異種",
+  any: "同異種",
+};
 
 export function ListingNewForm({
   inventoryItems,
@@ -48,118 +43,109 @@ export function ListingNewForm({
 }) {
   const router = useRouter();
 
-  // ─── 譲（単選択） ─────────────────────────────────
-  const [inventoryId, setInventoryId] = useState(inventoryItems[0]?.id ?? "");
-  // 絞り込み（推し / 種別）
-  const [pushFilter, setPushFilter] = useState(ALL);
-  const [typeFilter, setTypeFilter] = useState(ALL);
+  const [haves, setHaves] = useState<Selected[]>([]);
+  const [haveLogic, setHaveLogic] = useState<ListingLogic>("and");
 
-  // フィルタ候補の自動抽出（重複排除）
-  const pushOptions = useMemo(() => {
-    const set = new Set<string>([ALL]);
-    for (const it of inventoryItems) {
-      if (it.groupName) set.add(it.groupName);
-      if (it.characterName) set.add(it.characterName);
-    }
-    return Array.from(set);
-  }, [inventoryItems]);
-  const typeOptions = useMemo(() => {
-    const set = new Set<string>([ALL]);
-    for (const it of inventoryItems) {
-      if (it.goodsTypeName) set.add(it.goodsTypeName);
-    }
-    return Array.from(set);
-  }, [inventoryItems]);
+  const [wishes, setWishes] = useState<Selected[]>([]);
+  const [wishLogic, setWishLogic] = useState<ListingLogic>("or");
 
-  const filteredInventory = useMemo(() => {
-    return inventoryItems.filter((it) => {
-      if (
-        pushFilter !== ALL &&
-        it.groupName !== pushFilter &&
-        it.characterName !== pushFilter
-      ) {
-        return false;
-      }
-      if (typeFilter !== ALL && it.goodsTypeName !== typeFilter) {
-        return false;
-      }
-      return true;
-    });
-  }, [inventoryItems, pushFilter, typeFilter]);
-
-  // ─── wish（複数選択） ─────────────────────────────
-  const [wishIds, setWishIds] = useState<string[]>([]);
-  // wish 絞り込み
-  const [wishPushFilter, setWishPushFilter] = useState(ALL);
-  const [wishTypeFilter, setWishTypeFilter] = useState(ALL);
-
-  const wishPushOptions = useMemo(() => {
-    const set = new Set<string>([ALL]);
-    for (const w of wishItems) {
-      if (w.groupName) set.add(w.groupName);
-      if (w.characterName) set.add(w.characterName);
-    }
-    return Array.from(set);
-  }, [wishItems]);
-  const wishTypeOptions = useMemo(() => {
-    const set = new Set<string>([ALL]);
-    for (const w of wishItems) {
-      if (w.goodsTypeName) set.add(w.goodsTypeName);
-    }
-    return Array.from(set);
-  }, [wishItems]);
-
-  const filteredWishes = useMemo(() => {
-    return wishItems.filter((w) => {
-      if (
-        wishPushFilter !== ALL &&
-        w.groupName !== wishPushFilter &&
-        w.characterName !== wishPushFilter
-      ) {
-        return false;
-      }
-      if (wishTypeFilter !== ALL && w.goodsTypeName !== wishTypeFilter) {
-        return false;
-      }
-      return true;
-    });
-  }, [wishItems, wishPushFilter, wishTypeFilter]);
-
-  // ─── その他 ───────────────────────────────────
-  const [exchangeType, setExchangeType] = useState<ListingExchangeType>("any");
-  const [ratioGive, setRatioGive] = useState(1);
-  const [ratioReceive, setRatioReceive] = useState(1);
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /* フィルタ */
+  const [havePushFilter, setHavePushFilter] = useState(ALL);
+  const [haveTypeFilter, setHaveTypeFilter] = useState(ALL);
+  const [wishPushFilter, setWishPushFilter] = useState(ALL);
+  const [wishTypeFilter, setWishTypeFilter] = useState(ALL);
+
+  /* フィルタ候補 */
+  const havePushOpts = useMemo(
+    () => collectFilter(inventoryItems, "push"),
+    [inventoryItems],
+  );
+  const haveTypeOpts = useMemo(
+    () => collectFilter(inventoryItems, "type"),
+    [inventoryItems],
+  );
+  const wishPushOpts = useMemo(
+    () => collectFilter(wishItems, "push"),
+    [wishItems],
+  );
+  const wishTypeOpts = useMemo(
+    () => collectFilter(wishItems, "type"),
+    [wishItems],
+  );
+
+  const filteredInv = useMemo(
+    () => filterItems(inventoryItems, havePushFilter, haveTypeFilter),
+    [inventoryItems, havePushFilter, haveTypeFilter],
+  );
+  const filteredWishes = useMemo(
+    () => filterItems(wishItems, wishPushFilter, wishTypeFilter),
+    [wishItems, wishPushFilter, wishTypeFilter],
+  );
 
   useEffect(() => {
     router.prefetch("/listings");
   }, [router]);
 
-  function toggleWish(id: string) {
-    setWishIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+  /* OR×OR ガード（UI 段階で警告） */
+  const orOrViolation =
+    haveLogic === "or" && wishLogic === "or" && haves.length > 1 && wishes.length > 1;
+
+  function toggleSelect(
+    set: Selected[],
+    setSet: (s: Selected[]) => void,
+    id: string,
+  ) {
+    const existing = set.find((s) => s.id === id);
+    if (existing) {
+      setSet(set.filter((s) => s.id !== id));
+    } else {
+      setSet([...set, { id, qty: 1 }]);
+    }
+  }
+
+  function setQty(
+    set: Selected[],
+    setSet: (s: Selected[]) => void,
+    id: string,
+    delta: number,
+  ) {
+    setSet(
+      set.map((s) =>
+        s.id === id
+          ? { ...s, qty: Math.max(1, Math.min(99, s.qty + delta)) }
+          : s,
+      ),
     );
   }
 
   async function handleSubmit() {
     setError(null);
-    if (!inventoryId) {
-      setError("譲るグッズを選択してください");
+    if (haves.length === 0) {
+      setError("譲るグッズを 1 件以上選択してください");
       return;
     }
-    if (wishIds.length === 0) {
+    if (wishes.length === 0) {
       setError("求める wish を 1 件以上選択してください");
+      return;
+    }
+    if (orOrViolation) {
+      setError(
+        "両側で複数アイテム × OR は曖昧なため指定できません。どちらかを AND にするか片側を 1 件にしてください。",
+      );
       return;
     }
     setPending(true);
     const r = await createListing({
-      inventoryId,
-      wishIds,
-      exchangeType,
-      ratioGive,
-      ratioReceive,
+      haveIds: haves.map((s) => s.id),
+      haveQtys: haves.map((s) => s.qty),
+      haveLogic,
+      wishIds: wishes.map((s) => s.id),
+      wishQtys: wishes.map((s) => s.qty),
+      wishLogic,
       note: note.trim() || undefined,
     });
     if (r?.error) {
@@ -178,152 +164,112 @@ export function ListingNewForm({
       }}
       className="space-y-5"
     >
-      {/* 譲るグッズ：パネル形式 + 絞り込み */}
+      {/* ─ 譲側 ─ */}
       <Section
-        label="譲るグッズ（1 件選択）"
+        label="譲るグッズ"
         required
-        hint={`${filteredInventory.length} / ${inventoryItems.length}`}
+        hint={`${haves.length} 件選択中 / ${filteredInv.length} 件表示`}
       >
         <FilterRow
           label="推し"
-          options={pushOptions}
-          value={pushFilter}
-          onChange={setPushFilter}
+          options={havePushOpts}
+          value={havePushFilter}
+          onChange={setHavePushFilter}
         />
         <FilterRow
           label="種別"
-          options={typeOptions}
-          value={typeFilter}
-          onChange={setTypeFilter}
+          options={haveTypeOpts}
+          value={haveTypeFilter}
+          onChange={setHaveTypeFilter}
         />
-        {filteredInventory.length === 0 ? (
-          <div className="mt-2 rounded-xl border border-dashed border-[#3a324a14] bg-[#fbf9fc] p-4 text-center text-[11px] text-gray-500">
-            条件に合う譲るグッズがありません
-          </div>
+
+        {filteredInv.length === 0 ? (
+          <Empty label="条件に合う譲るグッズがありません" />
         ) : (
           <div className="mt-2 grid grid-cols-3 gap-2">
-            {filteredInventory.map((it) => {
-              const sel = inventoryId === it.id;
+            {filteredInv.map((it) => {
+              const sel = haves.find((s) => s.id === it.id);
               return (
                 <PanelCard
                   key={it.id}
                   item={it}
-                  selected={sel}
-                  onClick={() => setInventoryId(it.id)}
+                  selected={!!sel}
+                  qty={sel?.qty ?? 0}
+                  onClick={() => toggleSelect(haves, setHaves, it.id)}
+                  onQty={(d) => setQty(haves, setHaves, it.id, d)}
                 />
               );
             })}
           </div>
         )}
+
+        {haves.length > 1 && (
+          <LogicToggle
+            label="この複数の譲は…"
+            value={haveLogic}
+            onChange={setHaveLogic}
+          />
+        )}
       </Section>
 
-      {/* 求める wish：複数選択 + 絞り込み */}
+      {/* ─ 求側 ─ */}
       <Section
-        label={`求める wish（複数選択）`}
+        label="求める wish"
         required
-        hint={`${wishIds.length} 件選択中 / ${filteredWishes.length} 件表示`}
+        hint={`${wishes.length} 件選択中 / ${filteredWishes.length} 件表示`}
       >
         <FilterRow
           label="推し"
-          options={wishPushOptions}
+          options={wishPushOpts}
           value={wishPushFilter}
           onChange={setWishPushFilter}
         />
         <FilterRow
           label="種別"
-          options={wishTypeOptions}
+          options={wishTypeOpts}
           value={wishTypeFilter}
           onChange={setWishTypeFilter}
         />
+
         {filteredWishes.length === 0 ? (
-          <div className="mt-2 rounded-xl border border-dashed border-[#3a324a14] bg-[#fbf9fc] p-4 text-center text-[11px] text-gray-500">
-            条件に合う wish がありません
-          </div>
+          <Empty label="条件に合う wish がありません" />
         ) : (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {filteredWishes.map((w) => {
-              const sel = wishIds.includes(w.id);
+              const sel = wishes.find((s) => s.id === w.id);
               return (
-                <button
+                <WishChip
                   key={w.id}
-                  type="button"
-                  onClick={() => toggleWish(w.id)}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11.5px] font-bold transition-all ${
-                    sel
-                      ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
-                      : "border border-[#3a324a14] bg-white text-gray-700"
-                  }`}
-                >
-                  {w.characterName ?? w.groupName ?? w.title}
-                  {w.goodsTypeName && (
-                    <span
-                      className={`text-[9.5px] font-semibold ${
-                        sel ? "text-white/80" : "text-gray-500"
-                      }`}
-                    >
-                      · {w.goodsTypeName}
-                    </span>
-                  )}
-                </button>
+                  item={w}
+                  selected={!!sel}
+                  qty={sel?.qty ?? 0}
+                  onClick={() => toggleSelect(wishes, setWishes, w.id)}
+                  onQty={(d) => setQty(wishes, setWishes, w.id, d)}
+                />
               );
             })}
           </div>
         )}
+
+        {wishes.length > 1 && (
+          <LogicToggle
+            label="この複数の wish は…"
+            value={wishLogic}
+            onChange={setWishLogic}
+          />
+        )}
       </Section>
 
-      {/* 交換タイプ */}
-      <Section label="交換タイプ" hint="自己申告タグ・判定なし">
-        <div className="grid grid-cols-3 gap-1.5">
-          {EXCHANGE_OPTS.map((e) => {
-            const active = exchangeType === e.value;
-            return (
-              <button
-                key={e.value}
-                type="button"
-                onClick={() => setExchangeType(e.value)}
-                className={`flex flex-col items-center justify-center rounded-xl px-2 py-2.5 text-center transition-all ${
-                  active
-                    ? "bg-[#a695d8] text-white shadow-[0_4px_10px_rgba(166,149,216,0.33)]"
-                    : "border border-[#3a324a14] bg-white text-gray-700"
-                }`}
-              >
-                <span className="text-[12px] font-bold">{e.label}</span>
-                <span
-                  className={`mt-0.5 text-[9.5px] leading-tight ${
-                    active ? "text-white/85" : "text-gray-500"
-                  }`}
-                >
-                  {e.sub}
-                </span>
-              </button>
-            );
-          })}
+      {orOrViolation && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-700">
+          ⚠️
+          譲・求の両方で複数アイテム ×{" "}
+          <b>OR</b>{" "}
+          を選んでいます。「誰がどれを選ぶのか」が曖昧になるため、
+          <b>どちらかは AND</b>
+          にするか、片側のアイテムを 1 件にしてください。
         </div>
-      </Section>
-
-      {/* 比率 */}
-      <Section label="交換比率" hint="1〜10">
-        <div className="flex items-center justify-center gap-3 rounded-xl bg-[#a695d80a] py-3">
-          <Stepper
-            value={ratioGive}
-            onChange={setRatioGive}
-            min={1}
-            max={10}
-            label="譲"
-          />
-          <span className="text-[18px] font-bold text-[#3a324a8c]">↔</span>
-          <Stepper
-            value={ratioReceive}
-            onChange={setRatioReceive}
-            min={1}
-            max={10}
-            label="受"
-          />
-        </div>
-        <p className="mt-1 px-1 text-[10.5px] text-gray-500">
-          例: 「譲 1 ↔ 受 3」=「自分の譲 1 つ出して、相手から 3 つもらう」
-        </p>
-      </Section>
+      )}
 
       {/* メモ */}
       <Section label="メモ" hint={`${note.length} / 500`}>
@@ -343,23 +289,132 @@ export function ListingNewForm({
         </div>
       )}
 
-      <PrimaryButton type="submit" pending={pending} pendingLabel="登録中…">
+      <PrimaryButton
+        type="submit"
+        pending={pending}
+        pendingLabel="登録中…"
+        disabled={orOrViolation}
+      >
         個別募集を作成
       </PrimaryButton>
     </form>
   );
 }
 
-/* ─── パネルカード（在庫一覧の ItemCard を簡略化したもの） ─── */
+/* ─── helpers ───────────────────────────────────────── */
 
+function collectFilter(
+  arr: { groupName: string | null; characterName: string | null; goodsTypeName: string | null }[],
+  type: "push" | "type",
+): string[] {
+  const set = new Set<string>([ALL]);
+  for (const it of arr) {
+    if (type === "push") {
+      if (it.groupName) set.add(it.groupName);
+      if (it.characterName) set.add(it.characterName);
+    } else {
+      if (it.goodsTypeName) set.add(it.goodsTypeName);
+    }
+  }
+  return Array.from(set);
+}
+
+function filterItems<
+  T extends {
+    groupName: string | null;
+    characterName: string | null;
+    goodsTypeName: string | null;
+  },
+>(arr: T[], pushFilter: string, typeFilter: string): T[] {
+  return arr.filter((it) => {
+    if (
+      pushFilter !== ALL &&
+      it.groupName !== pushFilter &&
+      it.characterName !== pushFilter
+    ) {
+      return false;
+    }
+    if (typeFilter !== ALL && it.goodsTypeName !== typeFilter) return false;
+    return true;
+  });
+}
+
+/* ─── 共通 sub-components ──────────────────────────── */
+
+function Empty({ label }: { label: string }) {
+  return (
+    <div className="mt-2 rounded-xl border border-dashed border-[#3a324a14] bg-[#fbf9fc] p-4 text-center text-[11px] text-gray-500">
+      {label}
+    </div>
+  );
+}
+
+function LogicToggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: ListingLogic;
+  onChange: (v: ListingLogic) => void;
+}) {
+  return (
+    <div className="mt-3 rounded-xl border border-[#3a324a14] bg-[#fbf9fc] p-2.5">
+      <div className="mb-1.5 px-1 text-[11px] font-bold text-[#3a324a8c]">
+        {label}
+      </div>
+      <div className="flex gap-1">
+        {(
+          [
+            { v: "and" as const, label: "全部 (AND)", sub: "セットで取引" },
+            { v: "or" as const, label: "いずれか (OR)", sub: "どれか1つでOK" },
+          ]
+        ).map((opt) => {
+          const active = value === opt.v;
+          return (
+            <button
+              key={opt.v}
+              type="button"
+              onClick={() => onChange(opt.v)}
+              className={`flex-1 rounded-lg px-3 py-2 text-center transition-all ${
+                active
+                  ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.33)]"
+                  : "bg-white text-gray-700"
+              }`}
+            >
+              <div
+                className={`text-[12px] ${active ? "font-extrabold" : "font-bold"}`}
+              >
+                {opt.label}
+              </div>
+              <div
+                className={`mt-0.5 text-[9.5px] ${
+                  active ? "text-white/80" : "text-gray-500"
+                }`}
+              >
+                {opt.sub}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* 譲側のパネルカード */
 function PanelCard({
   item,
   selected,
+  qty,
   onClick,
+  onQty,
 }: {
   item: InventoryOpt;
   selected: boolean;
+  qty: number;
   onClick: () => void;
+  onQty: (delta: number) => void;
 }) {
   const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 82%) 6px 11px)`;
   const memberLabelColor = `hsl(${item.hue}, 35%, 28%)`;
@@ -368,10 +423,8 @@ function PanelCard({
   const hasPhoto = !!item.photoUrl;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`relative overflow-hidden rounded-xl border shadow-[0_2px_6px_rgba(58,50,74,0.08)] transition-all active:scale-[0.97] ${
+    <div
+      className={`relative overflow-hidden rounded-xl border shadow-[0_2px_6px_rgba(58,50,74,0.08)] transition-all ${
         selected
           ? "border-[2px] border-[#a695d8] shadow-[0_6px_16px_rgba(166,149,216,0.45)]"
           : "border-[#3a324a14]"
@@ -381,18 +434,24 @@ function PanelCard({
         background: hasPhoto ? "#3a324a" : stripeBg,
       }}
     >
+      <button
+        type="button"
+        onClick={onClick}
+        className="absolute inset-0 z-0 active:scale-[0.97]"
+        aria-label={selected ? "選択解除" : "選択"}
+      />
       {hasPhoto && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={item.photoUrl!}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover"
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
           loading="lazy"
         />
       )}
 
       {/* メンバー名 */}
-      <div className="absolute left-1.5 top-1.5 z-10">
+      <div className="pointer-events-none absolute left-1.5 top-1.5 z-10">
         <div
           className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
             hasPhoto ? "bg-black/55 text-white backdrop-blur-sm" : "bg-white/85"
@@ -403,25 +462,43 @@ function PanelCard({
         </div>
       </div>
 
-      {/* 選択チェックマーク */}
-      {selected && (
-        <div className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.6)]">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path
-              d="M2.5 6l2.5 2.5L9.5 3.5"
-              stroke="#fff"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+      {selected ? (
+        <div className="absolute right-1.5 top-1.5 z-20 flex items-center gap-0.5 rounded-full bg-white/95 p-0.5 shadow-[0_2px_6px_rgba(0,0,0,0.15)]">
+          <button
+            type="button"
+            disabled={qty <= 1}
+            onClick={(e) => {
+              e.stopPropagation();
+              onQty(-1);
+            }}
+            className="flex h-5 w-5 items-center justify-center rounded-full bg-[#a695d8] text-[12px] font-bold text-white disabled:bg-gray-200 disabled:text-gray-400"
+          >
+            −
+          </button>
+          <span className="min-w-[22px] text-center text-[10.5px] font-extrabold tabular-nums">
+            ×{qty}
+          </span>
+          <button
+            type="button"
+            disabled={qty >= 99}
+            onClick={(e) => {
+              e.stopPropagation();
+              onQty(1);
+            }}
+            className="flex h-5 w-5 items-center justify-center rounded-full bg-[#a695d8] text-[12px] font-bold text-white disabled:bg-gray-200 disabled:text-gray-400"
+          >
+            ＋
+          </button>
+        </div>
+      ) : (
+        <div className="pointer-events-none absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border-[1.5px] border-white bg-white/55 text-[#a695d8] shadow-[0_2px_6px_rgba(0,0,0,0.15)]">
+          ＋
         </div>
       )}
 
-      {/* イニシャル（写真なし時） */}
       {!hasPhoto && (
         <div
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[28px] font-extrabold text-white/90"
+          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[28px] font-extrabold text-white/90"
           style={{ textShadow: initialShadow }}
         >
           {memberName[0]}
@@ -430,7 +507,7 @@ function PanelCard({
 
       {/* 下部ストリップ */}
       <div
-        className="absolute bottom-0 left-0 right-0 px-1.5 pb-1.5 pt-1"
+        className="pointer-events-none absolute bottom-0 left-0 right-0 px-1.5 pb-1.5 pt-1"
         style={{
           background:
             "linear-gradient(180deg, transparent, rgba(255,255,255,0.95))",
@@ -440,11 +517,90 @@ function PanelCard({
           {item.goodsTypeName ?? "?"}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
-/* ─── フィルタ chip 行 ─── */
+/* 求側の chip */
+function WishChip({
+  item,
+  selected,
+  qty,
+  onClick,
+  onQty,
+}: {
+  item: WishOpt;
+  selected: boolean;
+  qty: number;
+  onClick: () => void;
+  onQty: (delta: number) => void;
+}) {
+  const name = item.characterName ?? item.groupName ?? item.title;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11.5px] font-bold transition-all ${
+        selected
+          ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
+          : "border border-[#3a324a14] bg-white text-gray-700"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex items-center gap-1.5"
+      >
+        {name}
+        {item.goodsTypeName && (
+          <span
+            className={`text-[9.5px] font-semibold ${
+              selected ? "text-white/80" : "text-gray-500"
+            }`}
+          >
+            · {item.goodsTypeName}
+          </span>
+        )}
+        {item.exchangeType && item.exchangeType !== "any" && (
+          <span
+            className={`text-[9px] font-bold ${selected ? "text-white/85" : "text-[#a695d8]"}`}
+          >
+            {EXCHANGE_LABEL[item.exchangeType]}
+          </span>
+        )}
+      </button>
+      {selected && (
+        <span className="ml-0.5 inline-flex items-center gap-0.5 rounded-full bg-white/25 px-1 py-[1px]">
+          <button
+            type="button"
+            disabled={qty <= 1}
+            onClick={(e) => {
+              e.stopPropagation();
+              onQty(-1);
+            }}
+            className="flex h-4 w-4 items-center justify-center rounded-full bg-white/95 text-[10px] font-bold text-[#a695d8] disabled:opacity-50"
+          >
+            −
+          </button>
+          <span className="min-w-[18px] text-center text-[10px] font-extrabold tabular-nums">
+            ×{qty}
+          </span>
+          <button
+            type="button"
+            disabled={qty >= 99}
+            onClick={(e) => {
+              e.stopPropagation();
+              onQty(1);
+            }}
+            className="flex h-4 w-4 items-center justify-center rounded-full bg-white/95 text-[10px] font-bold text-[#a695d8] disabled:opacity-50"
+          >
+            ＋
+          </button>
+        </span>
+      )}
+    </span>
+  );
+}
+
+/* ─── filter & section ─────────────────────────────── */
 
 function FilterRow({
   label,
@@ -505,47 +661,6 @@ function Section({
         {hint && <span className="text-[10px] text-gray-500">{hint}</span>}
       </div>
       {children}
-    </div>
-  );
-}
-
-function Stepper({
-  value,
-  onChange,
-  min,
-  max,
-  label,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  min: number;
-  max: number;
-  label: string;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onChange(Math.max(min, value - 1))}
-          disabled={value <= min}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white text-lg font-bold text-gray-700 disabled:opacity-30"
-        >
-          −
-        </button>
-        <div className="min-w-[36px] text-center text-[24px] font-extrabold tabular-nums text-[#a695d8]">
-          {value}
-        </div>
-        <button
-          type="button"
-          onClick={() => onChange(Math.min(max, value + 1))}
-          disabled={value >= max}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white text-lg font-bold text-gray-700 disabled:opacity-30"
-        >
-          ＋
-        </button>
-      </div>
-      <span className="text-[10px] font-bold text-[#3a324a8c]">{label}</span>
     </div>
   );
 }

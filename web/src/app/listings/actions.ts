@@ -6,38 +6,33 @@ import { createClient } from "@/lib/supabase/server";
 
 type ActionResult = { error?: string } | undefined;
 
-const VALID_EXCHANGE = ["same_kind", "cross_kind", "any"] as const;
 const VALID_STATUS = ["active", "paused", "matched", "closed"] as const;
+const VALID_LOGIC = ["and", "or"] as const;
 
-export type ListingExchangeType = "same_kind" | "cross_kind" | "any";
 export type ListingStatus = "active" | "paused" | "matched" | "closed";
+export type ListingLogic = "and" | "or";
 
 /**
- * 個別募集を作成。
- * inventory_id (kind=for_trade) と wish_ids[] (kind=wanted) は同 user のもの。
- * trigger でも検証されるが、サーバー側でも事前チェック。
+ * iter67.3：個別募集を「N×M × AND/OR」マトリクスで作成。
+ *
+ * - 譲側 (have): 複数のインベントリ + 各数量 + AND/OR
+ * - 求側 (wish): 複数のウィッシュ + 各数量 + AND/OR
+ * - 「比率」概念は qty に統合（別概念は持たない）
+ * - OR × OR 両側 ≥2 アイテム は禁止（曖昧 / 組合せ爆発防止）
+ *
+ * trigger と DB 制約でも検証されるが、サーバー側でも事前チェック。
  */
 export async function createListing(input: {
-  inventoryId: string;
+  haveIds: string[];
+  haveQtys: number[];
+  haveLogic: ListingLogic;
   wishIds: string[];
-  exchangeType?: ListingExchangeType;
-  ratioGive: number;
-  ratioReceive: number;
+  wishQtys: number[];
+  wishLogic: ListingLogic;
   note?: string;
 }): Promise<ActionResult> {
-  const exchangeType = input.exchangeType ?? "any";
-  if (!VALID_EXCHANGE.includes(exchangeType)) {
-    return { error: "交換タイプが不正です" };
-  }
-  if (input.ratioGive < 1 || input.ratioGive > 10) {
-    return { error: "譲の比率は 1〜10 で指定してください" };
-  }
-  if (input.ratioReceive < 1 || input.ratioReceive > 10) {
-    return { error: "受の比率は 1〜10 で指定してください" };
-  }
-  if (!input.wishIds || input.wishIds.length === 0) {
-    return { error: "求める wish を 1 件以上選択してください" };
-  }
+  const v = validateMatrix(input);
+  if (v) return v;
 
   const supabase = await createClient();
   const {
@@ -47,11 +42,12 @@ export async function createListing(input: {
 
   const { error } = await supabase.from("listings").insert({
     user_id: user.id,
-    inventory_id: input.inventoryId,
+    have_ids: input.haveIds,
+    have_qtys: input.haveQtys,
+    have_logic: input.haveLogic,
     wish_ids: input.wishIds,
-    exchange_type: exchangeType,
-    ratio_give: input.ratioGive,
-    ratio_receive: input.ratioReceive,
+    wish_qtys: input.wishQtys,
+    wish_logic: input.wishLogic,
     note: input.note?.trim() || null,
   });
 
@@ -62,10 +58,12 @@ export async function createListing(input: {
 
 export async function updateListing(input: {
   id: string;
+  haveIds?: string[];
+  haveQtys?: number[];
+  haveLogic?: ListingLogic;
   wishIds?: string[];
-  exchangeType?: ListingExchangeType;
-  ratioGive?: number;
-  ratioReceive?: number;
+  wishQtys?: number[];
+  wishLogic?: ListingLogic;
   status?: ListingStatus;
   note?: string;
 }): Promise<ActionResult> {
@@ -75,27 +73,45 @@ export async function updateListing(input: {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // 全マトリクス更新時は再 validate
+  if (
+    input.haveIds !== undefined ||
+    input.wishIds !== undefined ||
+    input.haveLogic !== undefined ||
+    input.wishLogic !== undefined
+  ) {
+    // 部分更新は禁止（マトリクス全体を一括で渡してもらう）
+    if (
+      !input.haveIds ||
+      !input.haveQtys ||
+      !input.haveLogic ||
+      !input.wishIds ||
+      !input.wishQtys ||
+      !input.wishLogic
+    ) {
+      return {
+        error:
+          "マトリクスを更新する場合は have/wish/logic 全てまとめて指定してください",
+      };
+    }
+    const v = validateMatrix({
+      haveIds: input.haveIds,
+      haveQtys: input.haveQtys,
+      haveLogic: input.haveLogic,
+      wishIds: input.wishIds,
+      wishQtys: input.wishQtys,
+      wishLogic: input.wishLogic,
+    });
+    if (v) return v;
+  }
+
   const updateFields: Record<string, unknown> = {};
-  if (input.wishIds !== undefined) {
-    if (input.wishIds.length === 0)
-      return { error: "wish を 1 件以上選択してください" };
-    updateFields.wish_ids = input.wishIds;
-  }
-  if (input.exchangeType) {
-    if (!VALID_EXCHANGE.includes(input.exchangeType))
-      return { error: "交換タイプが不正です" };
-    updateFields.exchange_type = input.exchangeType;
-  }
-  if (input.ratioGive !== undefined) {
-    if (input.ratioGive < 1 || input.ratioGive > 10)
-      return { error: "譲の比率は 1〜10" };
-    updateFields.ratio_give = input.ratioGive;
-  }
-  if (input.ratioReceive !== undefined) {
-    if (input.ratioReceive < 1 || input.ratioReceive > 10)
-      return { error: "受の比率は 1〜10" };
-    updateFields.ratio_receive = input.ratioReceive;
-  }
+  if (input.haveIds) updateFields.have_ids = input.haveIds;
+  if (input.haveQtys) updateFields.have_qtys = input.haveQtys;
+  if (input.haveLogic) updateFields.have_logic = input.haveLogic;
+  if (input.wishIds) updateFields.wish_ids = input.wishIds;
+  if (input.wishQtys) updateFields.wish_qtys = input.wishQtys;
+  if (input.wishLogic) updateFields.wish_logic = input.wishLogic;
   if (input.status) {
     if (!VALID_STATUS.includes(input.status))
       return { error: "ステータス値が不正です" };
@@ -103,6 +119,8 @@ export async function updateListing(input: {
   }
   if (input.note !== undefined)
     updateFields.note = input.note.trim() || null;
+
+  if (Object.keys(updateFields).length === 0) return undefined;
 
   const { error } = await supabase
     .from("listings")
@@ -130,5 +148,54 @@ export async function deleteListing(id: string): Promise<ActionResult> {
 
   if (error) return { error: error.message };
   revalidatePath("/listings");
+  return undefined;
+}
+
+/* ─── helpers ─────────────────────────────────────── */
+
+function validateMatrix(input: {
+  haveIds: string[];
+  haveQtys: number[];
+  haveLogic: ListingLogic;
+  wishIds: string[];
+  wishQtys: number[];
+  wishLogic: ListingLogic;
+}): { error: string } | undefined {
+  if (!VALID_LOGIC.includes(input.haveLogic)) {
+    return { error: "譲側の条件タイプ（AND/OR）が不正です" };
+  }
+  if (!VALID_LOGIC.includes(input.wishLogic)) {
+    return { error: "求側の条件タイプ（AND/OR）が不正です" };
+  }
+  if (!input.haveIds.length) {
+    return { error: "譲るグッズを 1 件以上選択してください" };
+  }
+  if (!input.wishIds.length) {
+    return { error: "求める wish を 1 件以上選択してください" };
+  }
+  if (input.haveIds.length !== input.haveQtys.length) {
+    return { error: "譲側の数量配列の長さが一致しません" };
+  }
+  if (input.wishIds.length !== input.wishQtys.length) {
+    return { error: "求側の数量配列の長さが一致しません" };
+  }
+  if (input.haveQtys.some((q) => q < 1 || q > 99)) {
+    return { error: "譲側の数量は 1〜99 で指定してください" };
+  }
+  if (input.wishQtys.some((q) => q < 1 || q > 99)) {
+    return { error: "求側の数量は 1〜99 で指定してください" };
+  }
+  // OR × OR 両側 ≥2 ガード
+  if (
+    input.haveLogic === "or" &&
+    input.wishLogic === "or" &&
+    input.haveIds.length > 1 &&
+    input.wishIds.length > 1
+  ) {
+    return {
+      error:
+        "譲・求の両側でアイテム複数 × OR 条件 は曖昧なため指定できません。どちらかは AND にするか、片側を 1 件にしてください。",
+    };
+  }
   return undefined;
 }

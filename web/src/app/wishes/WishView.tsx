@@ -18,7 +18,12 @@ export type WishItem = {
   createdAt: string; // ISO
 };
 
-// PRIO_LABEL / FLEX_LABEL / EXCHANGE_LABEL は iter65.5/65.6/65.7 で UI から廃止
+// iter67.3：exchangeType chip を再表示（iter65.6 で廃止 → 再復活）
+const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
+  same_kind: "同種のみ",
+  cross_kind: "異種のみ",
+  any: "同異種OK",
+};
 
 export function WishView({ items }: { items: WishItem[] }) {
   const router = useRouter();
@@ -165,7 +170,20 @@ export function WishView({ items }: { items: WishItem[] }) {
                       </button>
                     </div>
 
-                    {/* priority / flexLevel / exchangeType chip は wish レベルから全廃止（iter65.5/65.6/65.7） */}
+                    {/* iter67.3: exchangeType chip 復活（priority/flexLevel は iter65 で廃止） */}
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <span
+                        className={`rounded-full border px-2 py-[1px] text-[9.5px] font-bold ${
+                          w.exchangeType === "any"
+                            ? "border-[#3a324a14] bg-[#3a324a08] text-[#3a324a8c]"
+                            : w.exchangeType === "same_kind"
+                              ? "border-[#a695d855] bg-[#a695d80f] text-[#a695d8]"
+                              : "border-[#f3c5d455] bg-[#f3c5d40f] text-[#3a324a]"
+                        }`}
+                      >
+                        {EXCHANGE_LABEL[w.exchangeType]}
+                      </span>
+                    </div>
 
                     {/* 探し中ステータス（マッチ数は将来実データ） */}
                     <div className="mt-2 rounded-lg bg-[#3a324a08] px-2.5 py-1.5 text-[10.5px] leading-snug">

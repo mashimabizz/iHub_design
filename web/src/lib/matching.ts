@@ -42,6 +42,21 @@ export type Match = {
   theirGives: MatchInv[];
   /** 個別募集経由のマッチか */
   viaListing: boolean;
+  /**
+   * iter67.3：listing 経由のマッチで、その listing 構造（AND/OR、qty）を
+   * UI 側でバッジ・関係図モーダルに使うため伝播
+   */
+  matchedListings?: MatchedListingInfo[];
+};
+
+export type MatchedListingInfo = {
+  listingId: string;
+  haveLogic: "and" | "or";
+  wishLogic: "and" | "or";
+  /** マッチに寄与した私の譲（haveIds の subset） */
+  matchedHaveIds: string[];
+  /** マッチに寄与した相手アイテム（私の wish_ids の subset と対応） */
+  matchedTheirInvIds: string[];
 };
 
 /**
@@ -61,9 +76,22 @@ export function isMatching(my: MatchInv, theirs: MatchInv): boolean {
   return my.groupId === theirs.groupId;
 }
 
+/**
+ * iter67.3：listings は have/wish 両側で複数 + AND/OR をサポート。
+ *
+ * 旧モデル: inventoryId (single) + wishIds[]
+ * 新モデル: haveIds[] + haveQtys[] + haveLogic / wishIds[] + wishQtys[] + wishLogic
+ *
+ * 制約：have_logic='or' AND wish_logic='or' AND 両側 ≥2 アイテム は禁止（DB CHECK）
+ */
 export type ListingForMatch = {
-  inventoryId: string;
-  wishIds: string[]; // listings.wish_ids
+  id: string;
+  haveIds: string[];
+  haveQtys: number[];
+  haveLogic: "and" | "or";
+  wishIds: string[];
+  wishQtys: number[];
+  wishLogic: "and" | "or";
 };
 
 /**
@@ -82,6 +110,7 @@ export function matchPair(input: {
   myWishes: MatchInv[];
   myListings: ListingForMatch[];
   myWishById: Map<string, MatchInv>;
+  myInvById: Map<string, MatchInv>;
   partnerInv: MatchInv[];
   partnerWishes: MatchInv[];
   partner: UserSummary;
@@ -91,22 +120,57 @@ export function matchPair(input: {
     myWishes,
     myListings,
     myWishById,
+    myInvById,
     partnerInv,
     partnerWishes,
     partner,
   } = input;
 
-  // 譲アイテム ID → 関連 listing の wish_ids を Map 化
-  const listingByInvId = new Map<string, string[]>();
+  /* ─── どの私の譲が listing でカバーされているか ─── */
+  const listingsCoveringInv = new Map<string, ListingForMatch[]>();
   for (const l of myListings) {
-    listingByInvId.set(l.inventoryId, l.wishIds);
+    for (const hid of l.haveIds) {
+      const arr = listingsCoveringInv.get(hid) ?? [];
+      arr.push(l);
+      listingsCoveringInv.set(hid, arr);
+    }
   }
 
+  /* ─── 結果プール ─── */
+  const myGivesMap = new Map<string, MatchInv>();
+  const theirGivesMap = new Map<string, MatchInv>();
+  const matchedListings: MatchedListingInfo[] = [];
   let viaListing = false;
 
-  // ─── forward: 私の譲 X が相手の wish Y にヒット ───
-  const myGivesMap = new Map<string, MatchInv>();
+  /* ─── 1. listing 駆動マッチ（譲側＝listing.have、求側＝listing.wish_ids 経由） ─── */
+  for (const l of myListings) {
+    const lm = evaluateListingMatch(l, myInvById, myWishById, partnerInv);
+    if (!lm) continue;
+    viaListing = true;
+    matchedListings.push({
+      listingId: l.id,
+      haveLogic: l.haveLogic,
+      wishLogic: l.wishLogic,
+      matchedHaveIds: lm.matchedHaveIds,
+      matchedTheirInvIds: lm.matchedTheirInvIds,
+    });
+    // 譲 / 受 group に登録
+    for (const id of lm.matchedHaveIds) {
+      const inv = myInvById.get(id);
+      if (inv) myGivesMap.set(inv.id, inv);
+    }
+    for (const id of lm.matchedTheirInvIds) {
+      const inv = partnerInv.find((p) => p.id === id);
+      if (inv) theirGivesMap.set(inv.id, inv);
+    }
+  }
+
+  /* ─── 2. 通常マッチ（listing にカバーされていない譲・求） ─── */
+
+  // forward: 私の譲が相手の wish にヒット（listing 駆動でない譲のみ）
   for (const myInv of myInventory) {
+    if (myGivesMap.has(myInv.id)) continue;
+    if (listingsCoveringInv.has(myInv.id)) continue; // listing 側でハンドル済み
     for (const theirWish of partnerWishes) {
       if (isMatching(myInv, theirWish)) {
         myGivesMap.set(myInv.id, myInv);
@@ -115,30 +179,7 @@ export function matchPair(input: {
     }
   }
 
-  // ─── backward: 相手の譲 Y が私の wish にヒット ───
-  // listing がある譲 X については、その listing.wish_ids を使う（通常 wish より優先）
-  const theirGivesMap = new Map<string, MatchInv>();
-
-  // listing 経由のマッチを優先計算
-  for (const myInv of myInventory) {
-    const wishIds = listingByInvId.get(myInv.id);
-    if (!wishIds) continue;
-    const relevantWishes = wishIds
-      .map((wid) => myWishById.get(wid))
-      .filter((w): w is MatchInv => !!w);
-    for (const theirInv of partnerInv) {
-      for (const myWish of relevantWishes) {
-        if (isMatching(theirInv, myWish)) {
-          theirGivesMap.set(theirInv.id, theirInv);
-          viaListing = true;
-          break;
-        }
-      }
-    }
-  }
-
-  // 通常 wish マッチ（listing にカバーされていない譲 + 通常 wish）
-  // listing が一つも無い場合は myWishes 全件、ある場合でも追加検査
+  // backward: 相手の譲が私の wish にヒット（listing 経由で既出のものは除く）
   for (const theirInv of partnerInv) {
     if (theirGivesMap.has(theirInv.id)) continue;
     for (const myWish of myWishes) {
@@ -166,7 +207,73 @@ export function matchPair(input: {
     myGives: Array.from(myGivesMap.values()),
     theirGives: Array.from(theirGivesMap.values()),
     viaListing,
+    matchedListings: matchedListings.length > 0 ? matchedListings : undefined,
   };
+}
+
+/**
+ * 1 listing が相手とマッチするかを判定。
+ *
+ * 仕様:
+ * - have_logic = AND ⇒ haveIds 全件が「相手の wish 群のいずれか」にヒットする必要あり
+ * - have_logic = OR  ⇒ haveIds のうち少なくとも 1 件が相手 wish にヒット
+ * - wish_logic = AND ⇒ wishIds 全件が「相手の譲群」にヒットする必要あり
+ * - wish_logic = OR  ⇒ wishIds のうち少なくとも 1 件が相手 譲 にヒット
+ *
+ * 「ヒット」= isMatching() 真（goods_type + character/group の一致）
+ *
+ * 数量 (qty) は MVP では判定に用いない（タグ表示のみ）。実数量は打診で個別調整する想定。
+ *
+ * 注：相手側にも listing があり得るが、MVP では考慮しない（自分側 listing で完結）。
+ *
+ * @returns null = マッチ不成立 / { matchedHaveIds, matchedTheirInvIds } = 寄与した ID 群
+ */
+function evaluateListingMatch(
+  listing: ListingForMatch,
+  myInvById: Map<string, MatchInv>,
+  myWishById: Map<string, MatchInv>,
+  partnerInv: MatchInv[],
+): { matchedHaveIds: string[]; matchedTheirInvIds: string[] } | null {
+  /* ─ have 側評価：自分の譲が相手の wish にヒットするか ─ */
+  // partnerWishes は呼び出し側で持つが、ここでは partnerInv を使った逆向きチェックのみ
+  // （iter67.3 MVP：listing 経由は私 give→相手 wish の forward 方向は通常マッチで拾う）
+  // よって listing.haveLogic は ここでは「全 have が listing.wishIds（相手の対応譲群）と整合」でチェック
+
+  /* ─ wish 側評価：listing.wishIds に対して、相手の譲がどれだけヒットするか ─ */
+  const matchedTheirInvByWishId = new Map<string, string[]>(); // wishId → matched theirInv ids
+  for (const wid of listing.wishIds) {
+    const myWish = myWishById.get(wid);
+    if (!myWish) continue;
+    const hits = partnerInv
+      .filter((p) => isMatching(p, myWish))
+      .map((p) => p.id);
+    if (hits.length > 0) {
+      matchedTheirInvByWishId.set(wid, hits);
+    }
+  }
+
+  // wish_logic 評価
+  const wishMatched =
+    listing.wishLogic === "and"
+      ? listing.wishIds.every((wid) => matchedTheirInvByWishId.has(wid))
+      : matchedTheirInvByWishId.size > 0;
+
+  if (!wishMatched) return null;
+
+  /* ─ have 側：listing が wish 側でマッチしたなら、listing の have すべてが
+     trade に出ると見なす（have_logic=AND なら全件、OR なら任意 1 件以上で OK）─ */
+  const matchedHaveIds: string[] =
+    listing.haveLogic === "and"
+      ? listing.haveIds.filter((hid) => myInvById.has(hid))
+      : listing.haveIds.filter((hid) => myInvById.has(hid)).slice(0, 1); // OR は最初の 1 件を仮表示
+
+  if (matchedHaveIds.length === 0) return null;
+
+  // 相手側ヒットアイテム集合（重複除去）
+  const matchedTheirInvIds = Array.from(
+    new Set(Array.from(matchedTheirInvByWishId.values()).flat()),
+  );
+  return { matchedHaveIds, matchedTheirInvIds };
 }
 
 /**
@@ -187,6 +294,8 @@ export function computeAllMatches(input: {
 }): Match[] {
   const myWishById = new Map<string, MatchInv>();
   for (const w of input.myWishes) myWishById.set(w.id, w);
+  const myInvById = new Map<string, MatchInv>();
+  for (const i of input.myInventory) myInvById.set(i.id, i);
 
   const matches: Match[] = [];
   for (const p of input.partners) {
@@ -195,6 +304,7 @@ export function computeAllMatches(input: {
       myWishes: input.myWishes,
       myListings: input.myListings,
       myWishById,
+      myInvById,
       partnerInv: p.inventory,
       partnerWishes: p.wishes,
       partner: p.user,
