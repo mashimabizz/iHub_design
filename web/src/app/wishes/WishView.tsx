@@ -16,6 +16,8 @@ export type WishItem = {
   exchangeType: "same_kind" | "cross_kind" | "any";
   quantity: number;
   createdAt: string; // ISO
+  /** iter84: 同条件の他ユーザー出品数 */
+  matchCount: number;
 };
 
 // iter67.3 で復活した EXCHANGE_LABEL は iter67.5 で再削除
@@ -24,6 +26,8 @@ export type WishItem = {
 export function WishView({ items }: { items: WishItem[] }) {
   const router = useRouter();
   const filtered = items;
+  // iter84: 全 wish の合計マッチ数
+  const totalMatches = items.reduce((s, w) => s + (w.matchCount ?? 0), 0);
 
   async function handleDelete(id: string) {
     if (!confirm("このウィッシュを削除しますか？")) return;
@@ -95,10 +99,12 @@ export function WishView({ items }: { items: WishItem[] }) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-[12.5px] font-extrabold text-gray-900">
-              マッチ <span className="text-[#a695d8]">— 件</span> 検出中
+              マッチ <span className="text-[#a695d8]">{totalMatches} 件</span> 検出中
             </div>
             <div className="text-[10.5px] text-gray-500">
-              マッチング機能は次の iter で実装予定
+              {items.length === 0
+                ? "ウィッシュを登録するとマッチが表示されます"
+                : `${items.length} 件のウィッシュ・条件に合う出品を集計中`}
             </div>
           </div>
           <Link
@@ -131,63 +137,96 @@ export function WishView({ items }: { items: WishItem[] }) {
               )}
             </div>
           ) : (
-            filtered.map((w) => (
-              <div
-                key={w.id}
-                className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-white"
-              >
-                <div className="flex gap-3 p-3.5">
-                  {/* サムネ */}
-                  <div className="relative flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[10px] border border-[#3a324a14] bg-[linear-gradient(135deg,#a695d833,#a8d4e633)]">
-                    <span className="text-[11px] font-extrabold text-[#a695d8]">
-                      IMG
-                    </span>
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    {/* タイトル */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-extrabold text-gray-900">
-                          {w.title}
-                        </div>
-                        <div className="mt-0.5 text-[10.5px] text-gray-500">
-                          {w.goodsTypeName}・{w.groupName ?? ""}
-                          {w.characterName ? ` / ${w.characterName}` : ""}
-                          {w.quantity > 1 ? ` · ×${w.quantity}` : ""}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(w.id)}
-                        className="flex-shrink-0 text-[10px] text-gray-400 hover:text-red-500"
-                      >
-                        削除
-                      </button>
-                    </div>
-
-                    {/* iter67.5: exchangeType chip 削除（個別募集の選択肢で設定する設計に統一） */}
-
-                    {/* 探し中ステータス（マッチ数は将来実データ） */}
-                    <div className="mt-2 rounded-lg bg-[#3a324a08] px-2.5 py-1.5 text-[10.5px] leading-snug">
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-gray-400" />
-                        <span className="font-extrabold text-gray-500">
-                          探し中 · {daysSince(w.createdAt)} 日前から
+            filtered.map((w) => {
+              // iter84: マッチ数 5 件以上で HOT、1〜4 はマッチあり
+              const hot = w.matchCount >= 5;
+              const hasMatch = w.matchCount > 0;
+              return (
+                <div
+                  key={w.id}
+                  className={`overflow-hidden rounded-2xl border bg-white ${
+                    hot
+                      ? "border-[#a695d855] shadow-[0_6px_16px_rgba(166,149,216,0.20)]"
+                      : "border-[#3a324a14]"
+                  }`}
+                >
+                  <div className="flex gap-3 p-3.5">
+                    {/* サムネ */}
+                    <div className="relative flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[10px] border border-[#3a324a14] bg-[linear-gradient(135deg,#a695d833,#a8d4e633)]">
+                      <span className="text-[11px] font-extrabold text-[#a695d8]">
+                        IMG
+                      </span>
+                      {hot && (
+                        <span className="absolute -right-1 -top-1 rounded-full bg-[#d9826b] px-1.5 py-[2px] text-[8.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_4px_rgba(217,130,107,0.35)]">
+                          HOT
                         </span>
-                      </div>
+                      )}
                     </div>
 
-                    {/* メモ */}
-                    {w.note && (
-                      <div className="mt-1.5 italic text-[10.5px] leading-snug text-gray-500">
-                        ”{w.note}”
+                    <div className="min-w-0 flex-1">
+                      {/* タイトル */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[13px] font-extrabold text-gray-900">
+                            {w.title}
+                          </div>
+                          <div className="mt-0.5 text-[10.5px] text-gray-500">
+                            {w.goodsTypeName}・{w.groupName ?? ""}
+                            {w.characterName ? ` / ${w.characterName}` : ""}
+                            {w.quantity > 1 ? ` · ×${w.quantity}` : ""}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(w.id)}
+                          className="flex-shrink-0 text-[10px] text-gray-400 hover:text-red-500"
+                        >
+                          削除
+                        </button>
                       </div>
-                    )}
+
+                      {/* 探し中ステータス + マッチ数 */}
+                      <div
+                        className={`mt-2 rounded-lg px-2.5 py-1.5 text-[10.5px] leading-snug ${
+                          hasMatch
+                            ? "bg-[#a695d80f]"
+                            : "bg-[#3a324a08]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+                              hasMatch ? "bg-[#a695d8]" : "bg-gray-400"
+                            } ${hasMatch ? "animate-pulse" : ""}`}
+                          />
+                          <span
+                            className={`font-extrabold ${
+                              hasMatch ? "text-[#a695d8]" : "text-gray-500"
+                            }`}
+                          >
+                            {hasMatch
+                              ? `探し中 · ${daysSince(w.createdAt)}日前から`
+                              : `探し中 · まだマッチなし · ${daysSince(w.createdAt)}日前から`}
+                          </span>
+                        </div>
+                        {hasMatch && (
+                          <div className="mt-0.5 pl-[10px] text-[#3a324a]">
+                            マッチ <b>{w.matchCount}件</b>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* メモ */}
+                      {w.note && (
+                        <div className="mt-1.5 italic text-[10.5px] leading-snug text-gray-500">
+                          ”{w.note}”
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
