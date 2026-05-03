@@ -78,6 +78,62 @@ export async function saveWishItem(input: {
   return undefined;
 }
 
+/**
+ * iter88: wish の編集（最小フィールド：グループ・キャラ・種別・個数・メモ）
+ *
+ * ユーザー方針：wish は「作品名/グループ・キャラ・個数」を登録できれば良いので、
+ * 譲るグッズ用の condition/photo/series/carrying は wish 側では一切触らない。
+ * priority / flex_level / exchange_type も UI 廃止済（DB 既存値を維持）。
+ */
+export async function updateWishItem(input: {
+  id: string;
+  groupId?: string;
+  characterId?: string;
+  goodsTypeId: string;
+  title: string;
+  note?: string;
+  quantity: number;
+}): Promise<ActionResult> {
+  const title = input.title.trim();
+  if (!title || title.length > 100) {
+    return { error: "タイトルは 1〜100 文字で入力してください" };
+  }
+  if (!input.goodsTypeId) {
+    return { error: "グッズ種別を選択してください" };
+  }
+  if (!input.groupId && !input.characterId) {
+    return { error: "推しのグループまたはメンバーを選択してください" };
+  }
+  if (input.quantity < 1 || input.quantity > 999) {
+    return { error: "数量は 1〜999 で入力してください" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { error } = await supabase
+    .from("goods_inventory")
+    .update({
+      group_id: input.groupId ?? null,
+      character_id: input.characterId ?? null,
+      goods_type_id: input.goodsTypeId,
+      title,
+      description: input.note?.trim() || null,
+      quantity: input.quantity,
+    })
+    .eq("id", input.id)
+    .eq("user_id", user.id)
+    .eq("kind", "wanted");
+
+  if (error) return { error: error.message };
+  revalidatePath("/wishes");
+  revalidatePath(`/wishes/${input.id}/edit`);
+  return undefined;
+}
+
 export async function deleteWishItem(id: string): Promise<ActionResult> {
   const supabase = await createClient();
   const {

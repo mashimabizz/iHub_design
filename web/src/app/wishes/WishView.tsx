@@ -151,7 +151,7 @@ export function WishView({ items }: { items: WishItem[] }) {
                   }`}
                 >
                   <Link
-                    href={`/inventory/${w.id}`}
+                    href={`/wishes/${w.id}/edit`}
                     className="block flex gap-3 p-3.5 active:scale-[0.99]"
                   >
                     {/* サムネ */}

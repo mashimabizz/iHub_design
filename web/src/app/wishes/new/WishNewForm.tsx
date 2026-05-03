@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   saveWishItem,
+  updateWishItem,
   type WishFlexLevel,
   type WishPriority,
 } from "@/app/wishes/actions";
@@ -16,22 +17,44 @@ type CharacterMaster = { id: string; name: string; group_id: string };
 // exchangeType（同種/異種/同異種）は iter67.3 で復活したが、iter67.5 で再廃止
 // → 個別募集（listing）の選択肢ごとに設定する設計に統一されたため、wish レベルでは不要
 
+export type WishFormInitial = {
+  groupId: string;
+  characterId: string;
+  goodsTypeId: string;
+  title: string;
+  quantity: number;
+  note: string;
+};
+
 export function WishNewForm({
   groups,
   characters,
   goodsTypes,
+  mode = "create",
+  wishId,
+  initial,
 }: {
   groups: Master[];
   characters: CharacterMaster[];
   goodsTypes: Master[];
+  /** iter88: 作成 or 編集 */
+  mode?: "create" | "edit";
+  /** edit モード時の対象 wish id */
+  wishId?: string;
+  /** edit モード時の初期値 */
+  initial?: WishFormInitial;
 }) {
   const router = useRouter();
-  const [groupId, setGroupId] = useState<string>("");
-  const [characterId, setCharacterId] = useState<string>("");
-  const [goodsTypeId, setGoodsTypeId] = useState<string>("");
-  const [title, setTitle] = useState("");
-  const [quantity, setQuantity] = useState(1);
-  const [note, setNote] = useState("");
+  const [groupId, setGroupId] = useState<string>(initial?.groupId ?? "");
+  const [characterId, setCharacterId] = useState<string>(
+    initial?.characterId ?? "",
+  );
+  const [goodsTypeId, setGoodsTypeId] = useState<string>(
+    initial?.goodsTypeId ?? "",
+  );
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [quantity, setQuantity] = useState(initial?.quantity ?? 1);
+  const [note, setNote] = useState(initial?.note ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,9 +74,11 @@ export function WishNewForm({
     [characters, groupId],
   );
 
+  // iter88: 編集モードの初期マウント時は characterId をリセットしない
+  const [groupChangedByUser, setGroupChangedByUser] = useState(false);
   useEffect(() => {
-    setCharacterId("");
-  }, [groupId]);
+    if (groupChangedByUser) setCharacterId("");
+  }, [groupId, groupChangedByUser]);
 
   async function handleSubmit() {
     if (!goodsTypeId) {
@@ -79,19 +104,30 @@ export function WishNewForm({
 
     setPending(true);
     setError(null);
-    const result = await saveWishItem({
-      groupId: groupId || undefined,
-      characterId: characterId || undefined,
-      goodsTypeId,
-      title: finalTitle,
-      // 優先度・許容範囲・exchangeType は UI 廃止（DB 列はデフォルト値で埋める）
-      // exchangeType は iter67.5 で wish レベルから再削除（個別募集の選択肢ごとに設定する設計）
-      priority: "second" as WishPriority,
-      flexLevel: "exact" as WishFlexLevel,
-      exchangeType: "any",
-      note: note.trim() || undefined,
-      quantity,
-    });
+    const result =
+      mode === "edit" && wishId
+        ? await updateWishItem({
+            id: wishId,
+            groupId: groupId || undefined,
+            characterId: characterId || undefined,
+            goodsTypeId,
+            title: finalTitle,
+            note: note.trim() || undefined,
+            quantity,
+          })
+        : await saveWishItem({
+            groupId: groupId || undefined,
+            characterId: characterId || undefined,
+            goodsTypeId,
+            title: finalTitle,
+            // 優先度・許容範囲・exchangeType は UI 廃止（DB 列はデフォルト値で埋める）
+            // exchangeType は iter67.5 で wish レベルから再削除（個別募集の選択肢ごとに設定する設計）
+            priority: "second" as WishPriority,
+            flexLevel: "exact" as WishFlexLevel,
+            exchangeType: "any",
+            note: note.trim() || undefined,
+            quantity,
+          });
     if (result?.error) {
       setPending(false);
       setError(result.error);
@@ -114,7 +150,10 @@ export function WishNewForm({
           <Field label="グループ" required>
             <select
               value={groupId}
-              onChange={(e) => setGroupId(e.target.value)}
+              onChange={(e) => {
+                setGroupId(e.target.value);
+                setGroupChangedByUser(true);
+              }}
               className="block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-3 text-base text-gray-900 focus:border-[#a695d8] focus:outline-none"
             >
               <option value="">選択してください</option>
@@ -223,8 +262,12 @@ export function WishNewForm({
         </div>
       )}
 
-      <PrimaryButton type="submit" pending={pending} pendingLabel="登録中...">
-        ウィッシュを登録
+      <PrimaryButton
+        type="submit"
+        pending={pending}
+        pendingLabel={mode === "edit" ? "更新中..." : "登録中..."}
+      >
+        {mode === "edit" ? "ウィッシュを更新" : "ウィッシュを登録"}
       </PrimaryButton>
     </form>
   );
