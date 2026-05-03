@@ -179,38 +179,11 @@ export function HomeView({
           </div>
         </div>
       )}
-      {/* Sync strip */}
-      <div className="flex items-center gap-2 border-b border-[#3a324a14] bg-white px-5 py-2 text-[11px]">
-        <span
-          className="h-1.5 w-1.5 rounded-full bg-amber-500"
-          style={{ boxShadow: "0 0 0 3px rgba(224,168,71,0.18)" }}
-        />
-        <span className="font-medium text-gray-900">オフライン中</span>
-        <span className="text-gray-400">·</span>
-        <span className="text-gray-500 tabular-nums">最終同期 3分前</span>
-        <div className="flex-1" />
-        <span className="text-gray-500 tabular-nums">
-          ローカル: マッチ12 / 在庫24
-        </span>
-      </div>
-
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
         {/* Title row */}
         <div className="flex items-start justify-between px-5 pb-1.5 pt-4">
           <div>
-            <div className="text-[11px] font-semibold tracking-wider text-[#a695d8]">
-              推し：
-              <span
-                style={{
-                  fontFamily: "var(--font-inter-tight), system-ui",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                LUMENA
-              </span>
-              {" · スア"}
-            </div>
-            <h1 className="mt-1 text-[26px] font-bold leading-tight text-gray-900">
+            <h1 className="text-[26px] font-bold leading-tight text-gray-900">
               マッチング
             </h1>
           </div>

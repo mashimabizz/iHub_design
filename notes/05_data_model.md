@@ -13,6 +13,7 @@
 | v1.0 | 2026-04-27 | 初版（マスタ階層、availability_windows、proposals 等） |
 | **v2.0** | **2026-05-01** | **iter24/29/33/34 反映（meetup, outfit, location_share, 状態名統一、deals リネーム）** |
 | **v2.1** | **2026-05-03** | **iter67 反映（schedules 新設、proposals.message_tone 追加、meetup_scheduled_aw_id 廃止、expose_calendar の対象を AW → schedules に変更）** |
+| **v2.2** | **2026-05-03** | **iter67.1 反映（待ち合わせを「時間帯+地図座標」型に統一：meetup_type/meetup_now_minutes/meetup_scheduled_custom 廃止、meetup_start_at/end_at/place_name/lat/lng 追加）** |
 
 ## このドキュメントの位置付け
 
@@ -336,13 +337,20 @@ iter28（match_type）/ iter29（数量）/ iter30（7日期限）/ iter32（合
 | `extension_count` | int default 0 | iter30、+7日延長回数 |
 | `rejected_template` | text nullable | 旧定型文選択 |
 | `message_tone` | text | iter67、`standard`/`casual`/`polite`（メッセージのトーン選択を記録、デフォルト 'standard'） |
-| `meetup_type` | text | iter33、`now` / `scheduled`（必須） |
-| `meetup_now_minutes` | int nullable | iter33、5/10/15/30 (`meetup_type='now'`時のみ) |
-| ~~`meetup_scheduled_aw_id`~~ | — | **iter67 で廃止**。AW はマッチング演算専用に分離。打診の日時指定は `meetup_scheduled_custom` のみで保持 |
-| `meetup_scheduled_custom` | jsonb nullable | iter33→iter67 改訂、`{date, time, placeName}` のみ（lat/lng/register_as_aw は iter67 で削除）。`meetup_type='scheduled'`の時に必須 |
+| ~~`meetup_type`~~ | — | **iter67.1 で廃止**。「いますぐ/日時指定」分岐を統一フォームに置換 |
+| ~~`meetup_now_minutes`~~ | — | **iter67.1 で廃止** |
+| ~~`meetup_scheduled_aw_id`~~ | — | **iter67 で廃止**。AW はマッチング演算専用に分離 |
+| ~~`meetup_scheduled_custom`~~ | — | **iter67.1 で廃止**。下記 5 列に分解 |
+| `meetup_start_at` | timestamptz | iter67.1、待ち合わせ開始時刻 |
+| `meetup_end_at` | timestamptz | iter67.1、待ち合わせ終了時刻（CHECK: end > start） |
+| `meetup_place_name` | text(≤200) | iter67.1、場所名（駅・施設名など） |
+| `meetup_lat` | numeric(9,6) | iter67.1、緯度（地図上の位置） |
+| `meetup_lng` | numeric(9,6) | iter67.1、経度 |
 | `expose_calendar` | bool default false | iter67 で再定義：送信者が自分の **個人スケジュール（schedules）** を相手に公開する ON/OFF。受信側は受信表示画面で送信者の予定を見られる（取引完了で自動的に RLS 不可）。AW は対象外 |
 | `listing_id` | uuid nullable | iter64、個別募集 (`listings`) 経由の打診ならその id。直接打診なら null |
 | `created_at` / `updated_at` | timestamptz | |
+
+CHECK 制約 `proposals_meetup_required`（iter67.1）：`status='draft'` 以外なら 5 列すべて NOT NULL かつ `meetup_end_at > meetup_start_at`。
 
 ⚠️ 要確認：
 - ネゴ中の提案修正で `last_action_at` リセットするか（09 未確定項目#1）

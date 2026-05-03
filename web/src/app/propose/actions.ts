@@ -15,13 +15,12 @@ export async function createProposal(input: {
   receiverHaveQtys: number[];
   message: string;
   messageTone?: "standard" | "casual" | "polite";
-  meetupType: "now" | "scheduled";
-  meetupNowMinutes?: 5 | 10 | 15 | 30;
-  meetupScheduledCustom?: {
-    date: string;
-    time: string;
-    placeName: string;
-  };
+  /** 待ち合わせ：時間帯 + 地図座標（iter67.1 統一フォーム） */
+  meetupStartAt: string; // ISO
+  meetupEndAt: string; // ISO
+  meetupPlaceName: string;
+  meetupLat: number;
+  meetupLng: number;
   exposeCalendar: boolean;
   listingId?: string | null;
 }): Promise<ActionResult> {
@@ -36,18 +35,22 @@ export async function createProposal(input: {
     return { error: "数量配列の長さが不一致" };
   if (!input.message.trim()) return { error: "メッセージを入力してください" };
 
-  if (input.meetupType === "now") {
-    if (
-      !input.meetupNowMinutes ||
-      ![5, 10, 15, 30].includes(input.meetupNowMinutes)
-    ) {
-      return { error: "合流時間（5/10/15/30 分）を選んでください" };
-    }
-  } else {
-    const c = input.meetupScheduledCustom;
-    if (!c?.date || !c?.time || !c?.placeName?.trim()) {
-      return { error: "日時と場所を入力してください" };
-    }
+  // 待ち合わせバリデーション
+  if (
+    !input.meetupStartAt ||
+    !input.meetupEndAt ||
+    !input.meetupPlaceName?.trim()
+  ) {
+    return { error: "待ち合わせの時間帯と場所を入力してください" };
+  }
+  if (new Date(input.meetupEndAt) <= new Date(input.meetupStartAt)) {
+    return { error: "終了時刻は開始時刻より後にしてください" };
+  }
+  if (
+    !Number.isFinite(input.meetupLat) ||
+    !Number.isFinite(input.meetupLng)
+  ) {
+    return { error: "地図上で待ち合わせ場所を選んでください" };
   }
 
   const supabase = await createClient();
@@ -78,13 +81,11 @@ export async function createProposal(input: {
       status: "sent",
       last_action_at: now.toISOString(),
       expires_at: expires.toISOString(),
-      meetup_type: input.meetupType,
-      meetup_now_minutes:
-        input.meetupType === "now" ? input.meetupNowMinutes : null,
-      meetup_scheduled_custom:
-        input.meetupType === "scheduled"
-          ? input.meetupScheduledCustom
-          : null,
+      meetup_start_at: input.meetupStartAt,
+      meetup_end_at: input.meetupEndAt,
+      meetup_place_name: input.meetupPlaceName.trim(),
+      meetup_lat: input.meetupLat,
+      meetup_lng: input.meetupLng,
       expose_calendar: input.exposeCalendar,
       listing_id: input.listingId ?? null,
     })

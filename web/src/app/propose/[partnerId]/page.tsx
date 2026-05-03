@@ -68,6 +68,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
     { data: theirInvRaw },
     { data: myWishesRaw },
     { data: theirWishesRaw },
+    { data: partnerLocalMode },
   ] = await Promise.all([
     supabase
       .from("users")
@@ -98,9 +99,40 @@ export default async function ProposePage({ params, searchParams }: Props) {
       .eq("user_id", partnerId)
       .eq("kind", "wanted")
       .neq("status", "archived"),
+    // 相手の現地モード設定（enabled & aw_id）
+    supabase
+      .from("user_local_mode_settings")
+      .select("enabled, aw_id, last_lat, last_lng")
+      .eq("user_id", partnerId)
+      .maybeSingle(),
   ]);
 
   if (!partner) notFound();
+
+  // 相手の現地モード AW（venue/座標/時間帯）を取得
+  let partnerAW: {
+    venue: string;
+    centerLat: number | null;
+    centerLng: number | null;
+    startAt: string;
+    endAt: string;
+  } | null = null;
+  if (partnerLocalMode?.enabled && partnerLocalMode.aw_id) {
+    const { data: aw } = await supabase
+      .from("activity_windows")
+      .select("venue, center_lat, center_lng, start_at, end_at")
+      .eq("id", partnerLocalMode.aw_id)
+      .maybeSingle();
+    if (aw) {
+      partnerAW = {
+        venue: aw.venue,
+        centerLat: aw.center_lat,
+        centerLng: aw.center_lng,
+        startAt: aw.start_at,
+        endAt: aw.end_at,
+      };
+    }
+  }
 
   const myInv = ((myInvRaw as GoodsRow[]) ?? [])
     .map(toInv)
@@ -148,6 +180,8 @@ export default async function ProposePage({ params, searchParams }: Props) {
         handle: partner.handle,
         displayName: partner.display_name,
         primaryArea: partner.primary_area,
+        localModeEnabled: !!partnerLocalMode?.enabled,
+        localModeAW: partnerAW,
       }}
       myInv={myInvWithFlag}
       theirInv={theirInvWithFlag}

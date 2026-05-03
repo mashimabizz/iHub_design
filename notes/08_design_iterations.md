@@ -419,6 +419,126 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67.1：打診 C-0 改修＋ホームヘッダー整理
+
+### 背景
+
+iter67 で打診 C-0 ウィザードが動き出した。実機で触ったオーナーから整理依頼：
+
+- 提示物選択で **wish 一致が下に埋もれる** → 上に並べてほしい
+- 待ち合わせの「いますぐ / 日時指定」**トグルが面倒**。1 画面に統一して、相手が現地交換モードならその AW から自動入力したい。時間は **時間帯**（開始〜終了）で。地図も AW 編集と同じく必要
+- フッターの **3 行サマリ（譲・受・待ち合わせ）は冗長** なので削除
+- STEP 3 確認画面のグッズが文字一覧 → **マッチパネルみたいに画像** で表示。待ち合わせ場所も **地図** で表示
+- ついでにホーム上部の「**オフライン中**」「**推し：LUMENA**」表記を削除（mock 残骸）
+
+### 変更内容
+
+#### A. `web/src/components/home/HomeView.tsx`
+- Sync strip（オフライン中・最終同期・ローカル件数）削除
+- タイトル行から「推し：LUMENA · スア」サブ表記を削除（h1「マッチング」だけ残す）
+
+#### B. DB マイグレーション（新規 `supabase/migrations/20260503170000_simplify_meetup.sql`）
+
+`proposals` テーブルから旧待ち合わせ列を削除し、新列に置換。
+
+| 旧 | 新 |
+|---|---|
+| `meetup_type ('now'/'scheduled')` | （削除） |
+| `meetup_now_minutes` | （削除） |
+| `meetup_scheduled_custom JSONB` | （削除） |
+| — | `meetup_start_at timestamptz` |
+| — | `meetup_end_at timestamptz` |
+| — | `meetup_place_name text (≤200)` |
+| — | `meetup_lat numeric(9,6)` |
+| — | `meetup_lng numeric(9,6)` |
+
+CHECK 制約 `proposals_meetup_required`：`status='draft'` 以外なら 5 列すべて NOT NULL かつ end > start。
+
+旧テストデータは `delete from proposals` で掃除（運用前なのでロスト懸念無し）。
+
+#### C. `web/src/app/propose/[partnerId]/page.tsx`
+
+server fetch を 1 つ追加：
+```ts
+supabase.from("user_local_mode_settings")
+  .select("enabled, aw_id, last_lat, last_lng")
+  .eq("user_id", partnerId)
+```
+`enabled && aw_id` なら `activity_windows` から `venue / center_lat / center_lng / start_at / end_at` を取得。
+ProposeFlow には `partner.localModeEnabled` と `partner.localModeAW` を渡す。
+
+#### D. `web/src/app/propose/[partnerId]/ProposeFlow.tsx` 全面リファクタ
+
+**(1) 提示物選択：wish 一致を上にソート**
+- `sortByWishFirst()` を `myItems` / `theirItems` 初期化時に適用
+
+**(2) 待ち合わせの統一フォーム**
+- now / scheduled トグル削除
+- 単一フォーム：
+  - 時間帯：`<input type="datetime-local">` × 2（開始・終了）
+  - 場所：`<input type="text">` の「場所名」+ 地名検索バー（`/api/geocode`）+ 「📍 現在地を中心に」ボタン
+  - 地図：`MapPicker`（leaflet、ピンのドラッグ・タップで lat/lng 更新）
+- 相手が現地交換モード ON → 緑のバナー「@相手 は現地交換モード中」+ AW の値で 5 項目（start/end/venue/lat/lng）を pre-fill
+- 相手が現地モード OFF → 1 時間後 〜 2 時間後 / 東京駅をデフォルト
+
+**(3) 送信入力の形式変更**
+- `createProposal()` の input から `meetupType`/`meetupNowMinutes`/`meetupScheduledCustom` を削除
+- 代わりに `meetupStartAt` / `meetupEndAt` / `meetupPlaceName` / `meetupLat` / `meetupLng` を渡す
+
+**(4) フッターの 3 行サマリ削除**
+- `<SummaryRow>` / `<MeetupSummaryRow>` 撤去
+- フッターは CTA ボタン 1 つだけに（pb 領域も縮小）
+
+**(5) STEP 3 確認画面のリッチ化**
+- 「交換内容」セクションを **マッチパネル風グリッド** に：
+  - 左 = 相手の譲、中央 = ↔ 矢印、右 = あなたの譲
+  - 各アイテムは `Tcg` ミニカード（写真 or イニシャル、36×48px、数量バッジ右上）
+  - `MatchCard.tsx` の Tcg / SidePanel / ArrowDot を ProposeFlow 内で同型再実装
+- 「待ち合わせ」セクションに **地図プレビュー**（160px 高、operations 無し read-only）
+
+#### E. `web/src/app/propose/actions.ts`
+
+input 形式を新 schema に合わせて更新：
+```ts
+meetupStartAt: string  // ISO
+meetupEndAt: string    // ISO
+meetupPlaceName: string
+meetupLat: number
+meetupLng: number
+```
+バリデーション：
+- 全項目必須
+- end > start
+- lat / lng が finite
+
+INSERT 時：`meetup_start_at`, `meetup_end_at`, `meetup_place_name`, `meetup_lat`, `meetup_lng`。`meetup_type` 系は INSERT に含めない（DB 側で削除済み）。
+
+### 影響範囲
+
+- ホーム画面：上部のごみ表記が消えてスッキリ
+- `/propose/[partnerId]`：
+  - mine / theirs：wish 一致が一番上
+  - meetup：1 画面・地図付き・現地モード自動入力
+  - フッター：CTA だけ
+  - STEP 3：画像グリッド + 地図
+- DB：proposals の待ち合わせ 5 列が新形式に
+
+### 設計判断
+
+- 「いますぐ」概念は **時間帯の中に内包**（5 分後〜30 分後の時間帯を入れれば「いますぐ」相当）。UI 上は分岐なし
+- 相手が現地モード ON のときに **AW を読み込むだけ**（プロポーザル送信時に AW 自体は変更しない）。AW = マッチング演算用、proposal の meetup = この打診固有の待ち合わせ
+- 確認画面の地図は read-only（`onCenterChange={() => {}}`）。STEP 1 の地図で確定済みのため
+
+### 関連ファイル
+
+- `web/src/components/home/HomeView.tsx`（ヘッダー削除）
+- `supabase/migrations/20260503170000_simplify_meetup.sql`（新規）
+- `web/src/app/propose/[partnerId]/page.tsx`（partner local mode + AW fetch）
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`（全面リファクタ）
+- `web/src/app/propose/actions.ts`（input 形式変更）
+
+---
+
 ## イテレーション67：打診（C-0/C-1）と個人スケジュール
 
 ### 背景

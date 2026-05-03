@@ -1,10 +1,21 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 import { createProposal } from "../actions";
+
+/* MapPicker は SSR 不可（leaflet が window 必要） */
+const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center bg-[#e8eef0] text-[11px] text-[#3a324a8c]">
+      地図を読み込み中…
+    </div>
+  ),
+});
 
 /* ─── types ─────────────────────────────────────────────── */
 
@@ -28,6 +39,14 @@ type Partner = {
   handle: string;
   displayName: string;
   primaryArea: string | null;
+  localModeEnabled: boolean;
+  localModeAW: {
+    venue: string;
+    centerLat: number | null;
+    centerLng: number | null;
+    startAt: string; // ISO
+    endAt: string; // ISO
+  } | null;
 };
 
 type Selectable = ProposeInv & {
@@ -37,7 +56,6 @@ type Selectable = ProposeInv & {
 
 type Step = "select" | "message" | "confirm";
 type Tab = "mine" | "theirs" | "meetup";
-type MeetupType = "now" | "scheduled";
 type Tone = "standard" | "casual" | "polite";
 
 type Props = {
@@ -47,7 +65,39 @@ type Props = {
   matchType: "perfect" | "forward" | "backward";
 };
 
+/* Tokyo Station fallback */
+const FALLBACK_CENTER: [number, number] = [35.6812, 139.7671];
+
+type Place = { display_name: string; lat: string; lon: string; address?: Record<string, string> };
+
 /* ─── helpers ───────────────────────────────────────────── */
+
+/** ISO → datetime-local（YYYY-MM-DDTHH:mm） */
+function isoToLocal(iso: string): string {
+  const d = new Date(iso);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+/** datetime-local → ISO */
+function localToIso(s: string): string {
+  if (!s) return "";
+  return new Date(s).toISOString();
+}
+function nowPlusHoursLocal(h: number): string {
+  const d = new Date();
+  d.setHours(d.getHours() + h);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
+/** wishMatch を先頭にソート（同フラグ内は元の順） */
+function sortByWishFirst<T extends { wishMatch?: boolean }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => {
+    const aw = a.wishMatch ? 1 : 0;
+    const bw = b.wishMatch ? 1 : 0;
+    return bw - aw;
+  });
+}
 
 function buildSummaryText(items: Selectable[]): string {
   return items
@@ -64,9 +114,9 @@ function templateFor(input: {
   partnerHandle: string;
   myItems: Selectable[];
   theirItems: Selectable[];
-  meetupType: MeetupType;
-  meetupNowMinutes?: 5 | 10 | 15 | 30;
-  meetupScheduledCustom?: { date: string; time: string; placeName: string };
+  meetupStart: string;
+  meetupEnd: string;
+  meetupPlace: string;
   matchType: "perfect" | "forward" | "backward";
 }): string {
   const matchPhrase =
@@ -79,11 +129,9 @@ function templateFor(input: {
   const summaryMine = buildSummaryText(input.myItems);
   const summaryTheirs = buildSummaryText(input.theirItems);
   const meetupLine =
-    input.meetupType === "now"
-      ? `合流可能時間：${input.meetupNowMinutes ?? 15}分以内（会場周辺）`
-      : input.meetupScheduledCustom
-        ? `日時：${input.meetupScheduledCustom.date} ${input.meetupScheduledCustom.time}\n場所：${input.meetupScheduledCustom.placeName}`
-        : "";
+    input.meetupStart && input.meetupEnd && input.meetupPlace
+      ? `日時：${formatRange(input.meetupStart, input.meetupEnd)}\n場所：${input.meetupPlace}`
+      : "";
 
   if (input.tone === "casual") {
     return [
@@ -110,7 +158,6 @@ function templateFor(input: {
       .filter(Boolean)
       .join("\n");
   }
-  // standard
   return [
     `${input.partnerHandle} はじめまして！`,
     matchPhrase,
@@ -123,6 +170,41 @@ function templateFor(input: {
     .join("\n");
 }
 
+function formatRange(startLocal: string, endLocal: string): string {
+  if (!startLocal || !endLocal) return "";
+  const s = new Date(startLocal);
+  const e = new Date(endLocal);
+  const sameDay =
+    s.getFullYear() === e.getFullYear() &&
+    s.getMonth() === e.getMonth() &&
+    s.getDate() === e.getDate();
+  const dateFmt = (d: Date) =>
+    `${d.getMonth() + 1}/${d.getDate()}(${"日月火水木金土"[d.getDay()]})`;
+  const timeFmt = (d: Date) =>
+    `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return sameDay
+    ? `${dateFmt(s)} ${timeFmt(s)}〜${timeFmt(e)}`
+    : `${dateFmt(s)} ${timeFmt(s)} 〜 ${dateFmt(e)} ${timeFmt(e)}`;
+}
+
+function labelFromAddress(p: Place): string {
+  if (!p.address) return p.display_name.split(",")[0] ?? p.display_name;
+  const a = p.address;
+  return (
+    a.amenity ||
+    a.attraction ||
+    a.shop ||
+    a.station ||
+    a.railway ||
+    a.building ||
+    a.tourism ||
+    a.leisure ||
+    a.suburb ||
+    p.display_name.split(",")[0] ||
+    p.display_name
+  );
+}
+
 /* ─── main component ────────────────────────────────────── */
 
 export function ProposeFlow({
@@ -133,9 +215,9 @@ export function ProposeFlow({
 }: Props) {
   const router = useRouter();
 
-  /* ── 提示物 state ── */
+  /* ── 提示物 state（wishMatch を先頭にソート済） ── */
   const [myItems, setMyItems] = useState<Selectable[]>(() =>
-    myInv.map((i) => {
+    sortByWishFirst(myInv).map((i) => {
       const checked =
         (matchType === "perfect" || matchType === "forward") &&
         i.wishMatch === true;
@@ -147,7 +229,7 @@ export function ProposeFlow({
     }),
   );
   const [theirItems, setTheirItems] = useState<Selectable[]>(() =>
-    theirInv.map((i) => {
+    sortByWishFirst(theirInv).map((i) => {
       const checked =
         (matchType === "perfect" || matchType === "backward") &&
         i.wishMatch === true;
@@ -159,20 +241,37 @@ export function ProposeFlow({
     }),
   );
 
-  /* ── 待ち合わせ state ── */
-  const [meetupType, setMeetupType] = useState<MeetupType>("scheduled");
-  const [meetupNowMinutes, setMeetupNowMinutes] = useState<5 | 10 | 15 | 30>(
-    15,
-  );
-  const [scheduledDate, setScheduledDate] = useState("");
-  const [scheduledTime, setScheduledTime] = useState("");
-  const [scheduledPlace, setScheduledPlace] = useState("");
+  /* ── 待ち合わせ state（時間帯 + 地図） ── */
+  // 相手が現地モードなら AW から自動入力、それ以外は今+1〜2時間
+  const initStart = partner.localModeAW?.startAt
+    ? isoToLocal(partner.localModeAW.startAt)
+    : nowPlusHoursLocal(1);
+  const initEnd = partner.localModeAW?.endAt
+    ? isoToLocal(partner.localModeAW.endAt)
+    : nowPlusHoursLocal(2);
+  const initPlace = partner.localModeAW?.venue ?? "";
+  const initCenter: [number, number] =
+    partner.localModeAW?.centerLat != null && partner.localModeAW?.centerLng != null
+      ? [partner.localModeAW.centerLat, partner.localModeAW.centerLng]
+      : FALLBACK_CENTER;
+
+  const [meetupStart, setMeetupStart] = useState(initStart);
+  const [meetupEnd, setMeetupEnd] = useState(initEnd);
+  const [meetupPlace, setMeetupPlace] = useState(initPlace);
+  const [meetupCenter, setMeetupCenter] =
+    useState<[number, number]>(initCenter);
+
+  /* 地図検索 */
+  const [searchQ, setSearchQ] = useState("");
+  const [searchResults, setSearchResults] = useState<Place[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
 
   /* ── ステップ・タブ ── */
   const [step, setStep] = useState<Step>("select");
   const [tab, setTab] = useState<Tab>("mine");
 
-  /* ── メッセージ・トーン・カレンダー ── */
+  /* ── メッセージ ── */
   const [tone, setTone] = useState<Tone>("standard");
   const [exposeCalendar, setExposeCalendar] = useState(false);
   const [messageEdited, setMessageEdited] = useState<string | null>(null);
@@ -190,36 +289,23 @@ export function ProposeFlow({
     .reduce((s, i) => s + i.selectedQty, 0);
 
   const meetupSet =
-    meetupType === "now"
-      ? true
-      : !!(scheduledDate && scheduledTime && scheduledPlace.trim());
+    !!meetupStart &&
+    !!meetupEnd &&
+    !!meetupPlace.trim() &&
+    new Date(meetupEnd) > new Date(meetupStart);
 
   const canProceedSelect = myCount > 0 && theirCount > 0 && meetupSet;
 
-  const meetupSummary =
-    meetupType === "now"
-      ? `今すぐ・${meetupNowMinutes}分以内`
-      : meetupSet
-        ? `${scheduledDate} ${scheduledTime} ・${scheduledPlace}`
-        : "未設定";
-
-  /** 自動メッセージ（編集されてなければ template から、編集されたら edited を使用） */
+  /** 自動メッセージ */
   const autoMessage = useMemo(() => {
     return templateFor({
       tone,
       partnerHandle: `@${partner.handle}`,
       myItems: myItems.filter((i) => i.selected),
       theirItems: theirItems.filter((i) => i.selected),
-      meetupType,
-      meetupNowMinutes: meetupType === "now" ? meetupNowMinutes : undefined,
-      meetupScheduledCustom:
-        meetupType === "scheduled"
-          ? {
-              date: scheduledDate,
-              time: scheduledTime,
-              placeName: scheduledPlace,
-            }
-          : undefined,
+      meetupStart,
+      meetupEnd,
+      meetupPlace,
       matchType,
     });
   }, [
@@ -227,15 +313,65 @@ export function ProposeFlow({
     partner.handle,
     myItems,
     theirItems,
-    meetupType,
-    meetupNowMinutes,
-    scheduledDate,
-    scheduledTime,
-    scheduledPlace,
+    meetupStart,
+    meetupEnd,
+    meetupPlace,
     matchType,
   ]);
 
   const message = messageEdited ?? autoMessage;
+
+  /* 場所検索 debounce */
+  const searchAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const q = searchQ.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      searchAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      searchAbortRef.current = ctrl;
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`, {
+          signal: ctrl.signal,
+        });
+        const data = (await res.json()) as Place[] | { error: string };
+        if (Array.isArray(data)) {
+          setSearchResults(data);
+          setShowResults(true);
+        }
+      } catch {
+        // ignore (abort or network)
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [searchQ]);
+
+  function pickPlace(p: Place) {
+    const lat = parseFloat(p.lat);
+    const lon = parseFloat(p.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      setMeetupCenter([lat, lon]);
+      setMeetupPlace(labelFromAddress(p));
+      setSearchQ("");
+      setShowResults(false);
+    }
+  }
+
+  function useCurrentLocation() {
+    if (typeof window === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setMeetupCenter([pos.coords.latitude, pos.coords.longitude]),
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
 
   /* ── handlers ── */
 
@@ -258,10 +394,7 @@ export function ProposeFlow({
     const update = (items: Selectable[]) =>
       items.map((i) => {
         if (i.id !== id) return i;
-        const newQty = Math.max(
-          1,
-          Math.min(i.quantity, i.selectedQty + delta),
-        );
+        const newQty = Math.max(1, Math.min(i.quantity, i.selectedQty + delta));
         return { ...i, selectedQty: newQty };
       });
     if (side === "mine") setMyItems(update);
@@ -297,17 +430,11 @@ export function ProposeFlow({
         receiverHaveQtys,
         message,
         messageTone: tone,
-        meetupType,
-        meetupNowMinutes:
-          meetupType === "now" ? meetupNowMinutes : undefined,
-        meetupScheduledCustom:
-          meetupType === "scheduled"
-            ? {
-                date: scheduledDate,
-                time: scheduledTime,
-                placeName: scheduledPlace.trim(),
-              }
-            : undefined,
+        meetupStartAt: localToIso(meetupStart),
+        meetupEndAt: localToIso(meetupEnd),
+        meetupPlaceName: meetupPlace.trim(),
+        meetupLat: meetupCenter[0],
+        meetupLng: meetupCenter[1],
         exposeCalendar,
       });
       if (r?.error) {
@@ -321,7 +448,7 @@ export function ProposeFlow({
   /* ─── render ─── */
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[180px] text-[#3a324a]">
+    <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[112px] text-[#3a324a]">
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-[#3a324a14] bg-white/90 px-[18px] pb-3 pt-12 backdrop-blur-xl">
         <div className="mx-auto flex max-w-md items-center gap-3">
@@ -410,16 +537,23 @@ export function ProposeFlow({
       <div className="mx-auto w-full max-w-md flex-1 px-[18px] pt-3.5">
         {step === "select" && tab === "meetup" && (
           <MeetupTab
-            meetupType={meetupType}
-            setMeetupType={setMeetupType}
-            meetupNowMinutes={meetupNowMinutes}
-            setMeetupNowMinutes={setMeetupNowMinutes}
-            scheduledDate={scheduledDate}
-            setScheduledDate={setScheduledDate}
-            scheduledTime={scheduledTime}
-            setScheduledTime={setScheduledTime}
-            scheduledPlace={scheduledPlace}
-            setScheduledPlace={setScheduledPlace}
+            partner={partner}
+            meetupStart={meetupStart}
+            setMeetupStart={setMeetupStart}
+            meetupEnd={meetupEnd}
+            setMeetupEnd={setMeetupEnd}
+            meetupPlace={meetupPlace}
+            setMeetupPlace={setMeetupPlace}
+            meetupCenter={meetupCenter}
+            setMeetupCenter={setMeetupCenter}
+            searchQ={searchQ}
+            setSearchQ={setSearchQ}
+            searchResults={searchResults}
+            searching={searching}
+            showResults={showResults}
+            setShowResults={setShowResults}
+            pickPlace={pickPlace}
+            useCurrentLocation={useCurrentLocation}
           />
         )}
 
@@ -439,7 +573,6 @@ export function ProposeFlow({
             tone={tone}
             setTone={(t) => {
               setTone(t);
-              // トーン変更時は edited を破棄して template に戻す
               setMessageEdited(null);
             }}
             message={message}
@@ -454,7 +587,10 @@ export function ProposeFlow({
             partnerHandle={partner.handle}
             myItems={myItems.filter((i) => i.selected)}
             theirItems={theirItems.filter((i) => i.selected)}
-            meetupSummary={meetupSummary}
+            meetupStart={meetupStart}
+            meetupEnd={meetupEnd}
+            meetupPlace={meetupPlace}
+            meetupCenter={meetupCenter}
             message={message}
             tone={tone}
             exposeCalendar={exposeCalendar}
@@ -463,38 +599,22 @@ export function ProposeFlow({
         )}
       </div>
 
-      {/* Bottom CTA */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[#3a324a14] bg-white/95 px-[18px] pb-7 pt-2.5 backdrop-blur-xl">
+      {/* Bottom CTA — オーナー指示で 3 行 summary は廃止、CTA だけ */}
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[#3a324a14] bg-white/95 px-[18px] pb-7 pt-3 backdrop-blur-xl">
         <div className="mx-auto w-full max-w-md">
           {step === "select" && (
-            <>
-              <SummaryRow
-                myCount={myCount}
-                theirCount={theirCount}
-                myText={
-                  myCount > 0 ? buildSummaryText(myItems) : "未選択"
-                }
-                theirText={
-                  theirCount > 0 ? buildSummaryText(theirItems) : "未選択"
-                }
-              />
-              <MeetupSummaryRow
-                set={meetupSet}
-                summary={meetupSet ? meetupSummary : "未設定"}
-              />
-              <button
-                type="button"
-                disabled={!canProceedSelect}
-                onClick={() => setStep("message")}
-                className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-sm font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-              >
-                {canProceedSelect
-                  ? "次へ：メッセージ作成 →"
-                  : myCount === 0 || theirCount === 0
-                    ? "提示物を両方から選んでください"
-                    : "待ち合わせを設定してください"}
-              </button>
-            </>
+            <button
+              type="button"
+              disabled={!canProceedSelect}
+              onClick={() => setStep("message")}
+              className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-sm font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+            >
+              {canProceedSelect
+                ? "次へ：メッセージ作成 →"
+                : myCount === 0 || theirCount === 0
+                  ? "提示物を両方から選んでください"
+                  : "待ち合わせを設定してください"}
+            </button>
           )}
           {step === "message" && (
             <button
@@ -582,7 +702,7 @@ function ItemTab({
           <>
             @{partnerHandle} の譲から、<b>あなたが受け取るもの</b>を選びます。
             <b className="text-[#a695d8]">★ wish 一致</b>
-            はあなたの wish にある目印。
+            は一番上に並びます。
           </>
         )}
       </div>
@@ -619,7 +739,6 @@ function ItemRow({
   onQty: (delta: number) => void;
 }) {
   const stepperVisible = it.selected && it.quantity > 1;
-  // hue は character/group id から決定（不変・色被り回避）
   const hue =
     Math.abs(
       (it.characterId ?? it.groupId ?? it.id)
@@ -637,7 +756,6 @@ function ItemRow({
           : "border-[0.5px] border-[#3a324a14]"
       }`}
     >
-      {/* checkbox */}
       <span
         className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-[5px] border-[1.8px] ${
           it.selected
@@ -659,7 +777,6 @@ function ItemRow({
         )}
       </span>
 
-      {/* thumb */}
       <span
         className="block h-12 w-9 flex-shrink-0 overflow-hidden rounded-md"
         style={{
@@ -678,7 +795,6 @@ function ItemRow({
         )}
       </span>
 
-      {/* main text */}
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-1">
           <span className="text-[13px] font-bold leading-tight">
@@ -702,7 +818,6 @@ function ItemRow({
         </span>
       </span>
 
-      {/* qty stepper */}
       {stepperVisible && (
         <span
           className="flex flex-shrink-0 items-center gap-0 rounded-full bg-[#3a324a08] p-[3px]"
@@ -737,153 +852,162 @@ function ItemRow({
 }
 
 function MeetupTab({
-  meetupType,
-  setMeetupType,
-  meetupNowMinutes,
-  setMeetupNowMinutes,
-  scheduledDate,
-  setScheduledDate,
-  scheduledTime,
-  setScheduledTime,
-  scheduledPlace,
-  setScheduledPlace,
+  partner,
+  meetupStart,
+  setMeetupStart,
+  meetupEnd,
+  setMeetupEnd,
+  meetupPlace,
+  setMeetupPlace,
+  meetupCenter,
+  setMeetupCenter,
+  searchQ,
+  setSearchQ,
+  searchResults,
+  searching,
+  showResults,
+  setShowResults,
+  pickPlace,
+  useCurrentLocation,
 }: {
-  meetupType: MeetupType;
-  setMeetupType: (t: MeetupType) => void;
-  meetupNowMinutes: 5 | 10 | 15 | 30;
-  setMeetupNowMinutes: (m: 5 | 10 | 15 | 30) => void;
-  scheduledDate: string;
-  setScheduledDate: (s: string) => void;
-  scheduledTime: string;
-  setScheduledTime: (s: string) => void;
-  scheduledPlace: string;
-  setScheduledPlace: (s: string) => void;
+  partner: Partner;
+  meetupStart: string;
+  setMeetupStart: (s: string) => void;
+  meetupEnd: string;
+  setMeetupEnd: (s: string) => void;
+  meetupPlace: string;
+  setMeetupPlace: (s: string) => void;
+  meetupCenter: [number, number];
+  setMeetupCenter: (c: [number, number]) => void;
+  searchQ: string;
+  setSearchQ: (s: string) => void;
+  searchResults: Place[];
+  searching: boolean;
+  showResults: boolean;
+  setShowResults: (b: boolean) => void;
+  pickPlace: (p: Place) => void;
+  useCurrentLocation: () => void;
 }) {
   return (
     <>
+      {/* 相手が現地交換モードならバナー */}
+      {partner.localModeEnabled && partner.localModeAW && (
+        <div className="mb-3 rounded-[12px] border-[1.5px] border-[#7a9a8a] bg-[#7a9a8a14] px-3 py-2.5">
+          <div className="mb-0.5 flex items-center gap-1.5 text-[10.5px] font-extrabold tracking-[0.4px] text-[#7a9a8a]">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#7a9a8a] shadow-[0_0_0_3px_rgba(122,154,138,0.25)]" />
+            @{partner.handle} は現地交換モード中
+          </div>
+          <div className="text-[11.5px] leading-snug text-[#3a324a]">
+            相手が今いる場所と時間帯を自動で入力済みです。必要なら下で調整できます。
+          </div>
+        </div>
+      )}
+
       <div className="mb-3 rounded-[10px] bg-[#a695d810] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#3a324a]">
         <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
           📍 待ち合わせ
         </span>
-        日時と場所を決めます。<b>その場で会う</b>なら「いますぐ」、
-        <b>事前に約束</b>するなら「日時指定」を選んでください。
+        <b>時間帯</b>と<b>場所</b>を決めます。地図のピンをドラッグするか、検索で場所を選べます。
       </div>
 
-      {/* type toggle */}
-      <div className="mb-3.5 flex gap-1.5 rounded-xl bg-[#3a324a08] p-1">
-        {(
-          [
-            { id: "now", label: "🚀 いますぐ", sub: "5〜30分以内に合流" },
-            { id: "scheduled", label: "📅 日時指定", sub: "事前に時間を決める" },
-          ] as const
-        ).map((opt) => {
-          const active = meetupType === opt.id;
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => setMeetupType(opt.id)}
-              className={`flex-1 rounded-[9px] px-1.5 py-2.5 text-center leading-tight ${
-                active
-                  ? "bg-white text-[#a695d8] shadow-[0_2px_6px_rgba(0,0,0,0.06)]"
-                  : "text-[#3a324a8c]"
-              }`}
-            >
-              <div
-                className={`text-[12.5px] ${active ? "font-extrabold" : "font-bold"}`}
-              >
-                {opt.label}
-              </div>
-              <div
-                className={`mt-0.5 text-[9.5px] font-semibold ${
-                  active ? "text-[#3a324a8c]" : "text-[#3a324a4d]"
-                }`}
-              >
-                {opt.sub}
-              </div>
-            </button>
-          );
-        })}
+      {/* 時間帯（開始 + 終了） */}
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <div>
+          <div className="mb-1 px-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+            開始
+          </div>
+          <input
+            type="datetime-local"
+            value={meetupStart}
+            onChange={(e) => setMeetupStart(e.target.value)}
+            className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
+          />
+        </div>
+        <div>
+          <div className="mb-1 px-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+            終了
+          </div>
+          <input
+            type="datetime-local"
+            value={meetupEnd}
+            onChange={(e) => setMeetupEnd(e.target.value)}
+            className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
+          />
+        </div>
       </div>
 
-      {meetupType === "now" ? (
-        <>
-          <div className="mb-2 px-1 text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-            合流可能時間
+      {/* 場所名 + 検索 */}
+      <div className="mb-2 px-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+        場所
+      </div>
+      <input
+        type="text"
+        value={meetupPlace}
+        onChange={(e) => setMeetupPlace(e.target.value)}
+        maxLength={120}
+        placeholder="例: 東京駅 銀の鈴前"
+        className="mb-2 block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
+      />
+
+      {/* 検索バー */}
+      <div className="relative mb-2">
+        <input
+          type="text"
+          value={searchQ}
+          onChange={(e) => setSearchQ(e.target.value)}
+          onFocus={() => searchResults.length && setShowResults(true)}
+          placeholder="🔍 駅・施設名で検索（例：渋谷駅）"
+          className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
+        />
+        {searching && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[#3a324a8c]">
+            …
+          </span>
+        )}
+        {showResults && searchResults.length > 0 && (
+          <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-lg border border-[#3a324a14] bg-white shadow-[0_8px_20px_rgba(58,50,74,0.12)]">
+            {searchResults.slice(0, 10).map((p, i) => (
+              <button
+                key={`${p.lat}-${p.lon}-${i}`}
+                type="button"
+                onClick={() => pickPlace(p)}
+                className="block w-full border-b border-[#3a324a08] px-3 py-2 text-left last:border-0 hover:bg-[#a695d80a]"
+              >
+                <div className="text-[12px] font-semibold text-[#3a324a]">
+                  {labelFromAddress(p)}
+                </div>
+                <div className="mt-0.5 truncate text-[10px] text-[#3a324a8c]">
+                  {p.display_name}
+                </div>
+              </button>
+            ))}
           </div>
-          <div className="mb-4 flex flex-wrap gap-1.5">
-            {([5, 10, 15, 30] as const).map((m) => {
-              const active = meetupNowMinutes === m;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMeetupNowMinutes(m)}
-                  className={`rounded-full px-3.5 py-2 text-[12px] ${
-                    active
-                      ? "bg-[#a695d8] font-extrabold text-white shadow-[0_2px_6px_rgba(166,149,216,0.33)]"
-                      : "border-[0.5px] border-[#3a324a14] bg-white font-semibold text-[#3a324a]"
-                  }`}
-                >
-                  {m}分以内
-                </button>
-              );
-            })}
-          </div>
-          <div className="rounded-[10px] bg-[#a8d4e614] px-3 py-2.5 text-[10.5px] leading-relaxed text-[#3a324a]">
-            💡
-            「いますぐ」を選ぶ場合、相手が承諾した直後に合流できる距離にいることが前提です。会場周辺など、すぐ動ける状況で使いましょう。場所は取引チャットで決めます。
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="mb-2 px-1 text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-            日時を指定する
-          </div>
-          <div className="mb-2 grid grid-cols-2 gap-2">
-            <div>
-              <div className="mb-1 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-                日付
-              </div>
-              <input
-                type="date"
-                value={scheduledDate}
-                onChange={(e) => setScheduledDate(e.target.value)}
-                className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
-              />
-            </div>
-            <div>
-              <div className="mb-1 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-                時刻
-              </div>
-              <input
-                type="time"
-                value={scheduledTime}
-                onChange={(e) => setScheduledTime(e.target.value)}
-                className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
-              />
-            </div>
-          </div>
-          <div className="mb-3">
-            <div className="mb-1 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-              場所（駅・施設名など）
-            </div>
-            <input
-              type="text"
-              value={scheduledPlace}
-              onChange={(e) => setScheduledPlace(e.target.value)}
-              maxLength={80}
-              placeholder="例: 東京駅 銀の鈴前"
-              className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
-            />
-          </div>
-          <div className="rounded-[10px] bg-[#a8d4e614] px-3 py-2.5 text-[10.5px] leading-relaxed text-[#3a324a]">
-            💡
-            日時指定はあなたの個人スケジュールに反映されません。スケジュール公開を ON
-            にすると、相手はあなたの「忙しい時間帯」を把握できます。
-          </div>
-        </>
-      )}
+        )}
+      </div>
+
+      {/* 現在地ボタン */}
+      <button
+        type="button"
+        onClick={useCurrentLocation}
+        className="mb-2 flex items-center gap-1.5 rounded-full border border-[#a695d855] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#a695d8] active:scale-[0.97]"
+      >
+        📍 現在地を中心に
+      </button>
+
+      {/* 地図 */}
+      <div className="overflow-hidden rounded-[12px] border-[0.5px] border-[#3a324a14] bg-[#e8eef0]">
+        <div className="h-[240px] w-full">
+          <MapPicker
+            center={meetupCenter}
+            radiusM={120}
+            onCenterChange={(lat, lng) => setMeetupCenter([lat, lng])}
+            className="h-full w-full"
+          />
+        </div>
+        <div className="border-t border-[#3a324a14] bg-white px-3 py-2 text-[10px] text-[#3a324a8c]">
+          ピンをドラッグ or 地図をタップで位置を調整できます。
+        </div>
+      </div>
     </>
   );
 }
@@ -912,7 +1036,6 @@ function MessageStep({
         トーンを選ぶと自動でメッセージが入ります。文面はそのままでも、編集してから送ってもOK。
       </div>
 
-      {/* tone selector */}
       <div className="mb-3 flex gap-1 rounded-[10px] bg-[#3a324a08] p-[3px]">
         {(
           [
@@ -951,7 +1074,6 @@ function MessageStep({
         <span className="tabular-nums">{message.length} / 400</span>
       </div>
 
-      {/* calendar expose toggle */}
       <button
         type="button"
         onClick={() => setExposeCalendar(!exposeCalendar)}
@@ -998,7 +1120,10 @@ function ConfirmStep({
   partnerHandle,
   myItems,
   theirItems,
-  meetupSummary,
+  meetupStart,
+  meetupEnd,
+  meetupPlace,
+  meetupCenter,
   message,
   tone,
   exposeCalendar,
@@ -1007,7 +1132,10 @@ function ConfirmStep({
   partnerHandle: string;
   myItems: Selectable[];
   theirItems: Selectable[];
-  meetupSummary: string;
+  meetupStart: string;
+  meetupEnd: string;
+  meetupPlace: string;
+  meetupCenter: [number, number];
   message: string;
   tone: Tone;
   exposeCalendar: boolean;
@@ -1022,70 +1150,52 @@ function ConfirmStep({
         @{partnerHandle} に下記の内容で打診を送ります。送信後 7 日間が応答期限です。
       </div>
 
+      {/* 交換内容（マッチパネル風グリッド：相手の譲 ↔ 私の譲） */}
       <Section label="交換内容">
-        <div className="grid grid-cols-[1fr_auto_1fr] gap-2.5 rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white p-3">
-          <div>
-            <div className="mb-1.5 px-0.5 text-[9.5px] font-bold tracking-[0.6px] text-[#3a324a8c]">
-              あなたが出す ({myItems.length})
-            </div>
-            <ul className="space-y-1">
-              {myItems.map((i) => (
-                <li
-                  key={i.id}
-                  className="text-[11.5px] font-semibold leading-tight"
-                >
-                  {i.title} ×{i.selectedQty}
-                </li>
-              ))}
-            </ul>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2.5 rounded-[14px] bg-[#a8d4e614] p-2.5">
+          <SidePanel
+            label={`相手の譲（${theirItems.length}）`}
+            items={theirItems}
+            align="left"
+          />
+          <div className="flex flex-col items-center gap-1 pt-4">
+            <ArrowDot color="#a695d8" dir="right" />
+            <ArrowDot color="#a8d4e6" dir="left" />
           </div>
-          <div className="flex flex-col items-center justify-center gap-1">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#a695d8] text-white">
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <path
-                  d="M2 6h8m-2-2l2 2-2 2"
-                  stroke="#fff"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-              </svg>
-            </span>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#a8d4e6] text-white">
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <path
-                  d="M10 6H2m2-2L2 6l2 2"
-                  stroke="#fff"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-              </svg>
-            </span>
-          </div>
-          <div>
-            <div className="mb-1.5 px-0.5 text-right text-[9.5px] font-bold tracking-[0.6px] text-[#3a324a8c]">
-              受け取る ({theirItems.length})
-            </div>
-            <ul className="space-y-1 text-right">
-              {theirItems.map((i) => (
-                <li
-                  key={i.id}
-                  className="text-[11.5px] font-semibold leading-tight"
-                >
-                  {i.title} ×{i.selectedQty}
-                </li>
-              ))}
-            </ul>
-          </div>
+          <SidePanel
+            label={`あなたの譲（${myItems.length}）`}
+            items={myItems}
+            align="right"
+            accent="#f3c5d4cc"
+          />
         </div>
       </Section>
 
+      {/* 待ち合わせ：日時 + 場所 + 地図 */}
       <Section label="待ち合わせ">
-        <div className="rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white px-3 py-3 text-[12.5px] font-semibold">
-          📍 {meetupSummary}
+        <div className="overflow-hidden rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white">
+          <div className="px-3 py-2.5">
+            <div className="mb-0.5 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+              日時
+            </div>
+            <div className="text-[13px] font-bold tabular-nums text-[#3a324a]">
+              {formatRange(meetupStart, meetupEnd)}
+            </div>
+            <div className="mt-2 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+              場所
+            </div>
+            <div className="text-[13px] font-bold text-[#3a324a]">
+              📍 {meetupPlace}
+            </div>
+          </div>
+          <div className="h-[160px] w-full border-t border-[#3a324a14]">
+            <MapPicker
+              center={meetupCenter}
+              radiusM={120}
+              onCenterChange={() => {}}
+              className="h-full w-full"
+            />
+          </div>
         </div>
       </Section>
 
@@ -1124,6 +1234,145 @@ function ConfirmStep({
   );
 }
 
+/** 1 アイテム = 写真 or イニシャルの縦長カード */
+function Tcg({ item, accent }: { item: Selectable; accent?: string }) {
+  const hue =
+    Math.abs(
+      (item.characterId ?? item.groupId ?? item.id)
+        .split("")
+        .reduce((s, c) => s + c.charCodeAt(0), 0),
+    ) % 360;
+  const stripeBg = `repeating-linear-gradient(135deg, hsl(${hue}, 28%, 86%) 0 5px, hsl(${hue}, 28%, 78%) 5px 10px)`;
+  const initialShadow = `0 1px 3px hsla(${hue}, 30%, 30%, 0.5)`;
+  const hasPhoto = !!item.photoUrl;
+  const label =
+    item.characterName ?? item.groupName ?? item.title ?? "?";
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-md border border-white/40 shadow-[0_1px_3px_rgba(58,50,74,0.15)]"
+      style={{
+        width: 36,
+        height: 48,
+        background: hasPhoto ? "#3a324a" : stripeBg,
+      }}
+      title={`${label}${item.goodsTypeName ? ` · ${item.goodsTypeName}` : ""} ×${item.selectedQty}`}
+    >
+      {hasPhoto && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.photoUrl!}
+          alt={label}
+          className="absolute inset-0 h-full w-full object-cover"
+          loading="lazy"
+        />
+      )}
+      {!hasPhoto && (
+        <div
+          className="absolute inset-0 flex items-center justify-center text-[16px] font-extrabold text-white/95"
+          style={{ textShadow: initialShadow }}
+        >
+          {label[0] || "?"}
+        </div>
+      )}
+      {accent && !hasPhoto && (
+        <div
+          className="absolute inset-x-0 bottom-0 h-1"
+          style={{ background: accent }}
+        />
+      )}
+      {item.selectedQty > 1 && (
+        <div className="absolute right-0.5 top-0.5 rounded-sm bg-black/55 px-1 text-[8px] font-extrabold leading-tight text-white">
+          ×{item.selectedQty}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SidePanel({
+  label,
+  items,
+  align,
+  accent,
+}: {
+  label: string;
+  items: Selectable[];
+  align: "left" | "right";
+  accent?: string;
+}) {
+  return (
+    <div>
+      <div
+        className={`mb-1.5 px-1 text-[9.5px] font-bold tracking-[0.6px] text-[#3a324a8c] ${
+          align === "right" ? "text-right" : "text-left"
+        }`}
+      >
+        {label}
+      </div>
+      {items.length === 0 ? (
+        <div
+          className={`px-1 text-[10px] italic text-[#3a324a4d] ${
+            align === "right" ? "text-right" : "text-left"
+          }`}
+        >
+          —
+        </div>
+      ) : (
+        <div
+          className={`flex flex-wrap gap-1 px-1 ${
+            align === "right" ? "justify-end" : "justify-start"
+          }`}
+        >
+          {items.map((it) => (
+            <Tcg key={it.id} item={it} accent={accent} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ArrowDot({
+  color,
+  dir,
+}: {
+  color: string;
+  dir: "left" | "right";
+}) {
+  return (
+    <div
+      className="flex h-5 w-5 items-center justify-center rounded-full text-white"
+      style={{
+        background: color,
+        boxShadow: `0 2px 5px ${color}80`,
+      }}
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10">
+        {dir === "right" ? (
+          <path
+            d="M2 5h6m-2-2l2 2-2 2"
+            stroke="#fff"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        ) : (
+          <path
+            d="M8 5H2m2-2L2 5l2 2"
+            stroke="#fff"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        )}
+      </svg>
+    </div>
+  );
+}
+
 function Section({
   label,
   hint,
@@ -1144,99 +1393,6 @@ function Section({
         )}
       </div>
       {children}
-    </div>
-  );
-}
-
-function SummaryRow({
-  myCount,
-  theirCount,
-  myText,
-  theirText,
-}: {
-  myCount: number;
-  theirCount: number;
-  myText: string;
-  theirText: string;
-}) {
-  const set = myCount > 0 && theirCount > 0;
-  return (
-    <div
-      className={`mb-1.5 flex items-center gap-2 rounded-[10px] px-3 py-2 text-[11px] ${
-        set ? "bg-[#a695d810]" : "bg-[#3a324a08]"
-      }`}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-          あなたが出す ({myCount}枚)
-        </div>
-        <div
-          className={`truncate text-[11px] ${
-            myCount > 0
-              ? "font-bold text-[#3a324a]"
-              : "font-medium text-[#3a324a4d]"
-          }`}
-        >
-          {myText}
-        </div>
-      </div>
-      <svg
-        width="22"
-        height="22"
-        viewBox="0 0 22 22"
-        className="flex-shrink-0"
-      >
-        <path
-          d="M5 8h12M14 4l4 4-4 4M17 14H5M8 18l-4-4 4-4"
-          stroke="#a695d8"
-          strokeWidth="1.6"
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <div className="min-w-0 flex-1 text-right">
-        <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-          あなたが受け取る ({theirCount}枚)
-        </div>
-        <div
-          className={`truncate text-[11px] ${
-            theirCount > 0
-              ? "font-bold text-[#3a324a]"
-              : "font-medium text-[#3a324a4d]"
-          }`}
-        >
-          {theirText}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MeetupSummaryRow({
-  set,
-  summary,
-}: {
-  set: boolean;
-  summary: string;
-}) {
-  return (
-    <div
-      className={`mb-2 flex items-center gap-2 rounded-[10px] px-3 py-2 text-[11px] ${
-        set ? "bg-[#a695d810]" : "bg-[#3a324a08]"
-      }`}
-    >
-      <span className="text-[13px]">📍</span>
-      <span className="flex-shrink-0 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-        待ち合わせ
-      </span>
-      <span
-        className={`min-w-0 flex-1 truncate text-right text-[11px] ${
-          set ? "font-bold text-[#3a324a]" : "font-medium text-[#3a324a4d]"
-        }`}
-      >
-        {summary}
-      </span>
     </div>
   );
 }
