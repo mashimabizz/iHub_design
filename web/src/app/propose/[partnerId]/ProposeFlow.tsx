@@ -63,6 +63,15 @@ type Props = {
   myInv: ProposeInv[];
   theirInv: ProposeInv[];
   matchType: "perfect" | "forward" | "backward";
+  /** iter67.7：listing/option 経由打診の初期値プリフィル */
+  initial?: {
+    senderHaveIds: string[];
+    senderHaveQtys: number[];
+    receiverHaveIds: string[];
+    receiverHaveQtys: number[];
+    cashOffer?: { amount: number };
+    listingId?: string;
+  };
 };
 
 /* Tokyo Station fallback */
@@ -212,34 +221,74 @@ export function ProposeFlow({
   myInv,
   theirInv,
   matchType,
+  initial,
 }: Props) {
   const router = useRouter();
 
-  /* ── 提示物 state（wishMatch を先頭にソート済） ── */
+  /* ── 提示物 state（initial があれば優先、なければ wishMatch pre-check） ── */
+  const initialSenderIdSet = useMemo(
+    () => new Set(initial?.senderHaveIds ?? []),
+    [initial],
+  );
+  const initialReceiverIdSet = useMemo(
+    () => new Set(initial?.receiverHaveIds ?? []),
+    [initial],
+  );
+  const initialSenderQtyById = useMemo(() => {
+    const m = new Map<string, number>();
+    if (initial) {
+      initial.senderHaveIds.forEach((id, i) => {
+        m.set(id, initial.senderHaveQtys[i] ?? 1);
+      });
+    }
+    return m;
+  }, [initial]);
+  const initialReceiverQtyById = useMemo(() => {
+    const m = new Map<string, number>();
+    if (initial) {
+      initial.receiverHaveIds.forEach((id, i) => {
+        m.set(id, initial.receiverHaveQtys[i] ?? 1);
+      });
+    }
+    return m;
+  }, [initial]);
+
   const [myItems, setMyItems] = useState<Selectable[]>(() =>
     sortByWishFirst(myInv).map((i) => {
-      const checked =
-        (matchType === "perfect" || matchType === "forward") &&
-        i.wishMatch === true;
+      const checked = initial
+        ? initialSenderIdSet.has(i.id)
+        : (matchType === "perfect" || matchType === "forward") &&
+          i.wishMatch === true;
+      const qty = checked
+        ? initialSenderQtyById.get(i.id) ?? i.quantity
+        : 1;
       return {
         ...i,
         selected: checked,
-        selectedQty: checked ? i.quantity : 1,
+        selectedQty: qty,
       };
     }),
   );
   const [theirItems, setTheirItems] = useState<Selectable[]>(() =>
     sortByWishFirst(theirInv).map((i) => {
-      const checked =
-        (matchType === "perfect" || matchType === "backward") &&
-        i.wishMatch === true;
+      const checked = initial
+        ? initialReceiverIdSet.has(i.id)
+        : (matchType === "perfect" || matchType === "backward") &&
+          i.wishMatch === true;
+      const qty = checked
+        ? initialReceiverQtyById.get(i.id) ?? i.quantity
+        : 1;
       return {
         ...i,
         selected: checked,
-        selectedQty: checked ? i.quantity : 1,
+        selectedQty: qty,
       };
     }),
   );
+
+  /* ── 定価交換モード（initial.cashOffer があれば true） ── */
+  const cashOffer = initial?.cashOffer;
+  const isCashMode = !!cashOffer;
 
   /* ── 待ち合わせ state（時間帯 + 地図） ── */
   // 相手が現地モードなら AW から自動入力、それ以外は今+1〜2時間
@@ -300,7 +349,10 @@ export function ProposeFlow({
     !!meetupPlace.trim() &&
     new Date(meetupEnd) > new Date(meetupStart);
 
-  const canProceedSelect = myCount > 0 && theirCount > 0 && meetupSet;
+  // 定価交換モードでは receivers (相手の譲) は要らない（金銭で受け取る/支払う）
+  const canProceedSelect = isCashMode
+    ? myCount > 0 && meetupSet
+    : myCount > 0 && theirCount > 0 && meetupSet;
 
   /** 自動メッセージ */
   const autoMessage = useMemo(() => {
@@ -485,8 +537,9 @@ export function ProposeFlow({
         matchType,
         senderHaveIds,
         senderHaveQtys,
-        receiverHaveIds,
-        receiverHaveQtys,
+        // 定価交換モードでは receiver 側は空配列で送信
+        receiverHaveIds: isCashMode ? [] : receiverHaveIds,
+        receiverHaveQtys: isCashMode ? [] : receiverHaveQtys,
         message,
         messageTone: tone,
         meetupStartAt: localToIso(meetupStart),
@@ -495,6 +548,9 @@ export function ProposeFlow({
         meetupLat: meetupCenter[0],
         meetupLng: meetupCenter[1],
         exposeCalendar,
+        listingId: initial?.listingId ?? null,
+        cashOffer: isCashMode,
+        cashAmount: cashOffer?.amount ?? null,
       });
       if (r?.error) {
         setError(r.error);
@@ -545,12 +601,31 @@ export function ProposeFlow({
           </span>
         </div>
 
+        {/* 定価交換モードバナー */}
+        {isCashMode && (
+          <div className="-mx-[18px] mt-2 flex items-center gap-2 border-b border-[#7a9a8a33] bg-[#7a9a8a14] px-[18px] py-2">
+            <span className="text-[14px]">💴</span>
+            <div className="flex-1 text-[11.5px] font-bold leading-snug text-[#3a324a]">
+              定価交換モード（個別募集の選択肢から）
+              <span className="ml-1.5 text-[10.5px] font-normal text-[#3a324a8c]">
+                受け取り＝¥{cashOffer?.amount.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        )}
+
         {step === "select" && (
           <div className="-mx-[18px] mt-3 flex border-b border-[#3a324a14] px-3">
             {(
               [
                 { id: "mine", label: "私が出す", count: myCount },
-                { id: "theirs", label: "受け取る", count: theirCount },
+                {
+                  id: "theirs",
+                  label: isCashMode
+                    ? `受け取り ¥${cashOffer?.amount.toLocaleString()}`
+                    : "受け取る",
+                  count: isCashMode ? "💴" : theirCount,
+                },
                 {
                   id: "meetup",
                   label: "待ち合わせ",
@@ -618,14 +693,30 @@ export function ProposeFlow({
         )}
 
         {step === "select" && tab !== "meetup" && (
-          <ItemTab
-            tab={tab}
-            partnerHandle={partner.handle}
-            matchType={matchType}
-            items={tab === "mine" ? myItems : theirItems}
-            onToggle={(id) => toggleItem(tab, id)}
-            onQty={(id, d) => updateQty(tab, id, d)}
-          />
+          <>
+            {isCashMode && tab === "theirs" ? (
+              <div className="rounded-[14px] border-[1.5px] border-[#7a9a8a] bg-[#7a9a8a0a] p-5 text-center">
+                <div className="text-[24px]">💴</div>
+                <div className="mt-1 text-[14px] font-extrabold text-[#3a324a]">
+                  定価交換 ¥{cashOffer?.amount.toLocaleString()}
+                </div>
+                <div className="mt-2 text-[11.5px] leading-relaxed text-[#3a324a8c]">
+                  この打診は <b>金銭での取引</b> です。
+                  <br />
+                  受け取るアイテムの選択は不要です。
+                </div>
+              </div>
+            ) : (
+              <ItemTab
+                tab={tab}
+                partnerHandle={partner.handle}
+                matchType={matchType}
+                items={tab === "mine" ? myItems : theirItems}
+                onToggle={(id) => toggleItem(tab, id)}
+                onQty={(id, d) => updateQty(tab, id, d)}
+              />
+            )}
+          </>
         )}
 
         {step === "message" && (

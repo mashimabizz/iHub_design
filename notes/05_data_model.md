@@ -16,6 +16,7 @@
 | **v2.2** | **2026-05-03** | **iter67.1 反映（待ち合わせを「時間帯+地図座標」型に統一：meetup_type/meetup_now_minutes/meetup_scheduled_custom 廃止、meetup_start_at/end_at/place_name/lat/lng 追加）** |
 | **v2.3** | **2026-05-03** | **iter67.3 反映（listings を N×M × AND/OR マトリクス化：have_ids[]/have_qtys[]/have_logic + wish_qtys[]/wish_logic 追加、inventory_id/ratio_*/priority/exchange_type 廃止。wish 側の exchange_type は goods_inventory に既存・UI で必須化）** |
 | **v2.4** | **2026-05-03** | **iter67.4 反映（求側を「複数選択肢」モデルへ再設計：listing_wish_options 新規、listings から wish_*/wish_logic 廃止、have_group_id/have_goods_type_id 追加で同一性検証、定価交換選択肢サポート）** |
+| **v2.5** | **2026-05-03** | **iter67.7 反映（proposals に cash_offer / cash_amount 列追加：定価交換打診サポート。receiver_have_ids 空時の CHECK 緩和）** |
 
 ## このドキュメントの位置付け
 
@@ -382,6 +383,8 @@ iter28（match_type）/ iter29（数量）/ iter30（7日期限）/ iter32（合
 | `meetup_lng` | numeric(9,6) | iter67.1、経度 |
 | `expose_calendar` | bool default false | iter67 で再定義：送信者が自分の **個人スケジュール（schedules）** を相手に公開する ON/OFF。受信側は受信表示画面で送信者の予定を見られる（取引完了で自動的に RLS 不可）。AW は対象外 |
 | `listing_id` | uuid nullable | iter64、個別募集 (`listings`) 経由の打診ならその id。直接打診なら null |
+| `cash_offer` | bool default false | iter67.7、定価交換打診なら true（receiver_have_ids 空 + cash_amount 必須） |
+| `cash_amount` | int nullable | iter67.7、定価交換金額（1〜9,999,999）。cash_offer=true のときのみ |
 | `created_at` / `updated_at` | timestamptz | |
 
 CHECK 制約 `proposals_meetup_required`（iter67.1）：`status='draft'` 以外なら 5 列すべて NOT NULL かつ `meetup_end_at > meetup_start_at`。

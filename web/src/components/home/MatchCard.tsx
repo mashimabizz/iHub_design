@@ -211,6 +211,8 @@ function ListingMatchCard({ card }: { card: MatchCardData }) {
       {modalOpen && (
         <MatchDetailModal
           partnerHandle={card.userHandle}
+          partnerId={card.partnerId}
+          matchType={card.matchType}
           myListings={card.myMatchedListings ?? []}
           partnerListings={card.partnerMatchedListings ?? []}
           onClose={() => setModalOpen(false)}

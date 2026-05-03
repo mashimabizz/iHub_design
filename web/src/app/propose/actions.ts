@@ -23,17 +23,37 @@ export async function createProposal(input: {
   meetupLng: number;
   exposeCalendar: boolean;
   listingId?: string | null;
+  /** iter67.7：定価交換打診（receiverHaveIds は空で OK、金額のみ送信） */
+  cashOffer?: boolean;
+  cashAmount?: number | null;
 }): Promise<ActionResult> {
   if (!input.receiverId) return { error: "受信者が不明です" };
   if (input.senderHaveIds.length === 0)
     return { error: "あなたが出すアイテムを選んでください" };
-  if (input.receiverHaveIds.length === 0)
-    return { error: "受け取るアイテムを選んでください" };
   if (input.senderHaveIds.length !== input.senderHaveQtys.length)
     return { error: "数量配列の長さが不一致" };
-  if (input.receiverHaveIds.length !== input.receiverHaveQtys.length)
-    return { error: "数量配列の長さが不一致" };
   if (!input.message.trim()) return { error: "メッセージを入力してください" };
+
+  // cash_offer 分岐：通常打診 vs 定価交換打診
+  if (input.cashOffer) {
+    if (
+      !input.cashAmount ||
+      input.cashAmount < 1 ||
+      input.cashAmount > 9999999
+    ) {
+      return { error: "定価交換の金額を 1〜9,999,999 で指定してください" };
+    }
+    if (input.receiverHaveIds.length > 0) {
+      return {
+        error: "定価交換打診では「受け取るアイテム」を空にしてください",
+      };
+    }
+  } else {
+    if (input.receiverHaveIds.length === 0)
+      return { error: "受け取るアイテムを選んでください" };
+    if (input.receiverHaveIds.length !== input.receiverHaveQtys.length)
+      return { error: "数量配列の長さが不一致" };
+  }
 
   // 待ち合わせバリデーション
   if (
@@ -74,8 +94,8 @@ export async function createProposal(input: {
       match_type: input.matchType,
       sender_have_ids: input.senderHaveIds,
       sender_have_qtys: input.senderHaveQtys,
-      receiver_have_ids: input.receiverHaveIds,
-      receiver_have_qtys: input.receiverHaveQtys,
+      receiver_have_ids: input.cashOffer ? [] : input.receiverHaveIds,
+      receiver_have_qtys: input.cashOffer ? [] : input.receiverHaveQtys,
       message: input.message.trim(),
       message_tone: input.messageTone ?? "standard",
       status: "sent",
@@ -88,6 +108,8 @@ export async function createProposal(input: {
       meetup_lng: input.meetupLng,
       expose_calendar: input.exposeCalendar,
       listing_id: input.listingId ?? null,
+      cash_offer: !!input.cashOffer,
+      cash_amount: input.cashOffer ? input.cashAmount : null,
     })
     .select("id")
     .single();

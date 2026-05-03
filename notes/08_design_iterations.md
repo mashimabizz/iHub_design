@@ -419,6 +419,111 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67.7：詳細モーダルのコンパクト化 + 選択肢から打診プリフィル + 定価交換打診
+
+### 背景
+
+iter67.6 の詳細モーダルを実機で見たオーナーから整理依頼：
+
+> Q1: 譲↔︎求の構成で、譲は左側に1度だけ出して、線が伸びて複数選択肢を表示
+> Q2: 「この選択肢で打診」ボタンをスタイリッシュに
+> Q3: 定価交換にも打診ボタンつける
+> Q4: 成立優先表示、未成立は薄く
+> 全体：コンパクトに、スクロール削減
+> 各選択肢で「打診→」を押すと、その選択肢の譲・求が打診画面に **プリフィル**
+
+### 変更内容
+
+#### A. DB マイグレーション（`20260503200000_proposal_cash_offer.sql`）
+
+`proposals` テーブルに：
+- `cash_offer boolean default false`
+- `cash_amount integer nullable` (1〜9,999,999)
+
+CHECK 制約：cash_offer=true なら cash_amount 必須 + receiver_have_ids 空、cash_offer=false なら cash_amount null + receiver_have_ids ≥1
+
+#### B. `createProposal` 拡張
+- input に `cashOffer?: boolean` `cashAmount?: number` 追加
+- cash 分岐：
+  - cash=true: receiverHaveIds 空 OK、cashAmount 必須
+  - cash=false: receiverHaveIds ≥1 必須
+- INSERT 時に cash_offer / cash_amount を埋める
+- listingId を保存（既存）
+
+#### C. propose `/propose/[partnerId]/page.tsx`：listing/option クエリ受け取り
+
+searchParams に `listing` + `option` を受け取り、両方ある場合：
+1. `listings` と `listing_wish_options` を fetch
+2. listing.user_id が自分か相手かで処理分岐
+3. 自分の listing：
+   - sender = listing.haves
+   - receiver = option.wish_ids にヒットする partner inv（matched）
+4. 相手の listing：
+   - sender = option.wish_ids にヒットする my inv
+   - receiver = listing.haves（相手が出すもの）
+5. 定価交換 option：cashOffer フィールドを構築
+6. `initial: { senderHaveIds, senderHaveQtys, receiverHaveIds, receiverHaveQtys, cashOffer?, listingId }` を ProposeFlow に渡す
+
+#### D. `ProposeFlow.tsx`：initial values + 定価交換モード
+
+- props に `initial?` 追加
+- `useState` 初期化で：
+  - initial があれば senderIds / receiverIds / qty を反映
+  - 無ければ既存の wishMatch pre-check 動作
+- `isCashMode = !!initial?.cashOffer`
+- 定価交換モード時：
+  - 上部に緑バナー「💴 定価交換モード · 受け取り＝¥X,XXX」
+  - 「受け取る」タブ：アイテムリストの代わりに定価金額カード
+  - canProceedSelect：theirCount チェック skip
+  - createProposal 呼び出し時に cashOffer / cashAmount / receiver 空配列
+
+#### E. `MatchDetailModal.tsx`：レイアウト全面書き直し（コンパクト版）
+
+- **左カラム**：listing.haves（共通）を **1 度だけ** 固定（縦中央）
+  - 64×84px のサムネ、最大 2 件表示 + 「+N」
+  - haves.length > 1 のとき AND/OR バッジ
+- **右カラム**：選択肢を **縦並び**（成立優先ソート → 未成立は opacity 0.6）
+  - 各選択肢は 1 行（横長）：
+    - 左：求アイテム or 💴 アイコン
+    - 中央：position chip + exchange_type chip + AND/OR + ✅
+    - 右：**スタイリッシュな「打診→」ボタン**（紫グラデの小さな pill）
+- **SVG 線**：左カラム中心 → 各選択肢中心
+  - 成立 + AND → 実線（2px）
+  - 成立 + OR → 点線（1.5px）
+  - 未成立 → 薄い点線（opacity 0.3）
+- セクションヘッダーをミニマル化：「●● あなたの個別募集 · 3 選択肢」1 行
+- 共通の譲セクションは廃止（左カラムに統合）
+- 「打診→」リンク → `/propose/[partnerId]?matchType=...&listing={id}&option={pos}`
+
+#### F. `MatchCard.tsx`：modal 呼び出し拡張
+`MatchDetailModal` 呼び出しに `partnerId` + `matchType` を追加（打診リンク生成用）
+
+### 影響範囲
+
+- DB：proposals に 2 列追加
+- 詳細モーダル：UI 大幅刷新、スクロール量大幅削減
+- 打診画面：listing/option クエリでプリフィル可能に
+- 定価交換打診フロー：完全実装
+
+### 設計判断
+
+- **左譲 1 回固定**：オーナー意図を直接反映。視覚的に「どの選択肢でも譲は同じ」が伝わる
+- **横長 1 行カード**：縦長ではスクロール多くなるので横使い。打診ボタンも右端で押しやすい
+- **成立優先ソート**：成立分が上、未成立は下（opacity 0.6 で参考表示）
+- **定価交換打診**：proposals に cash_offer / cash_amount 列追加で正面突破。receiver 側は空配列、message に金額情報を追加
+- **listingId 保存**：将来「この打診はどの listing 経由か」追跡できる
+
+### 関連ファイル
+
+- `supabase/migrations/20260503200000_proposal_cash_offer.sql`（新規）
+- `web/src/app/propose/actions.ts`（cash 対応）
+- `web/src/app/propose/[partnerId]/page.tsx`（listing/option fetch + initial 構築）
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`（initial values + cash mode）
+- `web/src/components/home/MatchDetailModal.tsx`（レイアウト全面書き直し）
+- `web/src/components/home/MatchCard.tsx`（modal props 拡張）
+
+---
+
 ## イテレーション67.6：マッチパネル改修（listing 経由のリッチカード + partner listings + 距離）
 
 ### 背景
