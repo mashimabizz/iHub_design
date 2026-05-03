@@ -112,13 +112,15 @@ export async function updateArrivalStatus(input: {
 
 /**
  * iter71-D：チャット写真メッセージ送信
+ * iter76-A: messageType を追加。"outfit_photo" は合意済み（agreed）専用。
+ *
  * Client side で chat-photos バケットに upload し、その path を渡してくる想定。
- * agreed/negotiating/agreement_one_side いずれの状態でも送信可。
  */
 export async function sendPhotoMessage(input: {
   proposalId: string;
   storagePath: string;
   caption?: string;
+  messageType?: "photo" | "outfit_photo";
 }): Promise<ActionResult> {
   const supabase = await createClient();
   const {
@@ -135,6 +137,11 @@ export async function sendPhotoMessage(input: {
   if (prop.sender_id !== user.id && prop.receiver_id !== user.id)
     return { error: "参加者ではありません" };
 
+  const messageType = input.messageType ?? "photo";
+  if (messageType === "outfit_photo" && prop.status !== "agreed") {
+    return { error: "服装写真は合意済の取引でのみ共有できます" };
+  }
+
   // 1 年期限の signed URL を作成
   const { data: signed, error: signedErr } = await supabase.storage
     .from("chat-photos")
@@ -146,8 +153,10 @@ export async function sendPhotoMessage(input: {
   const { error } = await supabase.from("messages").insert({
     proposal_id: input.proposalId,
     sender_id: user.id,
-    message_type: "photo",
-    body: input.caption?.trim() || null,
+    message_type: messageType,
+    body:
+      input.caption?.trim() ||
+      (messageType === "outfit_photo" ? "服装写真を共有しました" : null),
     photo_url: signed.signedUrl,
     meta: { storage_path: input.storagePath },
   });

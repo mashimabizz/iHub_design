@@ -117,8 +117,10 @@ export function ChatView({
   const [mapOpen, setMapOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadingOutfit, setUploadingOutfit] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const outfitInputRef = useRef<HTMLInputElement>(null);
 
   /* 自動下スクロール */
   useEffect(() => {
@@ -214,9 +216,12 @@ export function ChatView({
 
   /**
    * iter71-D：写真添付
-   * Storage の chat-photos バケットに直 upload → server action で signed URL 化 + message 投稿
+   * iter76-A: 通常写真 / 服装写真 の 2 種類を扱えるよう汎用化
    */
-  async function handlePhotoSelected(file: File | null) {
+  async function uploadAndSend(
+    file: File | null,
+    kind: "photo" | "outfit_photo",
+  ) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       setError("画像ファイルを選んでください");
@@ -227,11 +232,13 @@ export function ChatView({
       return;
     }
     setError(null);
-    setUploadingPhoto(true);
+    if (kind === "outfit_photo") setUploadingOutfit(true);
+    else setUploadingPhoto(true);
     try {
       const sb = createBrowserClient();
       const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const path = `${proposal.id}/chat-${Date.now()}.${ext}`;
+      const prefix = kind === "outfit_photo" ? "outfit" : "chat";
+      const path = `${proposal.id}/${prefix}-${Date.now()}.${ext}`;
       const { error: upErr } = await sb.storage
         .from("chat-photos")
         .upload(path, file, {
@@ -246,6 +253,7 @@ export function ChatView({
         const r = await sendPhotoMessage({
           proposalId: proposal.id,
           storagePath: path,
+          messageType: kind,
         });
         if (r?.error) {
           setError(r.error);
@@ -256,8 +264,15 @@ export function ChatView({
     } catch (e) {
       setError(e instanceof Error ? e.message : "アップロード失敗");
     } finally {
-      setUploadingPhoto(false);
+      if (kind === "outfit_photo") setUploadingOutfit(false);
+      else setUploadingPhoto(false);
     }
+  }
+  function handlePhotoSelected(file: File | null) {
+    uploadAndSend(file, "photo");
+  }
+  function handleOutfitSelected(file: File | null) {
+    uploadAndSend(file, "outfit_photo");
   }
 
   // iter70-D：合意前は当日合流系 UI を非表示（向かう/到着/服装写真）
@@ -291,7 +306,11 @@ export function ChatView({
             <OutfitCompactRow
               myShared={!!myOutfitPhoto}
               partnerShared={!!partnerOutfitPhoto}
+              myPhotoUrl={myOutfitPhoto}
+              partnerPhotoUrl={partnerOutfitPhoto}
               partnerHandle={proposal.partner.handle}
+              onTake={() => outfitInputRef.current?.click()}
+              uploading={uploadingOutfit}
             />
           )}
         </div>
@@ -356,11 +375,10 @@ export function ChatView({
                 />
                 <QuickChip
                   icon={<span className="text-[12px] leading-none">👕</span>}
-                  label="服装写真"
+                  label={uploadingOutfit ? "送信中…" : "服装写真"}
                   tone="pink"
-                  onClick={() =>
-                    alert("服装写真の撮影は次イテで実装予定です")
-                  }
+                  onClick={() => outfitInputRef.current?.click()}
+                  disabled={pending || uploadingOutfit}
                 />
                 <QuickChip
                   icon={<CameraIcon />}
@@ -409,6 +427,19 @@ export function ChatView({
               const f = e.target.files?.[0] ?? null;
               handlePhotoSelected(f);
               // 同じ画像を連続で選べるよう reset
+              if (e.target) e.target.value = "";
+            }}
+          />
+          {/* iter76-A: 服装写真用 hidden input（capture=user で内カメラ優先） */}
+          <input
+            ref={outfitInputRef}
+            type="file"
+            accept="image/*"
+            capture="user"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              handleOutfitSelected(f);
               if (e.target) e.target.value = "";
             }}
           />
@@ -851,44 +882,105 @@ function AgreedDot({ done, label }: { done: boolean; label: string }) {
 function OutfitCompactRow({
   myShared,
   partnerShared,
+  myPhotoUrl,
+  partnerPhotoUrl,
   partnerHandle,
+  onTake,
+  uploading,
 }: {
   myShared: boolean;
   partnerShared: boolean;
+  myPhotoUrl: string | null;
+  partnerPhotoUrl: string | null;
   partnerHandle: string;
+  onTake: () => void;
+  uploading: boolean;
 }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
   return (
-    <button
-      type="button"
-      onClick={() =>
-        alert("服装写真の撮影は次イテで実装予定です（Storage 整備後）")
-      }
-      className="mt-1.5 flex w-full items-center gap-2 rounded-[10px] border border-[#a695d855] bg-[#a695d80a] px-2.5 py-1.5 text-left active:bg-[#a695d814]"
-    >
-      <span className="text-[12px]">👕</span>
-      <span className="text-[10.5px] font-bold text-[#a695d8]">服装写真</span>
-      <span className="text-[10px] text-[#3a324a]">
-        あなた：
-        <span className={myShared ? "font-bold text-emerald-600" : "text-[#3a324a8c]"}>
-          {myShared ? "✓ 共有済" : "未シェア"}
-        </span>
-      </span>
-      <span className="text-[10px] text-[#3a324a8c]">/</span>
-      <span className="text-[10px] text-[#3a324a]">
-        @{partnerHandle}：
-        <span
-          className={
-            partnerShared ? "font-bold text-emerald-600" : "text-[#3a324a8c]"
-          }
+    <>
+      <div className="mt-1.5 flex w-full items-center gap-2 rounded-[10px] border border-[#a695d855] bg-[#a695d80a] px-2.5 py-1.5">
+        <span className="text-[12px]">👕</span>
+        <span className="text-[10.5px] font-bold text-[#a695d8]">服装写真</span>
+
+        {/* 自分側：サムネ or 未シェア */}
+        <button
+          type="button"
+          onClick={() => myPhotoUrl && setPreviewUrl(myPhotoUrl)}
+          disabled={!myPhotoUrl}
+          className="inline-flex items-center gap-1 text-[10px] text-[#3a324a]"
         >
-          {partnerShared ? "✓ 共有済" : "未シェア"}
-        </span>
-      </span>
-      <div className="flex-1" />
-      <span className="rounded-full bg-[#a695d8] px-2 py-[2px] text-[10px] font-bold text-white">
-        📷 撮影
-      </span>
-    </button>
+          あなた：
+          {myShared && myPhotoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={myPhotoUrl}
+              alt="あなたの服装"
+              className="h-5 w-5 rounded-full border border-emerald-300 object-cover"
+            />
+          ) : (
+            <span className="font-bold text-[#3a324a8c]">未シェア</span>
+          )}
+        </button>
+        <span className="text-[10px] text-[#3a324a8c]">/</span>
+
+        {/* 相手側：サムネ or 未シェア */}
+        <button
+          type="button"
+          onClick={() => partnerPhotoUrl && setPreviewUrl(partnerPhotoUrl)}
+          disabled={!partnerPhotoUrl}
+          className="inline-flex items-center gap-1 text-[10px] text-[#3a324a]"
+        >
+          @{partnerHandle}：
+          {partnerShared && partnerPhotoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={partnerPhotoUrl}
+              alt="相手の服装"
+              className="h-5 w-5 rounded-full border border-emerald-300 object-cover"
+            />
+          ) : (
+            <span className="font-bold text-[#3a324a8c]">未シェア</span>
+          )}
+        </button>
+        <div className="flex-1" />
+
+        {/* 撮影ボタン */}
+        <button
+          type="button"
+          onClick={onTake}
+          disabled={uploading}
+          className="rounded-full bg-[#a695d8] px-2 py-[2px] text-[10px] font-bold text-white disabled:opacity-50"
+        >
+          {uploading ? "送信中…" : myShared ? "📷 撮り直す" : "📷 撮影"}
+        </button>
+      </div>
+
+      {/* iter76-A: 服装写真プレビュー（サムネタップで拡大） */}
+      {previewUrl && (
+        <div
+          onClick={() => setPreviewUrl(null)}
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/75 backdrop-blur-sm"
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewUrl(null)}
+            aria-label="閉じる"
+            className="absolute right-4 top-12 z-[1010] flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-[#3a324a] shadow-md"
+          >
+            ✕
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrl}
+            alt="服装写真プレビュー"
+            className="m-4 max-h-[80vh] max-w-[92vw] rounded-[18px] shadow-[0_30px_80px_rgba(0,0,0,0.5)]"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
   );
 }
 
