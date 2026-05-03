@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { approveCompletion, flagDispute } from "../../actions";
 
@@ -69,42 +69,13 @@ export function ApproveView({ data }: { data: ApproveData }) {
     <div className="relative flex flex-1 flex-col bg-[#fbf9fc]">
       <div className="flex-1 overflow-y-auto px-4 pb-[120px] pt-4">
         <div className="mx-auto max-w-md space-y-3.5">
-          {/* 撮影写真ギャラリー */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <div className="text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-                取引証跡（{data.photos.length}枚）
-              </div>
-              <Link
-                href={`/transactions/${data.proposalId}/capture`}
-                className="text-[11px] font-bold text-[#a695d8] underline"
-              >
-                追加撮影 / 差し替え →
-              </Link>
-            </div>
-            <div className="space-y-2">
-              {data.photos.map((ph, i) => (
-                <div
-                  key={ph.id}
-                  className="relative overflow-hidden rounded-[18px] shadow-[0_4px_12px_rgba(58,50,74,0.10)]"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={ph.photoUrl}
-                    alt={`取引証跡 #${ph.position}`}
-                    className="block h-auto w-full"
-                  />
-                  <div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between rounded-[10px] bg-black/55 px-3 py-1.5 text-[10.5px] tabular-nums text-white backdrop-blur-md">
-                    <span>
-                      #{ph.position}
-                      {i === 0 && photoMeta !== "—" ? ` · ${photoMeta}` : ""}
-                    </span>
-                    <span>{data.placeName ?? "—"}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* 撮影写真ギャラリー（横スワイプ + peek） */}
+          <PhotoCarousel
+            photos={data.photos}
+            firstMeta={photoMeta}
+            placeName={data.placeName}
+            proposalId={data.proposalId}
+          />
 
           {/* アイテムリスト */}
           <div className="overflow-hidden rounded-[16px] border border-[#3a324a14] bg-white">
@@ -255,6 +226,148 @@ function ItemRow({ row }: { row: ApproveRow }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ─── 横スワイプカルーセル + peek + ドットインジケータ ─── */
+
+function PhotoCarousel({
+  photos,
+  firstMeta,
+  placeName,
+  proposalId,
+}: {
+  photos: ApprovePhoto[];
+  firstMeta: string;
+  placeName: string | null;
+  proposalId: string;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  /**
+   * IntersectionObserver で「画面中央に最も近い写真」を active にする
+   */
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestRatio = 0;
+        let bestIdx = activeIdx;
+        for (const e of entries) {
+          if (e.intersectionRatio > bestRatio) {
+            bestRatio = e.intersectionRatio;
+            const idxAttr = (e.target as HTMLElement).dataset.idx;
+            if (idxAttr) bestIdx = parseInt(idxAttr, 10);
+          }
+        }
+        setActiveIdx(bestIdx);
+      },
+      {
+        root,
+        rootMargin: "0px",
+        threshold: [0.5, 0.75, 1],
+      },
+    );
+    const items = root.querySelectorAll("[data-photo-card]");
+    items.forEach((it) => observer.observe(it));
+    return () => observer.disconnect();
+  }, [photos.length, activeIdx]);
+
+  function jumpTo(idx: number) {
+    const root = scrollRef.current;
+    if (!root) return;
+    const target = root.querySelector(
+      `[data-photo-card][data-idx="${idx}"]`,
+    ) as HTMLElement | null;
+    if (target) {
+      target.scrollIntoView({
+        behavior: "smooth",
+        inline: "center",
+        block: "nearest",
+      });
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <div className="text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+          取引証跡（{photos.length}枚）
+          {photos.length > 1 && (
+            <span className="ml-1 text-[10px] font-medium text-[#3a324a4d]">
+              ← スワイプ →
+            </span>
+          )}
+        </div>
+        <Link
+          href={`/transactions/${proposalId}/capture`}
+          className="text-[11px] font-bold text-[#a695d8] underline"
+        >
+          追加撮影 / 差し替え →
+        </Link>
+      </div>
+
+      {/* 横スクロール（snap + peek 約 12% 隣の写真が見える） */}
+      <div
+        ref={scrollRef}
+        className="-mx-4 overflow-x-auto px-4 pb-1 [&::-webkit-scrollbar]:hidden"
+        style={{
+          scrollSnapType: "x mandatory",
+          scrollPaddingLeft: 16,
+          scrollPaddingRight: 16,
+        }}
+      >
+        <div className="flex gap-3">
+          {photos.map((ph, i) => (
+            <div
+              key={ph.id}
+              data-photo-card
+              data-idx={i}
+              className="relative shrink-0 overflow-hidden rounded-[18px] shadow-[0_4px_12px_rgba(58,50,74,0.10)]"
+              style={{
+                scrollSnapAlign: "center",
+                width: "calc(100% - 36px)", // 18px*2 で隣の写真がちょい見え
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={ph.photoUrl}
+                alt={`取引証跡 #${ph.position}`}
+                className="block h-auto w-full"
+              />
+              <div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between rounded-[10px] bg-black/55 px-3 py-1.5 text-[10.5px] tabular-nums text-white backdrop-blur-md">
+                <span>
+                  #{ph.position}
+                  {i === 0 && firstMeta !== "—" ? ` · ${firstMeta}` : ""}
+                </span>
+                <span>{placeName ?? "—"}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ドットインジケータ（複数枚のとき） */}
+      {photos.length > 1 && (
+        <div className="flex justify-center gap-1.5 pt-1">
+          {photos.map((ph, i) => (
+            <button
+              key={ph.id}
+              type="button"
+              onClick={() => jumpTo(i)}
+              aria-label={`写真 ${i + 1}`}
+              className={`h-1.5 rounded-full transition-all ${
+                i === activeIdx
+                  ? "w-5 bg-[#a695d8]"
+                  : "w-1.5 bg-[#3a324a14]"
+              }`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
