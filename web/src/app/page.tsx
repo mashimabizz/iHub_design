@@ -6,6 +6,12 @@ import { PrimaryLinkButton } from "@/components/auth/PrimaryButton";
 import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
 import { HomeView } from "@/components/home/HomeView";
 import { BottomNav } from "@/components/home/BottomNav";
+import {
+  awsOverlap,
+  computeAllMatches,
+  type MatchInv,
+  type UserSummary,
+} from "@/lib/matching";
 
 type Props = {
   searchParams: Promise<{
@@ -16,6 +22,59 @@ type Props = {
     openLocalMode?: string;
   }>;
 };
+
+type GoodsRow = {
+  id: string;
+  user_id: string;
+  group_id: string | null;
+  character_id: string | null;
+  character_request_id: string | null;
+  goods_type_id: string | null;
+  title: string;
+  photo_urls: string[] | null;
+  exchange_type: "same_kind" | "cross_kind" | "any" | null;
+  group: { name: string } | { name: string }[] | null;
+  character: { name: string } | { name: string }[] | null;
+  goods_type: { name: string } | { name: string }[] | null;
+};
+
+type AWRow = {
+  id: string;
+  user_id: string;
+  start_at: string;
+  end_at: string;
+  radius_m: number;
+  center_lat: number | null;
+  center_lng: number | null;
+};
+
+function pickName(
+  v: { name: string } | { name: string }[] | null,
+): string | null {
+  if (!v) return null;
+  return Array.isArray(v) ? v[0]?.name ?? null : v.name;
+}
+
+function toMatchInv(r: GoodsRow): MatchInv | null {
+  if (!r.goods_type_id) return null;
+  return {
+    id: r.id,
+    userId: r.user_id,
+    groupId: r.group_id,
+    characterId: r.character_id,
+    characterRequestId: r.character_request_id,
+    goodsTypeId: r.goods_type_id,
+    title: r.title,
+    photoUrl: (r.photo_urls && r.photo_urls[0]) ?? null,
+    groupName: pickName(r.group),
+    characterName: pickName(r.character),
+    goodsTypeName: pickName(r.goods_type),
+    exchangeType: (r.exchange_type ?? "any") as
+      | "same_kind"
+      | "cross_kind"
+      | "any",
+  };
+}
 
 export default async function Home({ searchParams }: Props) {
   const params = await searchParams;
@@ -42,17 +101,27 @@ export default async function Home({ searchParams }: Props) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // 未ログイン → Welcome 画面（モックアップ AOWelcome 準拠）
+  // 未ログイン → Welcome 画面
   if (!user) {
     return <WelcomeView />;
   }
 
-  // ログイン中 → ホーム画面
+  const goodsSelect =
+    "id, user_id, group_id, character_id, character_request_id, goods_type_id, title, photo_urls, exchange_type, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)";
+
+  // ログイン中：マッチング演算に必要なデータを並列取得
   const [
     { data: profile },
     { data: localMode },
     { data: aws },
     { data: carryingItems },
+    { data: myInventoryRaw },
+    { data: myWishesRaw },
+    { data: myListings },
+    { data: othersInventoryRaw },
+    { data: othersWishesRaw },
+    { data: otherUsersRaw },
+    { data: othersAWsRaw },
   ] = await Promise.all([
     supabase
       .from("users")
@@ -83,14 +152,143 @@ export default async function Home({ searchParams }: Props) {
       .eq("kind", "for_trade")
       .eq("status", "active")
       .order("created_at", { ascending: false }),
+
+    // 自分の譲（マッチ計算用）
+    supabase
+      .from("goods_inventory")
+      .select(goodsSelect)
+      .eq("user_id", user.id)
+      .eq("kind", "for_trade")
+      .eq("status", "active"),
+    // 自分の wish（マッチ計算用）
+    supabase
+      .from("goods_inventory")
+      .select(goodsSelect)
+      .eq("user_id", user.id)
+      .eq("kind", "wanted")
+      .neq("status", "archived"),
+    // 自分の active な listings
+    supabase
+      .from("listings")
+      .select("inventory_id, wish_ids")
+      .eq("user_id", user.id)
+      .eq("status", "active"),
+
+    // 他者の譲
+    supabase
+      .from("goods_inventory")
+      .select(goodsSelect)
+      .neq("user_id", user.id)
+      .eq("kind", "for_trade")
+      .eq("status", "active")
+      .limit(500),
+    // 他者の wish
+    supabase
+      .from("goods_inventory")
+      .select(goodsSelect)
+      .neq("user_id", user.id)
+      .eq("kind", "wanted")
+      .neq("status", "archived")
+      .limit(500),
+    // 他者の users
+    supabase
+      .from("users")
+      .select("id, handle, display_name, primary_area")
+      .neq("id", user.id)
+      .limit(500),
+    // 他者の AW（現地マッチ用）
+    supabase
+      .from("activity_windows")
+      .select(
+        "id, user_id, start_at, end_at, radius_m, center_lat, center_lng",
+      )
+      .neq("user_id", user.id)
+      .eq("status", "enabled")
+      .limit(500),
   ]);
 
-  const pickName = (
-    v: { name: string } | { name: string }[] | null,
-  ): string | null => {
-    if (!v) return null;
-    return Array.isArray(v) ? v[0]?.name ?? null : v.name;
-  };
+  // ─── マッチング演算 ──────────────────────────────────────
+  const myInventory = ((myInventoryRaw as GoodsRow[]) ?? [])
+    .map(toMatchInv)
+    .filter((x): x is MatchInv => !!x);
+  const myWishes = ((myWishesRaw as GoodsRow[]) ?? [])
+    .map(toMatchInv)
+    .filter((x): x is MatchInv => !!x);
+  const myListingsForMatch = (myListings ?? []).map((l) => ({
+    inventoryId: l.inventory_id as string,
+    wishIds: (l.wish_ids as string[]) ?? [],
+  }));
+
+  // パートナー単位にグループ化
+  const partnersMap = new Map<
+    string,
+    { user: UserSummary; inventory: MatchInv[]; wishes: MatchInv[] }
+  >();
+  for (const u of otherUsersRaw ?? []) {
+    partnersMap.set(u.id, {
+      user: {
+        id: u.id,
+        handle: u.handle,
+        displayName: u.display_name,
+        primaryArea: u.primary_area,
+      },
+      inventory: [],
+      wishes: [],
+    });
+  }
+  for (const r of (othersInventoryRaw as GoodsRow[]) ?? []) {
+    const inv = toMatchInv(r);
+    if (!inv) continue;
+    const p = partnersMap.get(r.user_id);
+    if (p) p.inventory.push(inv);
+  }
+  for (const r of (othersWishesRaw as GoodsRow[]) ?? []) {
+    const inv = toMatchInv(r);
+    if (!inv) continue;
+    const p = partnersMap.get(r.user_id);
+    if (p) p.wishes.push(inv);
+  }
+
+  let matches = computeAllMatches({
+    myInventory,
+    myWishes,
+    myListings: myListingsForMatch,
+    partners: Array.from(partnersMap.values()),
+  });
+
+  // ─── 現地モード時の時空交差フィルタ ──────────────────────
+  const isLocal = localMode?.enabled ?? false;
+  const currentAW =
+    (aws ?? []).find((a) => a.id === localMode?.aw_id) ?? null;
+
+  if (isLocal && currentAW) {
+    // 他者 AW を user_id で集約
+    const partnerAWs = new Map<string, AWRow[]>();
+    for (const a of (othersAWsRaw as AWRow[]) ?? []) {
+      const arr = partnerAWs.get(a.user_id) ?? [];
+      arr.push(a);
+      partnerAWs.set(a.user_id, arr);
+    }
+    const myAWForOverlap = {
+      startAt: currentAW.start_at,
+      endAt: currentAW.end_at,
+      centerLat: currentAW.center_lat,
+      centerLng: currentAW.center_lng,
+      radiusM: currentAW.radius_m,
+    };
+    matches = matches.filter((m) => {
+      const aws = partnerAWs.get(m.partner.id) ?? [];
+      return aws.some((a) =>
+        awsOverlap(myAWForOverlap, {
+          startAt: a.start_at,
+          endAt: a.end_at,
+          centerLat: a.center_lat,
+          centerLng: a.center_lng,
+          radiusM: a.radius_m,
+        }),
+      );
+    });
+  }
 
   return (
     <>
@@ -109,28 +307,21 @@ export default async function Home({ searchParams }: Props) {
               }
             : null
         }
-        currentAW={(() => {
-          const target = (aws ?? []).find(
-            (a) => a.id === localMode?.aw_id,
-          );
-          if (!target) return null;
-          return {
-            id: target.id,
-            venue: target.venue,
-            eventName: target.event_name,
-            eventless: target.eventless,
-            startAt: target.start_at,
-            endAt: target.end_at,
-            radiusM:
-              (target as { radius_m?: number }).radius_m ?? 500,
-            centerLat:
-              (target as { center_lat?: number | null }).center_lat ??
-              null,
-            centerLng:
-              (target as { center_lng?: number | null }).center_lng ??
-              null,
-          };
-        })()}
+        currentAW={
+          currentAW
+            ? {
+                id: currentAW.id,
+                venue: currentAW.venue,
+                eventName: currentAW.event_name,
+                eventless: currentAW.eventless,
+                startAt: currentAW.start_at,
+                endAt: currentAW.end_at,
+                radiusM: currentAW.radius_m ?? 500,
+                centerLat: currentAW.center_lat ?? null,
+                centerLng: currentAW.center_lng ?? null,
+              }
+            : null
+        }
         carryingItems={(carryingItems ?? []).map((r) => ({
           id: r.id,
           title: r.title,
@@ -140,6 +331,7 @@ export default async function Home({ searchParams }: Props) {
           photoUrl: null,
         }))}
         autoOpenLocalSheet={params.openLocalMode === "1"}
+        matches={matches}
       />
       <BottomNav />
     </>
@@ -188,4 +380,3 @@ function WelcomeView() {
     </main>
   );
 }
-

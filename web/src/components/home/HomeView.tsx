@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { logout } from "@/app/auth/actions";
 import { MatchCard, type MockMatchCard } from "./MatchCard";
 import {
@@ -13,72 +13,37 @@ import {
   type SimpleAW,
   type SimpleItem,
 } from "./LocalModeSheet";
+import { buildLabel, type Match } from "@/lib/matching";
 
 const TABS = [
-  { id: 0, label: "完全マッチ", count: 3 },
-  { id: 1, label: "私の譲が欲しい人", count: 12 },
-  { id: 2, label: "私が欲しい譲を持つ人", count: 8 },
-  { id: 3, label: "探索", count: 64 },
+  { id: 0, label: "完全マッチ" },
+  { id: 1, label: "私の譲が欲しい人" },
+  { id: 2, label: "私が欲しい譲を持つ人" },
+  { id: 3, label: "探索" },
 ];
 
-// モックデータ（iter66 で実マッチング演算に置換予定）
-const MOCK_CARDS_BY_TAB: Record<number, MockMatchCard[]> = {
-  0: [
-    {
-      id: "m1",
-      userName: "ハナ",
-      userHandle: "hana_lumi",
-      oshiName: "LUMENA",
-      memberName: "スア",
-      givesLabel: "スア トレカ × 2 / 缶バッジ × 1",
-      wantsLabel: "ヒナ アクスタ / 生写真",
-      matchType: "complete",
-      distance: "横浜アリーナ 周辺 · 15m",
-      exchangeType: "any",
-    },
-    {
-      id: "m2",
-      userName: "ナナ",
-      userHandle: "nana_kpop",
-      oshiName: "LUMENA",
-      memberName: "スア",
-      givesLabel: "ヒナ アクスタ × 1",
-      wantsLabel: "スア 生写真",
-      matchType: "complete",
-      distance: "横浜アリーナ 周辺 · 80m",
-      exchangeType: "same_kind",
-    },
-  ],
-  1: [
-    {
-      id: "m3",
-      userName: "ユイ",
-      userHandle: "yui_pop",
-      oshiName: "LUMENA",
-      memberName: "ヒナ",
-      givesLabel: "ヒナ トレカ × 3",
-      wantsLabel: "（あなたの譲が欲しい）",
-      matchType: "they_want_you",
-      distance: "横浜アリーナ 周辺 · 200m",
-      exchangeType: "cross_kind",
-    },
-  ],
-  2: [
-    {
-      id: "m4",
-      userName: "リオ",
-      userHandle: "rio_lumi",
-      oshiName: "LUMENA",
-      memberName: "リナ",
-      givesLabel: "リナ アクスタ",
-      wantsLabel: "（あなたが欲しい）",
-      matchType: "you_want_them",
-      distance: "横浜アリーナ 周辺 · 350m",
-      exchangeType: "any",
-    },
-  ],
-  3: [],
-};
+/** Match を MatchCard 用の MockMatchCard 形式に変換 */
+function matchToCard(m: Match): MockMatchCard {
+  // 推し（グループ）と member 名の集約
+  const oshiSet = new Set<string>();
+  const memberSet = new Set<string>();
+  [...m.myGives, ...m.theirGives].forEach((it) => {
+    if (it.groupName) oshiSet.add(it.groupName);
+    if (it.characterName) memberSet.add(it.characterName);
+  });
+  return {
+    id: `match-${m.partner.id}`,
+    userName: m.partner.displayName || m.partner.handle,
+    userHandle: m.partner.handle,
+    oshiName: Array.from(oshiSet).join(", ") || "—",
+    memberName: Array.from(memberSet).join(", ") || "",
+    givesLabel: buildLabel(m.theirGives),
+    wantsLabel: buildLabel(m.myGives),
+    matchType: m.matchType,
+    distance: m.partner.primaryArea || "広域",
+    exchangeType: "any",
+  };
+}
 
 export function HomeView({
   profile,
@@ -86,15 +51,38 @@ export function HomeView({
   currentAW,
   carryingItems,
   autoOpenLocalSheet = false,
+  matches,
 }: {
   profile: { handle: string; display_name: string } | null;
   localMode: LocalModeSettings | null;
   currentAW: SimpleAW | null;
   carryingItems: SimpleItem[];
   autoOpenLocalSheet?: boolean;
+  matches: Match[];
 }) {
   const [tab, setTab] = useState(0);
-  const cards = MOCK_CARDS_BY_TAB[tab] ?? [];
+
+  // 4 タブにマッチを振り分け
+  const cardsByTab = useMemo(() => {
+    const all = matches.map(matchToCard);
+    return {
+      0: all.filter((c) => c.matchType === "complete"),
+      1: all.filter((c) => c.matchType === "they_want_you"),
+      2: all.filter((c) => c.matchType === "you_want_them"),
+      3: all, // 探索: 全部
+    } as Record<number, MockMatchCard[]>;
+  }, [matches]);
+  const cards = cardsByTab[tab] ?? [];
+
+  const tabCounts = useMemo(
+    () => ({
+      0: cardsByTab[0]?.length ?? 0,
+      1: cardsByTab[1]?.length ?? 0,
+      2: cardsByTab[2]?.length ?? 0,
+      3: cardsByTab[3]?.length ?? 0,
+    }),
+    [cardsByTab],
+  );
 
   // 現地モード state（DB から取得した初期値）
   const [sheetOpen, setSheetOpen] = useState(autoOpenLocalSheet);
@@ -329,7 +317,7 @@ export function HomeView({
                     active ? "text-white/85" : "text-gray-500"
                   }`}
                 >
-                  {t.count}
+                  {tabCounts[t.id as 0 | 1 | 2 | 3] ?? 0}
                 </span>
               </button>
             );

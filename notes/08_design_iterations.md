@@ -419,6 +419,95 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション66：実マッチング演算（mock 撤去）
+
+### 背景
+
+iter65 シリーズで在庫・wish・AW・listings・現地モード設定 — 全部品が DB に保存されるようになったが、ホームのマッチカードは依然として **mock 4 件**。実際の交換相手を探せる状態ではなかった。
+オーナー選択（A）で iter66 として「実マッチング演算」着手。
+
+### 変更内容
+
+#### A. `web/src/lib/matching.ts`（新規）
+
+純関数のマッチング演算コア:
+
+```ts
+isMatching(my, theirs)        // 1 アイテム同士のマッチ判定
+matchPair({ ... })             // 私 × 1 パートナーの組合せ → Match | null
+computeAllMatches({ ... })    // 全パートナー走査 + ソート
+buildLabel(items)              // UI ラベル生成
+haversineMeters(...)           // 2 点間距離（時空交差用）
+awsOverlap(myAW, theirAW)     // AW 同士の時空交差判定
+```
+
+**マッチ判定ルール**:
+- `goods_type_id` が一致必須
+- 双方が `character_id` 持ち → キャラ一致必須
+- どちらか `character_id` null → `group_id` で一致判定（箱推し的）
+
+**個別募集の優先**:
+- 私の譲 X に listing がある場合、その listing.wish_ids 群を「私の wish」として優先使用
+- listing がない譲は通常 wish との比較
+
+**ソート**:
+- complete > they_want_you = you_want_them
+- 同タイプ内では viaListing 優先
+
+#### B. `web/src/app/page.tsx`（拡張）
+
+`Promise.all` の中身を 7 件 → 12 件に拡張:
+- 自分の inventory + wishes + listings (active)
+- 他者の inventory + wishes（公開分）
+- 他者の users（display_name / handle / primary_area）
+- 他者の AW（時空交差用）
+
+ホーム描画前に `computeAllMatches` で計算 → `matches: Match[]` を HomeView に渡す。
+
+**現地モード時のフィルタ**:
+- `localMode.enabled === true` かつ `currentAW` がある場合
+- 他者の AW を user_id 単位に集約
+- `awsOverlap(myAW, theirAW)` でフィルタ
+- どれか 1 つでも交差すればパートナーとして残す
+
+#### C. `web/src/components/home/HomeView.tsx`（mock 撤去）
+
+- `MOCK_CARDS_BY_TAB` 削除
+- `matchToCard(m)` ヘルパで `Match → MockMatchCard`（既存 UI 互換のため型は維持）
+- `cardsByTab` を `useMemo` でタブ別に振り分け
+  - 0: complete / 1: they_want_you / 2: you_want_them / 3: 全部（探索）
+- `tabCounts` で各タブの実件数表示
+
+#### D. RLS と公開設定
+
+既存ポリシー流用（変更なし）:
+- `goods_inventory`: status in ('active', 'reserved') は誰でも読める
+- `users`: 誰でも読める
+- `activity_windows`: status='enabled' は誰でも読める
+- `listings`: status='active' は誰でも読める
+
+### 関連ファイル
+
+- `web/src/lib/matching.ts`（新規）
+- `web/src/app/page.tsx`（fetch + 計算拡張）
+- `web/src/components/home/HomeView.tsx`（mock 撤去 + matchToCard 配線）
+
+### スコープ外（後続 iter）
+
+- 同種/異種タグの判定（現状は表示のみ・iter62 確定）
+- 「断った」記録の除外（rejected_partners テーブル未作成）
+- ブロックリスト除外（テーブル未作成）
+- マッチング結果のキャッシュ（毎回計算でも 500 件 LIMIT で実用範囲）
+- 距離の数値表示（現状は primary_area or 「広域」）
+
+### セルフレビュー（CLAUDE.md absolute rule C）
+
+- **A. デザイン整合性**: MatchCard の見た目は変更なし（mock → 実データ）✅
+- **B. 仕様整合性**: notes/18 §B-1（タグは判定不使用）/ §B-2（listings 優先）/ §B-4（時空交差）と整合 ✅
+- **C. レビュー記録**: 500 件 LIMIT は MVP 暫定。スケール時はサーバ側マッチ（PostGIS / 関数）に切替予定 ✅
+
+---
+
 ## イテレーション65.9：プロフ画面 + プロフ編集 + 推し設定編集（案 Z ハイブリッド）
 
 ### 背景
