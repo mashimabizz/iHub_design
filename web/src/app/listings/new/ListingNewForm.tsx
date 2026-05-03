@@ -5,10 +5,29 @@ import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 import {
   createListing,
+  updateListingFull,
   type ListingExchangeType,
   type ListingLogic,
   type ListingOptionInput,
 } from "@/app/listings/actions";
+
+export type ListingFormInitialValues = {
+  haveGroupId: string | null;
+  haveGoodsTypeId: string | null;
+  selectedHaves: { id: string; qty: number }[];
+  haveLogic: ListingLogic;
+  options: {
+    position: number;
+    groupId: string | null;
+    goodsTypeId: string | null;
+    selected: { id: string; qty: number }[];
+    logic: ListingLogic;
+    exchangeType: ListingExchangeType;
+    isCashOffer: boolean;
+    cashAmount: number | null;
+  }[];
+  note: string;
+};
 
 type InventoryOpt = {
   id: string;
@@ -68,6 +87,9 @@ export function ListingNewForm({
   inventoryGoodsTypes,
   wishGroups,
   wishGoodsTypes,
+  mode = "create",
+  listingId,
+  initialValues,
 }: {
   inventoryItems: InventoryOpt[];
   wishItems: WishOpt[];
@@ -77,33 +99,61 @@ export function ListingNewForm({
   /** 求側選択肢 dropdown：自分の wish (kind=wanted) に登録のあるもののみ */
   wishGroups: { id: string; name: string }[];
   wishGoodsTypes: { id: string; name: string }[];
+  /** iter69-C：作成 or 編集 */
+  mode?: "create" | "edit";
+  /** edit モード時の対象 listing id */
+  listingId?: string;
+  /** edit モード時の初期値 */
+  initialValues?: ListingFormInitialValues;
 }) {
   const router = useRouter();
 
   /* ─ 譲側 ─ */
-  const [haveGroupId, setHaveGroupId] = useState<string | null>(null);
-  const [haveGoodsTypeId, setHaveGoodsTypeId] = useState<string | null>(null);
-  const [selectedHaves, setSelectedHaves] = useState<SelectedItem[]>([]);
-  const [haveLogic, setHaveLogic] = useState<ListingLogic>("and");
+  const [haveGroupId, setHaveGroupId] = useState<string | null>(
+    initialValues?.haveGroupId ?? null,
+  );
+  const [haveGoodsTypeId, setHaveGoodsTypeId] = useState<string | null>(
+    initialValues?.haveGoodsTypeId ?? null,
+  );
+  const [selectedHaves, setSelectedHaves] = useState<SelectedItem[]>(
+    initialValues?.selectedHaves ?? [],
+  );
+  const [haveLogic, setHaveLogic] = useState<ListingLogic>(
+    initialValues?.haveLogic ?? "and",
+  );
 
   /* ─ 求側選択肢 ─ */
-  const [options, setOptions] = useState<WishOption[]>([
-    {
-      position: 1,
-      groupId: null,
-      goodsTypeId: null,
-      groupCustomized: false,
-      goodsTypeCustomized: false,
-      selected: [],
-      logic: "or",
-      exchangeType: "any",
-      isCashOffer: false,
-      cashAmount: null,
-    },
-  ]);
+  const [options, setOptions] = useState<WishOption[]>(
+    initialValues?.options.map((o) => ({
+      position: o.position,
+      groupId: o.groupId,
+      goodsTypeId: o.goodsTypeId,
+      // 編集時は user 入力済として customized=true 扱い
+      groupCustomized: true,
+      goodsTypeCustomized: true,
+      selected: o.selected,
+      logic: o.logic,
+      exchangeType: o.exchangeType,
+      isCashOffer: o.isCashOffer,
+      cashAmount: o.cashAmount,
+    })) ?? [
+      {
+        position: 1,
+        groupId: null,
+        goodsTypeId: null,
+        groupCustomized: false,
+        goodsTypeCustomized: false,
+        selected: [],
+        logic: "or",
+        exchangeType: "any",
+        isCashOffer: false,
+        cashAmount: null,
+      },
+    ],
+  );
 
   /* ─ メモ ─ */
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(initialValues?.note ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -273,13 +323,23 @@ export function ListingNewForm({
     }
 
     setPending(true);
-    const r = await createListing({
-      haveIds: selectedHaves.map((s) => s.id),
-      haveQtys: selectedHaves.map((s) => s.qty),
-      haveLogic,
-      options: optionsInput,
-      note: note.trim() || undefined,
-    });
+    const r =
+      mode === "edit" && listingId
+        ? await updateListingFull({
+            id: listingId,
+            haveIds: selectedHaves.map((s) => s.id),
+            haveQtys: selectedHaves.map((s) => s.qty),
+            haveLogic,
+            options: optionsInput,
+            note: note.trim() || undefined,
+          })
+        : await createListing({
+            haveIds: selectedHaves.map((s) => s.id),
+            haveQtys: selectedHaves.map((s) => s.qty),
+            haveLogic,
+            options: optionsInput,
+            note: note.trim() || undefined,
+          });
     if (r?.error) {
       setPending(false);
       setError(r.error);
@@ -422,8 +482,12 @@ export function ListingNewForm({
         </div>
       )}
 
-      <PrimaryButton type="submit" pending={pending} pendingLabel="登録中…">
-        個別募集を作成
+      <PrimaryButton
+        type="submit"
+        pending={pending}
+        pendingLabel={mode === "edit" ? "更新中…" : "登録中…"}
+      >
+        {mode === "edit" ? "個別募集を更新" : "個別募集を作成"}
       </PrimaryButton>
     </form>
   );

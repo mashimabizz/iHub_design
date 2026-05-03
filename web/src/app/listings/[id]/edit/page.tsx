@@ -1,0 +1,295 @@
+import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+import { HeaderBack } from "@/components/auth/HeaderBack";
+import {
+  ListingNewForm,
+  type ListingFormInitialValues,
+} from "@/app/listings/new/ListingNewForm";
+
+export const metadata = {
+  title: "個別募集を編集 — iHub",
+};
+
+type ListingRow = {
+  id: string;
+  user_id: string;
+  status: string;
+  have_ids: string[] | null;
+  have_qtys: number[] | null;
+  have_logic: "and" | "or";
+  have_group_id: string | null;
+  have_goods_type_id: string | null;
+  note: string | null;
+};
+
+type OptionRow = {
+  id: string;
+  position: number;
+  wish_ids: string[] | null;
+  wish_qtys: number[] | null;
+  logic: "and" | "or";
+  exchange_type: "same_kind" | "cross_kind" | "any";
+  is_cash_offer: boolean;
+  cash_amount: number | null;
+  wish_group_id: string | null;
+  wish_goods_type_id: string | null;
+};
+
+function pickName(
+  v: { name: string } | { name: string }[] | null,
+): string | null {
+  if (!v) return null;
+  return Array.isArray(v) ? v[0]?.name ?? null : v.name;
+}
+
+export default async function ListingEditPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // 対象 listing を fetch + 所有者チェック
+  const { data: row } = await supabase
+    .from("listings")
+    .select(
+      `id, user_id, status, have_ids, have_qtys, have_logic,
+       have_group_id, have_goods_type_id, note`,
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (!row) notFound();
+  const listing = row as ListingRow;
+  if (listing.user_id !== user.id) notFound();
+  if (listing.status === "matched" || listing.status === "closed") {
+    return (
+      <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+        <HeaderBack title="個別募集を編集" backHref="/listings" />
+        <div className="mx-auto w-full max-w-md flex-1 px-5 pt-8">
+          <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white p-6 text-center">
+            <div className="text-[14px] font-bold text-gray-900">
+              この個別募集は編集できません
+            </div>
+            <div className="mt-2 text-[12px] text-gray-500">
+              ステータス：
+              <b>{listing.status === "matched" ? "成立" : "完了"}</b>{" "}
+              の個別募集は編集不可です。
+            </div>
+            <Link
+              href="/listings"
+              className="mt-4 inline-block text-[12px] font-bold text-[#a695d8]"
+            >
+              ← 個別募集一覧に戻る
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // options
+  const { data: optRows } = await supabase
+    .from("listing_wish_options")
+    .select(
+      `id, position, wish_ids, wish_qtys, logic, exchange_type,
+       is_cash_offer, cash_amount, wish_group_id, wish_goods_type_id`,
+    )
+    .eq("listing_id", id)
+    .order("position", { ascending: true });
+  const options = (optRows as OptionRow[]) ?? [];
+
+  // 自分の active な譲 + active な wish を並列 fetch
+  const [{ data: inventoryRows }, { data: wishRows }] = await Promise.all([
+    supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, photo_urls, hue, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
+      )
+      .eq("user_id", user.id)
+      .eq("kind", "for_trade")
+      .eq("status", "active")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, exchange_type, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
+      )
+      .eq("user_id", user.id)
+      .eq("kind", "wanted")
+      .neq("status", "archived")
+      .order("created_at", { ascending: false }),
+  ]);
+
+  // 編集対象が参照する have/wish が現在 active でない可能性があるため、
+  // 参照されてる id を別途 union fetch して inventoryItems / wishItems に注入する
+  const referencedHaveIds = new Set<string>(listing.have_ids ?? []);
+  const referencedWishIds = new Set<string>();
+  for (const o of options) for (const wid of o.wish_ids ?? []) referencedWishIds.add(wid);
+  const haveIdsToFetch = Array.from(referencedHaveIds).filter(
+    (id) => !(inventoryRows ?? []).some((r) => r.id === id),
+  );
+  const wishIdsToFetch = Array.from(referencedWishIds).filter(
+    (id) => !(wishRows ?? []).some((r) => r.id === id),
+  );
+  const extraInventoryRows: typeof inventoryRows = [];
+  const extraWishRows: typeof wishRows = [];
+  if (haveIdsToFetch.length > 0) {
+    const { data } = await supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, photo_urls, hue, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
+      )
+      .in("id", haveIdsToFetch);
+    if (data) extraInventoryRows.push(...data);
+  }
+  if (wishIdsToFetch.length > 0) {
+    const { data } = await supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, exchange_type, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
+      )
+      .in("id", wishIdsToFetch);
+    if (data) extraWishRows.push(...data);
+  }
+  const allInventoryRows = [...(inventoryRows ?? []), ...extraInventoryRows];
+  const allWishRows = [...(wishRows ?? []), ...extraWishRows];
+
+  const nameToHue = (name: string): number => {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = (hash << 5) - hash + name.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash) % 360;
+  };
+
+  const inventoryItems = allInventoryRows.map((r) => {
+    const charName = pickName(r.character);
+    const grpName = pickName(r.group);
+    const memberName = charName ?? grpName ?? r.title;
+    return {
+      id: r.id,
+      title: r.title,
+      photoUrl:
+        (r.photo_urls && (r.photo_urls as string[])[0]) ?? null,
+      groupId: (r as { group_id?: string }).group_id ?? null,
+      goodsTypeId: (r as { goods_type_id?: string }).goods_type_id ?? null,
+      groupName: grpName,
+      characterName: charName,
+      goodsTypeName: pickName(r.goods_type),
+      hue:
+        ((r as { hue?: number }).hue as number | undefined) ??
+        nameToHue(memberName),
+    };
+  });
+
+  const wishItems = allWishRows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    exchangeType: (r as { exchange_type?: string }).exchange_type as
+      | "same_kind"
+      | "cross_kind"
+      | "any"
+      | undefined,
+    groupId: (r as { group_id?: string }).group_id ?? null,
+    goodsTypeId: (r as { goods_type_id?: string }).goods_type_id ?? null,
+    groupName: pickName(r.group),
+    characterName: pickName(r.character),
+    goodsTypeName: pickName(r.goods_type),
+  }));
+
+  function uniqueOptions<T extends { id: string; name: string }>(
+    src: { id: string | null; name: string | null }[],
+  ): T[] {
+    const seen = new Map<string, T>();
+    for (const o of src) {
+      if (o.id && o.name && !seen.has(o.id)) {
+        seen.set(o.id, { id: o.id, name: o.name } as T);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "ja"),
+    );
+  }
+
+  const inventoryGroups = uniqueOptions<{ id: string; name: string }>(
+    allInventoryRows.map((r) => ({
+      id: (r as { group_id?: string }).group_id ?? null,
+      name: pickName(r.group),
+    })),
+  );
+  const inventoryGoodsTypes = uniqueOptions<{ id: string; name: string }>(
+    allInventoryRows.map((r) => ({
+      id: (r as { goods_type_id?: string }).goods_type_id ?? null,
+      name: pickName(r.goods_type),
+    })),
+  );
+  const wishGroups = uniqueOptions<{ id: string; name: string }>(
+    allWishRows.map((r) => ({
+      id: (r as { group_id?: string }).group_id ?? null,
+      name: pickName(r.group),
+    })),
+  );
+  const wishGoodsTypes = uniqueOptions<{ id: string; name: string }>(
+    allWishRows.map((r) => ({
+      id: (r as { goods_type_id?: string }).goods_type_id ?? null,
+      name: pickName(r.goods_type),
+    })),
+  );
+
+  // 初期値構築
+  const haveIds = listing.have_ids ?? [];
+  const haveQtys = listing.have_qtys ?? [];
+  const initialValues: ListingFormInitialValues = {
+    haveGroupId: listing.have_group_id,
+    haveGoodsTypeId: listing.have_goods_type_id,
+    selectedHaves: haveIds.map((hid, i) => ({
+      id: hid,
+      qty: haveQtys[i] ?? 1,
+    })),
+    haveLogic: listing.have_logic,
+    options: options.map((o) => ({
+      position: o.position,
+      groupId: o.wish_group_id,
+      goodsTypeId: o.wish_goods_type_id,
+      selected: (o.wish_ids ?? []).map((wid, i) => ({
+        id: wid,
+        qty: (o.wish_qtys ?? [])[i] ?? 1,
+      })),
+      logic: o.logic,
+      exchangeType: o.exchange_type,
+      isCashOffer: o.is_cash_offer,
+      cashAmount: o.cash_amount,
+    })),
+    note: listing.note ?? "",
+  };
+
+  return (
+    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+      <HeaderBack title="個別募集を編集" backHref="/listings" />
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-8 pt-5">
+        <p className="mb-4 text-[12px] leading-relaxed text-gray-500">
+          譲・求の組合せやメモを変更できます。保存すると選択肢は新しい内容で
+          上書きされます。
+        </p>
+        <ListingNewForm
+          mode="edit"
+          listingId={listing.id}
+          initialValues={initialValues}
+          inventoryItems={inventoryItems}
+          wishItems={wishItems}
+          inventoryGroups={inventoryGroups}
+          inventoryGoodsTypes={inventoryGoodsTypes}
+          wishGroups={wishGroups}
+          wishGoodsTypes={wishGoodsTypes}
+        />
+      </div>
+    </main>
+  );
+}

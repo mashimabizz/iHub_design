@@ -275,6 +275,12 @@ export async function setEvidencePhoto(input: {
 
 /**
  * 双方承認：自分の approve フラグを true に。両方 true なら status='completed' + completed_at
+ *
+ * iter69-A：承認のタイミングで自分側の在庫処理を実行：
+ *   - 自分が譲ったもの → 自分の goods_inventory.quantity を qty 分減算（0 なら status='traded'）
+ *   - 自分が受け取ったもの → 自分の goods_inventory に kind='for_trade' + status='keep' で複製挿入
+ *   - 自分の wish のうち、受け取った items にマッチするものは quantity 減算
+ *   - 両者承認 (status='completed') 時に listing 経由なら listings.status='closed'
  */
 export async function approveCompletion(input: {
   proposalId: string;
@@ -288,7 +294,10 @@ export async function approveCompletion(input: {
   const { data: prop } = await supabase
     .from("proposals")
     .select(
-      "status, sender_id, receiver_id, approved_by_sender, approved_by_receiver, evidence_photo_url",
+      `id, status, sender_id, receiver_id,
+       approved_by_sender, approved_by_receiver, evidence_photo_url,
+       sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
+       listing_id`,
     )
     .eq("id", input.proposalId)
     .maybeSingle();
@@ -299,6 +308,126 @@ export async function approveCompletion(input: {
   if (!prop.evidence_photo_url) return { error: "先に取引証跡を撮影してください" };
 
   const isMeSender = prop.sender_id === user.id;
+  const alreadyApproved = isMeSender
+    ? prop.approved_by_sender
+    : prop.approved_by_receiver;
+
+  // 既に自分が承認済なら在庫処理はスキップ（重複減算防止）
+  if (!alreadyApproved) {
+    const myGiveIds: string[] = isMeSender
+      ? prop.sender_have_ids ?? []
+      : prop.receiver_have_ids ?? [];
+    const myGiveQtys: number[] = isMeSender
+      ? prop.sender_have_qtys ?? []
+      : prop.receiver_have_qtys ?? [];
+    const myReceiveIds: string[] = isMeSender
+      ? prop.receiver_have_ids ?? []
+      : prop.sender_have_ids ?? [];
+    const myReceiveQtys: number[] = isMeSender
+      ? prop.receiver_have_qtys ?? []
+      : prop.sender_have_qtys ?? [];
+
+    // 1. 自分が譲った items の quantity 減算（0 なら status='traded'）
+    for (let i = 0; i < myGiveIds.length; i++) {
+      const giveId = myGiveIds[i];
+      const giveQty = myGiveQtys[i] ?? 1;
+      const { data: cur } = await supabase
+        .from("goods_inventory")
+        .select("quantity")
+        .eq("id", giveId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!cur) continue; // 既に削除されている等は無視
+      const remain = Math.max(0, (cur.quantity ?? 1) - giveQty);
+      const updateFields: Record<string, unknown> = { quantity: remain };
+      if (remain === 0) updateFields.status = "traded";
+      await supabase
+        .from("goods_inventory")
+        .update(updateFields)
+        .eq("id", giveId)
+        .eq("user_id", user.id);
+    }
+
+    // 2. 自分が受け取った items を kind='for_trade' + status='keep' で複製挿入
+    if (myReceiveIds.length > 0) {
+      const { data: srcItems } = await supabase
+        .from("goods_inventory")
+        .select(
+          "id, group_id, character_id, goods_type_id, title, description, condition, photo_urls, series, hue",
+        )
+        .in("id", myReceiveIds);
+      if (srcItems && srcItems.length > 0) {
+        const partnerId = isMeSender ? prop.receiver_id : prop.sender_id;
+        const { data: partner } = await supabase
+          .from("users")
+          .select("handle")
+          .eq("id", partnerId)
+          .maybeSingle();
+        const partnerHandle = (partner?.handle as string | undefined) ?? "?";
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        const inserts = srcItems.map((s) => {
+          const idx = myReceiveIds.indexOf(s.id);
+          const qty = myReceiveQtys[idx] ?? 1;
+          return {
+            user_id: user.id,
+            kind: "for_trade",
+            status: "keep", // 自分用キープ（マッチ対象外）
+            group_id: s.group_id,
+            character_id: s.character_id,
+            goods_type_id: s.goods_type_id,
+            title: s.title,
+            description: `@${partnerHandle} から取引で受け取り（${dateStr}）${s.description ? `\n---\n${s.description}` : ""}`,
+            condition: s.condition,
+            quantity: qty,
+            photo_urls: s.photo_urls ?? [],
+            series: s.series,
+            hue: s.hue,
+            acquired_from_proposal_id: input.proposalId,
+            acquired_at: new Date().toISOString(),
+          };
+        });
+        await supabase.from("goods_inventory").insert(inserts);
+      }
+    }
+
+    // 3. 自分の wish のうち、受け取り items とマッチするものを quantity 減算
+    if (myReceiveIds.length > 0) {
+      const { data: srcItems } = await supabase
+        .from("goods_inventory")
+        .select("id, group_id, character_id, goods_type_id")
+        .in("id", myReceiveIds);
+      if (srcItems) {
+        for (let i = 0; i < srcItems.length; i++) {
+          const s = srcItems[i];
+          const qty = myReceiveQtys[myReceiveIds.indexOf(s.id)] ?? 1;
+          // 同 group + 同 character + 同 goods_type の自分の wish (kind='wanted', status='active')
+          let q = supabase
+            .from("goods_inventory")
+            .select("id, quantity")
+            .eq("user_id", user.id)
+            .eq("kind", "wanted")
+            .eq("status", "active")
+            .eq("goods_type_id", s.goods_type_id);
+          if (s.group_id) q = q.eq("group_id", s.group_id);
+          if (s.character_id) q = q.eq("character_id", s.character_id);
+          const { data: matches } = await q;
+          if (!matches || matches.length === 0) continue;
+          // 最初の 1 件を qty 減算
+          const target = matches[0];
+          const remain = Math.max(0, (target.quantity ?? 1) - qty);
+          const updateFields: Record<string, unknown> = { quantity: remain };
+          if (remain === 0) updateFields.status = "traded";
+          await supabase
+            .from("goods_inventory")
+            .update(updateFields)
+            .eq("id", target.id)
+            .eq("user_id", user.id);
+        }
+      }
+    }
+  }
+
   const newSender = isMeSender ? true : prop.approved_by_sender;
   const newReceiver = isMeSender ? prop.approved_by_receiver : true;
   const both = newSender && newReceiver;
@@ -319,6 +448,14 @@ export async function approveCompletion(input: {
 
   if (error) return { error: error.message };
 
+  // 両者承認時：listing 経由なら listings.status='closed'
+  if (both && prop.listing_id) {
+    await supabase
+      .from("listings")
+      .update({ status: "closed" })
+      .eq("id", prop.listing_id);
+  }
+
   // system message：承認 / 完了
   await supabase.from("messages").insert({
     proposal_id: input.proposalId,
@@ -330,6 +467,8 @@ export async function approveCompletion(input: {
   });
 
   revalidatePath(`/transactions/${input.proposalId}`);
+  revalidatePath("/inventory");
+  revalidatePath("/listings");
   return both
     ? { redirectTo: `/transactions/${input.proposalId}/rate` }
     : undefined;

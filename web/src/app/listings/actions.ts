@@ -92,6 +92,84 @@ export async function createListing(input: {
   return undefined;
 }
 
+/**
+ * iter69-C：listing の全置換更新（譲群 + 選択肢 + note）。
+ * listing_wish_options を全削除 → 再 insert。
+ * status 自体は別途 updateListing で切り替える（ここでは active/paused をいじらない）。
+ */
+export async function updateListingFull(input: {
+  id: string;
+  haveIds: string[];
+  haveQtys: number[];
+  haveLogic: ListingLogic;
+  options: ListingOptionInput[];
+  note?: string;
+}): Promise<ActionResult> {
+  const v = validate(input);
+  if (v) return v;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // 所有者チェック
+  const { data: existing } = await supabase
+    .from("listings")
+    .select("user_id, status")
+    .eq("id", input.id)
+    .maybeSingle();
+  if (!existing) return { error: "個別募集が見つかりません" };
+  if (existing.user_id !== user.id) return { error: "編集権限がありません" };
+  if (existing.status === "matched" || existing.status === "closed") {
+    return {
+      error: "成立／完了した個別募集は編集できません",
+    };
+  }
+
+  // listing 本体を update（trigger が have_group_id/have_goods_type_id を再計算）
+  const { error: listingErr } = await supabase
+    .from("listings")
+    .update({
+      have_ids: input.haveIds,
+      have_qtys: input.haveQtys,
+      have_logic: input.haveLogic,
+      note: input.note?.trim() || null,
+    })
+    .eq("id", input.id)
+    .eq("user_id", user.id);
+  if (listingErr) return { error: listingErr.message };
+
+  // 既存の選択肢を全削除（trigger によりカスケードしないので明示削除）
+  const { error: delErr } = await supabase
+    .from("listing_wish_options")
+    .delete()
+    .eq("listing_id", input.id);
+  if (delErr) return { error: delErr.message };
+
+  // 新しい選択肢を bulk INSERT
+  const { error: optsErr } = await supabase
+    .from("listing_wish_options")
+    .insert(
+      input.options.map((o) => ({
+        listing_id: input.id,
+        position: o.position,
+        wish_ids: o.isCashOffer ? [] : o.wishIds,
+        wish_qtys: o.isCashOffer ? [] : o.wishQtys,
+        logic: o.logic,
+        exchange_type: o.exchangeType,
+        is_cash_offer: o.isCashOffer,
+        cash_amount: o.isCashOffer ? (o.cashAmount ?? null) : null,
+      })),
+    );
+  if (optsErr) return { error: optsErr.message };
+
+  revalidatePath("/listings");
+  revalidatePath(`/listings/${input.id}/edit`);
+  return undefined;
+}
+
 export async function updateListing(input: {
   id: string;
   status?: ListingStatus;
