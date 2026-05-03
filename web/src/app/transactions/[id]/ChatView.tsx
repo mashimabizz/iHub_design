@@ -16,7 +16,7 @@ import {
   sendTextMessage,
   updateArrivalStatus,
 } from "../actions";
-import { respondToProposal } from "@/app/propose/actions";
+import { extendProposal, respondToProposal } from "@/app/propose/actions";
 import {
   CalendarOverlayModal,
   type CalEvent,
@@ -66,6 +66,9 @@ export type ChatProposal = {
   partnerAgreed: boolean;
   /** iter73: 自分が打診の receiver か（拒否ボタン表示判定用） */
   iAmReceiver: boolean;
+  /** iter78-E: 期限・延長関連 */
+  expiresAt: string | null;
+  extensionCount: number;
 };
 
 export type ChatMessage = {
@@ -187,6 +190,17 @@ export function ChatView({
     });
   }
 
+  // iter78-E: 期限延長
+  function handleExtend() {
+    if (!confirm("打診の期限を 7 日間延長しますか？")) return;
+    setError(null);
+    startTransition(async () => {
+      const r = await extendProposal({ id: proposal.id });
+      if (r?.error) setError(r.error);
+      else router.refresh();
+    });
+  }
+
   // iter73: 打診を承諾 / 拒否
   function handleAccept() {
     if (!confirm("この内容で合意しますか？両者が合意すると取引フェーズに進みます。"))
@@ -295,12 +309,20 @@ export function ChatView({
             onMapTap={() => setMapOpen(true)}
           />
           {!isAgreed && (
-            <AgreementBar
-              proposal={proposal}
-              onAccept={handleAccept}
-              onReject={handleReject}
-              pending={pending}
-            />
+            <>
+              <ExpireBanner
+                expiresAt={proposal.expiresAt}
+                extensionCount={proposal.extensionCount}
+                onExtend={handleExtend}
+                pending={pending}
+              />
+              <AgreementBar
+                proposal={proposal}
+                onAccept={handleAccept}
+                onReject={handleReject}
+                pending={pending}
+              />
+            </>
           )}
           {isAgreed && (
             <OutfitCompactRow
@@ -793,6 +815,80 @@ function CashChip({ amount }: { amount: number | null }) {
     <span className="inline-flex items-center gap-0.5 rounded-md bg-[#7a9a8a14] px-1.5 py-0.5 text-[11px] font-extrabold text-[#7a9a8a]">
       💴 ¥{amount?.toLocaleString() ?? "—"}
     </span>
+  );
+}
+
+/* ─── iter78-E: 期限警告バナー + 延長ボタン ─── */
+
+function ExpireBanner({
+  expiresAt,
+  extensionCount,
+  onExtend,
+  pending,
+}: {
+  expiresAt: string | null;
+  extensionCount: number;
+  onExtend: () => void;
+  pending: boolean;
+}) {
+  if (!expiresAt) return null;
+  const remainMs = new Date(expiresAt).getTime() - Date.now();
+  const remainDays = Math.ceil(remainMs / (1000 * 60 * 60 * 24));
+  // 残 3 日以下のみ表示
+  if (remainDays > 3) return null;
+
+  const tone =
+    remainDays <= 1 ? "warn" : remainDays <= 2 ? "amber" : "lavender";
+  const bgClass =
+    tone === "warn"
+      ? "border-[#d9826b80] bg-[#fff5f0]"
+      : tone === "amber"
+        ? "border-amber-300 bg-amber-50"
+        : "border-[#a695d855] bg-[#a695d80a]";
+  const labelClass =
+    tone === "warn"
+      ? "text-[#d9826b]"
+      : tone === "amber"
+        ? "text-amber-700"
+        : "text-[#a695d8]";
+  const iconText = tone === "warn" ? "⚠️" : "⏰";
+  const headlineText =
+    remainDays <= 0
+      ? "本日期限切れ"
+      : remainDays === 1
+        ? "あと 1 日で期限切れ"
+        : `あと ${remainDays} 日で期限切れ`;
+
+  const canExtend = extensionCount < 3;
+
+  return (
+    <div
+      className={`mt-1.5 flex items-center gap-2 rounded-[10px] border px-3 py-2 ${bgClass}`}
+    >
+      <span className="text-[12px]">{iconText}</span>
+      <div className="min-w-0 flex-1">
+        <div className={`text-[11px] font-bold ${labelClass}`}>
+          {headlineText}
+        </div>
+        <div className="text-[9.5px] text-[#3a324a8c]">
+          延長 {extensionCount}/3 回 ・ +7 日延長で再開できます
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onExtend}
+        disabled={pending || !canExtend}
+        className={`flex-shrink-0 rounded-full px-2.5 py-[3px] text-[10.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_5px_rgba(0,0,0,0.15)] disabled:opacity-50 ${
+          tone === "warn"
+            ? "bg-[#d9826b]"
+            : tone === "amber"
+              ? "bg-amber-500"
+              : "bg-[#a695d8]"
+        }`}
+      >
+        {canExtend ? "+7日延長" : "延長上限"}
+      </button>
+    </div>
   );
 }
 

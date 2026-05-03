@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { BottomNav } from "@/components/home/BottomNav";
+import { autoExpireProposals } from "@/lib/expire";
 import {
   TransactionsView,
   type TransactionRow,
@@ -60,6 +61,9 @@ export default async function TransactionsPage() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // iter78-E: 期限切れを自動的に expired に遷移
+  await autoExpireProposals(supabase, user.id);
 
   const { data: rows } = await supabase
     .from("proposals")

@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { respondToProposal } from "@/app/propose/actions";
+import { extendProposal, respondToProposal } from "@/app/propose/actions";
 
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
   ssr: false,
@@ -71,6 +71,8 @@ export type ProposalDetail = {
   matchAw: boolean;
   /** 相手の最新の服装写真（合意済以降にアップされたもの） */
   partnerOutfitPhotoUrl: string | null;
+  /** iter78-E: 延長回数（最大 3） */
+  extensionCount: number;
 };
 
 const STATUS_LABEL: Record<ProposalDetail["status"], string> = {
@@ -123,6 +125,20 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
         action,
         rejectedTemplate,
       });
+      if (r?.error) {
+        setError(r.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  // iter78-E: 期限延長
+  function handleExtend() {
+    if (!confirm("打診の期限を 7 日間延長しますか？")) return;
+    setError(null);
+    startTransition(async () => {
+      const r = await extendProposal({ id: detail.id });
       if (r?.error) {
         setError(r.error);
         return;
@@ -190,6 +206,15 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
           </div>
         </div>
       </section>
+
+      {/* iter78-E: 期限警告バナー（残 3 日以下のときのみ表示） */}
+      <ExpireBanner
+        expiresAt={detail.expiresAt}
+        extensionCount={detail.extensionCount}
+        status={detail.status}
+        onExtend={handleExtend}
+        pending={pending}
+      />
 
       {/* iter77-B: 提案内容を統合カード化（紫グラデ・「📩 提案内容」バッジ・待ち合わせ内包） */}
       <section
@@ -479,6 +504,86 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
 }
 
 /* ─── sub-components ─── */
+
+/* iter78-E: 期限警告バナー（残 3 日以下のときに目立つ表示 + 延長ボタン） */
+function ExpireBanner({
+  expiresAt,
+  extensionCount,
+  status,
+  onExtend,
+  pending,
+}: {
+  expiresAt: string | null;
+  extensionCount: number;
+  status: ProposalDetail["status"];
+  onExtend: () => void;
+  pending: boolean;
+}) {
+  if (!expiresAt) return null;
+  if (
+    status !== "sent" &&
+    status !== "negotiating" &&
+    status !== "agreement_one_side"
+  )
+    return null;
+
+  const remainMs = new Date(expiresAt).getTime() - Date.now();
+  const remainDays = Math.ceil(remainMs / (1000 * 60 * 60 * 24));
+  if (remainDays > 3) return null;
+
+  const tone =
+    remainDays <= 1 ? "warn" : remainDays <= 2 ? "amber" : "lavender";
+  const bgClass =
+    tone === "warn"
+      ? "border-[#d9826b80] bg-[#fff5f0]"
+      : tone === "amber"
+        ? "border-amber-300 bg-amber-50"
+        : "border-[#a695d855] bg-[#a695d80a]";
+  const labelClass =
+    tone === "warn"
+      ? "text-[#d9826b]"
+      : tone === "amber"
+        ? "text-amber-700"
+        : "text-[#a695d8]";
+  const iconText = tone === "warn" ? "⚠️" : "⏰";
+  const headlineText =
+    remainDays <= 0
+      ? "本日期限切れ"
+      : remainDays === 1
+        ? "あと 1 日で期限切れ"
+        : `あと ${remainDays} 日で期限切れ`;
+  const canExtend = extensionCount < 3;
+
+  return (
+    <div
+      className={`flex items-center gap-2.5 rounded-2xl border px-3 py-2.5 ${bgClass}`}
+    >
+      <span className="text-[16px]">{iconText}</span>
+      <div className="min-w-0 flex-1">
+        <div className={`text-[12px] font-extrabold ${labelClass}`}>
+          {headlineText}
+        </div>
+        <div className="mt-0.5 text-[10.5px] text-[#3a324a8c]">
+          延長 {extensionCount}/3 回 ・ 早めに承諾／反対提案／延長を
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onExtend}
+        disabled={pending || !canExtend}
+        className={`flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_5px_rgba(0,0,0,0.15)] disabled:opacity-50 ${
+          tone === "warn"
+            ? "bg-[#d9826b]"
+            : tone === "amber"
+              ? "bg-amber-500"
+              : "bg-[#a695d8]"
+        }`}
+      >
+        {canExtend ? "+7日延長" : "延長上限"}
+      </button>
+    </div>
+  );
+}
 
 function ExpiresLabel({
   iso,

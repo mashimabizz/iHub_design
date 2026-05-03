@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { BottomNav } from "@/components/home/BottomNav";
+import { autoExpireProposals } from "@/lib/expire";
 import { ProposalsView, type ProposalRow } from "./ProposalsView";
 
 export const metadata = {
@@ -30,6 +31,9 @@ export default async function ProposalsListPage() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // iter78-E: 期限切れを自動的に expired に
+  await autoExpireProposals(supabase, user.id);
 
   // 自分が sender or receiver の打診一覧（draft 除外）
   const { data: rows } = await supabase

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { HeaderBack } from "@/components/auth/HeaderBack";
+import { autoExpireProposals } from "@/lib/expire";
 import { ChatView, type ChatProposal, type ChatMessage } from "./ChatView";
 import type { CalEvent } from "@/components/schedule/CalendarOverlayModal";
 
@@ -32,6 +33,8 @@ type ProposalRaw = {
   expose_calendar: boolean;
   message: string | null;
   created_at: string;
+  expires_at: string | null;
+  extension_count: number;
 };
 
 type GoodsRow = {
@@ -82,6 +85,9 @@ export default async function TransactionChatPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // iter78-E: 期限切れを自動的に expired に
+  await autoExpireProposals(supabase, user.id);
+
   // proposal を fetch
   const { data: proposalRow } = await supabase
     .from("proposals")
@@ -91,7 +97,8 @@ export default async function TransactionChatPage({
        meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
        evidence_photo_url, approved_by_sender, approved_by_receiver,
        agreed_by_sender, agreed_by_receiver,
-       expose_calendar, message, created_at`,
+       expose_calendar, message, created_at,
+       expires_at, extension_count`,
     )
     .eq("id", id)
     .maybeSingle();
@@ -213,6 +220,8 @@ export default async function TransactionChatPage({
     myAgreed: isMeSender ? p.agreed_by_sender : p.agreed_by_receiver,
     partnerAgreed: isMeSender ? p.agreed_by_receiver : p.agreed_by_sender,
     iAmReceiver: !isMeSender,
+    expiresAt: p.expires_at,
+    extensionCount: p.extension_count ?? 0,
   };
 
   // 証跡写真（複数枚）

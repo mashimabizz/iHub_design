@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { HeaderBack } from "@/components/auth/HeaderBack";
+import { autoExpireProposals } from "@/lib/expire";
 import { ProposalDetailView, type ProposalDetail } from "./ProposalDetailView";
 
 export const metadata = {
@@ -34,6 +35,7 @@ type ProposalRaw = {
   expires_at: string | null;
   last_action_at: string | null;
   created_at: string;
+  extension_count: number;
 };
 
 type GoodsRow = {
@@ -64,6 +66,9 @@ export default async function ProposalDetailPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // iter78-E: 期限切れを自動的に expired に
+  await autoExpireProposals(supabase, user.id);
+
   const { data: row } = await supabase
     .from("proposals")
     .select(
@@ -73,7 +78,7 @@ export default async function ProposalDetailPage({
        rejected_template,
        meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
        expose_calendar, cash_offer, cash_amount, listing_id,
-       expires_at, last_action_at, created_at`,
+       expires_at, last_action_at, created_at, extension_count`,
     )
     .eq("id", id)
     .maybeSingle();
@@ -231,6 +236,7 @@ export default async function ProposalDetailPage({
     partnerTradeCount: tradeCount,
     matchAw,
     partnerOutfitPhotoUrl: partnerOutfitPhoto,
+    extensionCount: p.extension_count ?? 0,
   };
 
   return (

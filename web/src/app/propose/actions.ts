@@ -125,6 +125,85 @@ export async function createProposal(input: {
 }
 
 /**
+ * iter78-E: 打診の期限を +7 日延長。最大 3 回まで。
+ *
+ * 双方（sender / receiver）どちらでも実行可能。
+ * status は sent / negotiating / agreement_one_side のみ対象。
+ * agreed や completed では不要。
+ *
+ * extension_count を increment し、expires_at を新しい期限に更新。
+ * system message として「⏰ 期限が延長されました（残 N 日）」を投稿。
+ */
+const MAX_EXTENSIONS = 3;
+const EXTENSION_DAYS = 7;
+
+export async function extendProposal(input: {
+  id: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select(
+      "id, status, sender_id, receiver_id, extension_count, expires_at",
+    )
+    .eq("id", input.id)
+    .maybeSingle();
+  if (!prop) return { error: "打診が見つかりません" };
+  if (prop.sender_id !== user.id && prop.receiver_id !== user.id)
+    return { error: "参加者ではありません" };
+  if (
+    !["sent", "negotiating", "agreement_one_side"].includes(prop.status)
+  ) {
+    return { error: "この打診は延長できない状態です" };
+  }
+  const currentCount = (prop.extension_count as number) ?? 0;
+  if (currentCount >= MAX_EXTENSIONS) {
+    return { error: `延長できるのは最大 ${MAX_EXTENSIONS} 回までです` };
+  }
+
+  // 現在の expires_at が past の場合は now を起点に、未来なら expires_at を起点に +7 日
+  const baseTs = prop.expires_at ? new Date(prop.expires_at).getTime() : 0;
+  const nowTs = Date.now();
+  const startTs = Math.max(baseTs, nowTs);
+  const newExpires = new Date(
+    startTs + EXTENSION_DAYS * 24 * 60 * 60_000,
+  ).toISOString();
+
+  const { error } = await supabase
+    .from("proposals")
+    .update({
+      expires_at: newExpires,
+      extension_count: currentCount + 1,
+      last_action_at: new Date().toISOString(),
+    })
+    .eq("id", input.id);
+  if (error) return { error: error.message };
+
+  // 残日数（端数切り上げ）
+  const remainDays = Math.ceil(
+    (new Date(newExpires).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+  );
+  await supabase.from("messages").insert({
+    proposal_id: input.id,
+    sender_id: user.id,
+    message_type: "system",
+    body: `⏰ 期限が延長されました（残 ${remainDays}日 ・ 延長 ${currentCount + 1}/${MAX_EXTENSIONS}）`,
+    meta: { action: "extend", extended_by: user.id },
+  });
+
+  revalidatePath("/proposals");
+  revalidatePath(`/proposals/${input.id}`);
+  revalidatePath(`/transactions/${input.id}`);
+  revalidatePath("/transactions");
+  return { proposalId: input.id };
+}
+
+/**
  * iter71-C：再打診（条件修正）— 同じ proposal を update + diff system message。
  *
  * iter70-C 時は「旧 proposal を cancelled + 新規 proposal 作成」だったが、
