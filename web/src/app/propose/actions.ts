@@ -121,6 +121,65 @@ export async function createProposal(input: {
   return { proposalId: data.id };
 }
 
+/**
+ * iter70-C：再打診（条件修正）用 — 既存 proposal を cancelled に。
+ *
+ * フロー：
+ *   1. ユーザーが取引チャットの「条件を変えて再打診」ボタンを押す
+ *   2. /propose/[partnerId]?proposalId=...&revise=1 へ遷移
+ *   3. プリフィルされたフォームを編集 → 提出 → createProposal で新規 proposal 作成
+ *   4. 新規が成功したらこの cancelProposal を呼んで旧 proposal を cancelled に
+ *
+ * 自分が sender / receiver どちらでもキャンセル可能。
+ */
+export async function cancelProposal(input: {
+  id: string;
+  reason?: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select("status, sender_id, receiver_id")
+    .eq("id", input.id)
+    .maybeSingle();
+  if (!prop) return { error: "打診が見つかりません" };
+  if (prop.sender_id !== user.id && prop.receiver_id !== user.id)
+    return { error: "参加者ではありません" };
+  if (
+    !["sent", "negotiating", "agreement_one_side", "agreed"].includes(
+      prop.status,
+    )
+  )
+    return { error: "この打診はキャンセルできない状態です" };
+
+  const { error } = await supabase
+    .from("proposals")
+    .update({
+      status: "cancelled",
+      last_action_at: new Date().toISOString(),
+    })
+    .eq("id", input.id);
+  if (error) return { error: error.message };
+
+  // system message：再打診のためキャンセル
+  await supabase.from("messages").insert({
+    proposal_id: input.id,
+    sender_id: user.id,
+    message_type: "system",
+    body: input.reason ?? "条件を変更して再打診したため、この打診はキャンセルされました",
+  });
+
+  revalidatePath("/proposals");
+  revalidatePath(`/proposals/${input.id}`);
+  revalidatePath(`/transactions/${input.id}`);
+  return undefined;
+}
+
 export async function respondToProposal(input: {
   id: string;
   action: "accept" | "reject" | "negotiate";

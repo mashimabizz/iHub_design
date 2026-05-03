@@ -327,25 +327,68 @@ export async function approveCompletion(input: {
       ? prop.receiver_have_qtys ?? []
       : prop.sender_have_qtys ?? [];
 
-    // 1. 自分が譲った items の quantity 減算（0 なら status='traded'）
-    for (let i = 0; i < myGiveIds.length; i++) {
-      const giveId = myGiveIds[i];
-      const giveQty = myGiveQtys[i] ?? 1;
-      const { data: cur } = await supabase
-        .from("goods_inventory")
-        .select("quantity")
-        .eq("id", giveId)
-        .eq("user_id", user.id)
+    // 1. 自分が譲った items：
+    //    - 元レコード：quantity 減算（0 なら status='archived'）
+    //    - 譲った qty 分の **履歴レコード** を status='traded' で INSERT
+    //      → /inventory の「過去に譲った」タブに表示される
+    if (myGiveIds.length > 0) {
+      const partnerId = isMeSender ? prop.receiver_id : prop.sender_id;
+      const { data: partner } = await supabase
+        .from("users")
+        .select("handle")
+        .eq("id", partnerId)
         .maybeSingle();
-      if (!cur) continue; // 既に削除されている等は無視
-      const remain = Math.max(0, (cur.quantity ?? 1) - giveQty);
-      const updateFields: Record<string, unknown> = { quantity: remain };
-      if (remain === 0) updateFields.status = "traded";
-      await supabase
+      const partnerHandle = (partner?.handle as string | undefined) ?? "?";
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+      const { data: srcGiveItems } = await supabase
         .from("goods_inventory")
-        .update(updateFields)
-        .eq("id", giveId)
+        .select(
+          "id, group_id, character_id, goods_type_id, title, description, condition, photo_urls, series, hue, quantity",
+        )
+        .in("id", myGiveIds)
         .eq("user_id", user.id);
+
+      const giveSrcMap = new Map(
+        (srcGiveItems ?? []).map((s) => [s.id, s] as const),
+      );
+
+      for (let i = 0; i < myGiveIds.length; i++) {
+        const giveId = myGiveIds[i];
+        const giveQty = myGiveQtys[i] ?? 1;
+        const src = giveSrcMap.get(giveId);
+        if (!src) continue;
+
+        // 元レコード：quantity 減算
+        const remain = Math.max(0, (src.quantity ?? 1) - giveQty);
+        const updateFields: Record<string, unknown> = { quantity: remain };
+        if (remain === 0) updateFields.status = "archived";
+        await supabase
+          .from("goods_inventory")
+          .update(updateFields)
+          .eq("id", giveId)
+          .eq("user_id", user.id);
+
+        // 履歴レコード（status='traded'）を INSERT — 「過去に譲った」タブに出る
+        await supabase.from("goods_inventory").insert({
+          user_id: user.id,
+          kind: "for_trade",
+          status: "traded",
+          group_id: src.group_id,
+          character_id: src.character_id,
+          goods_type_id: src.goods_type_id,
+          title: src.title,
+          description: `@${partnerHandle} へ譲渡（${dateStr}）${src.description ? `\n---\n${src.description}` : ""}`,
+          condition: src.condition,
+          quantity: giveQty,
+          photo_urls: src.photo_urls ?? [],
+          series: src.series,
+          hue: src.hue,
+          traded_via_proposal_id: input.proposalId,
+          traded_at: new Date().toISOString(),
+        });
+      }
     }
 
     // 2. 自分が受け取った items を kind='for_trade' + status='keep' で複製挿入

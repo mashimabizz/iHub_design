@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
-import { createProposal } from "../actions";
+import { cancelProposal, createProposal } from "../actions";
 
 /* MapPicker は SSR 不可（leaflet が window 必要） */
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
@@ -63,7 +63,8 @@ type Props = {
   myInv: ProposeInv[];
   theirInv: ProposeInv[];
   matchType: "perfect" | "forward" | "backward";
-  /** iter67.7：listing/option 経由打診の初期値プリフィル */
+  /** iter67.7：listing/option 経由打診の初期値プリフィル
+   *  iter70-C：再打診の元 proposal id・既存 meetup・message も載せられる */
   initial?: {
     senderHaveIds: string[];
     senderHaveQtys: number[];
@@ -71,6 +72,13 @@ type Props = {
     receiverHaveQtys: number[];
     cashOffer?: { amount: number };
     listingId?: string;
+    reviseFromProposalId?: string;
+    meetupStartAt?: string;
+    meetupEndAt?: string;
+    meetupPlaceName?: string;
+    meetupLat?: number;
+    meetupLng?: number;
+    message?: string;
   };
 };
 
@@ -290,19 +298,27 @@ export function ProposeFlow({
   const cashOffer = initial?.cashOffer;
   const isCashMode = !!cashOffer;
 
-  /* ── 待ち合わせ state（時間帯 + 地図） ── */
-  // 相手が現地モードなら AW から自動入力、それ以外は今+1〜2時間
-  const initStart = partner.localModeAW?.startAt
-    ? isoToLocal(partner.localModeAW.startAt)
-    : nowPlusHoursLocal(1);
-  const initEnd = partner.localModeAW?.endAt
-    ? isoToLocal(partner.localModeAW.endAt)
-    : nowPlusHoursLocal(2);
-  const initPlace = partner.localModeAW?.venue ?? "";
+  /* ── 待ち合わせ state（時間帯 + 地図） ──
+     iter70-C: 再打診の場合は元 proposal の値を最優先 */
+  const initStart = initial?.meetupStartAt
+    ? isoToLocal(initial.meetupStartAt)
+    : partner.localModeAW?.startAt
+      ? isoToLocal(partner.localModeAW.startAt)
+      : nowPlusHoursLocal(1);
+  const initEnd = initial?.meetupEndAt
+    ? isoToLocal(initial.meetupEndAt)
+    : partner.localModeAW?.endAt
+      ? isoToLocal(partner.localModeAW.endAt)
+      : nowPlusHoursLocal(2);
+  const initPlace =
+    initial?.meetupPlaceName ?? partner.localModeAW?.venue ?? "";
   const initCenter: [number, number] =
-    partner.localModeAW?.centerLat != null && partner.localModeAW?.centerLng != null
-      ? [partner.localModeAW.centerLat, partner.localModeAW.centerLng]
-      : FALLBACK_CENTER;
+    initial?.meetupLat != null && initial?.meetupLng != null
+      ? [initial.meetupLat, initial.meetupLng]
+      : partner.localModeAW?.centerLat != null &&
+          partner.localModeAW?.centerLng != null
+        ? [partner.localModeAW.centerLat, partner.localModeAW.centerLng]
+        : FALLBACK_CENTER;
 
   const [meetupStart, setMeetupStart] = useState(initStart);
   const [meetupEnd, setMeetupEnd] = useState(initEnd);
@@ -329,7 +345,9 @@ export function ProposeFlow({
   /* ── メッセージ ── */
   const [tone, setTone] = useState<Tone>("standard");
   const [exposeCalendar, setExposeCalendar] = useState(false);
-  const [messageEdited, setMessageEdited] = useState<string | null>(null);
+  const [messageEdited, setMessageEdited] = useState<string | null>(
+    initial?.message ?? null,
+  );
 
   /* ── 送信状態 ── */
   const [pending, startTransition] = useTransition();
@@ -555,6 +573,13 @@ export function ProposeFlow({
       if (r?.error) {
         setError(r.error);
         return;
+      }
+      // iter70-C：再打診の場合は元 proposal を cancelled に
+      if (initial?.reviseFromProposalId) {
+        await cancelProposal({
+          id: initial.reviseFromProposalId,
+          reason: "条件を変更して再打診したため、この打診はキャンセルされました",
+        });
       }
       router.push("/");
     });

@@ -53,6 +53,9 @@ type Props = {
     option?: string;
     /** iter67.8: 複数選択肢の position をカンマ区切りで指定（"1,2,3" など） */
     options?: string;
+    /** iter70-C: 再打診時の元 proposal id */
+    proposalId?: string;
+    revise?: string;
   }>;
 };
 
@@ -63,7 +66,11 @@ export default async function ProposePage({ params, searchParams }: Props) {
     listing: listingIdRaw,
     option: optionRaw,
     options: optionsRaw,
+    proposalId: reviseProposalIdRaw,
+    revise: reviseFlagRaw,
   } = await searchParams;
+  const reviseFromProposalId =
+    reviseFlagRaw === "1" && reviseProposalIdRaw ? reviseProposalIdRaw : null;
 
   const supabase = await createClient();
   const {
@@ -194,8 +201,65 @@ export default async function ProposePage({ params, searchParams }: Props) {
     receiverHaveQtys: number[];
     cashOffer?: { amount: number };
     listingId?: string;
+    /** iter70-C: 再打診の元 proposal id（送信成功後にこの旧 proposal を cancel する） */
+    reviseFromProposalId?: string;
+    meetupStartAt?: string;
+    meetupEndAt?: string;
+    meetupPlaceName?: string;
+    meetupLat?: number;
+    meetupLng?: number;
+    message?: string;
   } | null;
   let initial: Initial = null;
+
+  /* ─ iter70-C：再打診プリフィル ─ 既存 proposal の値で initial を埋める */
+  if (reviseFromProposalId) {
+    const { data: prevRow } = await supabase
+      .from("proposals")
+      .select(
+        `id, sender_id, receiver_id, status,
+         sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
+         cash_offer, cash_amount, listing_id,
+         meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
+         message`,
+      )
+      .eq("id", reviseFromProposalId)
+      .maybeSingle();
+    if (prevRow) {
+      const isMePrevSender = prevRow.sender_id === user.id;
+      // 視点を「自分が送信者」基準に揃える
+      const senderHaveIds = isMePrevSender
+        ? (prevRow.sender_have_ids as string[]) ?? []
+        : (prevRow.receiver_have_ids as string[]) ?? [];
+      const senderHaveQtys = isMePrevSender
+        ? (prevRow.sender_have_qtys as number[]) ?? []
+        : (prevRow.receiver_have_qtys as number[]) ?? [];
+      const receiverHaveIds = isMePrevSender
+        ? (prevRow.receiver_have_ids as string[]) ?? []
+        : (prevRow.sender_have_ids as string[]) ?? [];
+      const receiverHaveQtys = isMePrevSender
+        ? (prevRow.receiver_have_qtys as number[]) ?? []
+        : (prevRow.sender_have_qtys as number[]) ?? [];
+      initial = {
+        senderHaveIds,
+        senderHaveQtys,
+        receiverHaveIds,
+        receiverHaveQtys,
+        cashOffer: prevRow.cash_offer
+          ? { amount: prevRow.cash_amount as number }
+          : undefined,
+        listingId: (prevRow.listing_id as string | null) ?? undefined,
+        reviseFromProposalId,
+        meetupStartAt: prevRow.meetup_start_at as string | undefined,
+        meetupEndAt: prevRow.meetup_end_at as string | undefined,
+        meetupPlaceName:
+          (prevRow.meetup_place_name as string | null) ?? undefined,
+        meetupLat: (prevRow.meetup_lat as number | null) ?? undefined,
+        meetupLng: (prevRow.meetup_lng as number | null) ?? undefined,
+        message: (prevRow.message as string | null) ?? undefined,
+      };
+    }
+  }
 
   /**
    * iter67.8: 単一 (option=N) と 複数 (options=1,2,3) の両方に対応。

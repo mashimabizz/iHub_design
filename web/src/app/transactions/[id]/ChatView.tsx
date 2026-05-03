@@ -15,6 +15,10 @@ import {
   sendTextMessage,
   updateArrivalStatus,
 } from "../actions";
+import {
+  CalendarOverlayModal,
+  type CalEvent,
+} from "@/components/schedule/CalendarOverlayModal";
 
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
   ssr: false,
@@ -85,6 +89,8 @@ export function ChatView({
   partnerArrival,
   myOutfitPhoto,
   partnerOutfitPhoto,
+  calendarEvents,
+  partnerCalendarExposed,
 }: {
   proposal: ChatProposal;
   messages: ChatMessage[];
@@ -92,6 +98,8 @@ export function ChatView({
   partnerArrival: "enroute" | "arrived" | "left" | null;
   myOutfitPhoto: string | null;
   partnerOutfitPhoto: string | null;
+  calendarEvents: CalEvent[];
+  partnerCalendarExposed: boolean;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState("");
@@ -99,6 +107,7 @@ export function ChatView({
   const [error, setError] = useState<string | null>(null);
   const [tradeOpen, setTradeOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   /* 自動下スクロール */
@@ -166,14 +175,18 @@ export function ChatView({
     });
   }
 
+  // iter70-D：合意前は当日合流系 UI を非表示（向かう/到着/服装写真）
+  const isAgreed = proposal.status === "agreed";
+
   return (
     <div className="relative flex h-[calc(100vh-72px)] flex-col bg-[#fbf9fc]">
       <ChatHeaderBar
         proposal={proposal}
         partnerArrival={partnerArrival}
+        isAgreed={isAgreed}
       />
 
-      {/* 上部固定：取引内容カード（コンパクト・画像表示） + 服装写真ステータス（1 行） */}
+      {/* 上部固定：取引内容カード（コンパクト・画像表示） + 服装写真（agreed のみ） */}
       <div className="flex-shrink-0 bg-[#fbf9fc]">
         <div className="mx-auto max-w-md px-3.5 pt-2.5">
           <DealCard
@@ -181,11 +194,13 @@ export function ChatView({
             onTap={() => setTradeOpen(true)}
             onMapTap={() => setMapOpen(true)}
           />
-          <OutfitCompactRow
-            myShared={!!myOutfitPhoto}
-            partnerShared={!!partnerOutfitPhoto}
-            partnerHandle={proposal.partner.handle}
-          />
+          {isAgreed && (
+            <OutfitCompactRow
+              myShared={!!myOutfitPhoto}
+              partnerShared={!!partnerOutfitPhoto}
+              partnerHandle={proposal.partner.handle}
+            />
+          )}
         </div>
       </div>
 
@@ -217,47 +232,72 @@ export function ChatView({
         </div>
       )}
 
-      {/* クイックアクション（向かう/到着 含む 5 chip）+ 入力欄 */}
+      {/* クイックアクション + 入力欄
+          iter70-D：agreed 時のみ向かう/到着/服装写真を表示。
+          打診中は再打診ボタン（iter70-C）+ カレンダーボタン（iter70-B）を表示。 */}
       <div className="border-t border-[#a695d822] bg-white/96 backdrop-blur-xl">
         <div className="mx-auto max-w-md px-3 pb-7 pt-2">
           <div className="mb-1.5 flex gap-1.5 overflow-x-auto pb-0.5 [&::-webkit-scrollbar]:hidden">
-            <QuickChip
-              icon={<MapPin />}
-              label="現在地を送る"
-              tone="lavender"
-              onClick={handleSendLocation}
-              disabled={pending}
-            />
-            <QuickChip
-              icon={<span className="text-[12px] leading-none">🚶</span>}
-              label="向かっています"
-              tone={myArrival === "enroute" ? "lavender-active" : "lavender"}
-              onClick={() => handleArrival("enroute")}
-              disabled={pending}
-            />
-            <QuickChip
-              icon={<span className="text-[12px] leading-none">✓</span>}
-              label="到着しました"
-              tone={myArrival === "arrived" ? "emerald-active" : "emerald"}
-              onClick={() => handleArrival("arrived")}
-              disabled={pending}
-            />
-            <QuickChip
-              icon={<span className="text-[12px] leading-none">👕</span>}
-              label="服装写真"
-              tone="pink"
-              onClick={() =>
-                alert("服装写真の撮影は次イテで実装予定です")
-              }
-            />
-            <QuickChip
-              icon={<CameraIcon />}
-              label="写真添付"
-              tone="neutral"
-              onClick={() =>
-                alert("写真添付は次イテで実装予定です")
-              }
-            />
+            {isAgreed ? (
+              <>
+                <QuickChip
+                  icon={<MapPin />}
+                  label="現在地を送る"
+                  tone="lavender"
+                  onClick={handleSendLocation}
+                  disabled={pending}
+                />
+                <QuickChip
+                  icon={<span className="text-[12px] leading-none">🚶</span>}
+                  label="向かっています"
+                  tone={myArrival === "enroute" ? "lavender-active" : "lavender"}
+                  onClick={() => handleArrival("enroute")}
+                  disabled={pending}
+                />
+                <QuickChip
+                  icon={<span className="text-[12px] leading-none">✓</span>}
+                  label="到着しました"
+                  tone={myArrival === "arrived" ? "emerald-active" : "emerald"}
+                  onClick={() => handleArrival("arrived")}
+                  disabled={pending}
+                />
+                <QuickChip
+                  icon={<span className="text-[12px] leading-none">👕</span>}
+                  label="服装写真"
+                  tone="pink"
+                  onClick={() =>
+                    alert("服装写真の撮影は次イテで実装予定です")
+                  }
+                />
+                <QuickChip
+                  icon={<CameraIcon />}
+                  label="写真添付"
+                  tone="neutral"
+                  onClick={() =>
+                    alert("写真添付は次イテで実装予定です")
+                  }
+                />
+              </>
+            ) : (
+              <>
+                <QuickChip
+                  icon={<span className="text-[12px] leading-none">📅</span>}
+                  label="カレンダー"
+                  tone="lavender"
+                  onClick={() => setCalendarOpen(true)}
+                />
+                <QuickChip
+                  icon={<span className="text-[12px] leading-none">↻</span>}
+                  label="条件を変えて再打診"
+                  tone="pink"
+                  onClick={() =>
+                    router.push(
+                      `/propose/${proposal.partner.id}?proposalId=${proposal.id}&revise=1`,
+                    )
+                  }
+                />
+              </>
+            )}
           </div>
 
           <form onSubmit={handleSend} className="flex items-end gap-2">
@@ -319,6 +359,14 @@ export function ChatView({
           onClose={() => setMapOpen(false)}
         />
       )}
+      {calendarOpen && (
+        <CalendarOverlayModal
+          events={calendarEvents}
+          partnerHandle={proposal.partner.handle}
+          exposed={partnerCalendarExposed}
+          onClose={() => setCalendarOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -328,10 +376,13 @@ export function ChatView({
 function ChatHeaderBar({
   proposal,
   partnerArrival,
+  isAgreed,
 }: {
   proposal: ChatProposal;
   partnerArrival: "enroute" | "arrived" | "left" | null;
+  isAgreed: boolean;
 }) {
+  // iter70-D：合意前は到着ステータス表示しない（打診中は不要）
   const arrivedColor =
     partnerArrival === "arrived"
       ? "#22c55e"
@@ -355,13 +406,22 @@ function ChatHeaderBar({
           @{proposal.partner.handle}
         </div>
         <div className="flex items-center gap-1.5 text-[10px] tabular-nums text-[#3a324a8c]">
-          <span
-            className="inline-block h-1.5 w-1.5 rounded-full"
-            style={{ background: arrivedColor }}
-          />
-          <span style={{ color: arrivedColor }} className="font-bold">
-            {arrivedLabel}
-          </span>
+          {isAgreed ? (
+            <>
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ background: arrivedColor }}
+              />
+              <span style={{ color: arrivedColor }} className="font-bold">
+                {arrivedLabel}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#a695d8]" />
+              <span className="font-bold text-[#a695d8]">打診中</span>
+            </>
+          )}
           {proposal.partner.primaryArea && (
             <>
               <span>·</span>

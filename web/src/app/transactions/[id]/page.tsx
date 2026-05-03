@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { HeaderBack } from "@/components/auth/HeaderBack";
 import { ChatView, type ChatProposal, type ChatMessage } from "./ChatView";
+import type { CalEvent } from "@/components/schedule/CalendarOverlayModal";
 
 export const metadata = {
   title: "取引チャット — iHub",
@@ -26,6 +27,7 @@ type ProposalRaw = {
   evidence_photo_url: string | null;
   approved_by_sender: boolean;
   approved_by_receiver: boolean;
+  expose_calendar: boolean;
 };
 
 type GoodsRow = {
@@ -83,7 +85,8 @@ export default async function TransactionChatPage({
       `id, sender_id, receiver_id, status, cash_offer, cash_amount,
        sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
        meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
-       evidence_photo_url, approved_by_sender, approved_by_receiver`,
+       evidence_photo_url, approved_by_sender, approved_by_receiver,
+       expose_calendar`,
     )
     .eq("id", id)
     .maybeSingle();
@@ -214,6 +217,123 @@ export default async function TransactionChatPage({
     proposal.hasEvidence = true;
   }
 
+  // iter70-B：自分 + 相手の AW + schedules を fetch（カレンダー重ね表示用）
+  // 相手側は RLS の "Calendar disclosure: counterpart can read" が
+  // expose_calendar=true & status in (sent/negotiating/agreement_one_side/agreed) で
+  // 許可されているときのみ読める。
+  const horizonStart = new Date();
+  const horizonEnd = new Date();
+  horizonEnd.setDate(horizonEnd.getDate() + 14);
+  const horizonStartIso = horizonStart.toISOString();
+  const horizonEndIso = horizonEnd.toISOString();
+
+  const [myAwResult, partnerAwResult, mySchedulesResult, partnerSchedulesResult] =
+    await Promise.all([
+      supabase
+        .from("activity_windows")
+        .select("id, venue, event_name, eventless, start_at, end_at, note")
+        .eq("user_id", user.id)
+        .eq("status", "enabled")
+        .lte("start_at", horizonEndIso)
+        .gte("end_at", horizonStartIso)
+        .order("start_at", { ascending: true }),
+      supabase
+        .from("activity_windows")
+        .select("id, venue, event_name, eventless, start_at, end_at, note")
+        .eq("user_id", partnerId)
+        .eq("status", "enabled")
+        .lte("start_at", horizonEndIso)
+        .gte("end_at", horizonStartIso)
+        .order("start_at", { ascending: true }),
+      supabase
+        .from("schedules")
+        .select("id, title, start_at, end_at, note")
+        .eq("user_id", user.id)
+        .lte("start_at", horizonEndIso)
+        .gte("end_at", horizonStartIso)
+        .order("start_at", { ascending: true }),
+      supabase
+        .from("schedules")
+        .select("id, title, start_at, end_at, note")
+        .eq("user_id", partnerId)
+        .lte("start_at", horizonEndIso)
+        .gte("end_at", horizonStartIso)
+        .order("start_at", { ascending: true }),
+    ]);
+
+  type AwRow = {
+    id: string;
+    venue: string;
+    event_name: string | null;
+    eventless: boolean;
+    start_at: string;
+    end_at: string;
+    note: string | null;
+  };
+  type ScheduleRow = {
+    id: string;
+    title: string;
+    start_at: string;
+    end_at: string;
+    note: string | null;
+  };
+
+  const calendarEvents: CalEvent[] = [];
+  const myAws = (myAwResult.data as AwRow[] | null) ?? [];
+  for (const a of myAws) {
+    calendarEvents.push({
+      id: `aw-me-${a.id}`,
+      kind: "aw",
+      side: "me",
+      title: a.event_name ?? (a.eventless ? "合流可（フリー）" : a.venue),
+      startAt: a.start_at,
+      endAt: a.end_at,
+      venue: a.venue,
+      note: a.note,
+    });
+  }
+  const mySchedules = (mySchedulesResult.data as ScheduleRow[] | null) ?? [];
+  for (const s of mySchedules) {
+    calendarEvents.push({
+      id: `sch-me-${s.id}`,
+      kind: "schedule",
+      side: "me",
+      title: s.title,
+      startAt: s.start_at,
+      endAt: s.end_at,
+      note: s.note,
+    });
+  }
+  const partnerExposed = p.expose_calendar;
+  if (partnerExposed) {
+    const partnerAws = (partnerAwResult.data as AwRow[] | null) ?? [];
+    for (const a of partnerAws) {
+      calendarEvents.push({
+        id: `aw-partner-${a.id}`,
+        kind: "aw",
+        side: "partner",
+        title: a.event_name ?? (a.eventless ? "合流可（フリー）" : a.venue),
+        startAt: a.start_at,
+        endAt: a.end_at,
+        venue: a.venue,
+        note: a.note,
+      });
+    }
+    const partnerSchedules =
+      (partnerSchedulesResult.data as ScheduleRow[] | null) ?? [];
+    for (const s of partnerSchedules) {
+      calendarEvents.push({
+        id: `sch-partner-${s.id}`,
+        kind: "schedule",
+        side: "partner",
+        title: s.title,
+        startAt: s.start_at,
+        endAt: s.end_at,
+        note: s.note,
+      });
+    }
+  }
+
   // メッセージ一覧
   const { data: msgs } = await supabase
     .from("messages")
@@ -283,6 +403,8 @@ export default async function TransactionChatPage({
         partnerArrival={latestArrival(proposal.partner.id)}
         myOutfitPhoto={latestOutfit(user.id)}
         partnerOutfitPhoto={latestOutfit(proposal.partner.id)}
+        calendarEvents={calendarEvents}
+        partnerCalendarExposed={partnerExposed}
       />
     </main>
   );
