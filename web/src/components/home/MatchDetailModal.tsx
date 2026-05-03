@@ -33,11 +33,15 @@ const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
 
 export function MatchDetailModal({
   partnerHandle,
-  listings,
+  myListings,
+  partnerListings,
   onClose,
 }: {
   partnerHandle: string;
-  listings: MatchCardListingInfo[];
+  /** 私の listing が成立したもの */
+  myListings: MatchCardListingInfo[];
+  /** 相手の listing が成立したもの */
+  partnerListings: MatchCardListingInfo[];
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -75,24 +79,103 @@ export function MatchDetailModal({
             🔗 関係図
           </span>
           <b>実線</b>＝AND（セット）/ <b>点線</b>＝OR（いずれか）。求側の選択肢のうち
-          相手は <b>いずれか 1 つ</b> を選んで取引します。
+          いずれか <b>1 つ</b> を選んで取引します。
         </div>
 
-        {listings.map((l, idx) => (
-          <ListingDiagram key={l.listingId} listing={l} index={idx} />
-        ))}
+        {/* 私の個別募集 */}
+        {myListings.length > 0 && (
+          <SectionGroup
+            title="あなたの個別募集"
+            subtitle="あなたが出している条件 — 相手の譲がこの条件を満たしました"
+            accentColor="#a695d8"
+          >
+            {myListings.map((l, idx) => (
+              <ListingDiagram
+                key={l.listingId}
+                listing={l}
+                index={idx}
+                ownerLabel="あなたの譲"
+                receiverLabel="相手から受け取る"
+              />
+            ))}
+          </SectionGroup>
+        )}
+
+        {/* 相手の個別募集 */}
+        {partnerListings.length > 0 && (
+          <SectionGroup
+            title={`@${partnerHandle} の個別募集`}
+            subtitle="相手が出している条件 — あなたの譲がこの条件を満たしました"
+            accentColor="#f3c5d4"
+          >
+            {partnerListings.map((l, idx) => (
+              <ListingDiagram
+                key={l.listingId}
+                listing={l}
+                index={idx}
+                ownerLabel="相手の譲"
+                receiverLabel="相手が受け取る（あなたの譲）"
+              />
+            ))}
+          </SectionGroup>
+        )}
+
+        {myListings.length === 0 && partnerListings.length === 0 && (
+          <div className="rounded-[10px] border border-dashed border-[#3a324a14] bg-white p-4 text-center text-[12px] text-[#3a324a8c]">
+            個別募集経由のマッチはありません
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+/* ─── Section group wrapper ─────────────────────── */
+
+function SectionGroup({
+  title,
+  subtitle,
+  accentColor,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  accentColor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mb-4">
+      <div
+        className="mb-2 rounded-[10px] px-3 py-2"
+        style={{ background: `${accentColor}14` }}
+      >
+        <div
+          className="text-[11px] font-extrabold tracking-[0.4px]"
+          style={{ color: accentColor }}
+        >
+          {title}
+        </div>
+        <div className="mt-0.5 text-[10px] text-[#3a324a8c]">{subtitle}</div>
+      </div>
+      {children}
+    </section>
   );
 }
 
 function ListingDiagram({
   listing,
   index,
+  ownerLabel,
+  receiverLabel,
 }: {
   listing: MatchCardListingInfo;
   index: number;
+  /** 左カラムのラベル（譲側＝listing オーナー） */
+  ownerLabel?: string;
+  /** 右カラムのラベル（求側＝listing オーナーが受け取る） */
+  receiverLabel?: string;
 }) {
+  void receiverLabel;
   return (
     <section className="mb-4 overflow-hidden rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white">
       <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
@@ -116,8 +199,8 @@ function ListingDiagram({
       {/* 譲群（共通） */}
       <div className="px-3 pt-3">
         <div className="mb-1.5 text-[10px] font-bold tracking-[0.4px] text-[#a8d4e6]">
-          あなたの譲（{listing.haves.filter((h) => h.matched).length} /{" "}
-          {listing.haves.length}）
+          {ownerLabel ?? "あなたの譲"}（
+          {listing.haves.filter((h) => h.matched).length} / {listing.haves.length}）
         </div>
         <div className="flex flex-wrap items-end gap-2">
           {listing.haves.map((h) => (

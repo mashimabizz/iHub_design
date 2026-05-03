@@ -1,10 +1,13 @@
 /**
- * マッチカード（モックアップ home-v2.jsx::CompleteCardV2 + OneWayList 準拠）
+ * iter67.6 改訂：マッチカードを 2 種類に分離
  *
- * - ヘッダー: アバター + @handle + 距離 + マッチタイプ pill
- * - Trade preview: 左=相手の譲（私が受け取る）/ 中央=矢印 / 右=私の譲（相手が受け取る）
- * - 各アイテムは aspect-3/4 のミニカード（写真 or イニシャル）
- * - CTA: 打診する → /propose/[partnerId]?matchType=...
+ * - **ListingMatchCard**：個別募集（listing）経由マッチ。リッチなデザイン、
+ *   「📦 個別募集マッチ」バナー、定価交換サブバッジ、詳細モーダル開閉ボタン
+ * - **SimpleMatchCard**：wish ベースの通常マッチ。今までの素朴なデザイン
+ *
+ * MatchCard wrapper が listingBadge の有無で振り分け。
+ *
+ * 距離表示（現地モード ON 時のみ）：distanceText prop で渡す。
  */
 
 import Link from "next/link";
@@ -13,13 +16,12 @@ import { MatchDetailModal } from "./MatchDetailModal";
 
 export type MiniItem = {
   id: string;
-  label: string; // メンバー名 or グループ名
+  label: string;
   goodsTypeName: string | null;
   photoUrl: string | null;
-  hue: number; // 0〜360
+  hue: number;
 };
 
-/** 個別募集（listing）の関係図モーダル用データ */
 export type MatchCardOption = {
   id: string;
   position: number;
@@ -34,9 +36,7 @@ export type MatchCardOption = {
 export type MatchCardListingInfo = {
   listingId: string;
   haveLogic: "and" | "or";
-  /** listing の全ハベ（私の譲）— 表示順 = haveIds の順 */
   haves: { item: MiniItem; qty: number; matched: boolean }[];
-  /** 求側の全選択肢（matched フラグ付き） */
   options: MatchCardOption[];
 };
 
@@ -45,15 +45,17 @@ export type MatchCardData = {
   partnerId: string;
   userName: string;
   userHandle: string;
-  myGives: MiniItem[]; // 私の譲（=相手が欲しい・私が出す）
-  theirGives: MiniItem[]; // 相手の譲（=私が受け取る）
+  myGives: MiniItem[];
+  theirGives: MiniItem[];
   matchType: "complete" | "they_want_you" | "you_want_them";
-  distance: string; // 「広域」 or 都道府県
+  distance: string;
   exchangeType?: "same_kind" | "cross_kind" | "any";
-  /** 個別募集経由のマッチ：'set' = AND バンドル / 'any' = OR 候補 / null = 通常マッチ */
   listingBadge?: "set" | "any" | null;
-  /** 関係図モーダル用：listing 経由マッチの構造 */
-  matchedListings?: MatchCardListingInfo[];
+  hasCashOffer?: boolean;
+  myMatchedListings?: MatchCardListingInfo[];
+  partnerMatchedListings?: MatchCardListingInfo[];
+  /** 現地モード ON 時の距離テキスト（例「約 250m」「約 1.2km」） */
+  distanceText?: string;
 };
 
 const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
@@ -62,7 +64,165 @@ const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
   any: "どちらでも",
 };
 
+/* ─── dispatcher ─────────────────────────────────────── */
+
 export function MatchCard({ card }: { card: MatchCardData }) {
+  const isListingMatch =
+    !!(card.myMatchedListings?.length || card.partnerMatchedListings?.length);
+  return isListingMatch ? (
+    <ListingMatchCard card={card} />
+  ) : (
+    <SimpleMatchCard card={card} />
+  );
+}
+
+/* ─── 個別募集マッチカード（リッチ） ────────────────── */
+
+function ListingMatchCard({ card }: { card: MatchCardData }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const matchLabel =
+    card.matchType === "complete"
+      ? "COMPLETE"
+      : card.matchType === "they_want_you"
+        ? "あなたを求めてる"
+        : "あなたの欲しいを持つ";
+
+  const hasMyListing = !!card.myMatchedListings?.length;
+  const hasPartnerListing = !!card.partnerMatchedListings?.length;
+  const sourceLabel =
+    hasMyListing && hasPartnerListing
+      ? "双方の個別募集が成立"
+      : hasMyListing
+        ? "あなたの個別募集が成立"
+        : "相手の個別募集が成立";
+
+  return (
+    <>
+      <div
+        className="relative overflow-hidden rounded-2xl border-[1.5px] border-[#a695d8] bg-white shadow-[0_10px_28px_rgba(166,149,216,0.20)]"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(166,149,216,0.10) 0%, transparent 50%, rgba(243,197,212,0.06) 100%)",
+        }}
+      >
+        {/* 上部リッチバナー */}
+        <div className="flex items-center gap-2 bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-1.5 text-white">
+          <span className="text-[12px]">📦</span>
+          <span className="text-[10.5px] font-extrabold tracking-[0.6px]">
+            個別募集マッチ
+          </span>
+          <span className="text-[9.5px] font-bold opacity-90">
+            · {sourceLabel}
+          </span>
+          <div className="flex-1" />
+          <span className="rounded-full bg-white/95 px-2 py-[2px] text-[9px] font-extrabold tracking-[0.4px] text-[#a695d8]">
+            {matchLabel}
+          </span>
+        </div>
+
+        <div className="p-3.5">
+          {/* Header */}
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[15px] font-bold text-[#a695d8]">
+              {card.userName[0] || "?"}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13.5px] font-bold text-gray-900">
+                @{card.userHandle}
+              </div>
+              <div className="mt-0.5 text-[10.5px] tabular-nums text-gray-500">
+                {card.distanceText ? (
+                  <>
+                    <span className="font-bold text-[#a695d8]">
+                      📍 {card.distanceText}
+                    </span>{" "}
+                    · {card.distance}
+                  </>
+                ) : (
+                  card.distance
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Trade preview */}
+          <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2.5 rounded-2xl bg-[#a8d4e614] p-2.5">
+            <SidePanel
+              label={`相手の譲（${card.theirGives.length}）`}
+              items={card.theirGives}
+              align="left"
+            />
+            <div className="flex flex-col items-center gap-1">
+              <ArrowDot color="#a695d8" dir="right" />
+              <ArrowDot color="#a8d4e6" dir="left" />
+            </div>
+            <SidePanel
+              label={`あなたの譲（${card.myGives.length}）`}
+              items={card.myGives}
+              align="right"
+              accent="#f3c5d4cc"
+            />
+          </div>
+
+          {/* バッジ群 */}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {card.listingBadge === "set" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#a695d8] px-2 py-0.5 text-[10px] font-bold text-white">
+                📦 セット
+              </span>
+            )}
+            {card.listingBadge === "any" && (
+              <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
+                いずれか OK
+              </span>
+            )}
+            {card.hasCashOffer && (
+              <span className="rounded-full border border-[#7a9a8a55] bg-[#7a9a8a14] px-2 py-0.5 text-[10px] font-bold text-[#7a9a8a]">
+                💴 定価交換も受付
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setModalOpen(true)}
+              className="ml-auto inline-flex items-center gap-0.5 rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-2.5 py-[3px] text-[10px] font-extrabold text-white shadow-[0_2px_6px_rgba(166,149,216,0.35)] active:scale-[0.97]"
+            >
+              詳細 →
+            </button>
+          </div>
+
+          {/* CTA */}
+          <div className="mt-3 flex gap-2">
+            <Link
+              href={`/propose/${card.partnerId}?matchType=${card.matchType}`}
+              className="flex-1 rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-2.5 text-center text-[13px] font-bold tracking-[0.4px] text-white shadow-[0_4px_12px_rgba(166,149,216,0.4)] transition-all duration-150 active:scale-[0.97]"
+            >
+              打診する
+            </Link>
+            <button
+              type="button"
+              className="rounded-xl border border-[#a695d855] bg-white px-3.5 py-2.5 text-[12px] font-semibold text-gray-700 transition-all active:scale-[0.97]"
+            >
+              相手プロフ →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {modalOpen && (
+        <MatchDetailModal
+          partnerHandle={card.userHandle}
+          myListings={card.myMatchedListings ?? []}
+          partnerListings={card.partnerMatchedListings ?? []}
+          onClose={() => setModalOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/* ─── 通常マッチカード（シンプル） ──────────────────── */
+
+function SimpleMatchCard({ card }: { card: MatchCardData }) {
   const isComplete = card.matchType === "complete";
   const matchLabel = isComplete
     ? "COMPLETE"
@@ -70,13 +230,8 @@ export function MatchCard({ card }: { card: MatchCardData }) {
       ? "あなたを求めてる"
       : "あなたの欲しいを持つ";
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const hasListings =
-    !!card.matchedListings && card.matchedListings.length > 0;
-
   return (
     <div className="relative overflow-hidden rounded-2xl border border-[#a695d830] bg-white p-3.5 shadow-[0_8px_24px_rgba(166,149,216,0.10)]">
-      {/* soft top tint (complete のみ) */}
       {isComplete && (
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-20"
@@ -87,7 +242,6 @@ export function MatchCard({ card }: { card: MatchCardData }) {
         />
       )}
 
-      {/* マッチタイプ pill (右上) */}
       <div
         className={`absolute right-3 top-3 z-10 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9.5px] font-bold tracking-[0.6px] ${
           isComplete
@@ -106,7 +260,6 @@ export function MatchCard({ card }: { card: MatchCardData }) {
         {matchLabel}
       </div>
 
-      {/* Header */}
       <div className="relative flex items-center gap-2.5 pr-24">
         <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[15px] font-bold text-[#a695d8]">
           {card.userName[0] || "?"}
@@ -116,27 +269,30 @@ export function MatchCard({ card }: { card: MatchCardData }) {
             @{card.userHandle}
           </div>
           <div className="mt-0.5 text-[10.5px] tabular-nums text-gray-500">
-            {card.distance}
+            {card.distanceText ? (
+              <>
+                <span className="font-bold text-[#a695d8]">
+                  📍 {card.distanceText}
+                </span>{" "}
+                · {card.distance}
+              </>
+            ) : (
+              card.distance
+            )}
           </div>
         </div>
       </div>
 
-      {/* Trade preview: 相手の譲 ↔ 私の譲 */}
       <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2.5 rounded-2xl bg-[#a8d4e614] p-2.5">
-        {/* 相手の譲（左）= 私が受け取る */}
         <SidePanel
           label={`相手の譲（${card.theirGives.length}）`}
           items={card.theirGives}
           align="left"
         />
-
-        {/* 中央: 矢印 */}
         <div className="flex flex-col items-center gap-1">
           <ArrowDot color="#a695d8" dir="right" />
           <ArrowDot color="#a8d4e6" dir="left" />
         </div>
-
-        {/* 私の譲（右）= 相手が受け取る */}
         <SidePanel
           label={`あなたの譲（${card.myGives.length}）`}
           items={card.myGives}
@@ -145,46 +301,17 @@ export function MatchCard({ card }: { card: MatchCardData }) {
         />
       </div>
 
-      {/* listing バッジ + 交換タイプタグ */}
-      {(card.listingBadge ||
-        (card.exchangeType && card.exchangeType !== "any")) && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {card.listingBadge === "set" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-[#a695d8] px-2 py-0.5 text-[10px] font-bold text-white">
-              📦 セット
-            </span>
-          )}
-          {card.listingBadge === "any" && (
-            <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
-              いずれか OK
-            </span>
-          )}
-          {card.exchangeType && card.exchangeType !== "any" && (
-            <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
-              {EXCHANGE_LABEL[card.exchangeType]}
-            </span>
-          )}
-          {hasListings && (
-            <button
-              type="button"
-              onClick={() => setModalOpen(true)}
-              className="ml-auto inline-flex items-center gap-0.5 rounded-full border border-[#a695d855] bg-white px-2 py-0.5 text-[10px] font-bold text-[#a695d8] active:scale-[0.97]"
-            >
-              詳細 →
-            </button>
-          )}
+      {card.exchangeType && card.exchangeType !== "any" && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
+            {EXCHANGE_LABEL[card.exchangeType]}
+          </span>
+          <span className="text-[9.5px] text-gray-500">
+            ※ 相手の自己申告
+          </span>
         </div>
       )}
 
-      {hasListings && modalOpen && (
-        <MatchDetailModal
-          partnerHandle={card.userHandle}
-          listings={card.matchedListings!}
-          onClose={() => setModalOpen(false)}
-        />
-      )}
-
-      {/* CTA */}
       <div className="mt-3 flex gap-2">
         <Link
           href={`/propose/${card.partnerId}?matchType=${card.matchType}`}
@@ -203,11 +330,8 @@ export function MatchCard({ card }: { card: MatchCardData }) {
   );
 }
 
-/* ─── Sub-components ─────────────────────────────────── */
+/* ─── shared sub-components ─────────────────────────── */
 
-/**
- * 左 / 右パネル（譲アイテム群）
- */
 function SidePanel({
   label,
   items,
@@ -256,9 +380,6 @@ function SidePanel({
   );
 }
 
-/**
- * 1 アイテム = 写真 or イニシャル の 縦長カード（Trading Card 風）
- */
 function Tcg({ item, accent }: { item: MiniItem; accent?: string }) {
   const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 86%) 0 5px, hsl(${item.hue}, 28%, 78%) 5px 10px)`;
   const initialShadow = `0 1px 3px hsla(${item.hue}, 30%, 30%, 0.5)`;

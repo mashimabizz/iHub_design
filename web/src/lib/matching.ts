@@ -40,13 +40,22 @@ export type Match = {
   myGives: MatchInv[];
   /** 相手の譲 = 私の wish にヒットしたもの */
   theirGives: MatchInv[];
-  /** 個別募集経由のマッチか */
+  /** 個別募集経由のマッチか（自分側 or 相手側いずれかの listing が成立） */
   viaListing: boolean;
   /**
-   * iter67.3：listing 経由のマッチで、その listing 構造（AND/OR、qty）を
-   * UI 側でバッジ・関係図モーダルに使うため伝播
+   * 私の個別募集が成立したもの（私 = listing オーナー視点）
+   * iter67.6 で `matchedListings` から rename
    */
-  matchedListings?: MatchedListingInfo[];
+  myMatchedListings?: MatchedListingInfo[];
+  /**
+   * 相手の個別募集が成立したもの（相手 = listing オーナー視点）
+   * iter67.6 で新規。partner の listing を私の inventory が満たすかを評価
+   */
+  partnerMatchedListings?: MatchedListingInfo[];
+  /**
+   * 私と相手の最短距離（m）。現地モード ON 時のみ計算される（iter67.6）
+   */
+  distanceMeters?: number;
 };
 
 export type MatchedListingInfo = {
@@ -124,15 +133,19 @@ export type ListingForMatch = {
 };
 
 /**
- * 私 × 1 パートナー の組合せに対してマッチを 1 つ計算。
+ * 私 × 1 パートナー の組合せに対してマッチを 1 つ計算（iter67.6 で partner listings 評価追加）。
  *
- * @param myInventory 私の譲 (kind=for_trade, status=active)
- * @param myWishes    私の wish (kind=wanted, status=active)
- * @param myListings  私の active な listings（譲 X → wish_ids 配列）
- * @param myWishById  私の wish を id で引く Map（listings の wish_ids 解決用）
- * @param partnerInv  相手の譲
- * @param partnerWishes 相手の wish
- * @param partner   相手の UserSummary
+ * @param myInventory      私の譲 (kind=for_trade, status=active)
+ * @param myWishes         私の wish (kind=wanted, status=active)
+ * @param myListings       私の active な listings
+ * @param myWishById       私の wish を id で引く Map
+ * @param myInvById        私の inventory を id で引く Map
+ * @param partnerInv       相手の譲
+ * @param partnerWishes    相手の wish
+ * @param partnerListings  相手の active な listings（iter67.6 追加）
+ * @param partnerInvById   相手の inventory を id で引く Map（iter67.6 追加）
+ * @param partnerWishById  相手の wish を id で引く Map（iter67.6 追加）
+ * @param partner          相手の UserSummary
  */
 export function matchPair(input: {
   myInventory: MatchInv[];
@@ -142,6 +155,9 @@ export function matchPair(input: {
   myInvById: Map<string, MatchInv>;
   partnerInv: MatchInv[];
   partnerWishes: MatchInv[];
+  partnerListings: ListingForMatch[];
+  partnerInvById: Map<string, MatchInv>;
+  partnerWishById: Map<string, MatchInv>;
   partner: UserSummary;
 }): Match | null {
   const {
@@ -152,6 +168,9 @@ export function matchPair(input: {
     myInvById,
     partnerInv,
     partnerWishes,
+    partnerListings,
+    partnerInvById,
+    partnerWishById,
     partner,
   } = input;
 
@@ -168,15 +187,16 @@ export function matchPair(input: {
   /* ─── 結果プール ─── */
   const myGivesMap = new Map<string, MatchInv>();
   const theirGivesMap = new Map<string, MatchInv>();
-  const matchedListings: MatchedListingInfo[] = [];
+  const myMatchedListings: MatchedListingInfo[] = [];
+  const partnerMatchedListings: MatchedListingInfo[] = [];
   let viaListing = false;
 
-  /* ─── 1. listing 駆動マッチ（選択肢ベース） ─── */
+  /* ─── 1a. 私の listing 駆動マッチ（partnerInv が私の wish に hit） ─── */
   for (const l of myListings) {
     const lm = evaluateListingMatch(l, myInvById, myWishById, partnerInv);
     if (!lm) continue;
     viaListing = true;
-    matchedListings.push({
+    myMatchedListings.push({
       listingId: l.id,
       haveIds: l.haveIds,
       haveQtys: l.haveQtys,
@@ -190,12 +210,46 @@ export function matchPair(input: {
       const inv = myInvById.get(id);
       if (inv) myGivesMap.set(inv.id, inv);
     }
-    // 成立した選択肢の相手アイテムを theirGives に登録
     for (const opt of lm.options) {
       if (!opt.matched) continue;
       for (const id of opt.matchedTheirInvIds) {
         const inv = partnerInv.find((p) => p.id === id);
         if (inv) theirGivesMap.set(inv.id, inv);
+      }
+    }
+  }
+
+  /* ─── 1b. 相手の listing 駆動マッチ（myInventory が相手の wish に hit） ─── */
+  for (const l of partnerListings) {
+    const lm = evaluateListingMatch(
+      l,
+      partnerInvById,
+      partnerWishById,
+      myInventory,
+    );
+    if (!lm) continue;
+    viaListing = true;
+    partnerMatchedListings.push({
+      listingId: l.id,
+      haveIds: l.haveIds,
+      haveQtys: l.haveQtys,
+      haveLogic: l.haveLogic,
+      haveGroupId: l.haveGroupId,
+      haveGoodsTypeId: l.haveGoodsTypeId,
+      matchedHaveIds: lm.matchedHaveIds,
+      options: lm.options,
+    });
+    // 相手 listing の have（=相手が出すもの）を theirGives へ
+    for (const id of lm.matchedHaveIds) {
+      const inv = partnerInvById.get(id);
+      if (inv) theirGivesMap.set(inv.id, inv);
+    }
+    // 相手 listing が成立した選択肢の「私のアイテム」を myGives へ
+    for (const opt of lm.options) {
+      if (!opt.matched) continue;
+      for (const id of opt.matchedTheirInvIds) {
+        const inv = myInventory.find((m) => m.id === id);
+        if (inv) myGivesMap.set(inv.id, inv);
       }
     }
   }
@@ -242,7 +296,12 @@ export function matchPair(input: {
     myGives: Array.from(myGivesMap.values()),
     theirGives: Array.from(theirGivesMap.values()),
     viaListing,
-    matchedListings: matchedListings.length > 0 ? matchedListings : undefined,
+    myMatchedListings:
+      myMatchedListings.length > 0 ? myMatchedListings : undefined,
+    partnerMatchedListings:
+      partnerMatchedListings.length > 0
+        ? partnerMatchedListings
+        : undefined,
   };
 }
 
@@ -355,6 +414,8 @@ export function computeAllMatches(input: {
     user: UserSummary;
     inventory: MatchInv[];
     wishes: MatchInv[];
+    /** iter67.6: 相手の listings（同じ user_id のもの） */
+    listings: ListingForMatch[];
   }>;
 }): Match[] {
   const myWishById = new Map<string, MatchInv>();
@@ -364,6 +425,11 @@ export function computeAllMatches(input: {
 
   const matches: Match[] = [];
   for (const p of input.partners) {
+    const partnerInvById = new Map<string, MatchInv>();
+    for (const i of p.inventory) partnerInvById.set(i.id, i);
+    const partnerWishById = new Map<string, MatchInv>();
+    for (const w of p.wishes) partnerWishById.set(w.id, w);
+
     const m = matchPair({
       myInventory: input.myInventory,
       myWishes: input.myWishes,
@@ -372,19 +438,23 @@ export function computeAllMatches(input: {
       myInvById,
       partnerInv: p.inventory,
       partnerWishes: p.wishes,
+      partnerListings: p.listings,
+      partnerInvById,
+      partnerWishById,
       partner: p.user,
     });
     if (m) matches.push(m);
   }
 
-  // ソート
+  // ソート（iter67.6 で viaListing 優先に変更）
   const order = { complete: 0, they_want_you: 1, you_want_them: 2 } as const;
   matches.sort((a, b) => {
+    // listing 経由 を最上位に
+    if (a.viaListing !== b.viaListing) return a.viaListing ? -1 : 1;
+    // 同じ群内では matchType 順
     const oa = order[a.matchType];
     const ob = order[b.matchType];
     if (oa !== ob) return oa - ob;
-    // listing 優先
-    if (a.viaListing !== b.viaListing) return a.viaListing ? -1 : 1;
     return 0;
   });
 

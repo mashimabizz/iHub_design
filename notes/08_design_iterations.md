@@ -419,6 +419,90 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67.6：マッチパネル改修（listing 経由のリッチカード + partner listings + 距離）
+
+### 背景
+
+iter67.4/5 で個別募集モデルが整理された後、オーナーから「マッチングパネル一覧」表示の改修：
+
+> Q1: B + popup（相手の条件 + 他の選択肢）
+> Q2: B（listing 経由はリッチに、上位表示）
+> Q3: A（定価交換も受付サブバッジ）
+> Q4: B（距離は現地モード ON 時のみ）
+> Q5: C（相手プロフ→は今は触らない）
+> Q6: B（色分けはしない）
+> Q7: 不要（スワイプ）
+
+### 変更内容
+
+#### A. `matching.ts`：partner listings 評価を追加
+- `Match.matchedListings` を **`myMatchedListings` + `partnerMatchedListings`** に分離
+- `matchPair` の引数に `partnerListings` / `partnerInvById` / `partnerWishById` 追加
+- 既存の `evaluateListingMatch` を再利用（引数を入れ替えるだけで partner 側評価が成立）
+- `viaListing` = 自分側 or 相手側いずれかで listing が成立すれば true
+- `Match.distanceMeters?` を追加（現地モード ON 時のみ）
+
+#### B. `computeAllMatches`：ソート優先度を変更
+- 旧：matchType 順 > viaListing
+- **新：viaListing 優先 > matchType 順**
+- 個別募集経由マッチがリストの上位に来る
+
+#### C. `page.tsx`：他者 listings + options を fetch
+- `othersListings` クエリ追加（`status='active'` のもの）
+- `listing_wish_options` を listing_id で bulk fetch
+- `othersListingsByUser` Map で user_id 別に集約
+- `partnersMap` 各エントリに `listings` を追加
+- 距離計算：`isLocal && last_lat/lng` のとき、相手の AW center との haversine 距離を最短値で算出 → `match.distanceMeters` に格納
+
+#### D. `MatchCard.tsx`：リッチ vs シンプルに分離
+新規：
+- `MatchCard` ディスパッチャー：`myMatchedListings || partnerMatchedListings` の有無で振り分け
+- `ListingMatchCard`（リッチ）：
+  - 上部に紫グラデバナー「📦 個別募集マッチ」+ source ラベル（あなた/相手/双方の個別募集が成立）
+  - 紫枠 1.5px + 強い影 + ソフトな背景グラデ
+  - Trade preview は既存
+  - バッジ群：「📦 セット」or「いずれか OK」+ 「💴 定価交換も受付」（hasCashOffer 時）
+  - 「詳細 →」ボタンが目立つ位置（右寄せ）でグラデ背景
+  - 距離テキスト「📍 約 250m」を表示（現地モード ON 時）
+- `SimpleMatchCard`：従来通りのシンプルデザイン（wish 経由マッチ用）
+
+#### E. `MatchDetailModal.tsx`：2 セクション構成に
+- props を `myListings` + `partnerListings` の 2 配列に分離
+- セクションA（紫）「あなたの個別募集」 — 「あなたが出している条件 — 相手の譲がこの条件を満たしました」
+- セクションB（ピンク）「@partner の個別募集」 — 「相手が出している条件 — あなたの譲がこの条件を満たしました」
+- 各セクション内で listing ごとに既存の関係図を描画
+- 譲側のラベルを `ownerLabel` prop で動的に（あなたの譲 / 相手の譲）
+
+#### F. `MatchCardData`：拡張
+- `myMatchedListings` + `partnerMatchedListings` （`matchedListings` から rename + 分離）
+- `hasCashOffer?: boolean`：定価交換選択肢を含む listing が成立したか
+- `distanceText?: string`：「約 Xm」「約 X.X km」（現地モード ON 時のみ）
+
+#### G. `HomeView.tsx`：matchToCard hydrate 拡張
+- partnersInventory / partnersWishes を props 追加（listing item 解決用）
+- partner listings の haves（=相手の譲）を `partnersInvById` から、wishes を `partnersWishById` から hydrate
+
+### 影響範囲
+
+- ホーム画面のマッチカード一覧：listing 経由マッチがリッチで上位に
+- 詳細モーダル：双方の listing を別セクションで明示
+- データ構造：Match に partner listings 情報追加
+
+### 設計判断
+
+- **partner listings を独立に評価**：相手も listing を持つ場合があり、両側が独立に成立し得る。両側で違う「条件」を提示してくる可能性がある
+- **viaListing 優先ソート**：個別募集はユーザーが意図的に作った「強い意思表示」なので最上位
+- **「詳細 →」ボタンを目立たせる**：listing 経由マッチは複雑な構造を持つので、必ず詳細を見てもらう導線を用意
+- **距離表示は現地モード ON 時のみ**：通常時は「広域 / 都道府県」で十分
+
+### 関連ファイル
+
+- `web/src/lib/matching.ts`（型 + matchPair + computeAllMatches sort）
+- `web/src/app/page.tsx`（partner listings fetch + 距離計算）
+- `web/src/components/home/{MatchCard.tsx, MatchDetailModal.tsx, HomeView.tsx}`
+
+---
+
 ## イテレーション67.5：listing 作成 UI 微調整 + wish exchange_type 再削除
 
 ### 背景

@@ -9,6 +9,7 @@ import { BottomNav } from "@/components/home/BottomNav";
 import {
   awsOverlap,
   computeAllMatches,
+  haversineMeters,
   type MatchInv,
   type UserSummary,
 } from "@/lib/matching";
@@ -122,6 +123,7 @@ export default async function Home({ searchParams }: Props) {
     { data: othersWishesRaw },
     { data: otherUsersRaw },
     { data: othersAWsRaw },
+    { data: othersListingsRaw },
   ] = await Promise.all([
     supabase
       .from("users")
@@ -207,6 +209,15 @@ export default async function Home({ searchParams }: Props) {
       .neq("user_id", user.id)
       .eq("status", "enabled")
       .limit(500),
+    // 他者の active な listings（iter67.6 で追加）
+    supabase
+      .from("listings")
+      .select(
+        "id, user_id, have_ids, have_qtys, have_logic, have_group_id, have_goods_type_id",
+      )
+      .neq("user_id", user.id)
+      .eq("status", "active")
+      .limit(500),
   ]);
 
   // ─── マッチング演算 ──────────────────────────────────────
@@ -269,10 +280,73 @@ export default async function Home({ searchParams }: Props) {
     };
   });
 
+  // 他者 listings の options 取得 + 構造化（iter67.6）
+  type OthersListingRow = {
+    id: string;
+    user_id: string;
+    have_ids: string[];
+    have_qtys: number[];
+    have_logic: "and" | "or";
+    have_group_id: string | null;
+    have_goods_type_id: string | null;
+  };
+  const othersListings = (othersListingsRaw ?? []) as OthersListingRow[];
+  const othersListingIds = othersListings.map((l) => l.id);
+  let othersOptionsByListing = new Map<string, OptRow[]>();
+  if (othersListingIds.length > 0) {
+    const { data: othersOpts } = await supabase
+      .from("listing_wish_options")
+      .select(
+        "id, listing_id, position, wish_ids, wish_qtys, logic, exchange_type, is_cash_offer, cash_amount",
+      )
+      .in("listing_id", othersListingIds)
+      .order("position", { ascending: true });
+    if (othersOpts) {
+      for (const o of othersOpts as OptRow[]) {
+        const arr = othersOptionsByListing.get(o.listing_id) ?? [];
+        arr.push(o);
+        othersOptionsByListing.set(o.listing_id, arr);
+      }
+    }
+  }
+  const othersListingsByUser = new Map<
+    string,
+    typeof myListingsForMatch
+  >();
+  for (const l of othersListings) {
+    const opts = othersOptionsByListing.get(l.id) ?? [];
+    const entry = {
+      id: l.id,
+      haveIds: l.have_ids ?? [],
+      haveQtys: l.have_qtys ?? [],
+      haveLogic: l.have_logic,
+      haveGroupId: l.have_group_id,
+      haveGoodsTypeId: l.have_goods_type_id,
+      options: opts.map((o) => ({
+        id: o.id,
+        position: o.position,
+        wishIds: o.wish_ids ?? [],
+        wishQtys: o.wish_qtys ?? [],
+        logic: o.logic,
+        exchangeType: o.exchange_type,
+        isCashOffer: o.is_cash_offer,
+        cashAmount: o.cash_amount,
+      })),
+    };
+    const arr = othersListingsByUser.get(l.user_id) ?? [];
+    arr.push(entry);
+    othersListingsByUser.set(l.user_id, arr);
+  }
+
   // パートナー単位にグループ化
   const partnersMap = new Map<
     string,
-    { user: UserSummary; inventory: MatchInv[]; wishes: MatchInv[] }
+    {
+      user: UserSummary;
+      inventory: MatchInv[];
+      wishes: MatchInv[];
+      listings: typeof myListingsForMatch;
+    }
   >();
   for (const u of otherUsersRaw ?? []) {
     partnersMap.set(u.id, {
@@ -284,6 +358,7 @@ export default async function Home({ searchParams }: Props) {
       },
       inventory: [],
       wishes: [],
+      listings: othersListingsByUser.get(u.id) ?? [],
     });
   }
   for (const r of (othersInventoryRaw as GoodsRow[]) ?? []) {
@@ -338,6 +413,28 @@ export default async function Home({ searchParams }: Props) {
         }),
       );
     });
+
+    // 距離（m）を最短 AW から算出（iter67.6）
+    if (
+      localMode &&
+      localMode.last_lat != null &&
+      localMode.last_lng != null
+    ) {
+      const myLat = localMode.last_lat as number;
+      const myLng = localMode.last_lng as number;
+      matches = matches.map((m) => {
+        const aws = partnerAWs.get(m.partner.id) ?? [];
+        let minDist = Infinity;
+        for (const a of aws) {
+          if (a.center_lat == null || a.center_lng == null) continue;
+          const d = haversineMeters(myLat, myLng, a.center_lat, a.center_lng);
+          if (d < minDist) minDist = d;
+        }
+        return Number.isFinite(minDist)
+          ? { ...m, distanceMeters: minDist }
+          : m;
+      });
+    }
   }
 
   return (
@@ -384,6 +481,12 @@ export default async function Home({ searchParams }: Props) {
         matches={matches}
         myInventory={myInventory}
         myWishes={myWishes}
+        partnersInventory={Array.from(partnersMap.values()).flatMap(
+          (p) => p.inventory,
+        )}
+        partnersWishes={Array.from(partnersMap.values()).flatMap(
+          (p) => p.wishes,
+        )}
       />
       <BottomNav />
     </>

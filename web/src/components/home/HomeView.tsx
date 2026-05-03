@@ -49,29 +49,22 @@ function toMini(inv: MatchInv): MiniItem {
   };
 }
 
-/** Match を MatchCard 用データに変換 */
+/** Match を MatchCard 用データに変換（iter67.6: partner listings 対応） */
 function matchToCard(
   m: Match,
   myInvById: Map<string, MatchInv>,
   myWishById: Map<string, MatchInv>,
+  partnersInvById: Map<string, MatchInv>,
+  partnersWishById: Map<string, MatchInv>,
 ): MatchCardData {
-  // listing 経由マッチで、AND が含まれていれば 'set'、それ以外は 'any'
-  const hasAnd = m.matchedListings?.some(
-    (ml) =>
-      ml.haveLogic === "and" ||
-      ml.options.some((o) => o.matched && o.logic === "and"),
-  );
-  const listingBadge: MatchCardData["listingBadge"] = m.matchedListings?.length
-    ? hasAnd
-      ? "set"
-      : "any"
-    : null;
-
-  // モーダル用の listing 詳細を構築
-  const matchedListings: MatchCardListingInfo[] | undefined =
-    m.matchedListings?.map((ml) => {
+  const hydrate = (
+    listings: typeof m.myMatchedListings,
+    haveLookup: Map<string, MatchInv>,
+    wishLookup: Map<string, MatchInv>,
+  ): MatchCardListingInfo[] | undefined =>
+    listings?.map((ml) => {
       const haves = ml.haveIds.map((id, i) => {
-        const inv = myInvById.get(id);
+        const inv = haveLookup.get(id);
         const item: MiniItem = inv
           ? toMini(inv)
           : { id, label: "?", goodsTypeName: null, photoUrl: null, hue: 0 };
@@ -81,7 +74,6 @@ function matchToCard(
           matched: ml.matchedHaveIds.includes(id),
         };
       });
-      // 各選択肢を MatchCardOption に変換
       const options = ml.options.map((opt) => ({
         id: opt.id,
         position: opt.position,
@@ -91,7 +83,7 @@ function matchToCard(
         cashAmount: opt.cashAmount,
         matched: opt.matched,
         wishes: opt.wishIds.map((id, i) => {
-          const inv = myWishById.get(id);
+          const inv = wishLookup.get(id);
           const item: MiniItem = inv
             ? toMini(inv)
             : { id, label: "?", goodsTypeName: null, photoUrl: null, hue: 0 };
@@ -109,6 +101,42 @@ function matchToCard(
       };
     });
 
+  const myMatched = hydrate(m.myMatchedListings, myInvById, myWishById);
+  const partnerMatched = hydrate(
+    m.partnerMatchedListings,
+    partnersInvById,
+    partnersWishById,
+  );
+
+  // バッジ判定：listing 経由マッチで AND があれば 'set'、それ以外は 'any'
+  const allListings = [
+    ...(m.myMatchedListings ?? []),
+    ...(m.partnerMatchedListings ?? []),
+  ];
+  const hasAnd = allListings.some(
+    (ml) =>
+      ml.haveLogic === "and" ||
+      ml.options.some((o) => o.matched && o.logic === "and"),
+  );
+  const listingBadge: MatchCardData["listingBadge"] = m.viaListing
+    ? hasAnd
+      ? "set"
+      : "any"
+    : null;
+
+  // 定価交換選択肢（cash_offer）が含まれているか（iter67.6 サブバッジ用）
+  const hasCashOffer = allListings.some((ml) =>
+    ml.options.some((o) => o.isCashOffer),
+  );
+
+  // 距離テキスト（現地モード ON 時のみ）
+  let distanceText: string | undefined;
+  if (typeof m.distanceMeters === "number") {
+    const d = m.distanceMeters;
+    distanceText =
+      d < 1000 ? `約 ${Math.round(d)}m` : `約 ${(d / 1000).toFixed(1)}km`;
+  }
+
   return {
     id: `match-${m.partner.id}`,
     partnerId: m.partner.id,
@@ -120,7 +148,10 @@ function matchToCard(
     distance: m.partner.primaryArea || "広域",
     exchangeType: "any",
     listingBadge,
-    matchedListings,
+    hasCashOffer,
+    myMatchedListings: myMatched,
+    partnerMatchedListings: partnerMatched,
+    distanceText,
   };
 }
 
@@ -133,6 +164,8 @@ export function HomeView({
   matches,
   myInventory,
   myWishes,
+  partnersInventory,
+  partnersWishes,
 }: {
   profile: { handle: string; display_name: string } | null;
   localMode: LocalModeSettings | null;
@@ -142,6 +175,9 @@ export function HomeView({
   matches: Match[];
   myInventory: MatchInv[];
   myWishes: MatchInv[];
+  /** 全パートナーの inv フラット（モーダル描画時の lookup 用、iter67.6） */
+  partnersInventory: MatchInv[];
+  partnersWishes: MatchInv[];
 }) {
   const [tab, setTab] = useState(0);
 
@@ -149,14 +185,18 @@ export function HomeView({
   const cardsByTab = useMemo(() => {
     const myInvById = new Map(myInventory.map((i) => [i.id, i]));
     const myWishById = new Map(myWishes.map((w) => [w.id, w]));
-    const all = matches.map((m) => matchToCard(m, myInvById, myWishById));
+    const partnersInvById = new Map(partnersInventory.map((i) => [i.id, i]));
+    const partnersWishById = new Map(partnersWishes.map((w) => [w.id, w]));
+    const all = matches.map((m) =>
+      matchToCard(m, myInvById, myWishById, partnersInvById, partnersWishById),
+    );
     return {
       0: all.filter((c) => c.matchType === "complete"),
       1: all.filter((c) => c.matchType === "they_want_you"),
       2: all.filter((c) => c.matchType === "you_want_them"),
       3: all, // 探索: 全部
     } as Record<number, MatchCardData[]>;
-  }, [matches, myInventory, myWishes]);
+  }, [matches, myInventory, myWishes, partnersInventory, partnersWishes]);
   const cards = cardsByTab[tab] ?? [];
 
   const tabCounts = useMemo(
