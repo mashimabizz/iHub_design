@@ -179,6 +179,39 @@ export function MatchDetailModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
+      {/* iter67.8.1：トースト（画面上部・safe-area 内） */}
+      {alertMsg && (
+        <div
+          className="pointer-events-none fixed inset-x-0 top-0 z-[120] flex justify-center px-4 pt-12"
+          aria-live="polite"
+          role="status"
+        >
+          <div
+            className="pointer-events-auto mx-auto inline-flex max-w-md items-start gap-2 rounded-[12px] border border-amber-300 bg-amber-50/95 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-amber-900 shadow-[0_8px_24px_rgba(0,0,0,0.15)] backdrop-blur-md"
+            style={{
+              animation: "ihub-toast-slide-down 220ms ease-out",
+            }}
+          >
+            <span className="text-[14px] leading-none">⚠️</span>
+            <span className="flex-1">{alertMsg}</span>
+            <button
+              type="button"
+              onClick={() => setAlertMsg(null)}
+              aria-label="閉じる"
+              className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-[12px] font-bold text-amber-900/60"
+            >
+              ✕
+            </button>
+          </div>
+          <style>{`
+            @keyframes ihub-toast-slide-down {
+              from { opacity: 0; transform: translateY(-12px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
+        </div>
+      )}
+
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
         <button
           type="button"
@@ -211,12 +244,6 @@ export function MatchDetailModal({
           できます。複数選んで組合せ打診も可能（同じ募集内のみ）。
           自分の在庫が足りなくなる組合せはアラートで防止します。
         </div>
-
-        {alertMsg && (
-          <div className="mb-2.5 rounded-[10px] border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-            ⚠️ {alertMsg}
-          </div>
-        )}
 
         {myListings.length > 0 && (
           <SectionGroup
