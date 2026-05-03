@@ -339,6 +339,8 @@ export default async function Home({ searchParams }: Props) {
         }))}
         autoOpenLocalSheet={params.openLocalMode === "1"}
         matches={matches}
+        myInventory={myInventory}
+        myWishes={myWishes}
       />
       <BottomNav />
     </>

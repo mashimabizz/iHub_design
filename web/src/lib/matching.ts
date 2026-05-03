@@ -51,7 +51,12 @@ export type Match = {
 
 export type MatchedListingInfo = {
   listingId: string;
+  // listing の全ハベ・全 wish 情報（詳細モーダル描画用）
+  haveIds: string[];
+  haveQtys: number[];
   haveLogic: "and" | "or";
+  wishIds: string[];
+  wishQtys: number[];
   wishLogic: "and" | "or";
   /** マッチに寄与した私の譲（haveIds の subset） */
   matchedHaveIds: string[];
@@ -149,7 +154,11 @@ export function matchPair(input: {
     viaListing = true;
     matchedListings.push({
       listingId: l.id,
+      haveIds: l.haveIds,
+      haveQtys: l.haveQtys,
       haveLogic: l.haveLogic,
+      wishIds: l.wishIds,
+      wishQtys: l.wishQtys,
       wishLogic: l.wishLogic,
       matchedHaveIds: lm.matchedHaveIds,
       matchedTheirInvIds: lm.matchedTheirInvIds,

@@ -511,8 +511,41 @@ Claude Design の現状実装：
 
 ### TODO（次の iter）
 
-- iter67.3-G **詳細モーダル**：マッチカードタップで開く SVG ベースの関係図（実線=AND / 点線=OR / 数量バッジ） — オーナーの本来希望は線で繋ぐ表現。本実装で foundation は揃っているので別タスク
+- ~~iter67.3-G **詳細モーダル**~~ → ✅ 別 commit で実装（オーナー指示「A」）
 - iter67-D：受信表示 `/proposals/[id]`
+
+### 追加：iter67.3-G — 詳細モーダル（SVG 関係図）
+
+別 commit で実装。
+
+#### 仕様
+
+- マッチカードに **「詳細→」** リンクを追加（listing 経由マッチのみ）
+- 全画面モーダルで listing の関係を可視化：
+  - 左カラム：私の譲（matched 分）
+  - 右カラム：求（matched 分）
+  - **SVG line で接続**：実線（AND）/ 点線（OR）
+  - 数量バッジは各アイテム右上に「×N」
+- 各 listing 1 セクション。複数 listing は縦に並ぶ
+- 各セクションヘッダーに「全部 AND / いずれか OR」chip × 2（譲側 / 求側）
+- OR で他にも候補ある場合は注記表示
+
+#### 実装
+
+- `web/src/components/home/MatchDetailModal.tsx` 新規
+  - 固定サイズアイテム（76×96px）
+  - 縦 gap 18px、横 col gap 110px で SVG line を計算的に描画
+  - body scroll lock
+- `MatchCard.tsx` に詳細ボタン + モーダル開閉 state
+- `MatchedListingInfo` 型を full listing snapshot（haveIds/haveQtys/wishIds/wishQtys 含む）に拡張
+- `HomeView.matchToCard()` で `myInvById` / `myWishById` を使って item details を hydrate
+- `page.tsx` から HomeView へ `myInventory` / `myWishes` を追加で渡す
+
+#### 設計判断
+
+- MVP では **matched 分のみ表示**（OR の代替候補は注記で件数だけ示す）。完全な候補展開は将来オーナー要望次第
+- 線の太さ：実線=2.2px、点線=1.6px。色 `#a695d8`、opacity 0.85
+- listing.wish_qtys は「私が欲しい数量」として右側のバッジに表示（相手のインベントリ qty ではない）
 
 ### 設計判断
 

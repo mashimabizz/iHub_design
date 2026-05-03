@@ -8,6 +8,8 @@
  */
 
 import Link from "next/link";
+import { useState } from "react";
+import { MatchDetailModal } from "./MatchDetailModal";
 
 export type MiniItem = {
   id: string;
@@ -15,6 +17,17 @@ export type MiniItem = {
   goodsTypeName: string | null;
   photoUrl: string | null;
   hue: number; // 0〜360
+};
+
+/** 個別募集（listing）の関係図モーダル用データ */
+export type MatchCardListingInfo = {
+  listingId: string;
+  haveLogic: "and" | "or";
+  wishLogic: "and" | "or";
+  /** listing の全ハベ（私の譲）— 表示順 = haveIds の順 */
+  haves: { item: MiniItem; qty: number; matched: boolean }[];
+  /** listing の全 wish — 表示順 = wishIds の順 */
+  wishes: { item: MiniItem; qty: number; matched: boolean }[];
 };
 
 export type MatchCardData = {
@@ -29,6 +42,8 @@ export type MatchCardData = {
   exchangeType?: "same_kind" | "cross_kind" | "any";
   /** 個別募集経由のマッチ：'set' = AND バンドル / 'any' = OR 候補 / null = 通常マッチ */
   listingBadge?: "set" | "any" | null;
+  /** 関係図モーダル用：listing 経由マッチの構造 */
+  matchedListings?: MatchCardListingInfo[];
 };
 
 const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
@@ -44,6 +59,10 @@ export function MatchCard({ card }: { card: MatchCardData }) {
     : card.matchType === "they_want_you"
       ? "あなたを求めてる"
       : "あなたの欲しいを持つ";
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const hasListings =
+    !!card.matchedListings && card.matchedListings.length > 0;
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-[#a695d830] bg-white p-3.5 shadow-[0_8px_24px_rgba(166,149,216,0.10)]">
@@ -135,12 +154,24 @@ export function MatchCard({ card }: { card: MatchCardData }) {
               {EXCHANGE_LABEL[card.exchangeType]}
             </span>
           )}
-          {card.listingBadge && (
-            <span className="text-[9.5px] text-gray-500">
-              ※ 個別募集経由
-            </span>
+          {hasListings && (
+            <button
+              type="button"
+              onClick={() => setModalOpen(true)}
+              className="ml-auto inline-flex items-center gap-0.5 rounded-full border border-[#a695d855] bg-white px-2 py-0.5 text-[10px] font-bold text-[#a695d8] active:scale-[0.97]"
+            >
+              詳細 →
+            </button>
           )}
         </div>
+      )}
+
+      {hasListings && modalOpen && (
+        <MatchDetailModal
+          partnerHandle={card.userHandle}
+          listings={card.matchedListings!}
+          onClose={() => setModalOpen(false)}
+        />
       )}
 
       {/* CTA */}
