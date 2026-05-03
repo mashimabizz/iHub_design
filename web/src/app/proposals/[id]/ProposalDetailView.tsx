@@ -204,6 +204,12 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
               )}
             </div>
           </div>
+          <Link
+            href={`/users/${detail.partner.id}`}
+            className="flex-shrink-0 rounded-full border border-[#a695d855] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#a695d8] active:scale-[0.97]"
+          >
+            プロフ
+          </Link>
         </div>
       </section>
 

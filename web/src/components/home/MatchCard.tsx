@@ -275,12 +275,12 @@ function ListingMatchCard({ card }: { card: MatchCardData }) {
             >
               {partnerOnly ? "応えて打診 →" : "打診する"}
             </Link>
-            <button
-              type="button"
+            <Link
+              href={`/users/${card.partnerId}`}
               className="rounded-xl border border-[#a695d855] bg-white px-3.5 py-2.5 text-[12px] font-semibold text-gray-700 transition-all active:scale-[0.97]"
             >
               相手プロフ →
-            </button>
+            </Link>
           </div>
         </div>
       </div>
