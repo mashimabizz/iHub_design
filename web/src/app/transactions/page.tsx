@@ -29,6 +29,7 @@ type RawRow = {
   created_at: string;
   last_action_at: string | null;
   completed_at: string | null;
+  message: string | null;
 };
 
 type GoodsRow = {
@@ -71,7 +72,7 @@ export default async function TransactionsPage() {
       `id, sender_id, receiver_id, status, cash_offer, cash_amount,
        sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
        meetup_start_at, meetup_end_at, meetup_place_name,
-       expires_at, created_at, last_action_at, completed_at`,
+       expires_at, created_at, last_action_at, completed_at, message`,
     )
     .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
     .neq("status", "draft")
@@ -224,6 +225,11 @@ export default async function TransactionsPage() {
       completedAt: r.completed_at,
       myStars: myEvalByProposalId.get(r.id) ?? null,
       openDispute: openDisputeByProposalId.get(r.id) ?? null,
+      messageExcerpt: r.message
+        ? r.message.length > 60
+          ? `${r.message.slice(0, 60)}…`
+          : r.message
+        : null,
     };
   });
 

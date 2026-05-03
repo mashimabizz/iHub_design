@@ -42,6 +42,8 @@ export type TransactionRow = {
   myStars: number | null;
   /** iter79-C: 進行中の dispute（あれば ID と ticket_no） */
   openDispute: { id: string; ticketNo: string } | null;
+  /** iter91: 打診作成時のメッセージ抜粋（打診中タブで表示） */
+  messageExcerpt: string | null;
 };
 
 type TabId = "pending" | "ongoing" | "past";
@@ -250,6 +252,11 @@ function PendingCard({ t }: { t: TransactionRow }) {
               {t.meetupStartAt &&
                 t.meetupEndAt &&
                 ` ・${formatRange(t.meetupStartAt, t.meetupEndAt)}`}
+            </div>
+          )}
+          {t.messageExcerpt && (
+            <div className="mt-1 line-clamp-2 text-[11px] italic leading-snug text-[#3a324a]">
+              「{t.messageExcerpt}」
             </div>
           )}
           <div
