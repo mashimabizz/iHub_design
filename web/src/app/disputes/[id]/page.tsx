@@ -23,6 +23,10 @@ type DisputeRow = {
   operator_deadline_at: string | null;
   submitted_at: string;
   closed_at: string | null;
+  respondent_response: "accepted" | "disputed" | "silent" | null;
+  respondent_response_text: string | null;
+  respondent_evidence_urls: string[];
+  respondent_responded_at: string | null;
 };
 
 export default async function DisputeDetailPage({
@@ -42,7 +46,9 @@ export default async function DisputeDetailPage({
     .select(
       `id, proposal_id, reporter_id, respondent_id, category, fact_memo,
        evidence_photo_urls, status, outcome, operator_comment, ticket_no,
-       respondent_deadline_at, operator_deadline_at, submitted_at, closed_at`,
+       respondent_deadline_at, operator_deadline_at, submitted_at, closed_at,
+       respondent_response, respondent_response_text, respondent_evidence_urls,
+       respondent_responded_at`,
     )
     .eq("id", id)
     .maybeSingle();
@@ -84,6 +90,10 @@ export default async function DisputeDetailPage({
     operatorDeadlineAt: d.operator_deadline_at,
     submittedAt: d.submitted_at,
     closedAt: d.closed_at,
+    respondentResponse: d.respondent_response,
+    respondentResponseText: d.respondent_response_text,
+    respondentEvidenceUrls: d.respondent_evidence_urls ?? [],
+    respondentRespondedAt: d.respondent_responded_at,
   };
 
   return (

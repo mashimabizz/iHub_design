@@ -10,9 +10,13 @@
  */
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { withdrawDispute } from "@/app/disputes/actions";
+import {
+  respondToDispute,
+  withdrawDispute,
+} from "@/app/disputes/actions";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
 
 const CATEGORY_LABEL: Record<DisputeDetail["category"], string> = {
   short: "受け取った点数が少ない",
@@ -40,9 +44,22 @@ export type DisputeDetail = {
   operatorDeadlineAt: string | null;
   submittedAt: string;
   closedAt: string | null;
+  /** iter80-D4: 相手側反論 */
+  respondentResponse: "accepted" | "disputed" | "silent" | null;
+  respondentResponseText: string | null;
+  respondentEvidenceUrls: string[];
+  respondentRespondedAt: string | null;
 };
 
 export function DisputeView({ detail }: { detail: DisputeDetail }) {
+  // iter80-D4: respondent でまだ未回答 + status が submitted/response_pending → 反論フロー
+  if (
+    !detail.iAmReporter &&
+    !detail.respondentResponse &&
+    (detail.status === "submitted" || detail.status === "response_pending")
+  ) {
+    return <RespondentResponseView detail={detail} />;
+  }
   if (detail.status === "closed") {
     return <ClosedView detail={detail} />;
   }
@@ -50,6 +67,325 @@ export function DisputeView({ detail }: { detail: DisputeDetail }) {
     return <SubmittedView detail={detail} />;
   }
   return <ArbitrationView detail={detail} />;
+}
+
+/* ─── iter80-D4: 受信者の反論フロー（D-4 / 拡張で反論本文 + 証跡） ─── */
+
+function RespondentResponseView({ detail }: { detail: DisputeDetail }) {
+  const router = useRouter();
+  const [mode, setMode] = useState<"choose" | "dispute">("choose");
+  const [responseText, setResponseText] = useState("");
+  const [extraPaths, setExtraPaths] = useState<string[]>([]);
+  const [extraPreviews, setExtraPreviews] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleAddPhoto(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("画像ファイルを選んでください");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("8MB 以下の画像にしてください");
+      return;
+    }
+    if (extraPaths.length >= 3) {
+      setError("追加写真は最大 3 枚までです");
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      const sb = createBrowserClient();
+      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `${detail.proposalId}/dispute-resp-${Date.now()}.${ext}`;
+      const { error: upErr } = await sb.storage
+        .from("chat-photos")
+        .upload(path, file, {
+          contentType: file.type,
+          upsert: false,
+        });
+      if (upErr) {
+        setError(upErr.message || "アップロード失敗");
+        return;
+      }
+      const { data: signed } = await sb.storage
+        .from("chat-photos")
+        .createSignedUrl(path, 60 * 60);
+      setExtraPaths((prev) => [...prev, path]);
+      setExtraPreviews((prev) => [...prev, signed?.signedUrl ?? ""]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "アップロード失敗");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeExtra(idx: number) {
+    setExtraPaths((prev) => prev.filter((_, i) => i !== idx));
+    setExtraPreviews((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function handleAccept() {
+    if (
+      !confirm(
+        "申告内容が事実であると認めますか？取引はキャンセル扱いとなります。",
+      )
+    )
+      return;
+    setError(null);
+    startTransition(async () => {
+      const r = await respondToDispute({
+        id: detail.id,
+        response: "accepted",
+      });
+      if (r?.error) setError(r.error);
+      else router.refresh();
+    });
+  }
+
+  function handleSubmitDispute() {
+    if (!responseText.trim()) {
+      setError("反論内容を入力してください");
+      return;
+    }
+    if (
+      !confirm(
+        "反論を提出します。送信後は内容を編集できません。続けますか？",
+      )
+    )
+      return;
+    setError(null);
+    startTransition(async () => {
+      const r = await respondToDispute({
+        id: detail.id,
+        response: "disputed",
+        responseText,
+        evidencePhotoStoragePaths: extraPaths,
+      });
+      if (r?.error) setError(r.error);
+      else router.refresh();
+    });
+  }
+
+  return (
+    <div className="space-y-3.5 pb-24">
+      {/* warning バナー（D-4 上部） */}
+      <div className="rounded-[14px] border border-[#d9826b40] bg-[#fff5f0] p-3.5">
+        <div className="mb-1.5 flex items-center gap-2">
+          <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-[#d9826b] text-[12px] font-extrabold text-white">
+            !
+          </span>
+          <span className="text-[13px] font-extrabold text-[#3a324a]">
+            申告がありました
+          </span>
+        </div>
+        <div className="text-[11.5px] leading-[1.6] text-[#3a324a]">
+          事実確認にご協力ください。以下の内容についてあなたの認識をお聞かせください。
+        </div>
+        {detail.respondentDeadlineAt && (
+          <div className="mt-2 text-[10.5px] text-[#3a324a8c]">
+            回答期限：{formatDateTime(detail.respondentDeadlineAt)}
+          </div>
+        )}
+      </div>
+
+      {/* 申告内容サマリ */}
+      <Section label="申告内容">
+        <div className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-white">
+          <Row label="申告者" value={`@${detail.partnerHandle}`} />
+          <Row label="カテゴリ" value={CATEGORY_LABEL[detail.category]} />
+          <Row label="送信日時" value={formatDateTime(detail.submittedAt)} />
+          {detail.factMemo && (
+            <div className="border-t border-[#3a324a08] px-3.5 py-3">
+              <div className="mb-1 text-[10.5px] font-bold text-[#3a324a8c]">
+                事実メモ（申告者）
+              </div>
+              <pre className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-[#3a324a]">
+                {detail.factMemo}
+              </pre>
+            </div>
+          )}
+          {(detail.autoAttachedPhotoUrls.length > 0 ||
+            detail.extraPhotoUrls.length > 0) && (
+            <div className="border-t border-[#3a324a08] p-3.5">
+              <div className="mb-2 text-[10.5px] font-bold text-[#3a324a8c]">
+                提出済み証跡
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  ...detail.autoAttachedPhotoUrls,
+                  ...detail.extraPhotoUrls,
+                ].map((url, i) => (
+                  <div
+                    key={i}
+                    className="relative aspect-[4/5] overflow-hidden rounded-[10px] border-[0.5px] border-[#3a324a14]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt={`evidence-${i}`}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      {/* mode === "choose": 3 択 */}
+      {mode === "choose" && (
+        <Section label="あなたの選択">
+          <div className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-white">
+            <button
+              type="button"
+              onClick={handleAccept}
+              disabled={pending}
+              className="flex w-full flex-col gap-0.5 border-b border-[#3a324a08] px-3.5 py-3 text-left disabled:opacity-50"
+            >
+              <span className="text-[12.5px] font-bold text-[#3a324a]">
+                事実です。間違いを認めます
+              </span>
+              <span className="text-[10.5px] font-bold text-[#d9826b]">
+                → 取引は取消・★ は据え置き
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("dispute")}
+              className="flex w-full flex-col gap-0.5 border-b border-[#3a324a08] px-3.5 py-3 text-left"
+            >
+              <span className="text-[12.5px] font-bold text-[#3a324a]">
+                事実と異なります。反論を提出します
+              </span>
+              <span className="text-[10.5px] font-bold text-[#a695d8]">
+                → 次画面で詳細を入力（推奨）
+              </span>
+            </button>
+            <div className="px-3.5 py-3 text-[#3a324a8c]">
+              <div className="text-[12.5px] font-medium">
+                回答せず 24 時間経過
+              </div>
+              <div className="text-[10.5px]">
+                → 申告内容が事実と推定されます
+              </div>
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {/* mode === "dispute": 反論フォーム */}
+      {mode === "dispute" && (
+        <>
+          <Section label="あなたの反論（必須）">
+            <div className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-white">
+              <textarea
+                value={responseText}
+                onChange={(e) => setResponseText(e.target.value)}
+                rows={6}
+                maxLength={4000}
+                placeholder="例：合意した点数は 3 枚です（5 枚ではありません）。チャット履歴をご確認ください。"
+                className="block w-full resize-none border-0 bg-transparent p-3.5 text-[16px] leading-relaxed text-[#3a324a] placeholder:text-[#3a324a4d] focus:outline-none"
+              />
+            </div>
+          </Section>
+
+          <Section label="補強証跡（任意・最大 3 枚）">
+            <div className="rounded-2xl border border-[#3a324a14] bg-white p-3.5">
+              <div className="grid grid-cols-3 gap-2">
+                {extraPreviews.map((url, i) => (
+                  <div
+                    key={i}
+                    className="relative aspect-[4/5] overflow-hidden rounded-[10px] border-[0.5px] border-[#3a324a14]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt={`extra-${i}`}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeExtra(i)}
+                      aria-label="削除"
+                      className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-[12px] font-bold text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {extraPaths.length < 3 && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex aspect-[4/5] flex-col items-center justify-center gap-1 rounded-[10px] border border-dashed border-[#a695d855] bg-[#fbf9fc] text-[10px] text-[#3a324a8c] disabled:opacity-50"
+                  >
+                    {uploading ? "アップ中…" : "+ 追加"}
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  handleAddPhoto(f);
+                  if (e.target) e.target.value = "";
+                }}
+              />
+            </div>
+          </Section>
+        </>
+      )}
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* sticky CTA */}
+      <div className="fixed inset-x-0 bottom-0 border-t border-[#a695d822] bg-white/96 px-[18px] pb-7 pt-3 backdrop-blur-xl">
+        <div className="mx-auto w-full max-w-md space-y-2">
+          {mode === "choose" ? (
+            <button
+              type="button"
+              onClick={() => setMode("dispute")}
+              className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-[14px] font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)]"
+            >
+              反論を提出する
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleSubmitDispute}
+                disabled={pending || !responseText.trim()}
+                className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-[14px] font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] disabled:opacity-50"
+              >
+                {pending ? "送信中…" : "反論を送信"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("choose")}
+                className="block w-full px-6 py-2 text-center text-[12px] font-semibold text-[#3a324a8c]"
+              >
+                ← 戻る
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ─── D-3: 送信完了 ─── */
@@ -232,6 +568,62 @@ function ArbitrationView({ detail }: { detail: DisputeDetail }) {
 
       {/* 提出済証跡 */}
       <SummarySection detail={detail} />
+
+      {/* iter80-D4: 相手の反論（あれば表示） */}
+      {detail.respondentResponse && (
+        <Section label={`相手の反論（${detail.iAmReporter ? `@${detail.partnerHandle}` : "あなた"}）`}>
+          <div className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-white">
+            <Row
+              label="回答"
+              value={
+                detail.respondentResponse === "accepted"
+                  ? "事実を認める"
+                  : detail.respondentResponse === "disputed"
+                    ? "反論あり"
+                    : "無回答（事実推定）"
+              }
+            />
+            {detail.respondentRespondedAt && (
+              <Row
+                label="回答日時"
+                value={formatDateTime(detail.respondentRespondedAt)}
+              />
+            )}
+            {detail.respondentResponseText && (
+              <div className="border-t border-[#3a324a08] px-3.5 py-3">
+                <div className="mb-1 text-[10.5px] font-bold text-[#3a324a8c]">
+                  反論内容
+                </div>
+                <pre className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-[#3a324a]">
+                  {detail.respondentResponseText}
+                </pre>
+              </div>
+            )}
+            {detail.respondentEvidenceUrls.length > 0 && (
+              <div className="border-t border-[#3a324a08] p-3.5">
+                <div className="mb-2 text-[10.5px] font-bold text-[#3a324a8c]">
+                  反論側の補強証跡（{detail.respondentEvidenceUrls.length}枚）
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {detail.respondentEvidenceUrls.map((url, i) => (
+                    <div
+                      key={i}
+                      className="relative aspect-[4/5] overflow-hidden rounded-[10px] border-[0.5px] border-[#3a324a14]"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={url}
+                        alt={`respondent-evidence-${i}`}
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
 
       {/* 現在の制限 */}
       <Section label="現在の制限">

@@ -139,6 +139,133 @@ export async function submitDispute(input: {
 }
 
 /**
+ * iter80-D4: respondent（被申告者）の反論フロー
+ *
+ * 3 択：
+ *   accepted  事実を認める → status='closed' / outcome='cancelled'
+ *               同時に proposals.status='cancelled' に
+ *   disputed  反論を提出 → status='arbitrating'
+ *               respondent_response_text + 追加証跡を保存
+ *   silent    今は使わない（24h SLA 経過時に運営側 cron でセット予定）
+ */
+export async function respondToDispute(input: {
+  id: string;
+  response: "accepted" | "disputed";
+  responseText?: string;
+  evidencePhotoStoragePaths?: string[];
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: dispute } = await supabase
+    .from("disputes")
+    .select(
+      "id, proposal_id, reporter_id, respondent_id, status, ticket_no, respondent_response",
+    )
+    .eq("id", input.id)
+    .maybeSingle();
+  if (!dispute) return { error: "申告が見つかりません" };
+  if (dispute.respondent_id !== user.id) {
+    return { error: "回答できるのは被申告者のみです" };
+  }
+  if (dispute.respondent_response) {
+    return { error: "既に回答済みです" };
+  }
+  if (
+    !["submitted", "response_pending"].includes(dispute.status as string)
+  ) {
+    return { error: "この申告には回答できません" };
+  }
+
+  if (input.response === "disputed" && !input.responseText?.trim()) {
+    return { error: "反論内容を入力してください" };
+  }
+  if (
+    input.evidencePhotoStoragePaths &&
+    input.evidencePhotoStoragePaths.length > 3
+  ) {
+    return { error: "追加写真は最大 3 枚までです" };
+  }
+
+  // 証跡 URL 化
+  const evidenceUrls: string[] = [];
+  if (input.evidencePhotoStoragePaths) {
+    for (const path of input.evidencePhotoStoragePaths) {
+      const { data: signed, error: signedErr } = await supabase.storage
+        .from("chat-photos")
+        .createSignedUrl(path, 60 * 60 * 24 * 365);
+      if (signedErr || !signed) {
+        return { error: signedErr?.message ?? "写真URL生成に失敗しました" };
+      }
+      evidenceUrls.push(signed.signedUrl);
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+
+  if (input.response === "accepted") {
+    // 即クローズ + proposals.status='cancelled'
+    const { error: updErr } = await supabase
+      .from("disputes")
+      .update({
+        respondent_response: "accepted",
+        respondent_response_text: input.responseText?.trim() || null,
+        respondent_evidence_urls: evidenceUrls,
+        respondent_responded_at: nowIso,
+        status: "closed",
+        outcome: "cancelled",
+        closed_at: nowIso,
+        operator_comment: "被申告者が事実を認めたため、迅速処理されました",
+      })
+      .eq("id", input.id);
+    if (updErr) return { error: updErr.message };
+
+    // proposal も cancelled に
+    await supabase
+      .from("proposals")
+      .update({ status: "cancelled", last_action_at: nowIso })
+      .eq("id", dispute.proposal_id);
+
+    await supabase.from("messages").insert({
+      proposal_id: dispute.proposal_id,
+      sender_id: user.id,
+      message_type: "system",
+      body: `✓ 申告 ${dispute.ticket_no} は事実と認められ、取引はキャンセルされました`,
+      meta: { action: "dispute_accepted", dispute_id: dispute.id },
+    });
+  } else {
+    // disputed → arbitrating に遷移
+    const { error: updErr } = await supabase
+      .from("disputes")
+      .update({
+        respondent_response: "disputed",
+        respondent_response_text: input.responseText?.trim() || null,
+        respondent_evidence_urls: evidenceUrls,
+        respondent_responded_at: nowIso,
+        status: "arbitrating",
+      })
+      .eq("id", input.id);
+    if (updErr) return { error: updErr.message };
+
+    await supabase.from("messages").insert({
+      proposal_id: dispute.proposal_id,
+      sender_id: user.id,
+      message_type: "system",
+      body: `⚖️ 申告 ${dispute.ticket_no} に反論が提出されました。運営による仲裁が開始されます`,
+      meta: { action: "dispute_responded", dispute_id: dispute.id },
+    });
+  }
+
+  revalidatePath(`/disputes/${input.id}`);
+  revalidatePath(`/transactions/${dispute.proposal_id}`);
+  revalidatePath("/transactions");
+  return { disputeId: input.id };
+}
+
+/**
  * iter79-C: 申告者または respondent が申告を取り下げ。
  * status='closed' + outcome='cancelled' 扱い。
  */

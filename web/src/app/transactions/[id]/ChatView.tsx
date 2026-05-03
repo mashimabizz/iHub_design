@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
+  approveTradeCancel,
   sendLocationMessage,
   sendPhotoMessage,
   sendTextMessage,
@@ -430,6 +431,26 @@ export function ChatView({
                   tone="neutral"
                   onClick={() => photoInputRef.current?.click()}
                   disabled={pending || uploadingPhoto}
+                />
+                <QuickChip
+                  icon={<span className="text-[12px] leading-none">⏰</span>}
+                  label="遅刻連絡"
+                  tone="pink"
+                  onClick={() =>
+                    router.push(
+                      `/transactions/${proposal.id}/cancel-or-late?kind=late`,
+                    )
+                  }
+                />
+                <QuickChip
+                  icon={<span className="text-[12px] leading-none">🚫</span>}
+                  label="キャンセル"
+                  tone="neutral"
+                  onClick={() =>
+                    router.push(
+                      `/transactions/${proposal.id}/cancel-or-late?kind=cancel`,
+                    )
+                  }
                 />
               </>
             ) : (
@@ -1199,9 +1220,18 @@ function MessageBubble({
         </Link>
       );
     }
+    // iter80-D7: キャンセル要請の system message — 相手側に「同意」ボタン
+    if (action === "cancel_requested" && !m.isMine) {
+      return (
+        <CancelRequestedBubble
+          proposalId={proposalId}
+          body={m.body ?? "キャンセル要請"}
+        />
+      );
+    }
     return (
       <div className="flex justify-center">
-        <span className="rounded-full bg-[#3a324a08] px-2.5 py-[3px] text-[10px] text-[#3a324a8c]">
+        <span className="whitespace-pre-wrap rounded-[10px] bg-[#3a324a08] px-2.5 py-1.5 text-center text-[10.5px] leading-relaxed text-[#3a324a8c]">
           {m.body}
         </span>
       </div>
@@ -1523,6 +1553,82 @@ function MapModal({
             </a>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── iter80-D7: キャンセル要請バブル（受信側で「同意」ボタン） ─── */
+
+function CancelRequestedBubble({
+  proposalId,
+  body,
+}: {
+  proposalId: string;
+  body: string;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function handleApprove() {
+    if (
+      !confirm(
+        "キャンセルに同意しますか？取引は無効化され、評価への影響はありません。",
+      )
+    )
+      return;
+    setError(null);
+    startTransition(async () => {
+      const r = await approveTradeCancel({ proposalId });
+      if (r?.error) setError(r.error);
+      else if (r?.redirectTo) router.push(r.redirectTo);
+      else router.refresh();
+    });
+  }
+
+  function handleDispute() {
+    // 同意できない場合は申告フローへ
+    router.push(`/disputes/new?proposalId=${proposalId}`);
+  }
+
+  return (
+    <div className="self-stretch overflow-hidden rounded-[14px] border border-[#d9826b40] bg-[#fff5f0]">
+      <div className="px-3 pt-2.5">
+        <div className="flex items-center gap-1.5">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#d9826b] text-[10px] font-extrabold text-white">
+            !
+          </span>
+          <span className="text-[11px] font-extrabold tracking-[0.3px] text-[#d9826b]">
+            キャンセル要請
+          </span>
+        </div>
+        <div className="mt-1 whitespace-pre-wrap text-[11.5px] leading-relaxed text-[#3a324a]">
+          {body}
+        </div>
+      </div>
+      {error && (
+        <div className="mx-3 mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">
+          {error}
+        </div>
+      )}
+      <div className="mt-2 flex gap-1.5 border-t border-[#d9826b22] bg-white/40 px-3 py-2">
+        <button
+          type="button"
+          onClick={handleDispute}
+          disabled={pending}
+          className="rounded-[10px] border border-[#3a324a14] bg-white px-3 py-1.5 text-[11px] font-bold text-[#3a324a] disabled:opacity-50"
+        >
+          申告する
+        </button>
+        <button
+          type="button"
+          onClick={handleApprove}
+          disabled={pending}
+          className="flex-1 rounded-[10px] bg-[linear-gradient(135deg,#d9826b,#cc6051)] px-3 py-1.5 text-[12px] font-extrabold text-white shadow-[0_2px_5px_rgba(217,130,107,0.4)] disabled:opacity-50"
+        >
+          {pending ? "処理中…" : "✓ 同意してキャンセル"}
+        </button>
       </div>
     </div>
   );

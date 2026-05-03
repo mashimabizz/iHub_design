@@ -576,6 +576,159 @@ export async function approveCompletion(input: {
 // iter79-C: 旧 flagDispute は削除。/disputes/new フォーム + submitDispute に置き換え。
 
 /**
+ * iter80-D7: 取引キャンセル
+ *
+ * 合意済 (status='agreed') の取引を、双方合意の上でキャンセル。
+ * - 単独キャンセル：相手の同意なしでキャンセル要請を送る → status は変えず、
+ *   system message + meta で記録。相手が「同意」または「異議」で確定。
+ * - 24h SLA を過ぎたら自動的に cancelled とみなす設計（次イテで cron 化）
+ *
+ * MVP 実装：単独キャンセル時はまず相手に通知（system message）し、
+ * 相手が同意ボタンを押すと proposals.status='cancelled' に。
+ * 異議があれば dispute フローへ誘導。
+ */
+export async function requestTradeCancel(input: {
+  proposalId: string;
+  reason: string;
+  note?: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select("status, sender_id, receiver_id")
+    .eq("id", input.proposalId)
+    .maybeSingle();
+  if (!prop) return { error: "取引が見つかりません" };
+  if (prop.sender_id !== user.id && prop.receiver_id !== user.id)
+    return { error: "参加者ではありません" };
+  if (prop.status !== "agreed") {
+    return { error: "合意済の取引のみキャンセル要請できます" };
+  }
+
+  // 相手に通知（system message）
+  await supabase.from("messages").insert({
+    proposal_id: input.proposalId,
+    sender_id: user.id,
+    message_type: "system",
+    body: `🚫 取引キャンセルが要請されました\n理由：${input.reason}${input.note ? `\n${input.note}` : ""}`,
+    meta: {
+      action: "cancel_requested",
+      requested_by: user.id,
+      reason: input.reason,
+      note: input.note ?? null,
+    },
+  });
+
+  revalidatePath(`/transactions/${input.proposalId}`);
+  return undefined;
+}
+
+/**
+ * iter80-D7: キャンセル要請への同意（双方合意でキャンセル成立）
+ * 相手側のボタン操作で呼ばれる想定。
+ */
+export async function approveTradeCancel(input: {
+  proposalId: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select("status, sender_id, receiver_id")
+    .eq("id", input.proposalId)
+    .maybeSingle();
+  if (!prop) return { error: "取引が見つかりません" };
+  if (prop.sender_id !== user.id && prop.receiver_id !== user.id)
+    return { error: "参加者ではありません" };
+  if (prop.status !== "agreed") {
+    return { error: "合意済の取引のみキャンセルできます" };
+  }
+
+  const { error } = await supabase
+    .from("proposals")
+    .update({
+      status: "cancelled",
+      last_action_at: new Date().toISOString(),
+    })
+    .eq("id", input.proposalId);
+  if (error) return { error: error.message };
+
+  await supabase.from("messages").insert({
+    proposal_id: input.proposalId,
+    sender_id: user.id,
+    message_type: "system",
+    body: "✓ 取引キャンセルが合意されました（評価への影響なし）",
+    meta: { action: "cancel_approved" },
+  });
+
+  revalidatePath(`/transactions/${input.proposalId}`);
+  revalidatePath("/transactions");
+  return { redirectTo: "/transactions" };
+}
+
+/**
+ * iter80-D7: 遅刻通知
+ *
+ * 合意済の取引で「N 分遅れる」を相手に通知。message_type='system' で投稿し、
+ * meta.action='late_notice' / late_minutes / reason を記録。
+ */
+export async function notifyLate(input: {
+  proposalId: string;
+  lateMinutes: 10 | 20 | 30 | 60 | 90;
+  reason: string;
+  note?: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select("status, sender_id, receiver_id")
+    .eq("id", input.proposalId)
+    .maybeSingle();
+  if (!prop) return { error: "取引が見つかりません" };
+  if (prop.sender_id !== user.id && prop.receiver_id !== user.id)
+    return { error: "参加者ではありません" };
+  if (prop.status !== "agreed") {
+    return { error: "合意済の取引のみ遅刻通知できます" };
+  }
+
+  const lateLabel =
+    input.lateMinutes >= 60
+      ? `${input.lateMinutes / 60}時間${input.lateMinutes % 60 === 0 ? "" : `${input.lateMinutes % 60}分`}`
+      : `${input.lateMinutes}分`;
+
+  await supabase.from("messages").insert({
+    proposal_id: input.proposalId,
+    sender_id: user.id,
+    message_type: "system",
+    body: `⏰ ${lateLabel}遅れる旨が通知されました\n理由：${input.reason}${input.note ? `\n${input.note}` : ""}`,
+    meta: {
+      action: "late_notice",
+      notified_by: user.id,
+      late_minutes: input.lateMinutes,
+      reason: input.reason,
+      note: input.note ?? null,
+    },
+  });
+
+  revalidatePath(`/transactions/${input.proposalId}`);
+  return undefined;
+}
+
+/**
  * 評価送信：1 取引につき 1 件まで（DB unique 制約）
  */
 export async function submitEvaluation(input: {
