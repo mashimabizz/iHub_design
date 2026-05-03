@@ -261,6 +261,12 @@ export function ProposeFlow({
   const [meetupCenter, setMeetupCenter] =
     useState<[number, number]>(initCenter);
 
+  /** ユーザーが place 入力欄を直接編集している間は reverse-geocode で上書きしない */
+  const placeManuallyEditedRef = useRef(false);
+  /** 地図移動が「ユーザー操作由来」かを管理 */
+  const skipReverseRef = useRef(true); // 初回 mount は reverse しない（pre-fill 値を尊重）
+  const [reverseFetching, setReverseFetching] = useState(false);
+
   /* 地図検索 */
   const [searchQ, setSearchQ] = useState("");
   const [searchResults, setSearchResults] = useState<Place[]>([]);
@@ -321,6 +327,40 @@ export function ProposeFlow({
 
   const message = messageEdited ?? autoMessage;
 
+  /* 地図中心が動いた時の reverse geocoding（自動で場所名を埋める） */
+  const reverseAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    if (skipReverseRef.current) {
+      // 初回 mount or 検索結果から選んだ直後など、自動 reverse をスキップしたい時
+      skipReverseRef.current = false;
+      return;
+    }
+    if (placeManuallyEditedRef.current) return; // 手入力モード中は触らない
+
+    const handle = setTimeout(async () => {
+      reverseAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      reverseAbortRef.current = ctrl;
+      setReverseFetching(true);
+      try {
+        const res = await fetch(
+          `/api/geocode?lat=${meetupCenter[0]}&lon=${meetupCenter[1]}`,
+          { signal: ctrl.signal },
+        );
+        const data = await res.json();
+        if (data && typeof data === "object" && !Array.isArray(data)) {
+          const label = labelFromAddress(data as Place);
+          if (label) setMeetupPlace(label);
+        }
+      } catch {
+        // ignore（abort or network error）
+      } finally {
+        setReverseFetching(false);
+      }
+    }, 600); // ピンドラッグ中の連続イベントを debounce
+    return () => clearTimeout(handle);
+  }, [meetupCenter]);
+
   /* 場所検索 debounce */
   const searchAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -357,6 +397,9 @@ export function ProposeFlow({
     const lat = parseFloat(p.lat);
     const lon = parseFloat(p.lon);
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      // 検索結果由来の label は reverse geocode より信頼できるので確定させる
+      placeManuallyEditedRef.current = false;
+      skipReverseRef.current = true;
       setMeetupCenter([lat, lon]);
       setMeetupPlace(labelFromAddress(p));
       setSearchQ("");
@@ -367,10 +410,26 @@ export function ProposeFlow({
   function useCurrentLocation() {
     if (typeof window === "undefined" || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      (pos) => setMeetupCenter([pos.coords.latitude, pos.coords.longitude]),
+      (pos) => {
+        // 現在地ジャンプは reverse で名前を取り直す
+        placeManuallyEditedRef.current = false;
+        setMeetupCenter([pos.coords.latitude, pos.coords.longitude]);
+      },
       () => {},
       { enableHighAccuracy: true, timeout: 10000 },
     );
+  }
+
+  /** 地図ピン操作（drag / click） */
+  function handleMapCenterChange(lat: number, lng: number) {
+    placeManuallyEditedRef.current = false; // 地図動かしたら自動 reverse を許可
+    setMeetupCenter([lat, lng]);
+  }
+
+  /** place 入力欄を手動で編集 */
+  function handlePlaceInputChange(value: string) {
+    placeManuallyEditedRef.current = true;
+    setMeetupPlace(value);
   }
 
   /* ── handlers ── */
@@ -543,9 +602,10 @@ export function ProposeFlow({
             meetupEnd={meetupEnd}
             setMeetupEnd={setMeetupEnd}
             meetupPlace={meetupPlace}
-            setMeetupPlace={setMeetupPlace}
+            onPlaceInputChange={handlePlaceInputChange}
             meetupCenter={meetupCenter}
-            setMeetupCenter={setMeetupCenter}
+            onMapCenterChange={handleMapCenterChange}
+            reverseFetching={reverseFetching}
             searchQ={searchQ}
             setSearchQ={setSearchQ}
             searchResults={searchResults}
@@ -858,9 +918,10 @@ function MeetupTab({
   meetupEnd,
   setMeetupEnd,
   meetupPlace,
-  setMeetupPlace,
+  onPlaceInputChange,
   meetupCenter,
-  setMeetupCenter,
+  onMapCenterChange,
+  reverseFetching,
   searchQ,
   setSearchQ,
   searchResults,
@@ -876,9 +937,10 @@ function MeetupTab({
   meetupEnd: string;
   setMeetupEnd: (s: string) => void;
   meetupPlace: string;
-  setMeetupPlace: (s: string) => void;
+  onPlaceInputChange: (s: string) => void;
   meetupCenter: [number, number];
-  setMeetupCenter: (c: [number, number]) => void;
+  onMapCenterChange: (lat: number, lng: number) => void;
+  reverseFetching: boolean;
   searchQ: string;
   setSearchQ: (s: string) => void;
   searchResults: Place[];
@@ -907,7 +969,7 @@ function MeetupTab({
         <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
           📍 待ち合わせ
         </span>
-        <b>時間帯</b>と<b>場所</b>を決めます。地図のピンをドラッグするか、検索で場所を選べます。
+        <b>時間帯</b>と<b>場所</b>を決めます。<b>地図のピンを動かすと場所名が自動で入ります</b>（直接編集も可）。
       </div>
 
       {/* 時間帯（開始 + 終了） */}
@@ -937,15 +999,20 @@ function MeetupTab({
       </div>
 
       {/* 場所名 + 検索 */}
-      <div className="mb-2 px-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-        場所
+      <div className="mb-1 flex items-center justify-between px-0.5">
+        <span className="text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+          場所
+        </span>
+        {reverseFetching && (
+          <span className="text-[9.5px] text-[#a695d8]">取得中…</span>
+        )}
       </div>
       <input
         type="text"
         value={meetupPlace}
-        onChange={(e) => setMeetupPlace(e.target.value)}
+        onChange={(e) => onPlaceInputChange(e.target.value)}
         maxLength={120}
-        placeholder="例: 東京駅 銀の鈴前"
+        placeholder="地図でピンを動かすと自動で入ります"
         className="mb-2 block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
       />
 
@@ -1000,12 +1067,12 @@ function MeetupTab({
           <MapPicker
             center={meetupCenter}
             radiusM={120}
-            onCenterChange={(lat, lng) => setMeetupCenter([lat, lng])}
+            onCenterChange={onMapCenterChange}
             className="h-full w-full"
           />
         </div>
         <div className="border-t border-[#3a324a14] bg-white px-3 py-2 text-[10px] text-[#3a324a8c]">
-          ピンをドラッグ or 地図をタップで位置を調整できます。
+          ピンをドラッグ or 地図をタップで位置を調整できます。場所名は自動で更新されます。
         </div>
       </div>
     </>
