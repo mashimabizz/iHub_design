@@ -20,16 +20,6 @@ const SUB_TABS: { id: SubTab; label: string; color: string }[] = [
   { id: "traded", label: "過去に譲った", color: "#9aa3b0" },
 ];
 
-const PUSHI_FILTERS = ["すべて", "LUMENA", "スア", "ヒナ", "+ 他"];
-const TYPE_FILTERS = [
-  "すべて",
-  "トレカ",
-  "生写真",
-  "缶バッジ",
-  "アクスタ",
-  "スロガン",
-];
-
 const SUB_IDS: SubTab[] = ["active", "keep", "traded"];
 
 export function InventoryView({
@@ -42,21 +32,49 @@ export function InventoryView({
   const [pending, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // iter98: フィルタを実データ駆動に。
+  //   activeMember: null = すべて、それ以外 = memberName 完全一致
+  //   activeType  : null = すべて、それ以外 = goodsType 完全一致
+  const [activeMember, setActiveMember] = useState<string | null>(null);
+  const [activeType, setActiveType] = useState<string | null>(null);
+
+  /** items から実在する memberName / goodsType だけを推し / 種別フィルタ候補に */
+  const memberOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of items) s.add(it.memberName);
+    return Array.from(s).sort();
+  }, [items]);
+  const typeOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of items) s.add(it.goodsType);
+    return Array.from(s).sort();
+  }, [items]);
+
+  /** フィルタ適用後の items（status 別の集計はこの後で行う） */
+  const filteredItems = useMemo(() => {
+    return items.filter((it) => {
+      if (activeMember && it.memberName !== activeMember) return false;
+      if (activeType && it.goodsType !== activeType) return false;
+      return true;
+    });
+  }, [items, activeMember, activeType]);
+
+  // counts と itemsBySub はフィルタ後で計算
   const counts = useMemo(
     () => ({
-      active: items.filter((i) => i.status === "active").length,
-      keep: items.filter((i) => i.status === "keep").length,
-      traded: items.filter((i) => i.status === "traded").length,
+      active: filteredItems.filter((i) => i.status === "active").length,
+      keep: filteredItems.filter((i) => i.status === "keep").length,
+      traded: filteredItems.filter((i) => i.status === "traded").length,
     }),
-    [items],
+    [filteredItems],
   );
   const itemsBySub = useMemo(
     () => ({
-      active: items.filter((i) => i.status === "active"),
-      keep: items.filter((i) => i.status === "keep"),
-      traded: items.filter((i) => i.status === "traded"),
+      active: filteredItems.filter((i) => i.status === "active"),
+      keep: filteredItems.filter((i) => i.status === "keep"),
+      traded: filteredItems.filter((i) => i.status === "traded"),
     }),
-    [items],
+    [filteredItems],
   );
   // carrying 関連は持参グッズ管理機能の廃止に伴い削除（iter65.6）
 
@@ -177,10 +195,20 @@ export function InventoryView({
         </div>
       </div>
 
-      {/* フィルタチップ（推し / 種別） */}
+      {/* フィルタチップ（推し / 種別） — iter98: 実データで動作 */}
       <div className="mx-auto w-full max-w-md px-4 pt-1.5">
-        <FilterRow label="推し" items={PUSHI_FILTERS} />
-        <FilterRow label="種別" items={TYPE_FILTERS} />
+        <FilterRow
+          label="推し"
+          options={memberOptions}
+          active={activeMember}
+          onChange={setActiveMember}
+        />
+        <FilterRow
+          label="種別"
+          options={typeOptions}
+          active={activeType}
+          onChange={setActiveType}
+        />
       </div>
 
       {/* スワイプコンテナ（横スクロール + scroll snap） */}
@@ -321,26 +349,49 @@ function IconButton({
   );
 }
 
-function FilterRow({
+/**
+ * iter98: 実データで動作する FilterRow。
+ *
+ * - options：items から動的に抽出した値（例：memberName / goodsType の Set）
+ * - active：null = 「すべて」、それ以外 = 選択中の値
+ * - 親が onChange で active を更新する
+ * - options が空（在庫が無い）なら何も表示しない（ノイズ削減）
+ */
+export function FilterRow({
   label,
-  items,
+  options,
+  active,
+  onChange,
 }: {
   label: string;
-  items: string[];
+  options: string[];
+  active: string | null;
+  onChange: (next: string | null) => void;
 }) {
-  const [active, setActive] = useState(0);
+  if (options.length === 0) return null;
   return (
     <div className="mb-1.5 flex items-center gap-1.5 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden">
       <span className="w-7 flex-shrink-0 pr-1 text-[9.5px] font-bold tracking-wider text-gray-500">
         {label}
       </span>
-      {items.map((f, i) => (
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className={`flex-shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all ${
+          active === null
+            ? "bg-[#a695d8] text-white"
+            : "border-[0.5px] border-[#3a324a14] bg-white text-gray-900"
+        }`}
+      >
+        すべて
+      </button>
+      {options.map((f) => (
         <button
           key={f}
           type="button"
-          onClick={() => setActive(i)}
+          onClick={() => onChange(f)}
           className={`flex-shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all ${
-            active === i
+            active === f
               ? "bg-[#a695d8] text-white"
               : "border-[0.5px] border-[#3a324a14] bg-white text-gray-900"
           }`}

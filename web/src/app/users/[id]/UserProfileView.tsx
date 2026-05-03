@@ -4,6 +4,8 @@
  * iter81: パートナーの公開プロフィール画面
  * iter97: 「譲るグッズ」一覧をマイ在庫と同じ ItemCard 形式で追加。
  *         チャットヘッダー → このプロフ画面で、相手のグッズが一目で分かる導線。
+ * iter98: 譲るグッズに「推し」「種別」フィルタを実装（マイ在庫と同じ FilterRow）
+ *         + 評価メトリクスをタップで評価コメント一覧へジャンプ。
  *
  * iHub/hub-screens.jsx の ProfileHub の hero 構造を参考に、
  * 受信側打診画面 (ProposalDetailView) や マッチカード、
@@ -11,15 +13,18 @@
  *
  * 表示：
  * - hero card：avatar 大 / handle / display_name / primary_area
- *   ★ ・ 取引数 ・ 譲るグッズ数 のメトリクス
+ *   ★ ・ 取引数 ・ 譲るグッズ数 のメトリクス（★はタップで評価一覧へ）
  * - 「打診を始める」CTA（自分の場合は表示しない、page.tsx で /profile に redirect 済み）
  * - iter97: 譲るグッズ一覧（マイ在庫と同じ ItemCard・3 列グリッド・閲覧専用）
+ *   + iter98: 推し / 種別フィルタ
  * - 公開中の個別募集 一覧（最大 5 件、譲：group×goodsType / 求：選択肢ごと）
  * - 最近の評価コメント（最大 5 件）
  */
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { ItemCard, type ItemCardData } from "@/app/inventory/ItemCard";
+import { FilterRow } from "@/app/inventory/InventoryView";
 
 export type PartnerInventoryItem = {
   id: string;
@@ -57,6 +62,38 @@ export type UserProfileData = {
 };
 
 export function UserProfileView({ profile }: { profile: UserProfileData }) {
+  // iter98: 譲るグッズのフィルタ（マイ在庫と同じ FilterRow を再利用）
+  const [activeMember, setActiveMember] = useState<string | null>(null);
+  const [activeType, setActiveType] = useState<string | null>(null);
+
+  const memberOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of profile.inventoryItems) s.add(it.memberName);
+    return Array.from(s).sort();
+  }, [profile.inventoryItems]);
+
+  const typeOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of profile.inventoryItems) s.add(it.goodsType);
+    return Array.from(s).sort();
+  }, [profile.inventoryItems]);
+
+  const filteredInventory = useMemo(() => {
+    return profile.inventoryItems.filter((it) => {
+      if (activeMember && it.memberName !== activeMember) return false;
+      if (activeType && it.goodsType !== activeType) return false;
+      return true;
+    });
+  }, [profile.inventoryItems, activeMember, activeType]);
+
+  // iter98: 「評価」メトリクスタップで最近の評価コメントセクションへスクロール
+  function scrollToRatings() {
+    if (typeof document === "undefined") return;
+    document
+      .getElementById("user-ratings")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <div className="space-y-3.5 pb-20">
       {/* hero */}
@@ -104,29 +141,51 @@ export function UserProfileView({ profile }: { profile: UserProfileData }) {
                   ? `★${profile.ratingAvg.toFixed(1)}`
                   : "★—",
               l: "評価",
+              onTap: scrollToRatings, // iter98: タップで評価コメント一覧へ
             },
             { v: String(profile.completedTradeCount), l: "取引" },
             // iter97: 「譲るグッズ」を主要メトリクスに昇格
             { v: String(profile.inventoryItems.length), l: "譲" },
             { v: String(profile.activeListingsCount), l: "個別募集" },
-          ].map((s, i) => (
-            <div
-              key={s.l}
-              className="flex-1 text-center"
-              style={{
-                borderLeft:
-                  i > 0 ? "1px solid rgba(255,255,255,0.2)" : "none",
-              }}
-            >
+          ].map((s, i) => {
+            const inner = (
+              <>
+                <div
+                  className="text-[14px] font-extrabold"
+                  style={{ fontFamily: '"Inter Tight", sans-serif' }}
+                >
+                  {s.v}
+                </div>
+                <div className="mt-0.5 text-[9.5px] opacity-85">{s.l}</div>
+              </>
+            );
+            const onTap = (s as { onTap?: () => void }).onTap;
+            return (
               <div
-                className="text-[14px] font-extrabold"
-                style={{ fontFamily: '"Inter Tight", sans-serif' }}
+                key={s.l}
+                className="flex-1 text-center"
+                style={{
+                  borderLeft:
+                    i > 0 ? "1px solid rgba(255,255,255,0.2)" : "none",
+                }}
               >
-                {s.v}
+                {onTap ? (
+                  <button
+                    type="button"
+                    onClick={onTap}
+                    className="block w-full rounded-md transition-colors active:bg-white/10"
+                    aria-label={`${s.l}（タップで評価コメント一覧へ）`}
+                  >
+                    {inner}
+                    {/* iter98: タップ可能であることを示す小さな下線 */}
+                    <div className="mx-auto mt-0.5 h-[1px] w-3 bg-white/40" />
+                  </button>
+                ) : (
+                  inner
+                )}
               </div>
-              <div className="mt-0.5 text-[9.5px] opacity-85">{s.l}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -138,31 +197,56 @@ export function UserProfileView({ profile }: { profile: UserProfileData }) {
         💬 このユーザーに打診する →
       </Link>
 
-      {/* iter97: 譲るグッズ一覧（マイ在庫と同じ ItemCard を使った 3 列グリッド・閲覧専用） */}
+      {/* iter97: 譲るグッズ一覧（マイ在庫と同じ ItemCard を使った 3 列グリッド・閲覧専用）
+          iter98: 推し / 種別フィルタを追加（マイ在庫と同じ FilterRow） */}
       <Section
         label="譲るグッズ"
-        hint={`${profile.inventoryItems.length} 件`}
+        hint={
+          activeMember || activeType
+            ? `${filteredInventory.length} / ${profile.inventoryItems.length} 件`
+            : `${profile.inventoryItems.length} 件`
+        }
       >
         {profile.inventoryItems.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
             譲る候補のグッズはまだありません
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-2.5">
-            {profile.inventoryItems.map((it) => {
-              const card: ItemCardData = {
-                id: it.id,
-                memberName: it.memberName,
-                goodsType: it.goodsType,
-                series: null,
-                qty: it.qty,
-                hue: it.hue,
-                carrying: false,
-                photoUrl: it.photoUrl,
-                isPending: false,
-              };
-              return <ItemCard key={it.id} item={card} />;
-            })}
+          <div>
+            <FilterRow
+              label="推し"
+              options={memberOptions}
+              active={activeMember}
+              onChange={setActiveMember}
+            />
+            <FilterRow
+              label="種別"
+              options={typeOptions}
+              active={activeType}
+              onChange={setActiveType}
+            />
+            {filteredInventory.length === 0 ? (
+              <div className="mt-1 rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
+                該当するグッズがありません
+              </div>
+            ) : (
+              <div className="mt-1 grid grid-cols-3 gap-2.5">
+                {filteredInventory.map((it) => {
+                  const card: ItemCardData = {
+                    id: it.id,
+                    memberName: it.memberName,
+                    goodsType: it.goodsType,
+                    series: null,
+                    qty: it.qty,
+                    hue: it.hue,
+                    carrying: false,
+                    photoUrl: it.photoUrl,
+                    isPending: false,
+                  };
+                  return <ItemCard key={it.id} item={card} />;
+                })}
+              </div>
+            )}
           </div>
         )}
       </Section>
@@ -209,8 +293,8 @@ export function UserProfileView({ profile }: { profile: UserProfileData }) {
         )}
       </Section>
 
-      {/* 最近の評価コメント */}
-      <Section label="最近の評価コメント">
+      {/* 最近の評価コメント — iter98: hero ★ メトリクスからスクロールで来る anchor */}
+      <Section label="最近の評価コメント" id="user-ratings">
         {profile.recentComments.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
             まだ評価コメントはありません
@@ -253,13 +337,16 @@ function Section({
   label,
   hint,
   children,
+  id,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
+  /** iter98: scrollIntoView 用 anchor */
+  id?: string;
 }) {
   return (
-    <div>
+    <div id={id} style={id ? { scrollMarginTop: 70 } : undefined}>
       <div className="mb-1.5 flex items-baseline justify-between px-1">
         <span className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-[#3a324a8c]">
           {label}
