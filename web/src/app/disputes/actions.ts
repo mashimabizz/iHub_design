@@ -266,6 +266,76 @@ export async function respondToDispute(input: {
 }
 
 /**
+ * iter89-D5d: dispute への追加メッセージ送信（運営からの追加質問への返信、
+ * または自発的な追加情報の提供）。
+ *
+ * 自分が reporter or respondent のときに、自分の役割で送信。
+ * 運営側からの operator メッセージは admin panel / service role 経由で挿入される。
+ */
+export async function sendDisputeMessage(input: {
+  disputeId: string;
+  body: string;
+  evidencePhotoStoragePaths?: string[];
+}): Promise<ActionResult> {
+  const body = input.body.trim();
+  if (!body) return { error: "本文を入力してください" };
+  if (body.length > 4000)
+    return { error: "本文は 4000 文字以内でお願いします" };
+  if (
+    input.evidencePhotoStoragePaths &&
+    input.evidencePhotoStoragePaths.length > 3
+  ) {
+    return { error: "添付写真は最大 3 枚までです" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // 役割判定
+  const { data: dispute } = await supabase
+    .from("disputes")
+    .select("id, reporter_id, respondent_id, status")
+    .eq("id", input.disputeId)
+    .maybeSingle();
+  if (!dispute) return { error: "申告が見つかりません" };
+  if (dispute.status === "closed")
+    return { error: "クローズ済の申告には送信できません" };
+  let role: "reporter" | "respondent";
+  if (dispute.reporter_id === user.id) role = "reporter";
+  else if (dispute.respondent_id === user.id) role = "respondent";
+  else return { error: "参加者ではありません" };
+
+  // 写真を signed URL に変換
+  const photoUrls: string[] = [];
+  if (input.evidencePhotoStoragePaths) {
+    for (const path of input.evidencePhotoStoragePaths) {
+      const { data: signed, error: signedErr } = await supabase.storage
+        .from("chat-photos")
+        .createSignedUrl(path, 60 * 60 * 24 * 365);
+      if (signedErr || !signed) {
+        return { error: signedErr?.message ?? "写真URL生成に失敗しました" };
+      }
+      photoUrls.push(signed.signedUrl);
+    }
+  }
+
+  const { error } = await supabase.from("dispute_messages").insert({
+    dispute_id: input.disputeId,
+    sender_id: user.id,
+    sender_role: role,
+    body,
+    photo_urls: photoUrls,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath(`/disputes/${input.disputeId}`);
+  return { disputeId: input.disputeId };
+}
+
+/**
  * iter79-C: 申告者または respondent が申告を取り下げ。
  * status='closed' + outcome='cancelled' 扱い。
  */

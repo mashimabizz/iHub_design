@@ -62,6 +62,21 @@ export default async function DisputeDetailPage({
     .select("photo_url")
     .eq("proposal_id", d.proposal_id);
 
+  // iter89-D5d: dispute_messages を時系列で取得
+  const { data: msgRows } = await supabase
+    .from("dispute_messages")
+    .select("id, sender_id, sender_role, body, photo_urls, created_at")
+    .eq("dispute_id", d.id)
+    .order("created_at", { ascending: true });
+  const disputeMessages = (msgRows ?? []).map((m) => ({
+    id: m.id as string,
+    senderRole: m.sender_role as "reporter" | "respondent" | "operator",
+    body: m.body as string,
+    photoUrls: (m.photo_urls as string[] | null) ?? [],
+    createdAt: m.created_at as string,
+    isMine: (m.sender_id as string | null) === user.id,
+  }));
+
   const partnerId =
     d.reporter_id === user.id ? d.respondent_id : d.reporter_id;
   const { data: partner } = await supabase
@@ -94,6 +109,7 @@ export default async function DisputeDetailPage({
     respondentResponseText: d.respondent_response_text,
     respondentEvidenceUrls: d.respondent_evidence_urls ?? [],
     respondentRespondedAt: d.respondent_responded_at,
+    messages: disputeMessages,
   };
 
   return (

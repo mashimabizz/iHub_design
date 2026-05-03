@@ -14,6 +14,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   respondToDispute,
+  sendDisputeMessage,
   withdrawDispute,
 } from "@/app/disputes/actions";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
@@ -49,6 +50,15 @@ export type DisputeDetail = {
   respondentResponseText: string | null;
   respondentEvidenceUrls: string[];
   respondentRespondedAt: string | null;
+  /** iter89-D5d: dispute_messages（時系列） */
+  messages: {
+    id: string;
+    senderRole: "reporter" | "respondent" | "operator";
+    body: string;
+    photoUrls: string[];
+    createdAt: string;
+    isMine: boolean;
+  }[];
 };
 
 export function DisputeView({ detail }: { detail: DisputeDetail }) {
@@ -633,6 +643,9 @@ function ArbitrationView({ detail }: { detail: DisputeDetail }) {
           <RestrictionRow label="★ ・ 取引数の集計" value="保留" tone="warn" isLast />
         </div>
       </Section>
+
+      {/* iter89-D5d: 運営とのやりとり */}
+      <DisputeMessagingSection detail={detail} />
     </div>
   );
 }
@@ -751,6 +764,11 @@ function ClosedView({ detail }: { detail: DisputeDetail }) {
 
       <SummarySection detail={detail} />
 
+      {/* iter89-D5d: 過去のやりとり（クローズ後は閲覧のみ） */}
+      {detail.messages.length > 0 && (
+        <DisputeMessagingSection detail={detail} />
+      )}
+
       <div className="pt-2">
         <Link
           href="/"
@@ -759,6 +777,253 @@ function ClosedView({ detail }: { detail: DisputeDetail }) {
           ホームに戻る
         </Link>
       </div>
+    </div>
+  );
+}
+
+/* ─── iter89-D5d: 運営とのやりとり（dispute_messages 時系列 + 返信フォーム） ─── */
+
+function DisputeMessagingSection({ detail }: { detail: DisputeDetail }) {
+  const router = useRouter();
+  const [draft, setDraft] = useState("");
+  const [extraPaths, setExtraPaths] = useState<string[]>([]);
+  const [extraPreviews, setExtraPreviews] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleAddPhoto(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("画像ファイルを選んでください");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("8MB 以下の画像にしてください");
+      return;
+    }
+    if (extraPaths.length >= 3) {
+      setError("添付写真は最大 3 枚までです");
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      const sb = createBrowserClient();
+      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `${detail.proposalId}/dispute-msg-${Date.now()}.${ext}`;
+      const { error: upErr } = await sb.storage
+        .from("chat-photos")
+        .upload(path, file, {
+          contentType: file.type,
+          upsert: false,
+        });
+      if (upErr) {
+        setError(upErr.message || "アップロード失敗");
+        return;
+      }
+      const { data: signed } = await sb.storage
+        .from("chat-photos")
+        .createSignedUrl(path, 60 * 60);
+      setExtraPaths((prev) => [...prev, path]);
+      setExtraPreviews((prev) => [...prev, signed?.signedUrl ?? ""]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "アップロード失敗");
+    } finally {
+      setUploading(false);
+    }
+  }
+  function removeExtra(idx: number) {
+    setExtraPaths((prev) => prev.filter((_, i) => i !== idx));
+    setExtraPreviews((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function handleSend() {
+    if (!draft.trim()) {
+      setError("本文を入力してください");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const r = await sendDisputeMessage({
+        disputeId: detail.id,
+        body: draft.trim(),
+        evidencePhotoStoragePaths: extraPaths,
+      });
+      if (r?.error) setError(r.error);
+      else {
+        setDraft("");
+        setExtraPaths([]);
+        setExtraPreviews([]);
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <Section label="運営とのやりとり">
+      <div className="space-y-2">
+        {/* メッセージ一覧 */}
+        {detail.messages.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white px-3.5 py-3 text-[11px] text-[#3a324a8c]">
+            まだやりとりはありません。運営から追加の質問が届くか、
+            自分から追加情報を送ると、ここに表示されます。
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {detail.messages.map((m) => (
+              <DisputeMessageBubble key={m.id} m={m} />
+            ))}
+          </div>
+        )}
+
+        {/* 返信フォーム（クローズ前のみ） */}
+        {detail.status !== "closed" && (
+          <div className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-white">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              maxLength={4000}
+              placeholder="運営に追加情報を送る（自由記述）"
+              className="block w-full resize-none border-0 bg-transparent p-3.5 text-[16px] leading-relaxed text-[#3a324a] placeholder:text-[#3a324a4d] focus:outline-none"
+            />
+
+            {/* 添付プレビュー */}
+            {(extraPreviews.length > 0 || extraPaths.length < 3) && (
+              <div className="border-t border-[#3a324a08] px-3.5 py-2">
+                <div className="grid grid-cols-3 gap-2">
+                  {extraPreviews.map((url, i) => (
+                    <div
+                      key={i}
+                      className="relative aspect-[4/5] overflow-hidden rounded-[8px] border-[0.5px] border-[#3a324a14]"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={url}
+                        alt={`extra-${i}`}
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeExtra(i)}
+                        aria-label="削除"
+                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-[12px] font-bold text-white"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  {extraPaths.length < 3 && (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="flex aspect-[4/5] flex-col items-center justify-center gap-1 rounded-[8px] border border-dashed border-[#a695d855] bg-[#fbf9fc] text-[10px] text-[#3a324a8c] disabled:opacity-50"
+                    >
+                      {uploading ? "アップ中…" : "+ 写真"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                handleAddPhoto(f);
+                if (e.target) e.target.value = "";
+              }}
+            />
+
+            <div className="flex justify-end gap-1.5 border-t border-[#3a324a08] px-3 py-2">
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={pending || !draft.trim()}
+                className="rounded-[10px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-4 py-1.5 text-[11.5px] font-extrabold text-white shadow-[0_2px_5px_rgba(166,149,216,0.4)] disabled:opacity-50"
+              >
+                {pending ? "送信中…" : "送信"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function DisputeMessageBubble({
+  m,
+}: {
+  m: DisputeDetail["messages"][number];
+}) {
+  // 役割別の表示
+  const isOperator = m.senderRole === "operator";
+  const align = m.isMine ? "items-end" : "items-start";
+  const bg = isOperator
+    ? "bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] border border-[#a695d855]"
+    : m.isMine
+      ? "bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] text-white"
+      : "bg-white border border-[#3a324a14] text-[#3a324a]";
+  const roleLabel = isOperator
+    ? "🛟 iHub サポート"
+    : m.senderRole === "reporter"
+      ? "申告者"
+      : "被申告者";
+  return (
+    <div className={`flex flex-col gap-0.5 ${align}`}>
+      <div
+        className={`max-w-[88%] overflow-hidden rounded-[14px] ${bg} px-3 py-2`}
+      >
+        <div
+          className={`mb-0.5 flex items-center gap-1.5 text-[10px] font-extrabold ${
+            isOperator
+              ? "text-[#a695d8]"
+              : m.isMine
+                ? "text-white/85"
+                : "text-[#3a324a8c]"
+          }`}
+        >
+          {roleLabel}
+        </div>
+        <div className="whitespace-pre-wrap break-words text-[12.5px] leading-relaxed">
+          {m.body}
+        </div>
+        {m.photoUrls.length > 0 && (
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
+            {m.photoUrls.map((url, i) => (
+              <a
+                key={i}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="relative aspect-[4/5] overflow-hidden rounded-[6px] border border-white/40"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt={`msg-${i}`}
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+      <span className="px-1 text-[9px] tabular-nums text-[#3a324a8c]">
+        {formatDateTime(m.createdAt)}
+      </span>
     </div>
   );
 }

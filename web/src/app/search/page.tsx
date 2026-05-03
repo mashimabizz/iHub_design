@@ -36,42 +36,16 @@ const POPULAR_KEYWORDS = [
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    q?: string;
-    match?: "perfect" | "all";
-    types?: string; // CSV of goods_type id
-    minStars?: "0" | "4.0" | "4.5" | "4.8";
-    sort?: "match" | "newest" | "rating";
-  }>;
+  searchParams: Promise<{ q?: string }>;
 }) {
-  const sp = await searchParams;
-  const q = (sp.q ?? "").trim();
-  const matchMode: "perfect" | "all" = sp.match === "perfect" ? "perfect" : "all";
-  const selectedTypeIds = (sp.types ?? "")
-    .split(",")
-    .filter((s) => s.length > 0);
-  const minStars =
-    sp.minStars === "4.8"
-      ? 4.8
-      : sp.minStars === "4.5"
-        ? 4.5
-        : sp.minStars === "4.0"
-          ? 4.0
-          : 0;
-  const sortMode: "match" | "newest" | "rating" =
-    sp.sort === "newest" || sp.sort === "rating" ? sp.sort : "match";
+  const { q: rawQ } = await searchParams;
+  const q = (rawQ ?? "").trim();
 
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-
-  // フィルタ用 goods_types マスタを取得
-  const { data: goodsTypeMasters } = await supabase
-    .from("goods_types_master")
-    .select("id, name")
-    .order("display_order", { ascending: true });
 
   let hits: SearchHit[] = [];
   if (q.length > 0) {
@@ -216,16 +190,7 @@ export default async function SearchPage({
       }
     }
 
-    // フィルタ：goods_type
-    let filtered = allHits;
-    if (selectedTypeIds.length > 0) {
-      filtered = filtered.filter((r) => {
-        const tid = (r as { goods_type_id?: string }).goods_type_id;
-        return tid && selectedTypeIds.includes(tid);
-      });
-    }
-
-    hits = filtered.map((row) => {
+    hits = allHits.map((row) => {
       const u = usersById.get(row.user_id);
       const grName = pickName(row.group);
       const charName = pickName(row.character);
@@ -267,30 +232,6 @@ export default async function SearchPage({
         wishHit,
       } satisfies SearchHit;
     });
-
-    // フィルタ：マッチ強度
-    if (matchMode === "perfect") {
-      hits = hits.filter((h) => h.wishHit);
-    }
-    // フィルタ：★ しきい値
-    if (minStars > 0) {
-      hits = hits.filter((h) => (h.ratingAvg ?? 0) >= minStars);
-    }
-    // 並び替え
-    if (sortMode === "newest") {
-      // 簡易：id 降順（新しい uuid ほど後ろにある仮定は弱いが、created_at を fetch していないため代替）
-      hits = [...hits].reverse();
-    } else if (sortMode === "rating") {
-      hits = [...hits].sort(
-        (a, b) => (b.ratingAvg ?? 0) - (a.ratingAvg ?? 0),
-      );
-    } else {
-      // match: 完全マッチ優先 + 評価降順
-      hits = [...hits].sort((a, b) => {
-        if (a.wishHit !== b.wishHit) return a.wishHit ? -1 : 1;
-        return (b.ratingAvg ?? 0) - (a.ratingAvg ?? 0);
-      });
-    }
   }
 
   return (
@@ -319,16 +260,6 @@ export default async function SearchPage({
             query={q}
             hits={hits}
             popularKeywords={POPULAR_KEYWORDS}
-            filters={{
-              matchMode,
-              selectedTypeIds,
-              minStars: sp.minStars ?? "0",
-              sortMode,
-            }}
-            goodsTypes={(goodsTypeMasters ?? []).map((g) => ({
-              id: g.id as string,
-              name: g.name as string,
-            }))}
           />
         </div>
       </main>
