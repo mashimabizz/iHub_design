@@ -237,6 +237,22 @@ export function matchPair(input: {
   }
 
   /* ─── 1b. 相手の listing 駆動マッチ（myInventory が相手の wish に hit） ─── */
+  // iter72.1：A パターン（厳密双方向）の判定用に、自分の listing.haves だけで
+  // 相手の listing が成立するかを別評価する。
+  //   - "loose" = myInventory（私の全在庫）で評価 → これを partnerMatchedListings に保存
+  //   - "strict" = 私の listing.haves だけで評価 → bothSidesListingMatch 判定に使う
+  // 「自分は listing 成立 + 相手の listing は通常在庫を駆使してようやく成立」のケースを
+  // "both" 扱いから外すため。
+  const myListingHaveIdSet = new Set<string>();
+  for (const l of myListings) {
+    for (const id of l.haveIds) myListingHaveIdSet.add(id);
+  }
+  const myListingHavesAsInv = myInventory.filter((m) =>
+    myListingHaveIdSet.has(m.id),
+  );
+
+  let partnerListingStrictlyMatched = false; // 厳密判定用フラグ
+
   for (const l of partnerListings) {
     const lm = evaluateListingMatch(
       l,
@@ -269,6 +285,17 @@ export function matchPair(input: {
         if (inv) myGivesMap.set(inv.id, inv);
       }
     }
+
+    // 厳密判定：私の listing.haves だけで応えられるか？
+    if (myListingHavesAsInv.length > 0 && !partnerListingStrictlyMatched) {
+      const strictLm = evaluateListingMatch(
+        l,
+        partnerInvById,
+        partnerWishById,
+        myListingHavesAsInv,
+      );
+      if (strictLm) partnerListingStrictlyMatched = true;
+    }
   }
 
   /* ─── 2. 通常マッチ（listing にカバーされていない譲・求） ─── */
@@ -298,11 +325,12 @@ export function matchPair(input: {
 
   if (myGivesMap.size === 0 && theirGivesMap.size === 0) return null;
 
-  // iter72-B: listing マッチの種類を細分化
+  // iter72-B + iter72.1: listing マッチの種類を細分化（厳密判定）
+  // "both" は **自分の listing が成立 AND 相手の listing も「私の listing.haves だけで」成立** のときのみ
   const hasMyListing = myMatchedListings.length > 0;
   const hasPartnerListing = partnerMatchedListings.length > 0;
   const listingMatchKind: Match["listingMatchKind"] =
-    hasMyListing && hasPartnerListing
+    hasMyListing && partnerListingStrictlyMatched
       ? "both"
       : hasMyListing
         ? "mine_only"
