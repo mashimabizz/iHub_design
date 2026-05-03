@@ -27,6 +27,8 @@ type ProposalRaw = {
   evidence_photo_url: string | null;
   approved_by_sender: boolean;
   approved_by_receiver: boolean;
+  agreed_by_sender: boolean;
+  agreed_by_receiver: boolean;
   expose_calendar: boolean;
   message: string | null;
   created_at: string;
@@ -88,6 +90,7 @@ export default async function TransactionChatPage({
        sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
        meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
        evidence_photo_url, approved_by_sender, approved_by_receiver,
+       agreed_by_sender, agreed_by_receiver,
        expose_calendar, message, created_at`,
     )
     .eq("id", id)
@@ -206,6 +209,10 @@ export default async function TransactionChatPage({
     },
     hasEvidence: !!p.evidence_photo_url,
     evidencePhotoCount: 0, // 後で更新
+    // iter73: 自分視点の合意フラグ（agreed_by_* がネゴ合意 / approved_by_* は完了承認）
+    myAgreed: isMeSender ? p.agreed_by_sender : p.agreed_by_receiver,
+    partnerAgreed: isMeSender ? p.agreed_by_receiver : p.agreed_by_sender,
+    iAmReceiver: !isMeSender,
   };
 
   // 証跡写真（複数枚）

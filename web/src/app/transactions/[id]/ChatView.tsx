@@ -16,6 +16,7 @@ import {
   sendTextMessage,
   updateArrivalStatus,
 } from "../actions";
+import { respondToProposal } from "@/app/propose/actions";
 import {
   CalendarOverlayModal,
   type CalEvent,
@@ -41,7 +42,7 @@ export type ChatItem = {
 
 export type ChatProposal = {
   id: string;
-  status: "agreed" | "negotiating" | "agreement_one_side";
+  status: "agreed" | "negotiating" | "agreement_one_side" | "sent";
   cashOffer: boolean;
   cashAmount: number | null;
   myGiveItems: ChatItem[];
@@ -60,6 +61,11 @@ export type ChatProposal = {
   me: { id: string };
   hasEvidence: boolean;
   evidencePhotoCount: number;
+  /** iter73: 合意フラグ（自分視点・相手視点） */
+  myAgreed: boolean;
+  partnerAgreed: boolean;
+  /** iter73: 自分が打診の receiver か（拒否ボタン表示判定用） */
+  iAmReceiver: boolean;
 };
 
 export type ChatMessage = {
@@ -179,6 +185,33 @@ export function ChatView({
     });
   }
 
+  // iter73: 打診を承諾 / 拒否
+  function handleAccept() {
+    if (!confirm("この内容で合意しますか？両者が合意すると取引フェーズに進みます。"))
+      return;
+    setError(null);
+    startTransition(async () => {
+      const r = await respondToProposal({
+        id: proposal.id,
+        action: "accept",
+      });
+      if (r?.error) setError(r.error);
+      else router.refresh();
+    });
+  }
+  function handleReject() {
+    if (!confirm("この打診を拒否しますか？")) return;
+    setError(null);
+    startTransition(async () => {
+      const r = await respondToProposal({
+        id: proposal.id,
+        action: "reject",
+      });
+      if (r?.error) setError(r.error);
+      else router.push("/transactions");
+    });
+  }
+
   /**
    * iter71-D：写真添付
    * Storage の chat-photos バケットに直 upload → server action で signed URL 化 + message 投稿
@@ -238,7 +271,7 @@ export function ChatView({
         isAgreed={isAgreed}
       />
 
-      {/* 上部固定：取引内容カード（コンパクト・画像表示） + 服装写真（agreed のみ） */}
+      {/* 上部固定：取引内容カード（コンパクト・画像表示） + 合意バー or 服装写真 */}
       <div className="flex-shrink-0 bg-[#fbf9fc]">
         <div className="mx-auto max-w-md px-3.5 pt-2.5">
           <DealCard
@@ -246,6 +279,14 @@ export function ChatView({
             onTap={() => setTradeOpen(true)}
             onMapTap={() => setMapOpen(true)}
           />
+          {!isAgreed && (
+            <AgreementBar
+              proposal={proposal}
+              onAccept={handleAccept}
+              onReject={handleReject}
+              pending={pending}
+            />
+          )}
           {isAgreed && (
             <OutfitCompactRow
               myShared={!!myOutfitPhoto}
@@ -720,6 +761,87 @@ function CashChip({ amount }: { amount: number | null }) {
   return (
     <span className="inline-flex items-center gap-0.5 rounded-md bg-[#7a9a8a14] px-1.5 py-0.5 text-[11px] font-extrabold text-[#7a9a8a]">
       💴 ¥{amount?.toLocaleString() ?? "—"}
+    </span>
+  );
+}
+
+/* ─── iter73: 合意バー（打診中・ネゴ中・片方合意中） ─── */
+
+function AgreementBar({
+  proposal,
+  onAccept,
+  onReject,
+  pending,
+}: {
+  proposal: ChatProposal;
+  onAccept: () => void;
+  onReject: () => void;
+  pending: boolean;
+}) {
+  const myAgreed = proposal.myAgreed;
+  const partnerAgreed = proposal.partnerAgreed;
+  const canReject = proposal.iAmReceiver;
+
+  // ステータス文
+  const statusText = myAgreed
+    ? `あなた合意済 · @${proposal.partner.handle} の合意待ち`
+    : partnerAgreed
+      ? `@${proposal.partner.handle} 合意済 · あなたの確認をお願いします`
+      : "両者の合意で取引フェーズへ進めます";
+
+  return (
+    <div className="mt-1.5 overflow-hidden rounded-[12px] border border-[#a695d855] bg-[linear-gradient(180deg,rgba(166,149,216,0.10),rgba(168,212,230,0.06))]">
+      <div className="flex items-center gap-2 px-3 pt-2">
+        <span className="text-[10px] font-bold tracking-[0.4px] text-[#a695d8]">
+          ✓ 合意ステータス
+        </span>
+        <div className="flex-1" />
+        <div className="flex items-center gap-1 text-[9.5px]">
+          <AgreedDot done={myAgreed} label="あなた" />
+          <AgreedDot done={partnerAgreed} label="相手" />
+        </div>
+      </div>
+      <div className="px-3 pt-1 text-[10.5px] leading-relaxed text-[#3a324a]">
+        {statusText}
+      </div>
+      <div className="flex gap-1.5 px-3 pb-2 pt-2">
+        {canReject && (
+          <button
+            type="button"
+            onClick={onReject}
+            disabled={pending}
+            className="rounded-[10px] border border-[#3a324a14] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#3a324a8c] disabled:opacity-50"
+          >
+            拒否
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onAccept}
+          disabled={pending || myAgreed}
+          className="flex-1 rounded-[10px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-1.5 text-[12px] font-bold tracking-[0.3px] text-white shadow-[0_2px_6px_rgba(166,149,216,0.31)] active:scale-[0.98] disabled:opacity-50"
+        >
+          {myAgreed
+            ? "合意済（相手の合意待ち）"
+            : partnerAgreed
+              ? "✓ この内容で合意して取引へ進む →"
+              : "✓ この内容で合意する"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AgreedDot({ done, label }: { done: boolean; label: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-[1px] font-bold tabular-nums ${
+        done
+          ? "bg-emerald-500 text-white"
+          : "border border-[#3a324a14] bg-white text-[#3a324a8c]"
+      }`}
+    >
+      {done ? "✓" : "○"} {label}
     </span>
   );
 }

@@ -235,6 +235,14 @@ export async function reviseProposal(input: {
   return { proposalId: input.id };
 }
 
+/**
+ * iter73-A: respondToProposal を sender/receiver 両対応に拡張。
+ *
+ * - accept：sender / receiver どちらでも可能。自分側の agreed_by_* を true にして
+ *   両者 true なら status='agreed'、片方なら 'agreement_one_side'。
+ *   再打診後に再度合意するケースも考慮（agreed_by_* がリセットされた状態から再合意）。
+ * - reject / negotiate：受信者のみ可能（送信者は cancel か revise を使う）。
+ */
 export async function respondToProposal(input: {
   id: string;
   action: "accept" | "reject" | "negotiate";
@@ -248,35 +256,76 @@ export async function respondToProposal(input: {
 
   const { data: proposal } = await supabase
     .from("proposals")
-    .select("status, receiver_id, sender_id")
+    .select(
+      "status, receiver_id, sender_id, agreed_by_sender, agreed_by_receiver",
+    )
     .eq("id", input.id)
     .maybeSingle();
   if (!proposal) return { error: "打診が見つかりません" };
-  if (proposal.receiver_id !== user.id)
-    return { error: "受信者ではありません" };
-  if (!["sent", "negotiating"].includes(proposal.status))
+
+  const isSender = proposal.sender_id === user.id;
+  const isReceiver = proposal.receiver_id === user.id;
+  if (!isSender && !isReceiver) return { error: "参加者ではありません" };
+
+  if ((input.action === "reject" || input.action === "negotiate") && !isReceiver) {
+    return { error: "拒否・ネゴは受信者のみ可能です" };
+  }
+
+  if (
+    !["sent", "negotiating", "agreement_one_side"].includes(proposal.status)
+  )
     return { error: "この打診はもう応答できません" };
 
-  let newStatus: string;
-  if (input.action === "accept") newStatus = "agreed";
-  else if (input.action === "reject") newStatus = "rejected";
-  else newStatus = "negotiating";
-
   const updateFields: Record<string, unknown> = {
-    status: newStatus,
     last_action_at: new Date().toISOString(),
   };
-  if (input.action === "reject" && input.rejectedTemplate)
-    updateFields.rejected_template = input.rejectedTemplate;
-  if (input.action === "accept") updateFields.agreed_by_receiver = true;
+
+  if (input.action === "accept") {
+    // 自分側の合意フラグを true に。両者 true なら agreed、片方なら agreement_one_side
+    const newAgreedSender = isSender ? true : proposal.agreed_by_sender;
+    const newAgreedReceiver = isReceiver ? true : proposal.agreed_by_receiver;
+    updateFields.agreed_by_sender = newAgreedSender;
+    updateFields.agreed_by_receiver = newAgreedReceiver;
+    updateFields.status =
+      newAgreedSender && newAgreedReceiver ? "agreed" : "agreement_one_side";
+  } else if (input.action === "reject") {
+    updateFields.status = "rejected";
+    if (input.rejectedTemplate)
+      updateFields.rejected_template = input.rejectedTemplate;
+  } else {
+    updateFields.status = "negotiating";
+  }
 
   const { error } = await supabase
     .from("proposals")
     .update(updateFields)
     .eq("id", input.id);
-
   if (error) return { error: error.message };
+
+  // accept 時は system message を投稿（両者合意 / 片方合意で文言変える）
+  if (input.action === "accept") {
+    const both = updateFields.status === "agreed";
+    await supabase.from("messages").insert({
+      proposal_id: input.id,
+      sender_id: user.id,
+      message_type: "system",
+      body: both
+        ? "両者が合意しました。取引を進めましょう ✓"
+        : "あなたが合意しました（相手の合意待ち）",
+      meta: { action: "agree", agreed_by: user.id },
+    });
+  } else if (input.action === "reject") {
+    await supabase.from("messages").insert({
+      proposal_id: input.id,
+      sender_id: user.id,
+      message_type: "system",
+      body: "打診が拒否されました",
+      meta: { action: "reject" },
+    });
+  }
+
   revalidatePath("/proposals");
   revalidatePath(`/proposals/${input.id}`);
+  revalidatePath(`/transactions/${input.id}`);
   return undefined;
 }
