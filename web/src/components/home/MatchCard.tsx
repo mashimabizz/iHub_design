@@ -68,6 +68,8 @@ export type MatchCardData = {
   hasCashOffer?: boolean;
   myMatchedListings?: MatchCardListingInfo[];
   partnerMatchedListings?: MatchCardListingInfo[];
+  /** iter71-F: 双方向 listing マッチ（自分も相手も個別募集が同時に成立）*/
+  bothSidesListingMatch?: boolean;
   /** 現地モード ON 時の距離テキスト（例「約 250m」「約 1.2km」） */
   distanceText?: string;
   /**
@@ -108,22 +110,40 @@ function ListingMatchCard({ card }: { card: MatchCardData }) {
 
   const hasMyListing = !!card.myMatchedListings?.length;
   const hasPartnerListing = !!card.partnerMatchedListings?.length;
-  const sourceLabel =
-    hasMyListing && hasPartnerListing
-      ? "双方の個別募集が成立"
-      : hasMyListing
-        ? "あなたの個別募集が成立"
-        : "相手の個別募集が成立";
+  const bothListings = card.bothSidesListingMatch === true;
+  const sourceLabel = bothListings
+    ? "双方の個別募集が成立"
+    : hasMyListing
+      ? "あなたの個別募集が成立"
+      : "相手の個別募集が成立";
 
   return (
     <>
       <div
-        className="relative overflow-hidden rounded-2xl border-[1.5px] border-[#a695d8] bg-white shadow-[0_10px_28px_rgba(166,149,216,0.20)]"
+        className={`relative overflow-hidden rounded-2xl border-[1.5px] bg-white ${
+          bothListings
+            ? "border-[#a695d8] shadow-[0_14px_36px_rgba(166,149,216,0.32)]"
+            : "border-[#a695d8] shadow-[0_10px_28px_rgba(166,149,216,0.20)]"
+        }`}
         style={{
-          background:
-            "linear-gradient(180deg, rgba(166,149,216,0.10) 0%, transparent 50%, rgba(243,197,212,0.06) 100%)",
+          background: bothListings
+            ? "linear-gradient(180deg, rgba(166,149,216,0.18) 0%, rgba(243,197,212,0.10) 50%, rgba(168,212,230,0.10) 100%)"
+            : "linear-gradient(180deg, rgba(166,149,216,0.10) 0%, transparent 50%, rgba(243,197,212,0.06) 100%)",
         }}
       >
+        {/* iter71-F: 双方向 listing マッチは「相手の個別募集にもあってます」を強調 */}
+        {bothListings && (
+          <div className="flex items-center gap-1.5 bg-[linear-gradient(135deg,#f3c5d4,#a695d8)] px-3 py-1 text-white">
+            <span className="text-[11px]">✨</span>
+            <span className="text-[9.5px] font-extrabold tracking-[0.7px]">
+              相手の個別募集にもマッチ！
+            </span>
+            <span className="text-[9px] font-bold opacity-90">
+              · 双方向で募集条件が一致しています
+            </span>
+          </div>
+        )}
+
         {/* 上部リッチバナー */}
         <div className="flex items-center gap-2 bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-1.5 text-white">
           <span className="text-[12px]">📦</span>

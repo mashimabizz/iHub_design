@@ -43,12 +43,18 @@ export function CalendarOverlayModal({
   partnerHandle,
   exposed,
   onClose,
+  onProposeWithEvent,
 }: {
   events: CalEvent[];
   partnerHandle: string;
   /** 相手がカレンダーを公開しているか（false なら相手側を「非公開」表示） */
   exposed: boolean;
   onClose: () => void;
+  /**
+   * iter71-E：カレンダー予定をタップして「この時間帯で再打診」する callback。
+   * 指定されている場合のみ詳細パネルにボタンが出る。
+   */
+  onProposeWithEvent?: (ev: CalEvent) => void;
 }) {
   const [selected, setSelected] = useState<CalEvent | null>(null);
 
@@ -319,7 +325,7 @@ export function CalendarOverlayModal({
         {/* 凡例 + 詳細 */}
         <div className="border-t border-[#3a324a14] bg-[#fbf9fc] px-4 py-2">
           {selected ? (
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               <div className="flex items-center gap-2 text-[12px] font-bold text-[#3a324a]">
                 <span
                   className="inline-block h-2 w-2 rounded-full"
@@ -346,6 +352,15 @@ export function CalendarOverlayModal({
                 <div className="text-[10.5px] text-[#3a324a]">
                   💬 {selected.note}
                 </div>
+              )}
+              {onProposeWithEvent && (
+                <button
+                  type="button"
+                  onClick={() => onProposeWithEvent(selected)}
+                  className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.3)] active:scale-[0.97]"
+                >
+                  📅 この時間帯で交換できませんか？ →
+                </button>
               )}
             </div>
           ) : (

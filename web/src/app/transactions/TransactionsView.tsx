@@ -225,9 +225,18 @@ function BasicCard({
       )
     : null;
 
+  // iter71-A：ネゴ中（negotiating / agreement_one_side / agreed）は
+  // チャットへ直送。sent は受信側未応答なので /proposals 詳細ページ。
+  const href =
+    t.status === "negotiating" ||
+    t.status === "agreement_one_side" ||
+    t.status === "agreed"
+      ? `/transactions/${t.id}`
+      : `/proposals/${t.id}`;
+
   return (
     <Link
-      href={`/proposals/${t.id}`}
+      href={href}
       className={`block overflow-hidden rounded-2xl border bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] transition-all active:scale-[0.99] ${
         dim ? "border-[#3a324a14] opacity-70" : "border-[#3a324a14]"
       }`}

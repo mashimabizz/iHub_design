@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
-import { cancelProposal, createProposal } from "../actions";
+import { createProposal, reviseProposal } from "../actions";
 
 /* MapPicker は SSR 不可（leaflet が window 必要） */
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
@@ -550,6 +550,32 @@ export function ProposeFlow({
           receiverHaveQtys.push(i.selectedQty);
         });
 
+      // iter71-C：再打診の場合は同じ proposal を update + diff を system message に
+      if (initial?.reviseFromProposalId) {
+        const r = await reviseProposal({
+          id: initial.reviseFromProposalId,
+          meSenderHaveIds: senderHaveIds,
+          meSenderHaveQtys: senderHaveQtys,
+          meReceiverHaveIds: isCashMode ? [] : receiverHaveIds,
+          meReceiverHaveQtys: isCashMode ? [] : receiverHaveQtys,
+          message,
+          meetupStartAt: localToIso(meetupStart),
+          meetupEndAt: localToIso(meetupEnd),
+          meetupPlaceName: meetupPlace.trim(),
+          meetupLat: meetupCenter[0],
+          meetupLng: meetupCenter[1],
+          cashOffer: isCashMode,
+          cashAmount: cashOffer?.amount ?? null,
+        });
+        if (r?.error) {
+          setError(r.error);
+          return;
+        }
+        // 同じチャットに戻る
+        router.push(`/transactions/${initial.reviseFromProposalId}`);
+        return;
+      }
+
       const r = await createProposal({
         receiverId: partner.id,
         matchType,
@@ -573,13 +599,6 @@ export function ProposeFlow({
       if (r?.error) {
         setError(r.error);
         return;
-      }
-      // iter70-C：再打診の場合は元 proposal を cancelled に
-      if (initial?.reviseFromProposalId) {
-        await cancelProposal({
-          id: initial.reviseFromProposalId,
-          reason: "条件を変更して再打診したため、この打診はキャンセルされました",
-        });
       }
       router.push("/");
     });

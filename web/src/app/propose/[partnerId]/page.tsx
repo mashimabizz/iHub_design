@@ -56,6 +56,10 @@ type Props = {
     /** iter70-C: 再打診時の元 proposal id */
     proposalId?: string;
     revise?: string;
+    /** iter71-E: カレンダー予定からの再打診で時間帯・場所をプリセット */
+    meetupStart?: string;
+    meetupEnd?: string;
+    meetupPlace?: string;
   }>;
 };
 
@@ -68,6 +72,9 @@ export default async function ProposePage({ params, searchParams }: Props) {
     options: optionsRaw,
     proposalId: reviseProposalIdRaw,
     revise: reviseFlagRaw,
+    meetupStart: meetupStartOverride,
+    meetupEnd: meetupEndOverride,
+    meetupPlace: meetupPlaceOverride,
   } = await searchParams;
   const reviseFromProposalId =
     reviseFlagRaw === "1" && reviseProposalIdRaw ? reviseProposalIdRaw : null;
@@ -250,10 +257,16 @@ export default async function ProposePage({ params, searchParams }: Props) {
           : undefined,
         listingId: (prevRow.listing_id as string | null) ?? undefined,
         reviseFromProposalId,
-        meetupStartAt: prevRow.meetup_start_at as string | undefined,
-        meetupEndAt: prevRow.meetup_end_at as string | undefined,
+        // iter71-E: クエリ override 優先（カレンダー予定タップ由来）
+        meetupStartAt:
+          meetupStartOverride ??
+          (prevRow.meetup_start_at as string | undefined),
+        meetupEndAt:
+          meetupEndOverride ?? (prevRow.meetup_end_at as string | undefined),
         meetupPlaceName:
-          (prevRow.meetup_place_name as string | null) ?? undefined,
+          meetupPlaceOverride ??
+          (prevRow.meetup_place_name as string | null) ??
+          undefined,
         meetupLat: (prevRow.meetup_lat as number | null) ?? undefined,
         meetupLng: (prevRow.meetup_lng as number | null) ?? undefined,
         message: (prevRow.message as string | null) ?? undefined,

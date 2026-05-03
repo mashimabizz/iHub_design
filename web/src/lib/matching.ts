@@ -43,6 +43,12 @@ export type Match = {
   /** 個別募集経由のマッチか（自分側 or 相手側いずれかの listing が成立） */
   viaListing: boolean;
   /**
+   * iter71-F: 「双方向 listing マッチ」フラグ。
+   * 自分の個別募集と相手の個別募集が **両方** 成立した場合のみ true。
+   * UI では「✨ 相手の個別募集にもマッチ！」バッジ等で強調。
+   */
+  bothSidesListingMatch: boolean;
+  /**
    * 私の個別募集が成立したもの（私 = listing オーナー視点）
    * iter67.6 で `matchedListings` から rename
    */
@@ -281,9 +287,30 @@ export function matchPair(input: {
 
   if (myGivesMap.size === 0 && theirGivesMap.size === 0) return null;
 
+  // iter71-F: 双方向 listing マッチ（両者の個別募集が同時に成立）
+  const bothSidesListingMatch =
+    myMatchedListings.length > 0 && partnerMatchedListings.length > 0;
+  const oneSideListingOnly =
+    viaListing &&
+    !bothSidesListingMatch &&
+    (myMatchedListings.length > 0 || partnerMatchedListings.length > 0);
+
   let matchType: Match["matchType"];
   if (myGivesMap.size > 0 && theirGivesMap.size > 0) {
-    matchType = "complete";
+    // iter71-F: 「個別募集片側だけ + 反対側は通常マッチ」のケースは
+    // perfect 扱いにせず、片方向に格下げ
+    //  → 個別募集マッチは「双方向」のときだけ complete として表示
+    if (oneSideListingOnly) {
+      // 自分の listing だけマッチ → 「相手が私のものを欲しがっている」寄り
+      // 相手の listing だけマッチ → 「私が相手のものを欲しがっている」寄り
+      if (myMatchedListings.length > 0) {
+        matchType = "they_want_you";
+      } else {
+        matchType = "you_want_them";
+      }
+    } else {
+      matchType = "complete";
+    }
   } else if (myGivesMap.size > 0) {
     matchType = "they_want_you";
   } else {
@@ -296,6 +323,7 @@ export function matchPair(input: {
     myGives: Array.from(myGivesMap.values()),
     theirGives: Array.from(theirGivesMap.values()),
     viaListing,
+    bothSidesListingMatch,
     myMatchedListings:
       myMatchedListings.length > 0 ? myMatchedListings : undefined,
     partnerMatchedListings:

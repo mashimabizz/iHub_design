@@ -122,19 +122,35 @@ export async function createProposal(input: {
 }
 
 /**
- * iter70-C：再打診（条件修正）用 — 既存 proposal を cancelled に。
+ * iter71-C：再打診（条件修正）— 同じ proposal を update + diff system message。
  *
- * フロー：
- *   1. ユーザーが取引チャットの「条件を変えて再打診」ボタンを押す
- *   2. /propose/[partnerId]?proposalId=...&revise=1 へ遷移
- *   3. プリフィルされたフォームを編集 → 提出 → createProposal で新規 proposal 作成
- *   4. 新規が成功したらこの cancelProposal を呼んで旧 proposal を cancelled に
+ * iter70-C 時は「旧 proposal を cancelled + 新規 proposal 作成」だったが、
+ * 別チャットになって不便。同じチャットを継続しつつ、修正前後の diff を
+ * system message として表示する形に変更。
  *
- * 自分が sender / receiver どちらでもキャンセル可能。
+ * 受信側（receiver）が再打診した場合は、視点を反転して保存する：
+ *   - 自分（receiver_id）が出す → sender_have_*（views are flipped at runtime）
+ *   ただし、ここでは role 入れ替えは行わず、そのままの ID で保持。
+ *   再打診後も sender_id は変わらないが「直近修正者」として
+ *   last_action_at と system message で誰の修正かを記録する。
+ *
+ * status は 'negotiating' に下げ直す（合意フラグもリセット）。
  */
-export async function cancelProposal(input: {
+export async function reviseProposal(input: {
   id: string;
-  reason?: string;
+  /** 視点：呼び出し側は「自分が出す」「自分が受け取る」で渡す */
+  meSenderHaveIds: string[];
+  meSenderHaveQtys: number[];
+  meReceiverHaveIds: string[];
+  meReceiverHaveQtys: number[];
+  message?: string;
+  meetupStartAt: string;
+  meetupEndAt: string;
+  meetupPlaceName: string;
+  meetupLat: number;
+  meetupLng: number;
+  cashOffer?: boolean;
+  cashAmount?: number | null;
 }): Promise<ActionResult> {
   const supabase = await createClient();
   const {
@@ -144,7 +160,13 @@ export async function cancelProposal(input: {
 
   const { data: prop } = await supabase
     .from("proposals")
-    .select("status, sender_id, receiver_id")
+    .select(
+      `id, status, sender_id, receiver_id,
+       sender_have_ids, sender_have_qtys,
+       receiver_have_ids, receiver_have_qtys,
+       meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
+       cash_offer, cash_amount`,
+    )
     .eq("id", input.id)
     .maybeSingle();
   if (!prop) return { error: "打診が見つかりません" };
@@ -155,29 +177,176 @@ export async function cancelProposal(input: {
       prop.status,
     )
   )
-    return { error: "この打診はキャンセルできない状態です" };
+    return { error: "この打診は修正できない状態です" };
 
+  // 修正者の視点を proposal の sender/receiver 視点へ変換
+  const isMeSender = prop.sender_id === user.id;
+  const newSenderIds = isMeSender
+    ? input.meSenderHaveIds
+    : input.meReceiverHaveIds;
+  const newSenderQtys = isMeSender
+    ? input.meSenderHaveQtys
+    : input.meReceiverHaveQtys;
+  const newReceiverIds = isMeSender
+    ? input.meReceiverHaveIds
+    : input.meSenderHaveIds;
+  const newReceiverQtys = isMeSender
+    ? input.meReceiverHaveQtys
+    : input.meSenderHaveQtys;
+
+  // ─ diff 算出（aggregated id → qty で比較） ─
+  function buildMap(ids: string[], qtys: number[]): Map<string, number> {
+    const m = new Map<string, number>();
+    for (let i = 0; i < ids.length; i++) {
+      m.set(ids[i], (m.get(ids[i]) ?? 0) + (qtys[i] ?? 1));
+    }
+    return m;
+  }
+  const oldSender = buildMap(
+    (prop.sender_have_ids as string[]) ?? [],
+    (prop.sender_have_qtys as number[]) ?? [],
+  );
+  const oldReceiver = buildMap(
+    (prop.receiver_have_ids as string[]) ?? [],
+    (prop.receiver_have_qtys as number[]) ?? [],
+  );
+  const newSender = buildMap(newSenderIds, newSenderQtys);
+  const newReceiver = buildMap(newReceiverIds, newReceiverQtys);
+
+  function diffSummary(
+    oldM: Map<string, number>,
+    newM: Map<string, number>,
+  ): { added: { id: string; qty: number }[]; removed: { id: string; qty: number }[] } {
+    const added: { id: string; qty: number }[] = [];
+    const removed: { id: string; qty: number }[] = [];
+    const ids = new Set([...oldM.keys(), ...newM.keys()]);
+    for (const id of ids) {
+      const o = oldM.get(id) ?? 0;
+      const n = newM.get(id) ?? 0;
+      if (n > o) added.push({ id, qty: n - o });
+      if (o > n) removed.push({ id, qty: o - n });
+    }
+    return { added, removed };
+  }
+  const senderDiff = diffSummary(oldSender, newSender);
+  const receiverDiff = diffSummary(oldReceiver, newReceiver);
+
+  // 商品名解決（diff 表示用）
+  const allIds = Array.from(
+    new Set(
+      [
+        ...senderDiff.added,
+        ...senderDiff.removed,
+        ...receiverDiff.added,
+        ...receiverDiff.removed,
+      ].map((x) => x.id),
+    ),
+  );
+  const titleById = new Map<string, string>();
+  if (allIds.length > 0) {
+    const { data: invs } = await supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, character:characters_master(name), group:groups_master(name)",
+      )
+      .in("id", allIds);
+    if (invs) {
+      for (const r of invs as {
+        id: string;
+        title: string;
+        character: { name: string } | { name: string }[] | null;
+        group: { name: string } | { name: string }[] | null;
+      }[]) {
+        const ch = Array.isArray(r.character) ? r.character[0] : r.character;
+        const gr = Array.isArray(r.group) ? r.group[0] : r.group;
+        titleById.set(r.id, ch?.name ?? gr?.name ?? r.title);
+      }
+    }
+  }
+  function listText(items: { id: string; qty: number }[]): string {
+    if (items.length === 0) return "—";
+    return items
+      .map((x) => `${titleById.get(x.id) ?? x.id} ×${x.qty}`)
+      .join(" / ");
+  }
+
+  // 待ち合わせ・cash の差分
+  const meetupChanged =
+    prop.meetup_start_at !== input.meetupStartAt ||
+    prop.meetup_end_at !== input.meetupEndAt ||
+    (prop.meetup_place_name ?? "") !== input.meetupPlaceName.trim() ||
+    prop.meetup_lat !== input.meetupLat ||
+    prop.meetup_lng !== input.meetupLng;
+  const cashChanged =
+    !!prop.cash_offer !== !!input.cashOffer ||
+    (prop.cash_amount ?? null) !== (input.cashAmount ?? null);
+
+  // proposal を update（status は negotiating に戻す）
+  const now = new Date();
+  const updateFields: Record<string, unknown> = {
+    sender_have_ids: newSenderIds,
+    sender_have_qtys: newSenderQtys,
+    receiver_have_ids: input.cashOffer ? [] : newReceiverIds,
+    receiver_have_qtys: input.cashOffer ? [] : newReceiverQtys,
+    cash_offer: !!input.cashOffer,
+    cash_amount: input.cashOffer ? input.cashAmount : null,
+    meetup_start_at: input.meetupStartAt,
+    meetup_end_at: input.meetupEndAt,
+    meetup_place_name: input.meetupPlaceName.trim(),
+    meetup_lat: input.meetupLat,
+    meetup_lng: input.meetupLng,
+    status: "negotiating",
+    agreed_by_sender: false,
+    agreed_by_receiver: false,
+    last_action_at: now.toISOString(),
+  };
+  if (input.message?.trim()) {
+    updateFields.message = input.message.trim();
+  }
   const { error } = await supabase
     .from("proposals")
-    .update({
-      status: "cancelled",
-      last_action_at: new Date().toISOString(),
-    })
+    .update(updateFields)
     .eq("id", input.id);
   if (error) return { error: error.message };
 
-  // system message：再打診のためキャンセル
+  // diff 内容を system message に
+  const lines: string[] = [];
+  lines.push(`✎ 打診内容が修正されました（修正者：あなた以外なら相手）`);
+  if (senderDiff.added.length > 0 || senderDiff.removed.length > 0) {
+    lines.push(
+      `[出すもの] +${listText(senderDiff.added)} / -${listText(senderDiff.removed)}`,
+    );
+  }
+  if (receiverDiff.added.length > 0 || receiverDiff.removed.length > 0) {
+    lines.push(
+      `[受け取るもの] +${listText(receiverDiff.added)} / -${listText(receiverDiff.removed)}`,
+    );
+  }
+  if (cashChanged) {
+    lines.push(
+      `[定価交換] ${prop.cash_offer ? `¥${prop.cash_amount?.toLocaleString()}` : "なし"} → ${input.cashOffer ? `¥${input.cashAmount?.toLocaleString()}` : "なし"}`,
+    );
+  }
+  if (meetupChanged) {
+    lines.push(
+      `[待ち合わせ] ${prop.meetup_place_name ?? "—"} → ${input.meetupPlaceName}`,
+    );
+  }
+  if (input.message?.trim()) {
+    lines.push(`💬 「${input.message.trim().slice(0, 80)}${input.message.trim().length > 80 ? "…" : ""}」`);
+  }
+
   await supabase.from("messages").insert({
     proposal_id: input.id,
     sender_id: user.id,
     message_type: "system",
-    body: input.reason ?? "条件を変更して再打診したため、この打診はキャンセルされました",
+    body: lines.join("\n"),
+    meta: { action: "revise", revised_by: user.id },
   });
 
-  revalidatePath("/proposals");
-  revalidatePath(`/proposals/${input.id}`);
   revalidatePath(`/transactions/${input.id}`);
-  return undefined;
+  revalidatePath("/proposals");
+  return { proposalId: input.id };
 }
 
 export async function respondToProposal(input: {

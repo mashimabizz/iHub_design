@@ -12,6 +12,7 @@ import {
 import { useRouter } from "next/navigation";
 import {
   sendLocationMessage,
+  sendPhotoMessage,
   sendTextMessage,
   updateArrivalStatus,
 } from "../actions";
@@ -19,6 +20,7 @@ import {
   CalendarOverlayModal,
   type CalEvent,
 } from "@/components/schedule/CalendarOverlayModal";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
 
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
   ssr: false,
@@ -108,7 +110,9 @@ export function ChatView({
   const [tradeOpen, setTradeOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   /* 自動下スクロール */
   useEffect(() => {
@@ -173,6 +177,54 @@ export function ChatView({
       if (r?.error) setError(r.error);
       else router.refresh();
     });
+  }
+
+  /**
+   * iter71-D：写真添付
+   * Storage の chat-photos バケットに直 upload → server action で signed URL 化 + message 投稿
+   */
+  async function handlePhotoSelected(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("画像ファイルを選んでください");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("8MB 以下の画像にしてください");
+      return;
+    }
+    setError(null);
+    setUploadingPhoto(true);
+    try {
+      const sb = createBrowserClient();
+      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `${proposal.id}/chat-${Date.now()}.${ext}`;
+      const { error: upErr } = await sb.storage
+        .from("chat-photos")
+        .upload(path, file, {
+          contentType: file.type,
+          upsert: false,
+        });
+      if (upErr) {
+        setError(upErr.message || "アップロード失敗");
+        return;
+      }
+      startTransition(async () => {
+        const r = await sendPhotoMessage({
+          proposalId: proposal.id,
+          storagePath: path,
+        });
+        if (r?.error) {
+          setError(r.error);
+          return;
+        }
+        router.refresh();
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "アップロード失敗");
+    } finally {
+      setUploadingPhoto(false);
+    }
   }
 
   // iter70-D：合意前は当日合流系 UI を非表示（向かう/到着/服装写真）
@@ -271,11 +323,10 @@ export function ChatView({
                 />
                 <QuickChip
                   icon={<CameraIcon />}
-                  label="写真添付"
+                  label={uploadingPhoto ? "送信中…" : "写真添付"}
                   tone="neutral"
-                  onClick={() =>
-                    alert("写真添付は次イテで実装予定です")
-                  }
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={pending || uploadingPhoto}
                 />
               </>
             ) : (
@@ -296,9 +347,30 @@ export function ChatView({
                     )
                   }
                 />
+                <QuickChip
+                  icon={<CameraIcon />}
+                  label={uploadingPhoto ? "送信中…" : "写真添付"}
+                  tone="neutral"
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={pending || uploadingPhoto}
+                />
               </>
             )}
           </div>
+
+          {/* iter71-D: 写真添付用 hidden input */}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              handlePhotoSelected(f);
+              // 同じ画像を連続で選べるよう reset
+              if (e.target) e.target.value = "";
+            }}
+          />
 
           <form onSubmit={handleSend} className="flex items-end gap-2">
             <textarea
@@ -365,6 +437,19 @@ export function ChatView({
           partnerHandle={proposal.partner.handle}
           exposed={partnerCalendarExposed}
           onClose={() => setCalendarOpen(false)}
+          onProposeWithEvent={(ev) => {
+            // iter71-E：選択した予定の時間帯 + 場所で再打診
+            const params = new URLSearchParams();
+            params.set("proposalId", proposal.id);
+            params.set("revise", "1");
+            params.set("meetupStart", ev.startAt);
+            params.set("meetupEnd", ev.endAt);
+            if (ev.venue) params.set("meetupPlace", ev.venue);
+            setCalendarOpen(false);
+            router.push(
+              `/propose/${proposal.partner.id}?${params.toString()}`,
+            );
+          }}
         />
       )}
     </div>

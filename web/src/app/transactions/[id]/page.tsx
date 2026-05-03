@@ -28,6 +28,8 @@ type ProposalRaw = {
   approved_by_sender: boolean;
   approved_by_receiver: boolean;
   expose_calendar: boolean;
+  message: string | null;
+  created_at: string;
 };
 
 type GoodsRow = {
@@ -86,7 +88,7 @@ export default async function TransactionChatPage({
        sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
        meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
        evidence_photo_url, approved_by_sender, approved_by_receiver,
-       expose_calendar`,
+       expose_calendar, message, created_at`,
     )
     .eq("id", id)
     .maybeSingle();
@@ -357,6 +359,24 @@ export default async function TransactionChatPage({
     meta: m.meta,
     createdAt: m.created_at,
   }));
+
+  // iter71-B：打診時に送信した proposal.message を最初のチャットメッセージとして
+  // 仮想挿入（DB には書かないが、UI 上は通常のメッセージバブルで先頭表示）
+  if (p.message?.trim()) {
+    messages.unshift({
+      id: `proposal-message-${p.id}`,
+      senderId: p.sender_id,
+      isMine: p.sender_id === user.id,
+      type: "text",
+      body: p.message,
+      photoUrl: null,
+      lat: null,
+      lng: null,
+      locationLabel: null,
+      meta: { virtual: "proposal_message" },
+      createdAt: p.created_at,
+    });
+  }
 
   // 双方の到着状態（最新の arrival_status を見る）
   function latestArrival(

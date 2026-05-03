@@ -110,6 +110,53 @@ export async function updateArrivalStatus(input: {
   return undefined;
 }
 
+/**
+ * iter71-D：チャット写真メッセージ送信
+ * Client side で chat-photos バケットに upload し、その path を渡してくる想定。
+ * agreed/negotiating/agreement_one_side いずれの状態でも送信可。
+ */
+export async function sendPhotoMessage(input: {
+  proposalId: string;
+  storagePath: string;
+  caption?: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select("status, sender_id, receiver_id")
+    .eq("id", input.proposalId)
+    .maybeSingle();
+  if (!prop) return { error: "打診が見つかりません" };
+  if (prop.sender_id !== user.id && prop.receiver_id !== user.id)
+    return { error: "参加者ではありません" };
+
+  // 1 年期限の signed URL を作成
+  const { data: signed, error: signedErr } = await supabase.storage
+    .from("chat-photos")
+    .createSignedUrl(input.storagePath, 60 * 60 * 24 * 365);
+  if (signedErr || !signed) {
+    return { error: signedErr?.message ?? "写真URL生成に失敗しました" };
+  }
+
+  const { error } = await supabase.from("messages").insert({
+    proposal_id: input.proposalId,
+    sender_id: user.id,
+    message_type: "photo",
+    body: input.caption?.trim() || null,
+    photo_url: signed.signedUrl,
+    meta: { storage_path: input.storagePath },
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath(`/transactions/${input.proposalId}`);
+  return undefined;
+}
+
 /* ─── iter68.1: 複数枚証跡対応 ─────────────────────────────── */
 
 /**

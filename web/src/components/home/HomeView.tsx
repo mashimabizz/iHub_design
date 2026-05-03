@@ -201,6 +201,7 @@ function matchToCard(
     hasCashOffer,
     myMatchedListings: myMatched,
     partnerMatchedListings: partnerMatched,
+    bothSidesListingMatch: m.bothSidesListingMatch,
     distanceText,
     myInventoryQty,
   };
