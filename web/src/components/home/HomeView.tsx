@@ -49,18 +49,25 @@ function toMini(inv: MatchInv): MiniItem {
   };
 }
 
-/** Match を MatchCard 用データに変換（iter67.6: partner listings 対応） */
+/** Match を MatchCard 用データに変換（iter67.6: partner listings 対応 / iter67.8: 在庫情報） */
 function matchToCard(
   m: Match,
   myInvById: Map<string, MatchInv>,
   myWishById: Map<string, MatchInv>,
   partnersInvById: Map<string, MatchInv>,
   partnersWishById: Map<string, MatchInv>,
+  myInventoryQty: Record<string, number>,
 ): MatchCardData {
+  /**
+   * iter67.8：listing 情報を hydrate する際、commitments 情報も計算
+   *
+   * @param isMyListing 自分が listing オーナーか
+   */
   const hydrate = (
     listings: typeof m.myMatchedListings,
     haveLookup: Map<string, MatchInv>,
     wishLookup: Map<string, MatchInv>,
+    isMyListing: boolean,
   ): MatchCardListingInfo[] | undefined =>
     listings?.map((ml) => {
       const haves = ml.haveIds.map((id, i) => {
@@ -92,20 +99,63 @@ function matchToCard(
             qty: opt.wishQtys[i] ?? 1,
           };
         }),
+        /**
+         * 私が追加で出す必要があるアイテム：
+         *  - my listing：[]（perOptionMyCommitment 側）
+         *  - partner listing：option.matchedTheirInvIds × wishQtys
+         *    （wishQtys[i] が「相手が要求する数」なので、私が出すべき数）
+         *
+         * 注：matchedTheirInvIds は wish_ids から派生した相手側 hit。
+         *     partner listing context では wish_ids に対応するのは私の inv なので、
+         *     wish_ids[i] と wishQtys[i] のペアで「i 番目 wish 用に必要な qty」が分かる
+         */
+        myAdditionalCommitments: isMyListing
+          ? []
+          : opt.matchedTheirInvIds.map((id) => ({
+              itemId: id,
+              // wishQtys は wish_ids 順に対応。同じ id が複数の wish にヒットする場合は
+              // 最初に見つかった wish の qty を使う（簡略化）
+              qty: (() => {
+                for (let i = 0; i < opt.wishIds.length; i++) {
+                  const myWishItem = wishLookup.get(opt.wishIds[i]);
+                  const myInvItem = myInvById.get(id);
+                  if (
+                    myWishItem &&
+                    myInvItem &&
+                    myWishItem.goodsTypeId === myInvItem.goodsTypeId
+                  ) {
+                    return opt.wishQtys[i] ?? 1;
+                  }
+                }
+                return 1;
+              })(),
+            })),
       }));
+
+      // listing 全体の per-option commitment (my listing の haves)
+      const perOptionMyCommitment = isMyListing
+        ? ml.haveIds.map((id, i) => ({
+            itemId: id,
+            qty: ml.haveQtys[i] ?? 1,
+          }))
+        : [];
+
       return {
         listingId: ml.listingId,
         haveLogic: ml.haveLogic,
         haves,
         options,
+        isMyListing,
+        perOptionMyCommitment,
       };
     });
 
-  const myMatched = hydrate(m.myMatchedListings, myInvById, myWishById);
+  const myMatched = hydrate(m.myMatchedListings, myInvById, myWishById, true);
   const partnerMatched = hydrate(
     m.partnerMatchedListings,
     partnersInvById,
     partnersWishById,
+    false,
   );
 
   // バッジ判定：listing 経由マッチで AND があれば 'set'、それ以外は 'any'
@@ -152,6 +202,7 @@ function matchToCard(
     myMatchedListings: myMatched,
     partnerMatchedListings: partnerMatched,
     distanceText,
+    myInventoryQty,
   };
 }
 
@@ -166,6 +217,7 @@ export function HomeView({
   myWishes,
   partnersInventory,
   partnersWishes,
+  myInventoryQty,
 }: {
   profile: { handle: string; display_name: string } | null;
   localMode: LocalModeSettings | null;
@@ -178,6 +230,8 @@ export function HomeView({
   /** 全パートナーの inv フラット（モーダル描画時の lookup 用、iter67.6） */
   partnersInventory: MatchInv[];
   partnersWishes: MatchInv[];
+  /** 自分の inv id → quantity（在庫オーバーチェック用、iter67.8） */
+  myInventoryQty: Record<string, number>;
 }) {
   const [tab, setTab] = useState(0);
 
@@ -188,7 +242,14 @@ export function HomeView({
     const partnersInvById = new Map(partnersInventory.map((i) => [i.id, i]));
     const partnersWishById = new Map(partnersWishes.map((w) => [w.id, w]));
     const all = matches.map((m) =>
-      matchToCard(m, myInvById, myWishById, partnersInvById, partnersWishById),
+      matchToCard(
+        m,
+        myInvById,
+        myWishById,
+        partnersInvById,
+        partnersWishById,
+        myInventoryQty,
+      ),
     );
     return {
       0: all.filter((c) => c.matchType === "complete"),
@@ -196,7 +257,14 @@ export function HomeView({
       2: all.filter((c) => c.matchType === "you_want_them"),
       3: all, // 探索: 全部
     } as Record<number, MatchCardData[]>;
-  }, [matches, myInventory, myWishes, partnersInventory, partnersWishes]);
+  }, [
+    matches,
+    myInventory,
+    myWishes,
+    partnersInventory,
+    partnersWishes,
+    myInventoryQty,
+  ]);
   const cards = cardsByTab[tab] ?? [];
 
   const tabCounts = useMemo(

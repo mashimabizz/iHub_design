@@ -419,6 +419,98 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67.8：詳細モーダル UX 改善（複数選択肢 + 在庫チェック + 線統一 + チェック削除）
+
+### 背景
+
+iter67.7 の詳細モーダルを実機確認したオーナーから 3 点指示：
+
+> ・緑のチェックマークは不要
+> ・複数の選択肢を選んで打診に飛べるルートも作って（フッターに固定の「打診に進む」、こちら側 / 相手側の手持ちが足りなくなる組合せはアラート）
+> ・実線と点線が今は実質意味をなしてないので、全部実線に
+
+### 変更内容
+
+#### A. 緑チェックマーク削除
+- OptionRow ヘッダーから ✅ バッジ撤廃
+- 成立 / 未成立は **枠色 + opacity** のみで表現（成立=紫枠、未成立=薄い灰枠+opacity 0.6）
+
+#### B. 線を全部実線に
+- SVG line の `strokeDasharray` を撤廃（条件分岐廃止）
+- すべて `strokeWidth=1.8` の実線、選択中は 2.4px に強調
+- opacity だけで「成立 / 未成立 / 選択中」を区別
+
+#### C. 複数選択肢トグル + フッター「打診に進む」 CTA
+
+**Modal state**：
+```ts
+selected: { listingId: string; optionIds: Set<string> } | null
+```
+1 listing 内では複数選択可能、別 listing にまたがる選択は禁止（選択リセット）
+
+**OptionRow**：タップで toggle、選択中は紫太枠 + 背景 tint + 右端に紫レ点バッジ
+
+**フッター CTA**：選択肢が 1 つ以上で出現
+- 「この N 件の選択肢で打診に進む →」
+- 「選択をクリア」リンク
+- リンク：`/propose/[partnerId]?listing={id}&options=p1,p2,...&matchType=...`
+
+#### D. 在庫オーバーチェック
+
+各選択肢の有効化前に「自分が出す総量 vs 自分の在庫」を計算：
+```
+required[itemId] =
+  Σ (listing.perOptionMyCommitment[itemId].qty × N)  ← 私の listing なら haves × N
+  + Σ option.myAdditionalCommitments[itemId].qty     ← 相手の listing の場合の per-option my inv
+```
+`required > myInventoryQty[itemId]` ならアラート表示で toggle 拒否：
+```
+⚠️ 自分の在庫が足りません（必要 ×N / 在庫 ×M）。選択肢を減らすか、別の組合せを試してください。
+```
+4 秒で自動消去。
+
+#### E. データモデル拡張
+- `MatchCardData.myInventoryQty: Record<string, number>` 追加（自分 inv → quantity）
+- `MatchCardListingInfo` に：
+  - `isMyListing: boolean`
+  - `perOptionMyCommitment: { itemId, qty }[]` — 自分 listing の haves（共通、選択肢ごとに乗算）
+- `MatchCardOption` に：
+  - `myAdditionalCommitments: { itemId, qty }[]` — 相手 listing の場合の per-option 私の inv
+
+#### F. propose page.tsx：複数 options クエリ受け取り
+
+`searchParams.options=1,2,3` 形式に対応。後方互換で既存 `option=N` も維持。
+
+集計ロジック：
+- 私の listing：`haves × N` を sender に、各 option の wishes に該当する partner inv を receiver に
+- 相手の listing：逆方向
+
+cash オプション：単独なら従来の cash モード、組合せの一部なら通常打診（cash 部分は無視 + cashOffer 情報だけ伝搬）
+
+### 影響範囲
+
+- 詳細モーダル：UX 大幅改善（複数選択肢 + 在庫チェック）
+- 打診画面：複数 options 対応
+- HomeView：myInventoryQty を渡す
+- page.tsx：goods_inventory.quantity を select に追加
+
+### 設計判断
+
+- **1 listing 内のみ複数選択**：別 listing にまたがる組合せは概念的に複雑（「異なる募集をまとめて打診」になる）ので禁止
+- **在庫チェック on toggle**：実際に有効化を試みた瞬間にチェックして拒否、UI で迷わせない
+- **アラートは 4 秒で消える**：エラーは一時的に見せて、すぐに次のアクションに進ませる
+- **線は全部実線**：オーナー指摘通り、点線/実線の意味が曖昧だった。opacity で「成立/未成立/選択中」を表現
+
+### 関連ファイル
+
+- `web/src/components/home/MatchDetailModal.tsx`（複数選択肢トグル + 在庫チェック + 線統一 + フッター CTA）
+- `web/src/components/home/MatchCard.tsx`（type 拡張 + Modal props 追加）
+- `web/src/components/home/HomeView.tsx`（matchToCard で commitments 計算 + myInventoryQty 受け渡し）
+- `web/src/app/page.tsx`（goods_inventory.quantity fetch + myInventoryQty 構築）
+- `web/src/app/propose/[partnerId]/page.tsx`（options クエリで複数選択肢集計）
+
+---
+
 ## イテレーション67.7：詳細モーダルのコンパクト化 + 選択肢から打診プリフィル + 定価交換打診
 
 ### 背景

@@ -31,6 +31,12 @@ export type MatchCardOption = {
   cashAmount: number | null;
   matched: boolean;
   wishes: { item: MiniItem; qty: number }[];
+  /**
+   * iter67.8: この選択肢を有効化したときに **追加で** 自分が出すアイテム + qty
+   * - 自分の listing：[]（譲は listing 共通なので listing.perOptionMyCommitment 側で）
+   * - 相手の listing：option.matchedTheirInvIds × wishQtys（私の inv に対応）
+   */
+  myAdditionalCommitments: { itemId: string; qty: number }[];
 };
 
 export type MatchCardListingInfo = {
@@ -38,6 +44,14 @@ export type MatchCardListingInfo = {
   haveLogic: "and" | "or";
   haves: { item: MiniItem; qty: number; matched: boolean }[];
   options: MatchCardOption[];
+  /** iter67.8: 自分が listing オーナーか（true=私の listing / false=相手の listing） */
+  isMyListing: boolean;
+  /**
+   * iter67.8: 1 選択肢を選ぶごとに **追加で** 自分が出すアイテム + qty
+   * - 自分の listing：listing.haveIds × listing.haveQtys（共通）
+   * - 相手の listing：[]（私の譲は option ごとに違う）
+   */
+  perOptionMyCommitment: { itemId: string; qty: number }[];
 };
 
 export type MatchCardData = {
@@ -56,6 +70,11 @@ export type MatchCardData = {
   partnerMatchedListings?: MatchCardListingInfo[];
   /** 現地モード ON 時の距離テキスト（例「約 250m」「約 1.2km」） */
   distanceText?: string;
+  /**
+   * iter67.8：詳細モーダルでの在庫オーバーチェック用。
+   * 自分の inv id → 在庫数（quantity）の Map
+   */
+  myInventoryQty?: Record<string, number>;
 };
 
 const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
@@ -215,6 +234,7 @@ function ListingMatchCard({ card }: { card: MatchCardData }) {
           matchType={card.matchType}
           myListings={card.myMatchedListings ?? []}
           partnerListings={card.partnerMatchedListings ?? []}
+          myInventoryQty={card.myInventoryQty ?? {}}
           onClose={() => setModalOpen(false)}
         />
       )}

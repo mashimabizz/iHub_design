@@ -108,7 +108,7 @@ export default async function Home({ searchParams }: Props) {
   }
 
   const goodsSelect =
-    "id, user_id, group_id, character_id, character_request_id, goods_type_id, title, photo_urls, exchange_type, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)";
+    "id, user_id, group_id, character_id, character_request_id, goods_type_id, title, photo_urls, quantity, exchange_type, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)";
 
   // ログイン中：マッチング演算に必要なデータを並列取得
   const [
@@ -224,6 +224,11 @@ export default async function Home({ searchParams }: Props) {
   const myInventory = ((myInventoryRaw as GoodsRow[]) ?? [])
     .map(toMatchInv)
     .filter((x): x is MatchInv => !!x);
+  // iter67.8: 在庫オーバーチェック用（モーダルで使用）
+  const myInventoryQty: Record<string, number> = {};
+  for (const r of (myInventoryRaw as (GoodsRow & { quantity?: number })[]) ?? []) {
+    myInventoryQty[r.id] = (r.quantity as number | undefined) ?? 1;
+  }
   const myWishes = ((myWishesRaw as GoodsRow[]) ?? [])
     .map(toMatchInv)
     .filter((x): x is MatchInv => !!x);
@@ -487,6 +492,7 @@ export default async function Home({ searchParams }: Props) {
         partnersWishes={Array.from(partnersMap.values()).flatMap(
           (p) => p.wishes,
         )}
+        myInventoryQty={myInventoryQty}
       />
       <BottomNav />
     </>

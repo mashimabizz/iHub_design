@@ -51,6 +51,8 @@ type Props = {
     listing?: string;
     /** iter67.7: その listing の選択肢 position（1〜5） */
     option?: string;
+    /** iter67.8: 複数選択肢の position をカンマ区切りで指定（"1,2,3" など） */
+    options?: string;
   }>;
 };
 
@@ -60,6 +62,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
     matchType: matchTypeRaw,
     listing: listingIdRaw,
     option: optionRaw,
+    options: optionsRaw,
   } = await searchParams;
 
   const supabase = await createClient();
@@ -194,119 +197,161 @@ export default async function ProposePage({ params, searchParams }: Props) {
   } | null;
   let initial: Initial = null;
 
-  if (listingIdRaw && optionRaw) {
-    const optionPos = parseInt(optionRaw, 10);
-    if (Number.isFinite(optionPos) && optionPos >= 1 && optionPos <= 5) {
-      // listing と該当 option を fetch（自分の listing or 相手の listing を区別せず両方試す）
-      const [{ data: listingRow }, { data: optionRow }] = await Promise.all([
-        supabase
-          .from("listings")
-          .select("id, user_id, have_ids, have_qtys, status")
-          .eq("id", listingIdRaw)
-          .maybeSingle(),
-        supabase
-          .from("listing_wish_options")
-          .select(
-            "id, listing_id, position, wish_ids, wish_qtys, is_cash_offer, cash_amount",
-          )
-          .eq("listing_id", listingIdRaw)
-          .eq("position", optionPos)
-          .maybeSingle(),
-      ]);
+  /**
+   * iter67.8: 単一 (option=N) と 複数 (options=1,2,3) の両方に対応。
+   * 単一の場合は options に変換して同じ処理を通す。
+   */
+  const positions: number[] = [];
+  if (optionsRaw) {
+    for (const p of optionsRaw.split(",").map((s) => parseInt(s.trim(), 10))) {
+      if (Number.isFinite(p) && p >= 1 && p <= 5 && !positions.includes(p)) {
+        positions.push(p);
+      }
+    }
+  } else if (optionRaw) {
+    const p = parseInt(optionRaw, 10);
+    if (Number.isFinite(p) && p >= 1 && p <= 5) positions.push(p);
+  }
 
-      if (listingRow && optionRow) {
-        const isMyListing = listingRow.user_id === user.id;
+  if (listingIdRaw && positions.length > 0) {
+    const [{ data: listingRow }, { data: optionRows }] = await Promise.all([
+      supabase
+        .from("listings")
+        .select("id, user_id, have_ids, have_qtys, status")
+        .eq("id", listingIdRaw)
+        .maybeSingle(),
+      supabase
+        .from("listing_wish_options")
+        .select(
+          "id, listing_id, position, wish_ids, wish_qtys, is_cash_offer, cash_amount",
+        )
+        .eq("listing_id", listingIdRaw)
+        .in("position", positions)
+        .order("position", { ascending: true }),
+    ]);
+
+    if (listingRow && optionRows && optionRows.length > 0) {
+      const isMyListing = listingRow.user_id === user.id;
+      const isPartnerListing = listingRow.user_id === partnerId;
+
+      if (isMyListing || isPartnerListing) {
         const haveIds = (listingRow.have_ids as string[]) ?? [];
         const haveQtys = (listingRow.have_qtys as number[]) ?? [];
-        const wishIds = (optionRow.wish_ids as string[]) ?? [];
-        const wishQtys = (optionRow.wish_qtys as number[]) ?? [];
+        const N = optionRows.length;
+        const cashOpt = optionRows.find(
+          (o) => o.is_cash_offer,
+        ) as { cash_amount: number } | undefined;
+
+        // 集計用 Map（itemId → qty）
+        const senderAgg = new Map<string, number>();
+        const receiverAgg = new Map<string, number>();
 
         if (isMyListing) {
-          // 自分の listing: senderHave = listing.haves、receiverHave = option.wishes に対応する相手の譲
-          const matchedTheirIds: string[] = [];
-          const matchedTheirQtys: number[] = [];
-          for (let i = 0; i < wishIds.length; i++) {
-            const myWish = myWishes.find((w) => w.id === wishIds[i]);
-            if (!myWish) continue;
-            const partnerHits = theirInvWithFlag.filter((t) => {
-              if (t.goodsTypeId !== myWish.goodsTypeId) return false;
-              if (myWish.characterId && t.characterId)
-                return myWish.characterId === t.characterId;
-              return (
-                !!myWish.groupId &&
-                !!t.groupId &&
-                myWish.groupId === t.groupId
-              );
-            });
-            for (const h of partnerHits) {
-              if (!matchedTheirIds.includes(h.id)) {
-                matchedTheirIds.push(h.id);
-                matchedTheirQtys.push(wishQtys[i] ?? 1);
+          // 私の listing：私が出す = haveIds × N、私が受け取る = 各 option の wishes に対応する相手 inv
+          for (const id of haveIds) {
+            const i = haveIds.indexOf(id);
+            const baseQty = haveQtys[i] ?? 1;
+            senderAgg.set(id, (senderAgg.get(id) ?? 0) + baseQty * N);
+          }
+          for (const opt of optionRows) {
+            if (opt.is_cash_offer) continue;
+            const wishIds = (opt.wish_ids as string[]) ?? [];
+            const wishQtys = (opt.wish_qtys as number[]) ?? [];
+            for (let i = 0; i < wishIds.length; i++) {
+              const myWish = myWishes.find((w) => w.id === wishIds[i]);
+              if (!myWish) continue;
+              const partnerHits = theirInvWithFlag.filter((t) => {
+                if (t.goodsTypeId !== myWish.goodsTypeId) return false;
+                if (myWish.characterId && t.characterId)
+                  return myWish.characterId === t.characterId;
+                return (
+                  !!myWish.groupId &&
+                  !!t.groupId &&
+                  myWish.groupId === t.groupId
+                );
+              });
+              for (const h of partnerHits) {
+                receiverAgg.set(
+                  h.id,
+                  (receiverAgg.get(h.id) ?? 0) + (wishQtys[i] ?? 1),
+                );
               }
             }
           }
-          if (optionRow.is_cash_offer) {
+        } else {
+          // 相手の listing：私が受け取る = haveIds × N、私が出す = 各 option の wishes に対応する私の inv
+          for (const id of haveIds) {
+            const i = haveIds.indexOf(id);
+            const baseQty = haveQtys[i] ?? 1;
+            receiverAgg.set(id, (receiverAgg.get(id) ?? 0) + baseQty * N);
+          }
+          for (const opt of optionRows) {
+            if (opt.is_cash_offer) continue;
+            const wishIds = (opt.wish_ids as string[]) ?? [];
+            const wishQtys = (opt.wish_qtys as number[]) ?? [];
+            for (let i = 0; i < wishIds.length; i++) {
+              const theirWish = theirWishes.find((w) => w.id === wishIds[i]);
+              if (!theirWish) continue;
+              const myHits = myInvWithFlag.filter((m) => {
+                if (m.goodsTypeId !== theirWish.goodsTypeId) return false;
+                if (theirWish.characterId && m.characterId)
+                  return theirWish.characterId === m.characterId;
+                return (
+                  !!theirWish.groupId &&
+                  !!m.groupId &&
+                  theirWish.groupId === m.groupId
+                );
+              });
+              for (const h of myHits) {
+                senderAgg.set(
+                  h.id,
+                  (senderAgg.get(h.id) ?? 0) + (wishQtys[i] ?? 1),
+                );
+              }
+            }
+          }
+        }
+
+        const senderHaveIds = Array.from(senderAgg.keys());
+        const senderHaveQtys = senderHaveIds.map((id) => senderAgg.get(id)!);
+        const receiverHaveIds = Array.from(receiverAgg.keys());
+        const receiverHaveQtys = receiverHaveIds.map(
+          (id) => receiverAgg.get(id)!,
+        );
+
+        if (cashOpt && optionRows.length === 1) {
+          // 唯一の選択肢が定価交換 → 通常の cash 打診
+          if (isMyListing) {
             initial = {
               senderHaveIds: haveIds,
               senderHaveQtys: haveQtys,
               receiverHaveIds: [],
               receiverHaveQtys: [],
-              cashOffer: { amount: optionRow.cash_amount as number },
+              cashOffer: { amount: cashOpt.cash_amount },
               listingId: listingRow.id,
             };
           } else {
-            initial = {
-              senderHaveIds: haveIds,
-              senderHaveQtys: haveQtys,
-              receiverHaveIds: matchedTheirIds,
-              receiverHaveQtys: matchedTheirQtys,
-              listingId: listingRow.id,
-            };
-          }
-        } else if (listingRow.user_id === partnerId) {
-          // 相手の listing: senderHave = option.wishes に対応する **私の譲**、receiverHave = listing.haves（相手側）
-          const matchedMyIds: string[] = [];
-          const matchedMyQtys: number[] = [];
-          for (let i = 0; i < wishIds.length; i++) {
-            const theirWish = theirWishes.find((w) => w.id === wishIds[i]);
-            if (!theirWish) continue;
-            const myHits = myInvWithFlag.filter((m) => {
-              if (m.goodsTypeId !== theirWish.goodsTypeId) return false;
-              if (theirWish.characterId && m.characterId)
-                return theirWish.characterId === m.characterId;
-              return (
-                !!theirWish.groupId &&
-                !!m.groupId &&
-                theirWish.groupId === m.groupId
-              );
-            });
-            for (const h of myHits) {
-              if (!matchedMyIds.includes(h.id)) {
-                matchedMyIds.push(h.id);
-                matchedMyQtys.push(wishQtys[i] ?? 1);
-              }
-            }
-          }
-          if (optionRow.is_cash_offer) {
-            // 相手 listing の cash 選択肢：相手が金銭を求めている = 私が金銭を出して相手の haves を受け取る
-            // 私の譲 = 金銭、私が受け取る = 相手の haves（listing.have_ids）
             initial = {
               senderHaveIds: [],
               senderHaveQtys: [],
               receiverHaveIds: haveIds,
               receiverHaveQtys: haveQtys,
-              cashOffer: { amount: optionRow.cash_amount as number },
-              listingId: listingRow.id,
-            };
-          } else {
-            initial = {
-              senderHaveIds: matchedMyIds,
-              senderHaveQtys: matchedMyQtys,
-              receiverHaveIds: haveIds,
-              receiverHaveQtys: haveQtys,
+              cashOffer: { amount: cashOpt.cash_amount },
               listingId: listingRow.id,
             };
           }
+        } else {
+          // 通常 or cash 含む組合せ
+          initial = {
+            senderHaveIds,
+            senderHaveQtys,
+            receiverHaveIds,
+            receiverHaveQtys,
+            cashOffer: cashOpt
+              ? { amount: cashOpt.cash_amount }
+              : undefined,
+            listingId: listingRow.id,
+          };
         }
       }
     }

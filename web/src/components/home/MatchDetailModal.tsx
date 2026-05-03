@@ -1,20 +1,23 @@
 "use client";
 
 /**
- * iter67.7：個別募集（listings）経由マッチの **関係図モーダル**（コンパクト版）。
+ * iter67.8：個別募集（listings）経由マッチの **関係図モーダル**。
  *
- * レイアウト方針：
- * - 左カラム：listing.haves を **1 度だけ** 固定表示（共通の譲）
- * - 右カラム：選択肢を縦に並べて表示（成立優先 → 未成立は opacity 0.6）
- * - SVG 線：左カラム中心 → 各選択肢に向けて延びる
- *   - 実線（solid）= AND
- *   - 点線（dashed）= OR or 未成立
- * - 各選択肢の右に **小さな「打診→」ボタン**（タップで /propose/[partnerId]?listing=...&option=...）
- * - 定価交換選択肢にも打診ボタン（金銭授受モードで打診送信）
+ * 主な変更点（iter67.7 から）：
+ * - **複数選択肢トグル**：各選択肢タップで有効化／解除。1 つ以上有効化すると
+ *   フッター固定の「打診に進む（n 件選択中）」ボタンが出現
+ * - **在庫オーバーチェック**：選択中の組合せで自分が出すべき総量が在庫を超えると
+ *   そのトグルを抑制 + アラート表示
+ * - **線は全部実線**（実線/点線の意味区別なし）
+ * - **緑チェック削除**：成立／未成立は枠色 + opacity でのみ表現
+ *
+ * レイアウト：
+ *   左カラム：listing.haves（共通、1 度だけ）
+ *   右カラム：選択肢縦並び（成立優先 → 未成立は薄く）
  */
 
-import { useEffect } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type {
   MatchCardListingInfo,
   MatchCardOption,
@@ -23,9 +26,10 @@ import type {
 
 const HAVE_W = 64;
 const HAVE_H = 84;
-const OPT_H = 64; // 各選択肢の縦サイズ
+const OPT_H = 64;
 const OPT_GAP = 8;
-const SVG_W = 56; // 左→右の SVG 幅
+const SVG_W = 56;
+const RIGHT_W = 240;
 
 const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
   same_kind: "同種",
@@ -39,6 +43,7 @@ export function MatchDetailModal({
   matchType,
   myListings,
   partnerListings,
+  myInventoryQty,
   onClose,
 }: {
   partnerHandle: string;
@@ -46,8 +51,24 @@ export function MatchDetailModal({
   matchType: "complete" | "they_want_you" | "you_want_them";
   myListings: MatchCardListingInfo[];
   partnerListings: MatchCardListingInfo[];
+  myInventoryQty: Record<string, number>;
   onClose: () => void;
 }) {
+  const router = useRouter();
+
+  /**
+   * 選択された option id の集合。listing 単位で個別に管理：
+   *   selected[listingId] = Set<optionId>
+   * 異なる listing にまたがる選択は禁止（同 listing 内のみ複数選べる）
+   * → 単純化：1 listing しか選択できない state にする
+   */
+  const [selected, setSelected] = useState<{
+    listingId: string;
+    optionIds: Set<string>;
+  } | null>(null);
+
+  const [alertMsg, setAlertMsg] = useState<string | null>(null);
+
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -55,6 +76,106 @@ export function MatchDetailModal({
       document.body.style.overflow = prev;
     };
   }, []);
+
+  const allListings = useMemo(
+    () => [
+      ...myListings.map((l) => ({ kind: "mine" as const, listing: l })),
+      ...partnerListings.map((l) => ({
+        kind: "partner" as const,
+        listing: l,
+      })),
+    ],
+    [myListings, partnerListings],
+  );
+
+  /**
+   * ある listing で option を toggle するとき、追加した結果の総量を計算して
+   * 自分の在庫を超えるかチェック。
+   *
+   * @returns OK = null / NG = 警告メッセージ
+   */
+  function checkAndToggle(
+    listing: MatchCardListingInfo,
+    optionId: string,
+  ): string | null {
+    // 別 listing が選択中なら state をリセット
+    let next: Set<string>;
+    if (selected && selected.listingId !== listing.listingId) {
+      next = new Set([optionId]);
+    } else {
+      next = new Set(selected?.optionIds ?? []);
+      if (next.has(optionId)) {
+        next.delete(optionId);
+      } else {
+        next.add(optionId);
+      }
+    }
+
+    if (next.size === 0) {
+      setSelected(null);
+      return null;
+    }
+
+    // 必要量を計算
+    const required: Record<string, number> = {};
+    const N = next.size;
+    // listing 全体の per-option commitment × N
+    for (const c of listing.perOptionMyCommitment) {
+      required[c.itemId] = (required[c.itemId] ?? 0) + c.qty * N;
+    }
+    // 各 option の追加 commitment
+    for (const opt of listing.options) {
+      if (!next.has(opt.id)) continue;
+      for (const c of opt.myAdditionalCommitments) {
+        required[c.itemId] = (required[c.itemId] ?? 0) + c.qty;
+      }
+    }
+
+    // 在庫オーバー検出
+    const overflows: { itemId: string; need: number; have: number }[] = [];
+    for (const itemId of Object.keys(required)) {
+      const need = required[itemId];
+      const have = myInventoryQty[itemId] ?? 0;
+      if (need > have) {
+        overflows.push({ itemId, need, have });
+      }
+    }
+    if (overflows.length > 0) {
+      const first = overflows[0];
+      // アイテム名は modal 内では知らないので、汎用メッセージ
+      return `自分の在庫が足りません（必要 ×${first.need} / 在庫 ×${first.have}）。選択肢を減らすか、別の組合せを試してください。`;
+    }
+
+    setSelected({ listingId: listing.listingId, optionIds: next });
+    return null;
+  }
+
+  function handleToggle(listing: MatchCardListingInfo, optionId: string) {
+    const err = checkAndToggle(listing, optionId);
+    if (err) {
+      setAlertMsg(err);
+      // 3 秒後に alert 自動消去
+      setTimeout(() => setAlertMsg(null), 4000);
+    } else {
+      setAlertMsg(null);
+    }
+  }
+
+  function handleProceed() {
+    if (!selected || selected.optionIds.size === 0) return;
+    const allOpts = [
+      ...myListings.flatMap((l) => l.options),
+      ...partnerListings.flatMap((l) => l.options),
+    ];
+    const positions = Array.from(selected.optionIds)
+      .map((id) => allOpts.find((o) => o.id === id)?.position)
+      .filter((p): p is number => p !== undefined)
+      .sort((a, b) => a - b);
+    const url = `/propose/${partnerId}?matchType=${matchType}&listing=${selected.listingId}&options=${positions.join(",")}`;
+    router.push(url);
+  }
+
+  const selectedCount = selected?.optionIds.size ?? 0;
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
@@ -77,13 +198,25 @@ export function MatchDetailModal({
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-[18px] py-3">
+      <div
+        className={`mx-auto w-full max-w-md flex-1 overflow-y-auto px-[18px] py-3 ${
+          selectedCount > 0 ? "pb-[100px]" : ""
+        }`}
+      >
         <div className="mb-2.5 rounded-[10px] bg-[#a695d810] px-3 py-2 text-[10.5px] leading-relaxed text-[#3a324a]">
           <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9px] font-extrabold tracking-[0.4px] text-[#a695d8]">
             🔗 関係図
           </span>
-          <b>実線</b>＝AND / <b>点線</b>＝OR or 未成立。各選択肢の「打診→」で個別募集の条件で打診できます。
+          選択肢を <b>タップで有効化</b>
+          できます。複数選んで組合せ打診も可能（同じ募集内のみ）。
+          自分の在庫が足りなくなる組合せはアラートで防止します。
         </div>
+
+        {alertMsg && (
+          <div className="mb-2.5 rounded-[10px] border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+            ⚠️ {alertMsg}
+          </div>
+        )}
 
         {myListings.length > 0 && (
           <SectionGroup
@@ -96,8 +229,12 @@ export function MatchDetailModal({
                 key={l.listingId}
                 listing={l}
                 index={idx}
-                partnerId={partnerId}
-                matchType={matchType}
+                selectedOptionIds={
+                  selected?.listingId === l.listingId
+                    ? selected.optionIds
+                    : new Set()
+                }
+                onToggle={(optId) => handleToggle(l, optId)}
               />
             ))}
           </SectionGroup>
@@ -114,8 +251,12 @@ export function MatchDetailModal({
                 key={l.listingId}
                 listing={l}
                 index={idx}
-                partnerId={partnerId}
-                matchType={matchType}
+                selectedOptionIds={
+                  selected?.listingId === l.listingId
+                    ? selected.optionIds
+                    : new Set()
+                }
+                onToggle={(optId) => handleToggle(l, optId)}
               />
             ))}
           </SectionGroup>
@@ -127,6 +268,28 @@ export function MatchDetailModal({
           </div>
         )}
       </div>
+
+      {/* フッター固定の「打診に進む」 CTA */}
+      {selectedCount > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-[110] border-t border-[#3a324a14] bg-white/95 px-[18px] pb-7 pt-3 backdrop-blur-xl">
+          <div className="mx-auto w-full max-w-md">
+            <button
+              type="button"
+              onClick={handleProceed}
+              className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-sm font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] active:scale-[0.97]"
+            >
+              この {selectedCount} 件の選択肢で打診に進む →
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="mt-1 block w-full text-center text-[10.5px] text-[#3a324a8c]"
+            >
+              選択をクリア
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -164,20 +327,19 @@ function SectionGroup({
   );
 }
 
-/* ─── 1 listing 分の関係図（コンパクト版） ─── */
+/* ─── 1 listing 分の関係図 ─── */
 
 function ListingDiagram({
   listing,
   index,
-  partnerId,
-  matchType,
+  selectedOptionIds,
+  onToggle,
 }: {
   listing: MatchCardListingInfo;
   index: number;
-  partnerId: string;
-  matchType: "complete" | "they_want_you" | "you_want_them";
+  selectedOptionIds: Set<string>;
+  onToggle: (optionId: string) => void;
 }) {
-  // 成立優先で並び替え
   const sortedOptions = [...listing.options].sort((a, b) => {
     if (a.matched !== b.matched) return a.matched ? -1 : 1;
     return a.position - b.position;
@@ -190,7 +352,6 @@ function ListingDiagram({
   );
   const haveAnchorY = containerH / 2;
 
-  // matched have id 集合
   const matchedHaveIds = new Set(
     listing.haves.filter((h) => h.matched).map((h) => h.item.id),
   );
@@ -226,22 +387,19 @@ function ListingDiagram({
         <div
           className="relative mx-auto"
           style={{
-            width: HAVE_W + SVG_W + 240,
+            width: HAVE_W + SVG_W + RIGHT_W,
             height: containerH,
           }}
         >
-          {/* SVG 線 */}
+          {/* SVG 線（全部実線、iter67.8） */}
           <svg
-            width={HAVE_W + SVG_W + 240}
+            width={HAVE_W + SVG_W + RIGHT_W}
             height={containerH}
             className="pointer-events-none absolute left-0 top-0"
           >
             {sortedOptions.map((opt, i) => {
               const y2 = optionYs[i];
-              // 線スタイル：成立 + AND → 実線 / 成立 + OR → 点線 / 未成立 → 薄い点線 / cash → 短い点線
-              const isAnd = opt.logic === "and";
-              const dashed = !opt.matched || !isAnd;
-              const opacity = opt.matched ? 0.85 : 0.3;
+              const isSelected = selectedOptionIds.has(opt.id);
               return (
                 <line
                   key={opt.id}
@@ -249,17 +407,18 @@ function ListingDiagram({
                   y1={haveAnchorY}
                   x2={HAVE_W + SVG_W}
                   y2={y2}
-                  stroke="#a695d8"
-                  strokeWidth={!dashed ? 2 : 1.5}
-                  strokeDasharray={dashed ? "5 4" : undefined}
+                  stroke={isSelected ? "#a695d8" : "#a695d8"}
+                  strokeWidth={isSelected ? 2.4 : 1.8}
                   strokeLinecap="round"
-                  opacity={opacity}
+                  opacity={
+                    isSelected ? 0.95 : opt.matched ? 0.7 : 0.35
+                  }
                 />
               );
             })}
           </svg>
 
-          {/* 左カラム：listing.haves（共通） */}
+          {/* 左カラム：listing.haves */}
           <div
             className="absolute left-0 flex flex-col items-center justify-center gap-1"
             style={{
@@ -312,15 +471,14 @@ function ListingDiagram({
               style={{
                 left: HAVE_W + SVG_W,
                 top: i * (OPT_H + OPT_GAP),
-                width: 240,
+                width: RIGHT_W,
                 height: OPT_H,
               }}
             >
               <OptionRow
                 option={opt}
-                listingId={listing.listingId}
-                partnerId={partnerId}
-                matchType={matchType}
+                isSelected={selectedOptionIds.has(opt.id)}
+                onToggle={() => onToggle(opt.id)}
               />
             </div>
           ))}
@@ -330,100 +488,102 @@ function ListingDiagram({
   );
 }
 
-/* ─── 各選択肢 1 行（横長） ─── */
+/* ─── 各選択肢 1 行（タップで toggle） ─── */
 
 function OptionRow({
   option,
-  listingId,
-  partnerId,
-  matchType,
+  isSelected,
+  onToggle,
 }: {
   option: MatchCardOption;
-  listingId: string;
-  partnerId: string;
-  matchType: "complete" | "they_want_you" | "you_want_them";
+  isSelected: boolean;
+  onToggle: () => void;
 }) {
   return (
-    <div
-      className={`flex h-full w-full items-center gap-2 rounded-[10px] border bg-white px-2 py-1.5 ${
-        option.matched
-          ? "border-[#a695d8]"
-          : "border-[#3a324a14] bg-[#fbf9fc]"
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`flex h-full w-full items-center gap-2 rounded-[10px] border bg-white px-2 py-1.5 text-left transition-all active:scale-[0.98] ${
+        isSelected
+          ? "border-[2px] border-[#a695d8] bg-[#a695d80f] shadow-[0_4px_10px_rgba(166,149,216,0.25)]"
+          : option.matched
+            ? "border-[#a695d855]"
+            : "border-[#3a324a14] bg-[#fbf9fc]"
       }`}
     >
-      {/* 求アイテム表示 or cash 表示 */}
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
-        {option.isCashOffer ? (
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-[#7a9a8a55] bg-[#7a9a8a14] text-[16px]">
-            💴
-          </div>
-        ) : (
-          <div className="flex flex-shrink-0 gap-0.5">
-            {option.wishes.slice(0, 2).map((w) => (
-              <ItemThumb
-                key={w.item.id}
-                item={w.item}
-                qty={w.qty}
-                kind="wish"
-              />
-            ))}
-            {option.wishes.length > 2 && (
-              <span className="self-center text-[8.5px] text-[#3a324a8c]">
-                +{option.wishes.length - 2}
-              </span>
-            )}
-          </div>
-        )}
-
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1 text-[9.5px]">
-            <span className="rounded-full bg-[#3a324a08] px-1 py-[1px] font-extrabold text-[#3a324a8c]">
-              #{option.position}
+      {option.isCashOffer ? (
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-[#7a9a8a55] bg-[#7a9a8a14] text-[16px]">
+          💴
+        </div>
+      ) : (
+        <div className="flex flex-shrink-0 gap-0.5">
+          {option.wishes.slice(0, 2).map((w) => (
+            <ItemThumb
+              key={w.item.id}
+              item={w.item}
+              qty={w.qty}
+              kind="wish"
+            />
+          ))}
+          {option.wishes.length > 2 && (
+            <span className="self-center text-[8.5px] text-[#3a324a8c]">
+              +{option.wishes.length - 2}
             </span>
-            {!option.isCashOffer && (
-              <span className="rounded-full border border-[#a695d855] bg-white px-1 py-[1px] font-bold text-[#a695d8]">
-                {EXCHANGE_LABEL[option.exchangeType]}
-              </span>
-            )}
-            {!option.isCashOffer && option.wishes.length > 1 && (
-              <span
-                className={`rounded-full px-1 py-[1px] font-extrabold ${
-                  option.logic === "and"
-                    ? "bg-[#a695d8] text-white"
-                    : "border border-[#a695d855] bg-white text-[#a695d8]"
-                }`}
-              >
-                {option.logic === "and" ? "AND" : "OR"}
-              </span>
-            )}
-            {option.matched && (
-              <span className="rounded-full bg-emerald-500 px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
-                ✅
-              </span>
-            )}
-          </div>
-          <div className="mt-0.5 truncate text-[10px] font-bold text-[#3a324a]">
-            {option.isCashOffer
-              ? `¥${option.cashAmount?.toLocaleString() ?? "—"}`
-              : option.wishes
-                  .map((w) => `${w.item.label} ×${w.qty}`)
-                  .join(" / ")}
-          </div>
+          )}
+        </div>
+      )}
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1 text-[9.5px]">
+          <span className="rounded-full bg-[#3a324a08] px-1 py-[1px] font-extrabold text-[#3a324a8c]">
+            #{option.position}
+          </span>
+          {!option.isCashOffer && (
+            <span className="rounded-full border border-[#a695d855] bg-white px-1 py-[1px] font-bold text-[#a695d8]">
+              {EXCHANGE_LABEL[option.exchangeType]}
+            </span>
+          )}
+          {!option.isCashOffer && option.wishes.length > 1 && (
+            <span
+              className={`rounded-full px-1 py-[1px] font-extrabold ${
+                option.logic === "and"
+                  ? "bg-[#a695d8] text-white"
+                  : "border border-[#a695d855] bg-white text-[#a695d8]"
+              }`}
+            >
+              {option.logic === "and" ? "AND" : "OR"}
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 truncate text-[10px] font-bold text-[#3a324a]">
+          {option.isCashOffer
+            ? `¥${option.cashAmount?.toLocaleString() ?? "—"}`
+            : option.wishes
+                .map((w) => `${w.item.label} ×${w.qty}`)
+                .join(" / ")}
         </div>
       </div>
 
-      {/* スタイリッシュな打診ボタン */}
-      <Link
-        href={`/propose/${partnerId}?matchType=${matchType}&listing=${listingId}&option=${option.position}`}
-        className="flex-shrink-0 rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-2 py-1 text-[10px] font-extrabold text-white shadow-[0_2px_5px_rgba(166,149,216,0.4)] active:scale-[0.95]"
-      >
-        打診→
-      </Link>
-    </div>
+      {/* 選択済みインジケータ（緑チェック → 紫レ点に変更） */}
+      {isSelected && (
+        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#a695d8] text-white shadow-[0_2px_5px_rgba(166,149,216,0.45)]">
+          <svg width="11" height="11" viewBox="0 0 11 11">
+            <path
+              d="M2 5.5L4.5 8L9 3"
+              stroke="#fff"
+              strokeWidth="2"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      )}
+    </button>
   );
 }
 
-/* ─── 小さなアイテムサムネ（ListingMatchCard から流用、ミニ版） ─── */
+/* ─── 小さなアイテムサムネ ─── */
 
 function ItemThumb({
   item,
@@ -443,9 +603,7 @@ function ItemThumb({
   return (
     <div
       className={`relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-md border shadow-[0_1px_3px_rgba(58,50,74,0.15)] ${
-        kind === "have"
-          ? "border-[#a8d4e6]"
-          : "border-[#f3c5d4]"
+        kind === "have" ? "border-[#a8d4e6]" : "border-[#f3c5d4]"
       }`}
       style={{
         width: W,
