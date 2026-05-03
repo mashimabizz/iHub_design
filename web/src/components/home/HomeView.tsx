@@ -221,6 +221,7 @@ export function HomeView({
   partnersInventory,
   partnersWishes,
   myInventoryQty,
+  unreadNotificationCount = 0,
 }: {
   profile: { handle: string; display_name: string } | null;
   localMode: LocalModeSettings | null;
@@ -235,6 +236,8 @@ export function HomeView({
   partnersWishes: MatchInv[];
   /** 自分の inv id → quantity（在庫オーバーチェック用、iter67.8） */
   myInventoryQty: Record<string, number>;
+  /** iter92: 通知の未読数（ホームヘッダーのベルバッジ用） */
+  unreadNotificationCount?: number;
 }) {
   const [tab, setTab] = useState(0);
 
@@ -383,22 +386,32 @@ export function HomeView({
                 <path d="M9.5 9.5L13 13" />
               </svg>
             </Link>
-            <button
-              type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white shadow-sm"
-              aria-label="フィルタ"
+            <Link
+              href="/notifications"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white shadow-sm"
+              aria-label="通知"
             >
               <svg
-                width="14"
-                height="14"
-                viewBox="0 0 14 14"
+                width="15"
+                height="15"
+                viewBox="0 0 15 15"
                 fill="none"
                 stroke="#3a324a"
                 strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <path d="M2 4h10M3.5 7h7M5 10h4" strokeLinecap="round" />
+                <path d="M3.5 6a4 4 0 018 0v3l1 2H2.5l1-2V6z" />
+                <path d="M6 13.5a1.5 1.5 0 003 0" />
               </svg>
-            </button>
+              {unreadNotificationCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[#d9826b] px-1 text-[9px] font-extrabold tabular-nums text-white">
+                  {unreadNotificationCount > 99
+                    ? "99+"
+                    : unreadNotificationCount}
+                </span>
+              )}
+            </Link>
           </div>
         </div>
 

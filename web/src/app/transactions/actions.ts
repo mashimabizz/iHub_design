@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createNotification } from "@/lib/notify";
 
 type ActionResult = { error?: string; redirectTo?: string } | undefined;
 
@@ -622,6 +623,24 @@ export async function requestTradeCancel(input: {
       reason: input.reason,
       note: input.note ?? null,
     },
+  });
+
+  // iter92: 相手に通知センター通知
+  const counterpartId =
+    prop.sender_id === user.id ? prop.receiver_id : prop.sender_id;
+  const { data: meUser } = await supabase
+    .from("users")
+    .select("handle")
+    .eq("id", user.id)
+    .maybeSingle();
+  const meHandle = (meUser?.handle as string | undefined) ?? "?";
+  await createNotification(supabase, {
+    userId: counterpartId,
+    kind: "cancel_requested",
+    title: `@${meHandle} がキャンセルを要請しました`,
+    body: `理由：${input.reason}`,
+    linkPath: `/transactions/${input.proposalId}`,
+    proposalId: input.proposalId,
   });
 
   revalidatePath(`/transactions/${input.proposalId}`);

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createNotification } from "@/lib/notify";
 
 type ActionResult = { error?: string; disputeId?: string } | undefined;
 
@@ -132,6 +133,24 @@ export async function submitDispute(input: {
     meta: { action: "dispute_submitted", dispute_id: created.id },
   });
 
+  // iter92: respondent に「申告を受けた」通知
+  const { data: reporterUser } = await supabase
+    .from("users")
+    .select("handle")
+    .eq("id", user.id)
+    .maybeSingle();
+  const reporterHandle =
+    (reporterUser?.handle as string | undefined) ?? "?";
+  await createNotification(supabase, {
+    userId: respondentId,
+    kind: "dispute_received",
+    title: `@${reporterHandle} から申告がありました（${ticketNo}）`,
+    body: "回答期限は 24 時間以内です。早めに確認してください。",
+    linkPath: `/disputes/${created.id}`,
+    proposalId: input.proposalId,
+    disputeId: created.id,
+  });
+
   revalidatePath(`/transactions/${input.proposalId}`);
   revalidatePath(`/transactions/${input.proposalId}/approve`);
   revalidatePath("/disputes");
@@ -256,6 +275,17 @@ export async function respondToDispute(input: {
       message_type: "system",
       body: `⚖️ 申告 ${dispute.ticket_no} に反論が提出されました。運営による仲裁が開始されます`,
       meta: { action: "dispute_responded", dispute_id: dispute.id },
+    });
+
+    // iter92: 申告者に「反論あり」通知
+    await createNotification(supabase, {
+      userId: dispute.reporter_id as string,
+      kind: "dispute_responded",
+      title: `申告 ${dispute.ticket_no} に反論が届きました`,
+      body: "運営による仲裁が開始されます",
+      linkPath: `/disputes/${dispute.id}`,
+      proposalId: dispute.proposal_id as string,
+      disputeId: dispute.id as string,
     });
   }
 

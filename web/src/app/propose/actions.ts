@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createNotification } from "@/lib/notify";
 
 type ActionResult = { error?: string; proposalId?: string } | undefined;
 
@@ -119,8 +120,24 @@ export async function createProposal(input: {
 
   if (error || !data) return { error: error?.message ?? "送信に失敗しました" };
 
+  // iter92: 受信者に通知
+  const { data: senderUser } = await supabase
+    .from("users")
+    .select("handle")
+    .eq("id", user.id)
+    .maybeSingle();
+  const senderHandle = (senderUser?.handle as string | undefined) ?? "?";
+  await createNotification(supabase, {
+    userId: input.receiverId,
+    kind: "proposal_received",
+    title: `@${senderHandle} から打診が届きました`,
+    body: input.message.slice(0, 100),
+    linkPath: `/proposals/${data.id}`,
+    proposalId: data.id,
+  });
+
   revalidatePath("/");
-  revalidatePath("/proposals");
+  revalidatePath("/transactions");
   return { proposalId: data.id };
 }
 
@@ -313,8 +330,24 @@ export async function reviseProposal(input: {
     meta: { action: "revise", revised_by: user.id },
   });
 
+  // iter92: 相手に「打診内容が修正されました」通知
+  const counterpartId = isMeSender ? prop.receiver_id : prop.sender_id;
+  const { data: meUserRev } = await supabase
+    .from("users")
+    .select("handle")
+    .eq("id", user.id)
+    .maybeSingle();
+  const meHandleRev = (meUserRev?.handle as string | undefined) ?? "?";
+  await createNotification(supabase, {
+    userId: counterpartId,
+    kind: "proposal_revised",
+    title: `@${meHandleRev} が打診内容を修正しました`,
+    linkPath: `/transactions/${input.id}`,
+    proposalId: input.id,
+  });
+
   revalidatePath(`/transactions/${input.id}`);
-  revalidatePath("/proposals");
+  revalidatePath("/transactions");
   return { proposalId: input.id };
 }
 
@@ -397,6 +430,23 @@ export async function respondToProposal(input: {
         : "あなたが合意しました（相手の合意待ち）",
       meta: { action: "agree", agreed_by: user.id },
     });
+    // iter92: 両者合意になったら相手（=sender）に「合意成立」通知
+    if (both) {
+      const counterpartId = isReceiver ? proposal.sender_id : proposal.receiver_id;
+      const { data: meUser } = await supabase
+        .from("users")
+        .select("handle")
+        .eq("id", user.id)
+        .maybeSingle();
+      const meHandle = (meUser?.handle as string | undefined) ?? "?";
+      await createNotification(supabase, {
+        userId: counterpartId,
+        kind: "proposal_accepted",
+        title: `@${meHandle} が合意しました — 取引を進めましょう`,
+        linkPath: `/transactions/${input.id}`,
+        proposalId: input.id,
+      });
+    }
   } else if (input.action === "reject") {
     await supabase.from("messages").insert({
       proposal_id: input.id,
@@ -404,6 +454,20 @@ export async function respondToProposal(input: {
       message_type: "system",
       body: "打診が拒否されました",
       meta: { action: "reject" },
+    });
+    // iter92: 拒否通知（sender 宛て）
+    const { data: meUser2 } = await supabase
+      .from("users")
+      .select("handle")
+      .eq("id", user.id)
+      .maybeSingle();
+    const meHandle2 = (meUser2?.handle as string | undefined) ?? "?";
+    await createNotification(supabase, {
+      userId: proposal.sender_id,
+      kind: "proposal_rejected",
+      title: `@${meHandle2} が打診を拒否しました`,
+      linkPath: `/transactions/${input.id}`,
+      proposalId: input.id,
     });
   }
 

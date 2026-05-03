@@ -229,6 +229,13 @@ export default async function Home({ searchParams }: Props) {
   for (const r of (myInventoryRaw as (GoodsRow & { quantity?: number })[]) ?? []) {
     myInventoryQty[r.id] = (r.quantity as number | undefined) ?? 1;
   }
+
+  // iter92: 通知の未読数（ホームヘッダーのベルバッジ用）
+  const { count: unreadNotificationCount } = await supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .is("read_at", null);
   const myWishes = ((myWishesRaw as GoodsRow[]) ?? [])
     .map(toMatchInv)
     .filter((x): x is MatchInv => !!x);
@@ -493,6 +500,7 @@ export default async function Home({ searchParams }: Props) {
           (p) => p.wishes,
         )}
         myInventoryQty={myInventoryQty}
+        unreadNotificationCount={unreadNotificationCount ?? 0}
       />
       <BottomNav />
     </>
