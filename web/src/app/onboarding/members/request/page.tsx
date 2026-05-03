@@ -8,7 +8,11 @@ export const metadata = {
 };
 
 type Props = {
-  searchParams: Promise<{ groupId?: string; oshiRequestId?: string }>;
+  searchParams: Promise<{
+    groupId?: string;
+    oshiRequestId?: string;
+    return?: string;
+  }>;
 };
 
 /**
@@ -20,8 +24,10 @@ type Props = {
  */
 export default async function CharacterRequestPage({ searchParams }: Props) {
   const params = await searchParams;
-  const { groupId, oshiRequestId } = params;
-  if (!groupId && !oshiRequestId) redirect("/onboarding/members");
+  const { groupId, oshiRequestId, return: returnTo } = params;
+  const backHref =
+    returnTo === "profile" ? "/profile/oshi" : "/onboarding/members";
+  if (!groupId && !oshiRequestId) redirect(backHref);
 
   const supabase = await createClient();
   const {
@@ -52,14 +58,11 @@ export default async function CharacterRequestPage({ searchParams }: Props) {
     }
   }
 
-  if (!parentName) redirect("/onboarding/members");
+  if (!parentName) redirect(backHref);
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
-      <HeaderBack
-        title="メンバー追加リクエスト"
-        backHref="/onboarding/members"
-      />
+      <HeaderBack title="メンバー追加リクエスト" backHref={backHref} />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-8 pt-6">
         <h2 className="text-[22px] font-extrabold leading-tight text-gray-900">
           メンバーを追加リクエスト

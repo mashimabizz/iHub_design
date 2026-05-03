@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { saveOshi } from "@/app/onboarding/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
@@ -65,6 +65,11 @@ export function OshiForm({
   pendingRequests: PendingRequest[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams?.get("return");
+  // ?return=profile で来た場合、保存後はプロフ推し設定画面に戻る
+  const destAfterSave =
+    returnTo === "profile" ? "/profile/oshi" : "/onboarding/members";
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(
     initialSelectedGroupIds,
   );
@@ -159,7 +164,7 @@ export function OshiForm({
       setError(result.error);
       return;
     }
-    router.push("/onboarding/members");
+    router.push(destAfterSave);
   }
 
   return (

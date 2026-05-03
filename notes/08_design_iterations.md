@@ -419,6 +419,78 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション65.9：プロフ画面 + プロフ編集 + 推し設定編集（案 Z ハイブリッド）
+
+### 背景
+
+オーナー要望: 「プロフ画面と推し設定画面が無いとテストできない」。
+iter65.8 で BottomNav の「プロフ」タブからのリンク先がまだ無い状態を解消。
+推し設定の動線について 3 案（X/Y/Z）を提示しオーナーが **案 Z（ハイブリッド）** を選択。
+
+### 変更内容
+
+#### A. `web/src/app/profile/actions.ts`（新規）
+
+4 つの server action:
+- `updateProfile(input)`: handle / display_name / gender / primary_area を更新（handle 重複チェック含む）
+- `removeOshiGroup(groupId)`: グループ単位で user_oshi 全行削除
+- `addCharacterToOshi({ groupId, characterId })`: メンバー追加。box 推しは specific 化、priority 自動採番
+- `removeCharacterFromOshi({ groupId, characterId })`: メンバー削除。最後のメンバーを消すと box 復活
+
+#### B. `/profile`（新規 + ProfileView.tsx）
+
+モックアップ `hub-screens.jsx::ProfileHub` 準拠（**Q1 = B フル構成**）:
+- ヘッダー（タイトル + 設定アイコン）
+- アイデンティティ hero（紫グラデ + アバター + @handle + サブ + 統計 4 マス）
+  - 統計: 評価（mock —）/ 取引（実 count）/ コレ（mock —）/ AW予定（実 count）
+- コレクションサマリ（**準備中** chip）
+- あなたの活動: 取引履歴（**準備中**）/ 自分の AW（実件数表示、ホームへリンク）
+- アイデンティティ: プロフィール編集 / 推し設定 / 本人確認（メール認証済バッジ）
+- 設定・サポート: 設定 / 通知 / ヘルプ（全部 **準備中**）
+- ログアウト + アカウント削除（準備中）
+
+#### C. `/profile/edit`（新規 + ProfileEditForm.tsx）
+
+モックアップ `account-extras.jsx::ProfileEdit` ベース:
+- アバター プレビュー（変更ボタンは disabled・準備中）
+- ハンドル名 input（@ プレフィクス + 半角英数 + アンダースコア・3〜20）
+- 表示名 input（必須）
+- 性別 chip（女性/男性/その他/回答しない、トグル可）
+- 主な活動エリア input（任意）
+
+#### D. `/profile/oshi`（新規 + OshiEditView.tsx）— 案 Z ハイブリッド
+
+- 自分の `user_oshi` をグループ単位でまとめてカード表示
+- 各グループカード:
+  - ヘッダー: グループ名 + イニシャル四角アイコン + 削除ボタン
+  - 推しメンバー chip 群: 名前 + × でメンバー削除
+  - 「+ 追加」chip → inline で同グループの**未選択**キャラを chip 表示
+  - 「マスタに無いメンバーを追加リクエスト →」リンク → `/onboarding/members/request?groupId=X&return=profile`
+- 「＋ 推しを追加（グループ・作品）」ボタン → `/onboarding/oshi?return=profile`
+
+#### E. オンボ画面の `?return=profile` 対応
+
+- `/onboarding/oshi/page.tsx`: searchParams から return を読み、HeaderBack の backHref / title を分岐
+- `/onboarding/oshi/OshiForm.tsx`: useSearchParams で return 取得、保存後 router.push 先を `/profile/oshi` に分岐
+- `/onboarding/members/request/page.tsx`: HeaderBack backHref を分岐
+- `/onboarding/members/request/RequestForm.tsx`: 保存後の遷移先を分岐
+
+### 関連ファイル
+
+- `web/src/app/profile/{actions.ts, page.tsx, ProfileView.tsx}`（新規）
+- `web/src/app/profile/edit/{page.tsx, ProfileEditForm.tsx}`（新規）
+- `web/src/app/profile/oshi/{page.tsx, OshiEditView.tsx}`（新規）
+- `web/src/app/onboarding/oshi/{page.tsx, OshiForm.tsx}`（return 対応）
+- `web/src/app/onboarding/members/request/{page.tsx, RequestForm.tsx}`（return 対応）
+
+### セルフレビュー（CLAUDE.md absolute rule C）
+
+- **A. デザイン整合性**: hero card 紫グラデ・統計 4 マス・Section/Row UI を ProfileHub と同等にレイアウト ✅
+- **B. 仕様整合性**: users / user_oshi / activity_windows / deals テーブルから実データ取得、未実装機能は **「準備中」chip** で明示 ✅
+- **C. レビュー記録**: 評価 / コレクション統計は実装未着手のため `—` 表示。bio 列が users にないため自己紹介編集は省略（必要なら別 iter でカラム追加）✅
+
+---
+
 ## イテレーション65.8：コンディション廃止・AW フッター除去・現地モード一体化
 
 ### 背景

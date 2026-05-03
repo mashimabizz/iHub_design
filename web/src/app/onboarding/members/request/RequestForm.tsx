@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { saveCharacterRequest } from "@/app/onboarding/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
@@ -17,14 +17,19 @@ export function RequestForm({
   isPendingParent: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams?.get("return");
+  const destAfterSave =
+    returnTo === "profile" ? "/profile/oshi" : "/onboarding/members";
+
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    router.prefetch("/onboarding/members");
-  }, [router]);
+    router.prefetch(destAfterSave);
+  }, [router, destAfterSave]);
 
   async function handleSubmit() {
     const trimmed = name.trim();
@@ -45,7 +50,7 @@ export function RequestForm({
       setError(result.error);
       return;
     }
-    router.push("/onboarding/members");
+    router.push(destAfterSave);
   }
 
   return (

@@ -15,7 +15,14 @@ export const metadata = {
  * - ジャンルチップでフィルタ + 名前/aliases 検索
  * - 複数選択可、選択順に user_oshi に priority を振る（kind=box でメンバー未選択状態）
  */
-export default async function OshiPage() {
+type Props = {
+  searchParams: Promise<{ return?: string }>;
+};
+
+export default async function OshiPage({ searchParams }: Props) {
+  const params = await searchParams;
+  const returnTo = params.return;
+  const backHref = returnTo === "profile" ? "/profile/oshi" : "/onboarding/gender";
   const supabase = await createClient();
   const {
     data: { user },
@@ -106,10 +113,10 @@ export default async function OshiPage() {
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack
-        title="プロフィール設定"
+        title={returnTo === "profile" ? "推しを追加" : "プロフィール設定"}
         sub="あなたの推し（複数選択可）"
-        progress="2/4"
-        backHref="/onboarding/gender"
+        progress={returnTo === "profile" ? undefined : "2/4"}
+        backHref={backHref}
       />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-8 pt-6">
         <ProgressDots current={1} total={4} />
