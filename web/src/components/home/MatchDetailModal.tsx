@@ -82,11 +82,11 @@ export function MatchDetailModal({
           いずれか <b>1 つ</b> を選んで取引します。
         </div>
 
-        {/* 私の個別募集 */}
+        {/* 私の個別募集（自分視点：あなたが譲る / あなたが受け取る） */}
         {myListings.length > 0 && (
           <SectionGroup
             title="あなたの個別募集"
-            subtitle="あなたが出している条件 — 相手の譲がこの条件を満たしました"
+            subtitle="あなたが出している条件で、相手の在庫がヒット"
             accentColor="#a695d8"
           >
             {myListings.map((l, idx) => (
@@ -94,18 +94,17 @@ export function MatchDetailModal({
                 key={l.listingId}
                 listing={l}
                 index={idx}
-                ownerLabel="あなたの譲"
-                receiverLabel="相手から受け取る"
+                viewpoint="mine"
               />
             ))}
           </SectionGroup>
         )}
 
-        {/* 相手の個別募集 */}
+        {/* 相手の個別募集（自分視点：あなたが受け取る / あなたが出す） */}
         {partnerListings.length > 0 && (
           <SectionGroup
             title={`@${partnerHandle} の個別募集`}
-            subtitle="相手が出している条件 — あなたの譲がこの条件を満たしました"
+            subtitle="相手が出している条件で、あなたの在庫がヒット"
             accentColor="#f3c5d4"
           >
             {partnerListings.map((l, idx) => (
@@ -113,8 +112,7 @@ export function MatchDetailModal({
                 key={l.listingId}
                 listing={l}
                 index={idx}
-                ownerLabel="相手の譲"
-                receiverLabel="相手が受け取る（あなたの譲）"
+                viewpoint="partner"
               />
             ))}
           </SectionGroup>
@@ -165,17 +163,30 @@ function SectionGroup({
 function ListingDiagram({
   listing,
   index,
-  ownerLabel,
-  receiverLabel,
+  viewpoint,
 }: {
   listing: MatchCardListingInfo;
   index: number;
-  /** 左カラムのラベル（譲側＝listing オーナー） */
-  ownerLabel?: string;
-  /** 右カラムのラベル（求側＝listing オーナーが受け取る） */
-  receiverLabel?: string;
+  /**
+   * iter94.1: 自分視点で表示するためのフラグ。
+   *   mine    = あなたの listing → 上「あなたが譲る」/ 下「あなたが受け取る候補」
+   *   partner = 相手の listing → 上「あなたが受け取る（相手の譲）」/ 下「あなたが出す候補（相手が求める）」
+   */
+  viewpoint: "mine" | "partner";
 }) {
-  void receiverLabel;
+  // 自分視点での上下ラベル
+  const topLabel =
+    viewpoint === "mine" ? "あなたが譲る" : "あなたが受け取る（相手の譲）";
+  const bottomLabel =
+    viewpoint === "mine"
+      ? "あなたが受け取る候補"
+      : "あなたが出す候補（相手が求める）";
+  // ロジックバッジの文言（譲群の AND/OR）
+  const haveLogicLabel =
+    viewpoint === "mine"
+      ? `${listing.haveLogic === "and" ? "全部 AND" : "いずれか OR"}`
+      : `相手側 ${listing.haveLogic === "and" ? "全部 AND" : "いずれか OR"}`;
+
   return (
     <section className="mb-4 overflow-hidden rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white">
       <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
@@ -191,15 +202,15 @@ function ListingDiagram({
                 : "border border-[#a695d855] bg-white text-[#a695d8]"
             }`}
           >
-            譲 {listing.haveLogic === "and" ? "全部 AND" : "いずれか OR"}
+            {haveLogicLabel}
           </span>
         )}
       </div>
 
-      {/* 譲群（共通） */}
+      {/* 上カラム：mine=あなたが譲る / partner=あなたが受け取る */}
       <div className="px-3 pt-3">
         <div className="mb-1.5 text-[10px] font-bold tracking-[0.4px] text-[#a8d4e6]">
-          {ownerLabel ?? "あなたの譲"}（
+          {topLabel}（
           {listing.haves.filter((h) => h.matched).length} / {listing.haves.length}）
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -223,10 +234,10 @@ function ListingDiagram({
         ↔
       </div>
 
-      {/* 求側選択肢（縦に並ぶ） */}
+      {/* 下カラム：mine=あなたが受け取る候補 / partner=あなたが出す候補 */}
       <div className="space-y-2 px-3 pb-3">
         <div className="text-[10px] font-bold tracking-[0.4px] text-[#f3c5d4]">
-          求 — 選択肢 {listing.options.length}
+          {bottomLabel} — 選択肢 {listing.options.length}
         </div>
         {listing.options.map((opt) => (
           <OptionDiagram
