@@ -18,6 +18,7 @@
 | **v2.4** | **2026-05-03** | **iter67.4 反映（求側を「複数選択肢」モデルへ再設計：listing_wish_options 新規、listings から wish_*/wish_logic 廃止、have_group_id/have_goods_type_id 追加で同一性検証、定価交換選択肢サポート）** |
 | **v2.5** | **2026-05-03** | **iter67.7 反映（proposals に cash_offer / cash_amount 列追加：定価交換打診サポート。receiver_have_ids 空時の CHECK 緩和）** |
 | **v2.6** | **2026-05-03** | **iter68-A 反映（messages テーブル新規：proposal_id × sender_id × type ('text'/'photo'/'outfit_photo'/'location'/'arrival_status'/'system') のチャット追記型）** |
+| **v2.7** | **2026-05-03** | **iter68-D/E/F 反映（proposals に evidence_photo_url / evidence_taken_at / evidence_taken_by / approved_by_* / completed_at / status='completed' 追加。user_evaluations テーブル新規（1 取引 1 評価 unique）。Storage chat-photos バケット作成）** |
 
 ## このドキュメントの位置付け
 

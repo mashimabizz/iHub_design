@@ -419,6 +419,173 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション68-B〜F：C-2 デザイン整合性修正 + C-3 撮影/承認/評価フル実装
+
+### 背景
+
+iter68-A の C-2 チャットを実機確認したオーナーから「ちょいちょいデザインと違う」指摘。
+CLAUDE.md の「画面実装時の絶対ルール」通り、c-flow.jsx を精読してセルフレビュー → 修正。
+ついでに C-3（撮影 / 双方承認 / 評価+コレクション）まで一気に実装。
+
+### セルフレビュー結果（C-2）
+
+c-flow.jsx の `ChatScreen` 実装と私の前 iter 実装の差分：
+
+| 項目 | デザイン | 前実装 | 修正 |
+|---|---|---|---|
+| ヘッダー右上 | 「QR」chip ボタン | 無し | ✅ 追加 |
+| 取引内容カード | mini map サムネ + 詳細 | 単純 grid | ✅ MapPicker 埋め込み |
+| 服装写真セクション | **紫グラデバナー** + 双方ステータス + 白い大ボタン | 薄ボックス | ✅ グラデ化 |
+| クイックアクション | 入力欄上に **常時 chip** 横並び | ＋ メニュー | ✅ 常時表示 |
+| メッセージ day separator | 中央チップで日時 | 無し | ✅ 追加 |
+| 到着システムメッセージ | 緑チップ + 動的色 | 部分的 | ✅ 強化 |
+| 「合流したら証跡撮影」案内 | dashed border + 撮影 CTA | 無し | ✅ 追加（C-3 入口） |
+
+### 変更内容
+
+#### A. DB マイグレーション
+
+**`20260503220000_proposal_evidence_and_evaluations.sql`**：
+- `proposals` に追加：
+  - `evidence_photo_url text`、`evidence_taken_at timestamptz`、`evidence_taken_by uuid`
+  - `approved_by_sender boolean`、`approved_by_receiver boolean`
+  - `completed_at timestamptz`
+- `proposals.status` CHECK に `'completed'` 追加
+- `user_evaluations` 新設：
+  - proposal_id × rater_id × ratee_id × stars(1-5) × comment
+  - `unique (proposal_id, rater_id)` で 1 取引 1 評価
+  - RLS：参加者のみ read、completed のみ insert
+
+**`20260503230000_chat_photos_bucket.sql`**：
+- Supabase Storage バケット `chat-photos` 作成
+- パス：`{proposal_id}/{type}-{timestamp}.{ext}`
+- RLS：参加者のみ read/upload、自分の object のみ delete
+
+#### B. C-2 チャット改修（`ChatView.tsx` 全面書き直し）
+
+**新コンポーネント**：
+- `ChatHeaderBar`：相手アバター + 到着ステータス + QR ボタン
+- `DealCard`：取引内容カード（紫枠＋mini map サムネ）
+- `OutfitShareBanner`：紫グラデの服装写真シェアバナー（双方ステータス + 白いボタン）
+- `EvidenceCallout`：合意済 + 撮影前のときに「合流したら証跡撮影」dashed カード
+- `QrModal`：QR 確認モーダル（簡易、QR ジェネレーターは次イテ）
+- `QuickChip`：lavender / pink / neutral 3 トーン
+- メッセージ day separator + 強化された arrival_status バブル
+
+**動作**：
+- 入力欄左の ＋ ボタン → 「向かう / 到着 / 離脱」3 サイクルトグル
+- 入力欄上に「現在地を送る / 服装写真 / 写真添付」常時表示
+- メッセージ送信時に自動下スクロール
+- 5 秒 polling で相手のメッセージを取得
+
+#### C. C-3 取引証跡撮影画面（`/transactions/[id]/capture`）
+
+c-flow.jsx `CaptureStep` 準拠：
+- 黒背景＋紫グラデ装飾
+- ヘッダー：✕ 戻る + 「オフライン保存」chip
+- タイトル：「取引証跡を撮影 / 両者の交換物を1枚に収めてください」
+- ビューファインダー：紫枠 + 4 隅コーナーマーク + 中央 dashed line + ↔ 白円
+  - 左右に myCount/theirCount 分のゴーストカード（傾き付き）
+  - 「相手のN点」「あなたのM点」黒チップ
+- Hint chip：「自動メタ: HH:mm · 場所」
+- 撮影コントロール：履歴 / シャッター（白い大円） / メニュー
+
+**実装**：
+- `<input type="file" accept="image/*" capture="environment">` でモバイル背面カメラ起動
+- Supabase Storage に upload（path: `{proposal_id}/evidence-{timestamp}.{ext}`）
+- signed URL（1 年）を取得して `proposals.evidence_photo_url` に保存
+- 撮影者は自動承認（approved_by_sender or receiver = true）
+- アップロード中はオーバーレイで進捗表示
+
+#### D. C-3 双方承認画面（`/transactions/[id]/approve`）
+
+c-flow.jsx `ApproveStep` 準拠：
+- 撮影写真表示（4:3、影あり、メタストリップ「YYYY-MM-DD HH:mm · 場所」）
+- アイテムリスト 2 行（@相手 / @あなた）：イニシャル ×N サムネ + 数量
+- 両者の確認ステータス：
+  - ✓ 緑円（承認済）/ ○ dashed 紫枠（待ち）
+- 注意 box「内容に問題がある場合は『相違あり』を選び、後でサポートに通報できます」
+- フッター：[相違あり] + [承認して完了]（紫グラデフル幅）
+
+**動作**：
+- `approveCompletion(proposalId)` で自分側 approved を true に
+- 双方 true なら status='completed' + completed_at + system message
+- `flagDispute(proposalId)` で system message として記録（dispute フローは次イテ）
+- 双方承認後は `/transactions/[id]/rate` に自動遷移
+
+#### E. C-3 完了画面（`/transactions/[id]/rate`）
+
+c-flow.jsx `RateStep` 準拠：
+- 紫グラデの ✓ アイコン + 「取引完了！」
+- 「@相手 との交換が記録されました」
+- **評価**：5 星 + コメント textarea（評価済なら disable + 「✓ 評価送信済み」）
+- **コレクション更新**：紫×ピンクグラデの box
+  - 受け取ったアイテムから character + goods_type を抽出
+  - 私の wish 該当数（total） vs 私の inv 該当数（acquired）
+  - プログレスバー + 「あと N枚 で {名前} コンプ」or「コンプリート達成 🎉」
+- **X 投稿カード**：交換完了の御礼テキスト + handle を `https://twitter.com/intent/tweet` で開く
+- フッター：[評価を送信]（紫グラデフル幅）
+
+**評価フロー**：
+- `submitEvaluation(proposalId, stars, comment?)` で `user_evaluations` に insert
+- unique 制約違反（既に評価済）は user-friendly メッセージ
+- 完了後は `/transactions` に redirect
+
+### 進入導線
+
+```
+/transactions/[id]
+  ├ status=agreed && evidence_photo_url=null → そのまま（チャット画面 + 「合流したら撮影」案内）
+  ├ status=agreed && evidence_photo_url exists → /approve に redirect
+  └ status=completed → /rate に redirect
+
+/capture → 撮影 → setEvidencePhoto → /approve に redirect
+/approve → approveCompletion → 双方承認なら /rate に redirect
+/rate → submitEvaluation → /transactions に redirect
+```
+
+### 影響範囲
+
+- 新ルート 3 つ（capture / approve / rate）
+- 取引チャット画面：c-flow.jsx 完全準拠にリニューアル
+- DB：proposals 6 列追加、user_evaluations テーブル新設、Storage バケット作成
+- C-3 完全フロー（撮影 → 承認 → 完了 → 評価 → コレクション更新）が回る
+
+### 設計判断
+
+- **Storage バケットは private + signed URL**：写真は participant 以外に見せない。期限 1 年（実用上十分）
+- **撮影者は自動承認**：UX 上、撮ったら自分は承認しているので追加タップ不要
+- **コレクション進捗は character + goods_type 単位**：「スア × トレカ」みたいな粒度で集計
+- **dispute は flagDispute system message のみ**：本格実装は次イテ（D-flow）
+- **X 投稿は Web Intent で**：API 不要、テキストだけ生成して Twitter に渡す
+
+### TODO（次イテ）
+
+- iter69-A：QR ジェネレーター（取引時の本人確認）
+- iter69-B：dispute（D-flow / 異議申し立て）— `disputes` テーブル + フロー
+- iter69-C：期限自動切替 cron（expires_at 過ぎたら status=expired）
+- iter69-D：Supabase Realtime（5 秒 polling 撤廃）
+- iter69-E：deals テーブル整備（proposals 分離 / 過去取引の長期保存）
+- iter69-F：服装写真 / 通常チャット写真 の upload UI
+
+### 関連ファイル
+
+**Migration**：
+- `supabase/migrations/20260503220000_proposal_evidence_and_evaluations.sql`
+- `supabase/migrations/20260503230000_chat_photos_bucket.sql`
+
+**Server actions**：
+- `web/src/app/transactions/actions.ts`（setEvidencePhoto / approveCompletion / flagDispute / submitEvaluation 追加）
+
+**ルート**：
+- `web/src/app/transactions/[id]/page.tsx`（リダイレクトチェーン追加）
+- `web/src/app/transactions/[id]/ChatView.tsx`（全面書き直し、c-flow.jsx 準拠）
+- `web/src/app/transactions/[id]/capture/page.tsx` + `CaptureView.tsx`（新規）
+- `web/src/app/transactions/[id]/approve/page.tsx` + `ApproveView.tsx`（新規）
+- `web/src/app/transactions/[id]/rate/page.tsx` + `RateView.tsx`（新規）
+
+---
+
 ## イテレーション68-A：取引チャット（C-2）— messages テーブル + チャット画面
 
 ### 背景

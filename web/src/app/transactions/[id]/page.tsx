@@ -23,6 +23,9 @@ type ProposalRaw = {
   meetup_place_name: string | null;
   meetup_lat: number | null;
   meetup_lng: number | null;
+  evidence_photo_url: string | null;
+  approved_by_sender: boolean;
+  approved_by_receiver: boolean;
 };
 
 type GoodsRow = {
@@ -79,7 +82,8 @@ export default async function TransactionChatPage({
     .select(
       `id, sender_id, receiver_id, status, cash_offer, cash_amount,
        sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
-       meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng`,
+       meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
+       evidence_photo_url, approved_by_sender, approved_by_receiver`,
     )
     .eq("id", id)
     .maybeSingle();
@@ -87,11 +91,22 @@ export default async function TransactionChatPage({
   const p = proposalRow as ProposalRaw;
   if (p.sender_id !== user.id && p.receiver_id !== user.id) notFound();
 
-  // 合意済 or ネゴ中 のみチャット可（draft/expired/cancelled は不可）
+  // 合意済 or ネゴ中 / 完了済 でチャット可（draft/expired/cancelled は不可）
   if (
-    !["agreed", "negotiating", "agreement_one_side"].includes(p.status)
+    !["agreed", "negotiating", "agreement_one_side", "completed"].includes(
+      p.status,
+    )
   ) {
     redirect(`/proposals/${id}`);
+  }
+
+  // 撮影済かつ未完了 → 承認画面へ
+  if (p.evidence_photo_url && p.status === "agreed") {
+    redirect(`/transactions/${id}/approve`);
+  }
+  // 完了済 → rate 画面へ（評価未送信なら）
+  if (p.status === "completed") {
+    redirect(`/transactions/${id}/rate`);
   }
 
   const isMeSender = p.sender_id === user.id;
@@ -178,6 +193,7 @@ export default async function TransactionChatPage({
     me: {
       id: user.id,
     },
+    hasEvidence: !!p.evidence_photo_url,
   };
 
   // メッセージ一覧
