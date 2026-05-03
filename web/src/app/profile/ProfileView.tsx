@@ -178,38 +178,22 @@ export function ProfileView({
 
         {/* 設定・サポート */}
         <Section label="設定・サポート">
-          <Row>
-            <RowItem icon="⚙" title="設定" sub="アプリ全体の設定" comingSoon />
-          </Row>
-          <Row>
-            <RowItem icon="🔔" title="通知設定" sub="未実装" comingSoon />
-          </Row>
-          <Row>
-            <RowItem icon="?" title="ヘルプ・問い合わせ" sub="FAQ・運営連絡" comingSoon />
-          </Row>
+          <RowLink href="/settings" icon="⚙" title="設定" sub="アプリ全体の設定" />
+          <RowLink
+            href="/settings/notifications"
+            icon="🔔"
+            title="通知設定"
+            sub="メール通知の ON/OFF"
+          />
+          <RowLink
+            href="/help"
+            icon="?"
+            title="ヘルプ・FAQ"
+            sub="使い方・取引の流れ・運営連絡"
+          />
         </Section>
 
-        {/* iter83: 法的画面リンク */}
-        <Section label="規約・法的情報">
-          <RowLink
-            href="/legal/terms"
-            icon="📄"
-            title="利用規約"
-            sub="サービス利用条件"
-          />
-          <RowLink
-            href="/legal/privacy"
-            icon="🔐"
-            title="プライバシーポリシー"
-            sub="個人情報の取扱い"
-          />
-          <RowLink
-            href="/legal/notice"
-            icon="📜"
-            title="特定商取引法に基づく表記"
-            sub="運営事業者情報"
-          />
-        </Section>
+        {/* iter93: 規約・法的情報リンクは /settings に集約済 */}
 
         {/* Logout / Delete */}
         <Section>
