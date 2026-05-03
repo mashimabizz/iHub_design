@@ -911,23 +911,8 @@ export function CaptureFlow({
                     />
                   )}
 
-                  {/* コンディション + 数量 */}
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={meta.condition}
-                      onChange={(e) =>
-                        updateMeta(i, {
-                          condition: e.target.value as Condition,
-                        })
-                      }
-                      className="block flex-1 rounded-lg border border-[#3a324a14] bg-white px-2 py-1.5 text-[11px] text-gray-900 focus:border-[#a695d8] focus:outline-none"
-                    >
-                      {CONDITIONS.map((c) => (
-                        <option key={c.value} value={c.value}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
+                  {/* 数量（コンディションは iter65.8 で廃止） */}
+                  <div className="flex items-center justify-end gap-2">
                     <div className="flex items-center gap-1">
                       <button
                         type="button"

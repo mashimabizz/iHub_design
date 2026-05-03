@@ -14,9 +14,9 @@ import { usePathname } from "next/navigation";
 export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
   const pathname = usePathname();
 
+  // iter65.8: AW タブを削除（現地交換モードはホーム画面で完結）
   const items = [
     { href: "/", label: "ホーム", icon: "home" as const },
-    { href: "/aw", label: "AW", icon: "aw" as const },
     { href: "/inventory", label: "在庫", icon: "inventory" as const },
     { href: "/wishes", label: "wish", icon: "wish" as const },
     { href: "/profile", label: "プロフ", icon: "profile" as const },
@@ -56,7 +56,7 @@ function NavIcon({
   name,
   active,
 }: {
-  name: "home" | "aw" | "inventory" | "wish" | "profile";
+  name: "home" | "inventory" | "wish" | "profile";
   active: boolean;
 }) {
   const stroke = active ? "#a695d8" : "#6b6478";
@@ -74,22 +74,6 @@ function NavIcon({
           strokeLinejoin="round"
         >
           <path d="M3 11l9-8 9 8v10a2 2 0 01-2 2h-4v-7h-6v7H5a2 2 0 01-2-2V11z" />
-        </svg>
-      );
-    case "aw":
-      return (
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke={stroke}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z" />
-          <circle cx="12" cy="9" r="2.5" />
         </svg>
       );
     case "inventory":

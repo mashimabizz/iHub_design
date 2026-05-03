@@ -68,6 +68,110 @@ export async function enableLocalMode(input: {
 }
 
 /**
+ * 現地モードシート内で AW を作成 or 更新し、現地モード設定に紐付ける。
+ * iter65.8: AW 編集画面に飛ばずシート内で完結する目的。
+ *
+ * - venue, center_lat/lng, radius_m, start_at, end_at を受け取る
+ * - 既存の `user_local_mode_settings.aw_id` が存在し有効なら **更新**、
+ *   なければ新規 AW を **作成** して aw_id を紐付け
+ */
+export async function applyLocalModeAW(input: {
+  venue: string;
+  centerLat?: number;
+  centerLng?: number;
+  radiusM: number;
+  startAt: string; // ISO
+  endAt: string;
+}): Promise<ActionResult> {
+  const venue = input.venue.trim();
+  if (!venue || venue.length > 100) {
+    return { error: "場所名を入力してください（1〜100 文字）" };
+  }
+  if (input.radiusM < 50 || input.radiusM > 5000) {
+    return { error: "半径は 50m〜5000m で指定してください" };
+  }
+  const start = new Date(input.startAt);
+  const end = new Date(input.endAt);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return { error: "日時の形式が不正です" };
+  }
+  if (end <= start) {
+    return { error: "終了時刻は開始時刻より後にしてください" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  // 現在の設定を取得
+  const { data: settings } = await supabase
+    .from("user_local_mode_settings")
+    .select("aw_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const awFields = {
+    venue,
+    event_name: null,
+    eventless: true,
+    start_at: start.toISOString(),
+    end_at: end.toISOString(),
+    radius_m: input.radiusM,
+    center_lat: input.centerLat ?? null,
+    center_lng: input.centerLng ?? null,
+    status: "enabled" as const,
+  };
+
+  let awId: string | null = settings?.aw_id ?? null;
+
+  if (awId) {
+    // 既存 AW を更新
+    const { error: updateErr } = await supabase
+      .from("activity_windows")
+      .update(awFields)
+      .eq("id", awId)
+      .eq("user_id", user.id);
+    if (updateErr) {
+      // 既存 AW が見つからない / 更新失敗 → 新規作成にフォールバック
+      awId = null;
+    }
+  }
+
+  if (!awId) {
+    const { data: created, error: insertErr } = await supabase
+      .from("activity_windows")
+      .insert({ ...awFields, user_id: user.id })
+      .select("id")
+      .single();
+    if (insertErr || !created) {
+      return { error: insertErr?.message ?? "AW の作成に失敗しました" };
+    }
+    awId = created.id;
+  }
+
+  // settings に aw_id とラジウス・最終位置を反映
+  const settingsFields: Record<string, unknown> = {
+    user_id: user.id,
+    enabled: true,
+    aw_id: awId,
+    radius_m: input.radiusM,
+  };
+  if (typeof input.centerLat === "number") settingsFields.last_lat = input.centerLat;
+  if (typeof input.centerLng === "number") settingsFields.last_lng = input.centerLng;
+
+  const { error: upsertErr } = await supabase
+    .from("user_local_mode_settings")
+    .upsert(settingsFields, { onConflict: "user_id" });
+
+  if (upsertErr) return { error: upsertErr.message };
+
+  revalidatePath("/");
+  return undefined;
+}
+
+/**
  * 広域モードに戻す（enabled=false）
  */
 export async function disableLocalMode(): Promise<ActionResult> {

@@ -1,12 +1,22 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
+  applyLocalModeAW,
   resetLocalModeSelections,
-  updateLocalModeSelections,
   type LocalModeSettings,
 } from "./actions";
+
+const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center bg-[#a8d4e61a] text-[10px] text-[#3a324a8c]">
+      地図を読み込み中…
+    </div>
+  ),
+});
 
 export type SimpleAW = {
   id: string;
@@ -16,6 +26,8 @@ export type SimpleAW = {
   startAt: string;
   endAt: string;
   radiusM: number;
+  centerLat?: number | null;
+  centerLng?: number | null;
 };
 
 export type SimpleItem = {
@@ -27,38 +39,123 @@ export type SimpleItem = {
   photoUrl: string | null;
 };
 
+// Nominatim 検索結果
+type Place = {
+  display_name: string;
+  lat: string;
+  lon: string;
+  address?: {
+    leisure?: string;
+    amenity?: string;
+    building?: string;
+    shop?: string;
+    tourism?: string;
+    road?: string;
+    suburb?: string;
+    neighbourhood?: string;
+    city?: string;
+    town?: string;
+  };
+};
+
+function labelFromAddress(p: Place): string {
+  const a = p.address ?? {};
+  return (
+    a.leisure ||
+    a.amenity ||
+    a.tourism ||
+    a.building ||
+    a.shop ||
+    a.road ||
+    a.neighbourhood ||
+    a.suburb ||
+    a.city ||
+    a.town ||
+    p.display_name.split(",")[0] ||
+    "場所"
+  );
+}
+
+const DURATION_OPTIONS = [
+  { value: 60, label: "1 時間" },
+  { value: 120, label: "2 時間" },
+  { value: 180, label: "3 時間" },
+  { value: 360, label: "6 時間" },
+  { value: 720, label: "終日" },
+];
+
+function nowPlusMinutesISO(min: number): string {
+  return new Date(Date.now() + min * 60_000).toISOString();
+}
+
+function isoToDatetimeLocal(iso: string): string {
+  const d = new Date(iso);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
+const FALLBACK_CENTER: [number, number] = [35.6595, 139.7005];
+
 /**
- * 現地交換モード設定シート（slide-up）— iter65.6 で大幅簡素化。
+ * 現地交換モード設定シート — iter65.8 でリッチ化。
  *
- * - AW 選択（半径は AW 自身の値を使う）
- * - 持参グッズ選択は **別画面** (/inventory/select-carrying) で行う
- *   （写真付きで選びたいというユーザー要望）
- * - wish 指定は廃止（指定なしで全 wish が対象）
- * - 一括リセット機能は維持
+ * 1 シート内で AW（場所・時間・半径）を作成 or 更新し、持参グッズも選ぶ。
+ * 別画面に飛ばずに完結する。
  */
 export function LocalModeSheet({
   open,
   onClose,
   initial,
-  aws,
+  currentAW,
   carryingItems,
 }: {
   open: boolean;
   onClose: () => void;
   initial: LocalModeSettings;
-  aws: SimpleAW[];
+  currentAW: SimpleAW | null;
   carryingItems: SimpleItem[];
 }) {
-  const [awId, setAwId] = useState(initial.awId);
+  // ─── 状態 ────────────────────────────────────────────────
+  const [venue, setVenue] = useState(currentAW?.venue ?? "");
+  const [center, setCenter] = useState<[number, number]>(() => {
+    if (currentAW?.centerLat && currentAW?.centerLng) {
+      return [currentAW.centerLat, currentAW.centerLng];
+    }
+    if (initial.lastLat && initial.lastLng) {
+      return [initial.lastLat, initial.lastLng];
+    }
+    return FALLBACK_CENTER;
+  });
+  const [radiusM, setRadiusM] = useState(currentAW?.radiusM ?? initial.radiusM);
+  const [startAt, setStartAt] = useState<string>(
+    currentAW?.startAt ?? new Date().toISOString(),
+  );
+  const [endAt, setEndAt] = useState<string>(
+    currentAW?.endAt ?? nowPlusMinutesISO(120),
+  );
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
+  const [searchResults, setSearchResults] = useState<Place[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [geolocating, setGeolocating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [resetting, startReset] = useTransition();
 
   // open のたびに DB 値で再初期化
   useEffect(() => {
     if (open) {
-      setAwId(initial.awId);
+      setVenue(currentAW?.venue ?? "");
+      if (currentAW?.centerLat && currentAW?.centerLng) {
+        setCenter([currentAW.centerLat, currentAW.centerLng]);
+      }
+      setRadiusM(currentAW?.radiusM ?? initial.radiusM);
+      setStartAt(currentAW?.startAt ?? new Date().toISOString());
+      setEndAt(currentAW?.endAt ?? nowPlusMinutesISO(120));
+      setError(null);
     }
-  }, [open, initial]);
+  }, [open, initial, currentAW]);
 
   // body scroll lock
   useEffect(() => {
@@ -72,13 +169,78 @@ export function LocalModeSheet({
     };
   }, [open]);
 
+  // 検索（debounce）
+  useEffect(() => {
+    const q = searchQ.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+        const data = (await res.json()) as Place[] | { error: string };
+        if (Array.isArray(data)) {
+          setSearchResults(data);
+          setShowResults(true);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchQ]);
+
+  function pickSearchResult(p: Place) {
+    const lat = parseFloat(p.lat);
+    const lon = parseFloat(p.lon);
+    if (isFinite(lat) && isFinite(lon)) {
+      setCenter([lat, lon]);
+      setVenue(labelFromAddress(p));
+      setShowResults(false);
+      setSearchQ("");
+    }
+  }
+
+  function useCurrentLocation() {
+    if (typeof window === "undefined" || !navigator.geolocation) return;
+    setGeolocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCenter([pos.coords.latitude, pos.coords.longitude]);
+        setGeolocating(false);
+      },
+      () => setGeolocating(false),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
+  function applyDuration(minutes: number) {
+    const newEnd = new Date(new Date(startAt).getTime() + minutes * 60_000);
+    setEndAt(newEnd.toISOString());
+  }
+
   function handleApply() {
+    setError(null);
+    if (!venue.trim()) {
+      setError("場所を入力してください");
+      return;
+    }
     startTransition(async () => {
-      const r = await updateLocalModeSelections({
-        awId,
+      const r = await applyLocalModeAW({
+        venue,
+        centerLat: center[0],
+        centerLng: center[1],
+        radiusM,
+        startAt: isoToDatetimeLocal(startAt),
+        endAt: isoToDatetimeLocal(endAt),
       });
       if (r?.error) {
-        alert(r.error);
+        setError(r.error);
         return;
       }
       onClose();
@@ -96,10 +258,19 @@ export function LocalModeSheet({
     });
   }
 
-  function fmtDate(iso: string) {
+  const radiusLabel = useMemo(
+    () =>
+      radiusM >= 1000 ? `${(radiusM / 1000).toFixed(1)}km` : `${radiusM}m`,
+    [radiusM],
+  );
+
+  const fmtTime = (iso: string) => {
     const d = new Date(iso);
-    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  }
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+  const durationMin = Math.round(
+    (new Date(endAt).getTime() - new Date(startAt).getTime()) / 60_000,
+  );
 
   // 選択中の持参グッズ件数
   const selectedCarryingCount = initial.selectedCarryingIds.length;
@@ -129,7 +300,7 @@ export function LocalModeSheet({
           open ? "translate-y-0" : "translate-y-full"
         }`}
         style={{
-          maxHeight: "85vh",
+          maxHeight: "92vh",
           paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
@@ -143,150 +314,244 @@ export function LocalModeSheet({
               現地交換モード
             </h2>
             <p className="mt-0.5 text-[11px] text-[#3a324a8c]">
-              AW（場所×時間×半径）と持参グッズで時空マッチを絞ります
+              場所・時間・半径と持参グッズで時空マッチを絞ります
             </p>
           </div>
-          {selectedCarryingCount > 0 && (
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={resetting}
-              className="rounded-full border border-[#3a324a14] bg-white px-2.5 py-1 text-[10.5px] font-bold text-[#3a324a8c] disabled:opacity-40"
-            >
-              {resetting ? "..." : "選択解除"}
-            </button>
-          )}
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-2">
-          {/* AW 選択 */}
-          <Section title="AW（場所・時間・半径）">
-            {aws.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[#3a324a14] bg-[#fbf9fc] p-4 text-center">
-                <div className="text-[12px] font-bold text-gray-900">
-                  有効な AW がありません
-                </div>
-                <Link
-                  href="/aw/new?return=local-mode"
-                  className="mt-2 inline-block rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-4 py-1.5 text-[11.5px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
-                >
-                  AW を追加 →
-                </Link>
-                <p className="mt-2 text-[10.5px] text-gray-500">
-                  追加後、自動的にこの画面に戻ってきます
-                </p>
+          {/* 場所 */}
+          <Section title="場所">
+            {/* 検索バー + 現在地 */}
+            <div className="flex gap-1.5">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                  placeholder="場所を検索（駅名・施設名）"
+                  className="block w-full rounded-xl border border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] text-gray-900 placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
+                />
+                {searching && (
+                  <span className="absolute right-3 top-3 text-[10px] text-[#3a324a8c]">
+                    ...
+                  </span>
+                )}
+                {showResults && searchResults.length > 0 && (
+                  <div className="absolute inset-x-0 top-full z-[1100] mt-1 max-h-[200px] overflow-y-auto rounded-xl border-[0.5px] border-[#3a324a14] bg-white shadow-[0_8px_20px_rgba(58,50,74,0.18)]">
+                    {searchResults.map((p, i) => {
+                      const label = labelFromAddress(p);
+                      return (
+                        <button
+                          key={`${p.lat},${p.lon}-${i}`}
+                          type="button"
+                          onClick={() => pickSearchResult(p)}
+                          className="flex w-full items-start gap-2 border-b-[0.5px] border-[#3a324a08] px-3 py-2 text-left last:border-0 hover:bg-[#a695d80f]"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[11.5px] font-bold text-[#3a324a]">
+                              {label}
+                            </div>
+                            <div className="mt-0.5 truncate text-[9.5px] text-[#3a324a8c]">
+                              {p.display_name}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="space-y-1.5">
-                {aws.map((aw) => {
-                  const sel = awId === aw.id;
-                  return (
-                    <button
-                      key={aw.id}
-                      type="button"
-                      onClick={() => setAwId(aw.id)}
-                      className={`flex w-full items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all ${
-                        sel
-                          ? "border-[1.5px] border-[#a695d8] bg-[#a695d810]"
-                          : "border-[#3a324a14] bg-white"
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          {aw.eventless && (
-                            <span className="rounded bg-[#3a324a0f] px-1.5 py-0.5 text-[9px] font-bold text-[#3a324a8c]">
-                              合流可能枠
-                            </span>
-                          )}
-                          <div className="truncate text-[13px] font-bold text-gray-900">
-                            {aw.venue}
-                          </div>
-                        </div>
-                        {!aw.eventless && aw.eventName && (
-                          <div className="mt-0.5 truncate text-[11px] text-gray-500">
-                            {aw.eventName}
-                          </div>
-                        )}
-                        <div className="mt-0.5 flex items-center gap-2 text-[10.5px] tabular-nums text-[#3a324a8c]">
-                          <span>
-                            {fmtDate(aw.startAt)} 〜 {fmtDate(aw.endAt)}
-                          </span>
-                          <span className="rounded-full bg-[#a695d80f] px-1.5 py-px text-[#a695d8] font-bold">
-                            半径{" "}
-                            {aw.radiusM >= 1000
-                              ? `${(aw.radiusM / 1000).toFixed(1)}km`
-                              : `${aw.radiusM}m`}
-                          </span>
-                        </div>
-                      </div>
-                      <Radio selected={sel} />
-                    </button>
-                  );
-                })}
-                <Link
-                  href="/aw/new?return=local-mode"
-                  className="block rounded-xl border border-dashed border-[#a695d888] bg-white px-3 py-2 text-center text-[11.5px] font-bold text-[#a695d8]"
-                >
-                  + AW を追加
-                </Link>
+              <button
+                type="button"
+                onClick={useCurrentLocation}
+                disabled={geolocating}
+                className="flex h-[42px] flex-shrink-0 items-center gap-1 rounded-xl border border-[#3a324a14] bg-white px-3 text-[11px] font-bold text-[#a695d8] disabled:opacity-50"
+              >
+                {geolocating ? (
+                  <span className="block h-3 w-3 animate-spin rounded-full border-2 border-[#a695d8] border-t-transparent" />
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 13 13">
+                    <circle cx="6.5" cy="6.5" r="2" fill="#a695d8" />
+                    <circle
+                      cx="6.5"
+                      cy="6.5"
+                      r="5.5"
+                      stroke="#a695d8"
+                      strokeWidth="1"
+                      fill="none"
+                    />
+                  </svg>
+                )}
+                現在地
+              </button>
+            </div>
+
+            {/* 地図 */}
+            <div className="relative mt-2 h-[180px] overflow-hidden rounded-xl border border-[#3a324a14]">
+              <MapPicker
+                center={center}
+                radiusM={radiusM}
+                onCenterChange={(lat, lng) => setCenter([lat, lng])}
+                className="absolute inset-0"
+              />
+              <div className="pointer-events-none absolute right-2.5 top-2.5 z-[900] rounded-full bg-[#a695d8] px-2 py-[3px] text-[10px] font-extrabold tabular-nums text-white shadow-[0_4px_10px_#a695d855]">
+                {radiusLabel}
+              </div>
+            </div>
+
+            {/* 場所名 */}
+            <input
+              type="text"
+              value={venue}
+              onChange={(e) => setVenue(e.target.value)}
+              placeholder="場所の名前（例: 渋谷駅周辺）"
+              maxLength={100}
+              className="mt-2 block w-full rounded-xl border border-[#3a324a14] bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-900 placeholder:font-medium placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
+            />
+          </Section>
+
+          {/* 半径 */}
+          <Section title={`マッチ範囲 / ${radiusLabel}`}>
+            <input
+              type="range"
+              min={200}
+              max={2000}
+              step={100}
+              value={radiusM}
+              onChange={(e) => setRadiusM(Number(e.target.value))}
+              className="block w-full"
+              style={{ accentColor: "#a695d8" }}
+            />
+            <div className="mt-0.5 flex justify-between text-[9.5px] tabular-nums text-[#3a324a8c]">
+              <span>200m</span>
+              <span>2km</span>
+            </div>
+          </Section>
+
+          {/* 時間 */}
+          <Section
+            title={`有効時間 / ${fmtTime(startAt)} 〜 ${fmtTime(endAt)} (${durationMin}分)`}
+          >
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {DURATION_OPTIONS.map((d) => {
+                const active = durationMin === d.value;
+                return (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => applyDuration(d.value)}
+                    className={`rounded-full px-3 py-1.5 text-[11px] font-bold transition-all ${
+                      active
+                        ? "bg-[#a695d8] text-white"
+                        : "border border-[#3a324a14] bg-white text-gray-700"
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="text-[10.5px] font-bold text-[#a695d8]"
+            >
+              {showAdvanced ? "詳細を閉じる" : "開始時刻も指定する"}
+            </button>
+            {showAdvanced && (
+              <div className="mt-2 space-y-1.5">
+                <div>
+                  <div className="mb-0.5 text-[10px] font-bold text-[#3a324a8c]">
+                    開始
+                  </div>
+                  <input
+                    type="datetime-local"
+                    value={isoToDatetimeLocal(startAt)}
+                    onChange={(e) =>
+                      setStartAt(new Date(e.target.value).toISOString())
+                    }
+                    className="block w-full rounded-lg border border-[#3a324a14] bg-white px-2.5 py-1.5 text-[12px] text-gray-900 focus:border-[#a695d8] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <div className="mb-0.5 text-[10px] font-bold text-[#3a324a8c]">
+                    終了
+                  </div>
+                  <input
+                    type="datetime-local"
+                    value={isoToDatetimeLocal(endAt)}
+                    onChange={(e) =>
+                      setEndAt(new Date(e.target.value).toISOString())
+                    }
+                    className="block w-full rounded-lg border border-[#3a324a14] bg-white px-2.5 py-1.5 text-[12px] text-gray-900 focus:border-[#a695d8] focus:outline-none"
+                  />
+                </div>
               </div>
             )}
           </Section>
 
-          {/* 持参グッズ — 写真付き選択画面へ */}
+          {/* 持参グッズ — 別画面リンク */}
           <Section title="持参するグッズ">
-            <Link
-              href="/inventory/select-carrying?return=local-mode"
-              className="flex items-center gap-3 rounded-xl border border-[#3a324a14] bg-white p-3 transition-all active:scale-[0.99]"
-            >
-              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-[#a695d80a]">
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 22 22"
-                  fill="none"
-                  stroke="#a695d8"
-                  strokeWidth="1.5"
-                >
-                  <rect x="3" y="5" width="16" height="13" rx="2" />
-                  <circle cx="11" cy="11.5" r="3" />
-                  <path d="M7 5l1.5-2h5L15 5" />
-                </svg>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-bold text-gray-900">
-                  グッズを選ぶ
-                </div>
-                <div className="mt-0.5 text-[11px] text-[#3a324a8c]">
-                  {carryingItems.length === 0
-                    ? "在庫がありません · 先に登録 →"
-                    : `現在 ${selectedCarryingCount} 件選択中 / 全${carryingItems.length}件`}
-                </div>
-              </div>
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 14 14"
-                fill="none"
-                stroke="#3a324a8c"
-                strokeWidth="1.6"
-                strokeLinecap="round"
+            <div className="flex items-center gap-2">
+              <Link
+                href="/inventory/select-carrying?return=local-mode"
+                className="flex flex-1 items-center gap-3 rounded-xl border border-[#3a324a14] bg-white p-3 transition-all active:scale-[0.99]"
               >
-                <path d="M5 2l5 5-5 5" />
-              </svg>
-            </Link>
-            <p className="mt-1.5 text-[10.5px] text-gray-500">
-              写真付きグッズ一覧で選択 → 自動的にここに戻ります
-            </p>
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#a695d80a]">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 22 22"
+                    fill="none"
+                    stroke="#a695d8"
+                    strokeWidth="1.5"
+                  >
+                    <rect x="3" y="5" width="16" height="13" rx="2" />
+                    <circle cx="11" cy="11.5" r="3" />
+                    <path d="M7 5l1.5-2h5L15 5" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px] font-bold text-gray-900">
+                    グッズを選ぶ
+                  </div>
+                  <div className="mt-0.5 text-[10.5px] text-[#3a324a8c]">
+                    {carryingItems.length === 0
+                      ? "在庫がありません · 先に登録 →"
+                      : `${selectedCarryingCount} 件選択中 / 全${carryingItems.length}件`}
+                  </div>
+                </div>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  stroke="#3a324a8c"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                >
+                  <path d="M5 2l5 5-5 5" />
+                </svg>
+              </Link>
+              {selectedCarryingCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={resetting}
+                  className="rounded-xl border border-[#3a324a14] bg-white px-2.5 py-2 text-[10.5px] font-bold text-[#3a324a8c] disabled:opacity-50"
+                >
+                  解除
+                </button>
+              )}
+            </div>
           </Section>
 
-          {/* 注釈 */}
-          <div className="rounded-xl bg-[#3a324a0a] p-3 text-[11px] leading-relaxed text-[#3a324a8c]">
-            <span className="font-bold text-[#3a324a]">📌 マッチング条件</span>
-            <br />
-            選択した AW の場所×時間×半径と、持参グッズで絞り込まれます。
-            wish 側は自動的に全件対象。
-          </div>
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">
+              {error}
+            </div>
+          )}
         </div>
 
         {/* CTA */}
@@ -302,7 +567,7 @@ export function LocalModeSheet({
           <button
             type="button"
             onClick={handleApply}
-            disabled={pending || !awId}
+            disabled={pending || !venue.trim()}
             className="h-11 flex-1 rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] text-[13.5px] font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] disabled:opacity-60"
           >
             {pending ? "適用中…" : "この設定で表示"}
@@ -326,20 +591,6 @@ function Section({
         {title}
       </div>
       {children}
-    </div>
-  );
-}
-
-function Radio({ selected }: { selected: boolean }) {
-  return (
-    <div
-      className={`flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full border-[1.5px] text-[10px] text-white ${
-        selected
-          ? "border-[#a695d8] bg-[#a695d8]"
-          : "border-[#3a324a4d] bg-transparent"
-      }`}
-    >
-      {selected ? "✓" : ""}
     </div>
   );
 }

@@ -419,6 +419,80 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション65.8：コンディション廃止・AW フッター除去・現地モード一体化
+
+### 背景
+
+オーナー要望:
+1. グッズ登録時のコンディション入力・編集・表示は不要
+2. AW はフッターから削除（独立タブとしては不要）
+3. 現地交換モードは AW 別画面に飛ばず、シート内で場所・時間・半径を直接設定
+
+### 変更内容
+
+#### A. コンディション UI を全削除
+
+- `CaptureFlow.tsx` (新規登録 meta ステップ): condition select 削除、レイアウトを「数量のみ」に
+- `EditForm.tsx` (/inventory/[id]): 「コンディション」Section 削除、`condition` state と `setCondition` 削除、`updateInventoryItem` への condition 引数渡しを廃止
+- DB 列 `goods_inventory.condition` は互換のため残置（NULL 許容）
+
+#### B. BottomNav から AW タブ削除
+
+- `BottomNav.tsx`: items 配列から `{ href: "/aw", label: "AW", ... }` を削除
+- 5 タブ → 4 タブ（ホーム / 在庫 / wish / プロフ）
+- `NavIcon` の `name` 型から `"aw"` を除外、対応 case 削除
+- `/aw` ルート自体は残置（直接 URL アクセス可、ホーム経由で機能は使える）
+
+#### C. LocalModeSheet 全面リファクタ
+
+シート内で **AW 作成 + 場所・時間・半径** を完結。AW 編集画面に飛ばない。
+
+新構成:
+- **場所**: 検索バー (Nominatim) + 「現在地」ボタン（GPS）+ 地図 (Leaflet) 表示 + venue text input
+- **半径**: スライダー (200〜2000m)、地図上に同期表示
+- **時間**: 持続時間 chip (1h/2h/3h/6h/終日) + 「開始時刻も指定する」expand で datetime-local 2 個
+- **持参グッズ**: `/inventory/select-carrying` への リンクカード + 解除ボタン
+
+「現在のシート対象 AW (currentAW)」を `localMode.aw_id` から決定し、開いたときに既存値で初期化。
+シートを開く度に DB 値で再初期化。
+
+旧 prop `aws: SimpleAW[]` は廃止、`currentAW: SimpleAW | null` に変更。
+
+#### D. applyLocalModeAW server action 追加
+
+`web/src/components/home/actions.ts`:
+
+```ts
+applyLocalModeAW({ venue, centerLat, centerLng, radiusM, startAt, endAt })
+```
+
+ロジック:
+1. バリデーション (venue 1-100 文字、半径 50-5000m、終了 > 開始)
+2. `user_local_mode_settings.aw_id` を確認
+3. 既存 AW があれば UPDATE、なければ INSERT で作成
+4. 失敗時は新規作成にフォールバック
+5. settings に aw_id・radius_m・last_lat/lng を upsert
+
+これで「シート → 1 ボタンで AW 作成 + モード ON + 設定保存」が完結。
+
+### 関連ファイル
+
+- `web/src/app/inventory/new/CaptureFlow.tsx`
+- `web/src/app/inventory/[id]/EditForm.tsx`
+- `web/src/components/home/BottomNav.tsx`
+- `web/src/components/home/LocalModeSheet.tsx` (大改修)
+- `web/src/components/home/HomeView.tsx`
+- `web/src/components/home/actions.ts` (`applyLocalModeAW` 追加)
+- `web/src/app/page.tsx` (currentAW を選別して渡す)
+
+### セルフレビュー（CLAUDE.md absolute rule C）
+
+- **A. デザイン整合性**: シート内地図・検索・chip 群は既存 `aw/new/location` と統一トーン ✅
+- **B. 仕様整合性**: 既存 `activity_windows` テーブル流用、`user_local_mode_settings.aw_id` で紐付け、別経路で AW を 1 つ作る運用 ✅
+- **C. レビュー記録**: condition / aw タブは UI のみ廃止、DB / ルートは残置。AW 一覧画面は `/aw` で引き続きアクセス可能（直接 URL）✅
+
+---
+
 ## イテレーション65.7：UI さらに簡素化（priority/フィルタ/モック/トグル削除、定価追加）
 
 ### 背景

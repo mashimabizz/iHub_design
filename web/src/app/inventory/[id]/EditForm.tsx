@@ -82,9 +82,7 @@ export function EditForm({
   const [goodsTypeId, setGoodsTypeId] = useState(item.goodsTypeId);
   const [title, setTitle] = useState(item.title);
   const [description, setDescription] = useState(item.description ?? "");
-  const [condition, setCondition] = useState<typeof item.condition>(
-    item.condition,
-  );
+  // condition は iter65.8 で廃止（DB 列は互換のため残置）
   const [quantity, setQuantity] = useState(item.quantity);
   const [status, setStatus] = useState(item.status);
   const [photoUrls, setPhotoUrls] = useState<string[]>(item.photoUrls);
@@ -227,7 +225,7 @@ export function EditForm({
         goodsTypeId,
         title: finalTitle,
         description: description || undefined,
-        condition: condition ?? undefined,
+        // condition は iter65.8 で廃止
         quantity,
         photoUrls,
       });
@@ -462,39 +460,7 @@ export function EditForm({
         </Section>
       )}
 
-      {/* コンディション */}
-      <Section label="コンディション" hint="(任意)">
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setCondition(null)}
-            className={`rounded-full px-3 py-1.5 text-[12px] font-bold transition-all ${
-              !condition
-                ? "bg-[#a695d8] text-white"
-                : "border border-[#3a324a14] bg-white text-gray-700"
-            }`}
-          >
-            指定なし
-          </button>
-          {CONDITION_OPTIONS.map((c) => {
-            const sel = condition === c.id;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setCondition(c.id)}
-                className={`rounded-full px-3 py-1.5 text-[12px] font-bold transition-all ${
-                  sel
-                    ? "bg-[#a695d8] text-white"
-                    : "border border-[#3a324a14] bg-white text-gray-700"
-                }`}
-              >
-                {c.label}
-              </button>
-            );
-          })}
-        </div>
-      </Section>
+      {/* コンディションは iter65.8 で廃止 */}
 
       {/* 数量 */}
       <Section label="数量" required>

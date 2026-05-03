@@ -69,7 +69,7 @@ export default async function Home({ searchParams }: Props) {
     supabase
       .from("activity_windows")
       .select(
-        "id, venue, event_name, eventless, start_at, end_at, radius_m",
+        "id, venue, event_name, eventless, start_at, end_at, radius_m, center_lat, center_lng",
       )
       .eq("user_id", user.id)
       .eq("status", "enabled")
@@ -109,15 +109,28 @@ export default async function Home({ searchParams }: Props) {
               }
             : null
         }
-        aws={(aws ?? []).map((a) => ({
-          id: a.id,
-          venue: a.venue,
-          eventName: a.event_name,
-          eventless: a.eventless,
-          startAt: a.start_at,
-          endAt: a.end_at,
-          radiusM: (a as { radius_m?: number }).radius_m ?? 500,
-        }))}
+        currentAW={(() => {
+          const target = (aws ?? []).find(
+            (a) => a.id === localMode?.aw_id,
+          );
+          if (!target) return null;
+          return {
+            id: target.id,
+            venue: target.venue,
+            eventName: target.event_name,
+            eventless: target.eventless,
+            startAt: target.start_at,
+            endAt: target.end_at,
+            radiusM:
+              (target as { radius_m?: number }).radius_m ?? 500,
+            centerLat:
+              (target as { center_lat?: number | null }).center_lat ??
+              null,
+            centerLng:
+              (target as { center_lng?: number | null }).center_lng ??
+              null,
+          };
+        })()}
         carryingItems={(carryingItems ?? []).map((r) => ({
           id: r.id,
           title: r.title,

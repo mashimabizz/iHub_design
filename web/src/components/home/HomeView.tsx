@@ -83,13 +83,13 @@ const MOCK_CARDS_BY_TAB: Record<number, MockMatchCard[]> = {
 export function HomeView({
   profile,
   localMode,
-  aws,
+  currentAW,
   carryingItems,
   autoOpenLocalSheet = false,
 }: {
   profile: { handle: string; display_name: string } | null;
   localMode: LocalModeSettings | null;
-  aws: SimpleAW[];
+  currentAW: SimpleAW | null;
   carryingItems: SimpleItem[];
   autoOpenLocalSheet?: boolean;
 }) {
@@ -158,7 +158,7 @@ export function HomeView({
   }
 
   // chosen AW info
-  const chosenAW = aws.find((a) => a.id === settings.awId);
+  const chosenAW = currentAW;
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
@@ -391,7 +391,7 @@ export function HomeView({
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
         initial={settings}
-        aws={aws}
+        currentAW={currentAW}
         carryingItems={carryingItems}
       />
     </main>
