@@ -419,6 +419,90 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67-D：打診の受信表示 `/proposals` + `/proposals/[id]`
+
+### 背景
+
+iter67-C で **送信側** の打診画面（`/propose/[partnerId]`）は完成、iter67.6/.7/.8 でマッチ → 詳細モーダル → 打診プリフィルまで導線が繋がった。
+ただし、**受信側がそれを見て応答する画面** が無いため、打診サイクルが閉じていなかった。
+
+iter67-D で：
+- `/proposals` 一覧（受信 / 送信タブ）
+- `/proposals/[id]` 詳細表示 + 受信者向け応答 CTA（承諾 / 拒否 / ネゴ）
+
+### 変更内容
+
+#### A. `/proposals/page.tsx`（一覧・server）+ `ProposalsView.tsx`（client）
+
+- 自分が sender or receiver の打診を `or(sender_id.eq.., receiver_id.eq..)` で fetch
+- draft 除外、`last_action_at desc` 順
+- 相手の handle / display_name は bulk fetch
+- タブ：「受信」「送信」（カウント付き）
+- カード：状態バッジ（色分け）、定価交換 chip、未応答に NEW、期限 残N日（≤1日 で警告色）
+  - 待ち合わせ要約（時間帯 + 場所）+ メッセージ抜粋（60 文字）
+  - タップで詳細へ
+
+#### B. `/proposals/[id]/page.tsx`（server）+ `ProposalDetailView.tsx`（client）
+
+server：
+- proposals + 関連 inventory（sender_have_ids + receiver_have_ids を flatten）+ 相手 user を fetch
+- 自分が sender / receiver か判定
+- `ProposalDetail` 型に整形して client に渡す
+
+client：
+- ヘッダーカード：ステータス、定価交換 chip、期限、相手 user
+- 交換内容：grid（譲 ↔ ⇄ 譲 + 中央 ArrowDot）。定価交換時は片側に「💴 ¥金額」カード
+- 待ち合わせ：日時範囲 + 場所 + 地図プレビュー（read-only MapPicker）
+- メッセージ：トーン chip + 全文表示
+- その他：スケジュール共有 ON/OFF、listing_id 経由表示、拒否理由表示
+- **受信者向け CTA**（status=`sent`/`negotiating` のみ）：
+  - 「✓ この内容で承諾する」（紫グラデフル幅）
+  - 「ネゴ（条件相談）」「拒否」（2 ボタン横並び）
+  - 「ネゴ：日時 / 数量 / 提示物の調整を打診相手と相談（C-1.5、次イテレーションで実装）」案内
+- **拒否モード**：
+  - REJECT_TEMPLATES：「条件が合わない / 時間が合わない / 場所が遠い / 理由非開示」
+  - 4 ボタン + 「理由なしで拒否を確定」+ 「← 戻る」
+- **送信者向け表示**：状態に応じた一文（「相手の応答を待っています」「ネゴ中です」「合意済 ✓」など）
+
+#### C. `respondToProposal` action は既存（iter67-C で実装済）
+- 引数：`id`, `action: 'accept'|'reject'|'negotiate'`, `rejectedTemplate?`
+- 受信者チェック、status sent/negotiating のみ通過、新 status へ更新
+
+#### D. プロフ画面に「📨 打診」リンク追加
+`/profile/ProfileView.tsx` の「あなたの活動」セクションに、スケジュールの上に「📨 打診 — 送信・受信した打診一覧」を追加。
+
+### 影響範囲
+
+- 新ルート：`/proposals`、`/proposals/[id]`
+- プロフィール：「📨 打診」エントリ追加
+- 打診サイクルが閉じる（送信→受信→応答→確認）
+
+### 設計判断
+
+- **受信専用画面ではなく一覧 + 詳細**：送信側も自分が送った打診を見て状態追跡できる必要があるため、両方扱う
+- **タブで切替**：受信 / 送信のメンタルモデルを分離
+- **承諾 CTA は紫グラデフル幅で目立たせる**：最頻パターンを推奨
+- **拒否は 2 段階**（拒否ボタン → 理由選択モード）：誤タップ防止 + 理由を集める動機付け
+- **ネゴはまだ flag 化のみ**：C-1.5 ネゴチャットは iter68 以降。今は status=`negotiating` に変えるだけで、UI は「次イテで実装」案内
+- **取引タブ未整備**：合意後の遷移先は表記のみ（「取引画面へ進めます（次イテで実装）」）
+
+### TODO（次の iter）
+
+- iter68：C-1.5 ネゴチャット（messages テーブル + UI）
+- iter68：合意後の取引画面（C-2 / C-3）
+- フッターに「取引」タブ追加
+- 期限自動切替 cron（expires_at 過ぎたら status=expired）
+
+### 関連ファイル
+
+- `web/src/app/proposals/page.tsx`（新規）
+- `web/src/app/proposals/ProposalsView.tsx`（新規）
+- `web/src/app/proposals/[id]/page.tsx`（新規）
+- `web/src/app/proposals/[id]/ProposalDetailView.tsx`（新規）
+- `web/src/app/profile/ProfileView.tsx`（リンク追加）
+
+---
+
 ## イテレーション67.8：詳細モーダル UX 改善（複数選択肢 + 在庫チェック + 線統一 + チェック削除）
 
 ### 背景

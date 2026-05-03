@@ -146,6 +146,16 @@ export function ProfileView({
 
         {/* あなたの活動 */}
         <Section label="あなたの活動">
+          <Link href="/proposals" className="block">
+            <Row>
+              <RowItem
+                icon="📨"
+                title="打診"
+                sub="送信・受信した打診一覧"
+                chevron
+              />
+            </Row>
+          </Link>
           <Link href="/schedules" className="block">
             <Row>
               <RowItem
