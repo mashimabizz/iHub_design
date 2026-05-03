@@ -18,18 +18,31 @@ export type ListingWishItem = {
   id: string;
   title: string;
   qty: number;
-  exchangeType: "same_kind" | "cross_kind" | "any";
+  photoUrl: string | null;
   groupName: string | null;
   characterName: string | null;
   goodsTypeName: string | null;
+};
+
+export type ListingOption = {
+  id: string;
+  position: number;
+  logic: "and" | "or";
+  exchangeType: "same_kind" | "cross_kind" | "any";
+  isCashOffer: boolean;
+  cashAmount: number | null;
+  groupName: string | null;
+  goodsTypeName: string | null;
+  wishes: ListingWishItem[];
 };
 
 export type ListingItem = {
   id: string;
   haves: ListingHaveItem[];
   haveLogic: "and" | "or";
-  wishes: ListingWishItem[];
-  wishLogic: "and" | "or";
+  haveGroupName: string | null;
+  haveGoodsTypeName: string | null;
+  options: ListingOption[];
   status: "active" | "paused" | "matched" | "closed";
   note: string | null;
 };
@@ -92,7 +105,6 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
                 : "border-[#3a324a14] opacity-70"
             }`}
           >
-            {/* status 帯 */}
             <div className="flex items-center gap-2.5 px-3.5 pt-3">
               <span
                 className={`rounded-full px-2 py-[3px] text-[9.5px] font-extrabold tracking-[0.5px] ${
@@ -120,26 +132,50 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
             </div>
 
             {/* 譲群 */}
-            <Side
-              kind="have"
-              items={it.haves}
-              logic={it.haveLogic}
-              colorAccent="#a8d4e6"
-              labelText="譲"
-            />
+            <div className="px-3.5 pt-2">
+              <div className="mb-1 flex items-baseline gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#a8d4e6]">
+                  譲 ({it.haves.length})
+                </span>
+                {it.haveGroupName && it.haveGoodsTypeName && (
+                  <span className="text-[10px] font-bold text-[#3a324a8c]">
+                    {it.haveGroupName} × {it.haveGoodsTypeName}
+                  </span>
+                )}
+                {it.haves.length > 1 && (
+                  <span
+                    className={`rounded-full px-1.5 py-[1px] text-[9.5px] font-extrabold ${
+                      it.haveLogic === "and"
+                        ? "bg-[#a695d8] text-white"
+                        : "border border-[#a695d855] bg-white text-[#a695d8]"
+                    }`}
+                  >
+                    {it.haveLogic === "and" ? "全部 AND" : "いずれか OR"}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {it.haves.map((h) => (
+                  <ItemChip key={h.id} item={h} accent="have" />
+                ))}
+              </div>
+            </div>
 
-            <div className="mx-3.5 my-1 flex items-center justify-center text-[14px] font-bold text-[#3a324a8c]">
+            <div className="my-2 flex items-center justify-center text-[14px] font-bold text-[#3a324a8c]">
               ↔
             </div>
 
-            {/* 求群 */}
-            <Side
-              kind="wish"
-              items={it.wishes}
-              logic={it.wishLogic}
-              colorAccent="#f3c5d4"
-              labelText="求"
-            />
+            {/* 求側選択肢 */}
+            <div className="px-3.5">
+              <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-[#f3c5d4]">
+                求 — 選択肢 {it.options.length}
+              </div>
+              <div className="space-y-2">
+                {it.options.map((opt) => (
+                  <OptionRow key={opt.id} option={opt} />
+                ))}
+              </div>
+            </div>
 
             {it.note && (
               <div className="mx-3.5 my-2 rounded-lg bg-[#3a324a06] px-2.5 py-1.5 text-[11px] text-[#3a324a]">
@@ -164,88 +200,75 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
   );
 }
 
-function Side({
-  kind,
-  items,
-  logic,
-  colorAccent,
-  labelText,
-}: {
-  kind: "have" | "wish";
-  items: ListingHaveItem[] | ListingWishItem[];
-  logic: "and" | "or";
-  colorAccent: string;
-  labelText: string;
-}) {
-  const isMulti = items.length > 1;
-  const logicLabel = logic === "and" ? "全部 AND" : "いずれか OR";
-
+function OptionRow({ option }: { option: ListingOption }) {
   return (
-    <div className="px-3.5 pt-2">
-      <div className="mb-1.5 flex items-baseline gap-2">
-        <span
-          className="text-[10px] font-bold uppercase tracking-wider"
-          style={{ color: colorAccent }}
-        >
-          {labelText} ({items.length})
+    <div className="rounded-xl border border-[#f3c5d433] bg-[#f3c5d40a] px-2.5 py-2">
+      <div className="mb-1 flex flex-wrap items-baseline gap-1.5 text-[10.5px]">
+        <span className="rounded-full bg-[#f3c5d4] px-1.5 py-[1px] text-[9.5px] font-extrabold text-[#3a324a]">
+          #{option.position}
         </span>
-        {isMulti && (
-          <span
-            className={`rounded-full px-1.5 py-[1px] text-[9.5px] font-extrabold ${
-              logic === "and"
-                ? "bg-[#a695d8] text-white"
-                : "border border-[#a695d855] bg-white text-[#a695d8]"
-            }`}
-          >
-            {logicLabel}
-          </span>
+        {option.isCashOffer ? (
+          <span className="font-bold text-[#3a324a]">💴 定価交換</span>
+        ) : (
+          <>
+            <span className="font-bold text-[#3a324a]">
+              {option.groupName ?? "?"} × {option.goodsTypeName ?? "?"}
+            </span>
+            <span className="rounded-full border border-[#a695d855] bg-white px-1.5 py-[1px] text-[9px] font-extrabold text-[#a695d8]">
+              {EXCHANGE_LABEL[option.exchangeType]}
+            </span>
+            {option.wishes.length > 1 && (
+              <span
+                className={`rounded-full px-1.5 py-[1px] text-[9px] font-extrabold ${
+                  option.logic === "and"
+                    ? "bg-[#a695d8] text-white"
+                    : "border border-[#a695d855] bg-white text-[#a695d8]"
+                }`}
+              >
+                {option.logic === "and" ? "全部 AND" : "いずれか OR"}
+              </span>
+            )}
+          </>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {items.map((it) => (
-          <ItemChip key={it.id} item={it} kind={kind} />
-        ))}
-      </div>
+      {option.isCashOffer ? (
+        <div className="text-[12px] font-extrabold tabular-nums text-[#3a324a]">
+          ¥{option.cashAmount?.toLocaleString() ?? "—"}
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-1">
+          {option.wishes.map((w) => (
+            <ItemChip key={w.id} item={w} accent="wish" small />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 function ItemChip({
   item,
-  kind,
+  accent,
+  small,
 }: {
   item: ListingHaveItem | ListingWishItem;
-  kind: "have" | "wish";
+  accent: "have" | "wish";
+  small?: boolean;
 }) {
   const name = item.characterName ?? item.groupName ?? item.title;
-  const exchangeType =
-    kind === "wish"
-      ? (item as ListingWishItem).exchangeType
-      : null;
-
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-        kind === "have"
+      className={`inline-flex items-center gap-1 rounded-full ${small ? "px-2 py-[3px] text-[10.5px]" : "px-2.5 py-1 text-[11px]"} font-bold ${
+        accent === "have"
           ? "border border-[#a8d4e655] bg-[#a8d4e60f] text-[#3a324a]"
-          : "border border-[#f3c5d455] bg-[#f3c5d40f] text-[#3a324a]"
+          : "border border-[#f3c5d455] bg-white text-[#3a324a]"
       }`}
     >
       {name}
-      {item.goodsTypeName && (
-        <span className="text-[9.5px] font-semibold text-[#3a324a8c]">
-          · {item.goodsTypeName}
-        </span>
-      )}
-      <span className="ml-0.5 rounded-sm bg-[#3a324a14] px-1 text-[9.5px] font-extrabold tabular-nums text-[#3a324a]">
+      <span className="ml-0.5 rounded-sm bg-[#3a324a14] px-1 text-[9px] font-extrabold tabular-nums text-[#3a324a]">
         ×{item.qty}
       </span>
-      {exchangeType && exchangeType !== "any" && (
-        <span className="ml-0.5 text-[9px] font-bold text-[#a695d8]">
-          {EXCHANGE_LABEL[exchangeType]}
-        </span>
-      )}
     </span>
   );
 }

@@ -51,16 +51,30 @@ export type Match = {
 
 export type MatchedListingInfo = {
   listingId: string;
-  // listing の全ハベ・全 wish 情報（詳細モーダル描画用）
+  // 譲側
   haveIds: string[];
   haveQtys: number[];
   haveLogic: "and" | "or";
-  wishIds: string[];
-  wishQtys: number[];
-  wishLogic: "and" | "or";
+  haveGroupId: string | null;
+  haveGoodsTypeId: string | null;
   /** マッチに寄与した私の譲（haveIds の subset） */
   matchedHaveIds: string[];
-  /** マッチに寄与した相手アイテム（私の wish_ids の subset と対応） */
+  // 求側（全選択肢、成立フラグ付き）
+  options: MatchedOptionInfo[];
+};
+
+export type MatchedOptionInfo = {
+  id: string;
+  position: number;
+  wishIds: string[];
+  wishQtys: number[];
+  logic: "and" | "or";
+  exchangeType: "same_kind" | "cross_kind" | "any";
+  isCashOffer: boolean;
+  cashAmount: number | null;
+  /** この選択肢が成立したか */
+  matched: boolean;
+  /** この選択肢に該当した相手の inventory id 群（matched=true の時のみ） */
   matchedTheirInvIds: string[];
 };
 
@@ -82,21 +96,31 @@ export function isMatching(my: MatchInv, theirs: MatchInv): boolean {
 }
 
 /**
- * iter67.3：listings は have/wish 両側で複数 + AND/OR をサポート。
+ * iter67.4：listings の求側を「複数選択肢」モデルに再設計。
  *
- * 旧モデル: inventoryId (single) + wishIds[]
- * 新モデル: haveIds[] + haveQtys[] + haveLogic / wishIds[] + wishQtys[] + wishLogic
- *
- * 制約：have_logic='or' AND wish_logic='or' AND 両側 ≥2 アイテム は禁止（DB CHECK）
+ * - 譲側：1 つのバンドル（同 group + 同 goods_type 制約、AND/OR）
+ * - 求側：複数の選択肢（最大 5）。選択肢間は OR（相手が 1 つ選ぶ）
+ *   各選択肢は独立に：group + goods_type + AND/OR + qty + exchange_type + 定価交換フラグ
  */
+export type ListingWishOption = {
+  id: string;
+  position: number;
+  wishIds: string[];
+  wishQtys: number[];
+  logic: "and" | "or";
+  exchangeType: "same_kind" | "cross_kind" | "any";
+  isCashOffer: boolean;
+  cashAmount: number | null;
+};
+
 export type ListingForMatch = {
   id: string;
   haveIds: string[];
   haveQtys: number[];
   haveLogic: "and" | "or";
-  wishIds: string[];
-  wishQtys: number[];
-  wishLogic: "and" | "or";
+  haveGroupId: string | null;
+  haveGoodsTypeId: string | null;
+  options: ListingWishOption[];
 };
 
 /**
@@ -147,7 +171,7 @@ export function matchPair(input: {
   const matchedListings: MatchedListingInfo[] = [];
   let viaListing = false;
 
-  /* ─── 1. listing 駆動マッチ（譲側＝listing.have、求側＝listing.wish_ids 経由） ─── */
+  /* ─── 1. listing 駆動マッチ（選択肢ベース） ─── */
   for (const l of myListings) {
     const lm = evaluateListingMatch(l, myInvById, myWishById, partnerInv);
     if (!lm) continue;
@@ -157,20 +181,22 @@ export function matchPair(input: {
       haveIds: l.haveIds,
       haveQtys: l.haveQtys,
       haveLogic: l.haveLogic,
-      wishIds: l.wishIds,
-      wishQtys: l.wishQtys,
-      wishLogic: l.wishLogic,
+      haveGroupId: l.haveGroupId,
+      haveGoodsTypeId: l.haveGoodsTypeId,
       matchedHaveIds: lm.matchedHaveIds,
-      matchedTheirInvIds: lm.matchedTheirInvIds,
+      options: lm.options,
     });
-    // 譲 / 受 group に登録
     for (const id of lm.matchedHaveIds) {
       const inv = myInvById.get(id);
       if (inv) myGivesMap.set(inv.id, inv);
     }
-    for (const id of lm.matchedTheirInvIds) {
-      const inv = partnerInv.find((p) => p.id === id);
-      if (inv) theirGivesMap.set(inv.id, inv);
+    // 成立した選択肢の相手アイテムを theirGives に登録
+    for (const opt of lm.options) {
+      if (!opt.matched) continue;
+      for (const id of opt.matchedTheirInvIds) {
+        const inv = partnerInv.find((p) => p.id === id);
+        if (inv) theirGivesMap.set(inv.id, inv);
+      }
     }
   }
 
@@ -221,68 +247,98 @@ export function matchPair(input: {
 }
 
 /**
- * 1 listing が相手とマッチするかを判定。
+ * iter67.4：1 listing が相手とマッチするかを「選択肢」モデルで判定。
  *
  * 仕様:
- * - have_logic = AND ⇒ haveIds 全件が「相手の wish 群のいずれか」にヒットする必要あり
- * - have_logic = OR  ⇒ haveIds のうち少なくとも 1 件が相手 wish にヒット
- * - wish_logic = AND ⇒ wishIds 全件が「相手の譲群」にヒットする必要あり
- * - wish_logic = OR  ⇒ wishIds のうち少なくとも 1 件が相手 譲 にヒット
+ * - 各選択肢を独立に評価：
+ *   - 定価交換 (is_cash_offer=true) は MVP では「常に成立」扱い（マッチング演算では発火しない）
+ *     → 通常の wish 系マッチには寄与しない。UI 表示のみ
+ *   - 通常選択肢：option.logic に従って相手の譲群と整合判定
+ *     - AND: 全 wish_ids が相手の譲群のいずれかにヒット必要
+ *     - OR : 少なくとも 1 件で OK
+ * - listing が成立 = 少なくとも 1 つの選択肢が成立
+ * - 成立時：listing.have_logic に従って譲を出す
  *
- * 「ヒット」= isMatching() 真（goods_type + character/group の一致）
+ * 数量 (qty) はマッチ判定では未使用（タグ表示のみ）。実数量は打診で調整。
  *
- * 数量 (qty) は MVP では判定に用いない（タグ表示のみ）。実数量は打診で個別調整する想定。
- *
- * 注：相手側にも listing があり得るが、MVP では考慮しない（自分側 listing で完結）。
- *
- * @returns null = マッチ不成立 / { matchedHaveIds, matchedTheirInvIds } = 寄与した ID 群
+ * @returns null = listing 全体不成立 / { matchedHaveIds, options } = 寄与情報
  */
 function evaluateListingMatch(
   listing: ListingForMatch,
   myInvById: Map<string, MatchInv>,
   myWishById: Map<string, MatchInv>,
   partnerInv: MatchInv[],
-): { matchedHaveIds: string[]; matchedTheirInvIds: string[] } | null {
-  /* ─ have 側評価：自分の譲が相手の wish にヒットするか ─ */
-  // partnerWishes は呼び出し側で持つが、ここでは partnerInv を使った逆向きチェックのみ
-  // （iter67.3 MVP：listing 経由は私 give→相手 wish の forward 方向は通常マッチで拾う）
-  // よって listing.haveLogic は ここでは「全 have が listing.wishIds（相手の対応譲群）と整合」でチェック
+): {
+  matchedHaveIds: string[];
+  options: MatchedOptionInfo[];
+} | null {
+  const optionResults: MatchedOptionInfo[] = [];
 
-  /* ─ wish 側評価：listing.wishIds に対して、相手の譲がどれだけヒットするか ─ */
-  const matchedTheirInvByWishId = new Map<string, string[]>(); // wishId → matched theirInv ids
-  for (const wid of listing.wishIds) {
-    const myWish = myWishById.get(wid);
-    if (!myWish) continue;
-    const hits = partnerInv
-      .filter((p) => isMatching(p, myWish))
-      .map((p) => p.id);
-    if (hits.length > 0) {
-      matchedTheirInvByWishId.set(wid, hits);
+  for (const opt of listing.options) {
+    if (opt.isCashOffer) {
+      // 定価交換は MVP マッチング対象外（UI 表示のみ、matched=false で記録）
+      optionResults.push({
+        id: opt.id,
+        position: opt.position,
+        wishIds: opt.wishIds,
+        wishQtys: opt.wishQtys,
+        logic: opt.logic,
+        exchangeType: opt.exchangeType,
+        isCashOffer: true,
+        cashAmount: opt.cashAmount,
+        matched: false,
+        matchedTheirInvIds: [],
+      });
+      continue;
     }
+
+    // 各 wish_id について「相手の譲群のいずれかにヒット」したかを判定
+    const matchedByWishId = new Map<string, string[]>();
+    for (const wid of opt.wishIds) {
+      const myWish = myWishById.get(wid);
+      if (!myWish) continue;
+      const hits = partnerInv
+        .filter((p) => isMatching(p, myWish))
+        .map((p) => p.id);
+      if (hits.length > 0) {
+        matchedByWishId.set(wid, hits);
+      }
+    }
+
+    const optMatched =
+      opt.logic === "and"
+        ? opt.wishIds.every((wid) => matchedByWishId.has(wid))
+        : matchedByWishId.size > 0;
+
+    optionResults.push({
+      id: opt.id,
+      position: opt.position,
+      wishIds: opt.wishIds,
+      wishQtys: opt.wishQtys,
+      logic: opt.logic,
+      exchangeType: opt.exchangeType,
+      isCashOffer: false,
+      cashAmount: null,
+      matched: optMatched,
+      matchedTheirInvIds: optMatched
+        ? Array.from(new Set(Array.from(matchedByWishId.values()).flat()))
+        : [],
+    });
   }
 
-  // wish_logic 評価
-  const wishMatched =
-    listing.wishLogic === "and"
-      ? listing.wishIds.every((wid) => matchedTheirInvByWishId.has(wid))
-      : matchedTheirInvByWishId.size > 0;
+  // listing 全体が成立する条件：少なくとも 1 つの「通常」選択肢が matched
+  const anyMatched = optionResults.some((o) => o.matched);
+  if (!anyMatched) return null;
 
-  if (!wishMatched) return null;
-
-  /* ─ have 側：listing が wish 側でマッチしたなら、listing の have すべてが
-     trade に出ると見なす（have_logic=AND なら全件、OR なら任意 1 件以上で OK）─ */
+  // 譲側：have_logic=AND なら全件、OR なら 1 件のみ
   const matchedHaveIds: string[] =
     listing.haveLogic === "and"
       ? listing.haveIds.filter((hid) => myInvById.has(hid))
-      : listing.haveIds.filter((hid) => myInvById.has(hid)).slice(0, 1); // OR は最初の 1 件を仮表示
+      : listing.haveIds.filter((hid) => myInvById.has(hid)).slice(0, 1);
 
   if (matchedHaveIds.length === 0) return null;
 
-  // 相手側ヒットアイテム集合（重複除去）
-  const matchedTheirInvIds = Array.from(
-    new Set(Array.from(matchedTheirInvByWishId.values()).flat()),
-  );
-  return { matchedHaveIds, matchedTheirInvIds };
+  return { matchedHaveIds, options: optionResults };
 }
 
 /**

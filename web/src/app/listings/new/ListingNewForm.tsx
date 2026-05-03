@@ -3,12 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
-import { createListing, type ListingLogic } from "@/app/listings/actions";
+import {
+  createListing,
+  type ListingExchangeType,
+  type ListingLogic,
+  type ListingOptionInput,
+} from "@/app/listings/actions";
 
 type InventoryOpt = {
   id: string;
   title: string;
   photoUrl: string | null;
+  groupId: string | null;
+  goodsTypeId: string | null;
   groupName: string | null;
   characterName: string | null;
   goodsTypeName: string | null;
@@ -19,102 +26,109 @@ type WishOpt = {
   id: string;
   title: string;
   exchangeType?: "same_kind" | "cross_kind" | "any";
+  groupId: string | null;
+  goodsTypeId: string | null;
   groupName: string | null;
   characterName: string | null;
   goodsTypeName: string | null;
 };
 
-type Selected = { id: string; qty: number };
+type SelectedItem = { id: string; qty: number };
 
-const ALL = "すべて";
-
-const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
-  same_kind: "同種",
-  cross_kind: "異種",
-  any: "同異種",
+type WishOption = {
+  position: number;
+  groupId: string | null;
+  goodsTypeId: string | null;
+  selected: SelectedItem[];
+  logic: ListingLogic;
+  exchangeType: ListingExchangeType;
+  isCashOffer: boolean;
+  cashAmount: number | null;
 };
+
+const MAX_OPTIONS = 5;
+
+const EXCHANGE_OPTIONS: {
+  value: ListingExchangeType;
+  label: string;
+  sub: string;
+}[] = [
+  { value: "any", label: "同異種", sub: "どちらでもOK" },
+  { value: "same_kind", label: "同種のみ", sub: "同じ種別のみ" },
+  { value: "cross_kind", label: "異種のみ", sub: "別の種別のみ" },
+];
 
 export function ListingNewForm({
   inventoryItems,
   wishItems,
+  groups,
+  goodsTypes,
 }: {
   inventoryItems: InventoryOpt[];
   wishItems: WishOpt[];
+  groups: { id: string; name: string }[];
+  goodsTypes: { id: string; name: string }[];
 }) {
   const router = useRouter();
 
-  const [haves, setHaves] = useState<Selected[]>([]);
+  /* ─ 譲側 ─ */
+  const [haveGroupId, setHaveGroupId] = useState<string | null>(null);
+  const [haveGoodsTypeId, setHaveGoodsTypeId] = useState<string | null>(null);
+  const [selectedHaves, setSelectedHaves] = useState<SelectedItem[]>([]);
   const [haveLogic, setHaveLogic] = useState<ListingLogic>("and");
 
-  const [wishes, setWishes] = useState<Selected[]>([]);
-  const [wishLogic, setWishLogic] = useState<ListingLogic>("or");
+  /* ─ 求側選択肢 ─ */
+  const [options, setOptions] = useState<WishOption[]>([
+    {
+      position: 1,
+      groupId: null,
+      goodsTypeId: null,
+      selected: [],
+      logic: "or",
+      exchangeType: "any",
+      isCashOffer: false,
+      cashAmount: null,
+    },
+  ]);
 
+  /* ─ メモ ─ */
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  /* フィルタ */
-  const [havePushFilter, setHavePushFilter] = useState(ALL);
-  const [haveTypeFilter, setHaveTypeFilter] = useState(ALL);
-  const [wishPushFilter, setWishPushFilter] = useState(ALL);
-  const [wishTypeFilter, setWishTypeFilter] = useState(ALL);
-
-  /* フィルタ候補 */
-  const havePushOpts = useMemo(
-    () => collectFilter(inventoryItems, "push"),
-    [inventoryItems],
-  );
-  const haveTypeOpts = useMemo(
-    () => collectFilter(inventoryItems, "type"),
-    [inventoryItems],
-  );
-  const wishPushOpts = useMemo(
-    () => collectFilter(wishItems, "push"),
-    [wishItems],
-  );
-  const wishTypeOpts = useMemo(
-    () => collectFilter(wishItems, "type"),
-    [wishItems],
-  );
-
-  const filteredInv = useMemo(
-    () => filterItems(inventoryItems, havePushFilter, haveTypeFilter),
-    [inventoryItems, havePushFilter, haveTypeFilter],
-  );
-  const filteredWishes = useMemo(
-    () => filterItems(wishItems, wishPushFilter, wishTypeFilter),
-    [wishItems, wishPushFilter, wishTypeFilter],
-  );
 
   useEffect(() => {
     router.prefetch("/listings");
   }, [router]);
 
-  /* OR×OR ガード（UI 段階で警告） */
-  const orOrViolation =
-    haveLogic === "or" && wishLogic === "or" && haves.length > 1 && wishes.length > 1;
+  /* ─ 譲側のフィルタ済みインベントリ ─ */
+  const filteredHaves = useMemo(() => {
+    if (!haveGroupId || !haveGoodsTypeId) return [];
+    return inventoryItems.filter(
+      (it) => it.groupId === haveGroupId && it.goodsTypeId === haveGoodsTypeId,
+    );
+  }, [inventoryItems, haveGroupId, haveGoodsTypeId]);
 
-  function toggleSelect(
-    set: Selected[],
-    setSet: (s: Selected[]) => void,
-    id: string,
-  ) {
-    const existing = set.find((s) => s.id === id);
-    if (existing) {
-      setSet(set.filter((s) => s.id !== id));
-    } else {
-      setSet([...set, { id, qty: 1 }]);
-    }
+  /* group/goods_type を変えると選択リセット */
+  function changeHaveGroup(id: string | null) {
+    setHaveGroupId(id);
+    setSelectedHaves([]);
+  }
+  function changeHaveGoodsType(id: string | null) {
+    setHaveGoodsTypeId(id);
+    setSelectedHaves([]);
   }
 
-  function setQty(
-    set: Selected[],
-    setSet: (s: Selected[]) => void,
-    id: string,
-    delta: number,
-  ) {
-    setSet(
-      set.map((s) =>
+  /* ─ 操作 ─ */
+  function toggleHave(id: string) {
+    setSelectedHaves((prev) =>
+      prev.find((s) => s.id === id)
+        ? prev.filter((s) => s.id !== id)
+        : [...prev, { id, qty: 1 }],
+    );
+  }
+  function setHaveQty(id: string, delta: number) {
+    setSelectedHaves((prev) =>
+      prev.map((s) =>
         s.id === id
           ? { ...s, qty: Math.max(1, Math.min(99, s.qty + delta)) }
           : s,
@@ -122,30 +136,118 @@ export function ListingNewForm({
     );
   }
 
+  function addOption() {
+    if (options.length >= MAX_OPTIONS) return;
+    setOptions((prev) => [
+      ...prev,
+      {
+        position: prev.length + 1,
+        // デフォルトは譲るグッズで設定したもの
+        groupId: haveGroupId,
+        goodsTypeId: haveGoodsTypeId,
+        selected: [],
+        logic: "or",
+        exchangeType: "any",
+        isCashOffer: false,
+        cashAmount: null,
+      },
+    ]);
+  }
+  function removeOption(idx: number) {
+    setOptions((prev) =>
+      prev
+        .filter((_, i) => i !== idx)
+        .map((o, i) => ({ ...o, position: i + 1 })),
+    );
+  }
+  function patchOption(idx: number, patch: Partial<WishOption>) {
+    setOptions((prev) => prev.map((o, i) => (i === idx ? { ...o, ...patch } : o)));
+  }
+  function toggleOptionWish(idx: number, wishId: string) {
+    setOptions((prev) =>
+      prev.map((o, i) => {
+        if (i !== idx) return o;
+        const exists = o.selected.find((s) => s.id === wishId);
+        return {
+          ...o,
+          selected: exists
+            ? o.selected.filter((s) => s.id !== wishId)
+            : [...o.selected, { id: wishId, qty: 1 }],
+        };
+      }),
+    );
+  }
+  function setOptionWishQty(idx: number, wishId: string, delta: number) {
+    setOptions((prev) =>
+      prev.map((o, i) => {
+        if (i !== idx) return o;
+        return {
+          ...o,
+          selected: o.selected.map((s) =>
+            s.id === wishId
+              ? { ...s, qty: Math.max(1, Math.min(99, s.qty + delta)) }
+              : s,
+          ),
+        };
+      }),
+    );
+  }
+
   async function handleSubmit() {
     setError(null);
-    if (haves.length === 0) {
-      setError("譲るグッズを 1 件以上選択してください");
+    if (!haveGroupId || !haveGoodsTypeId) {
+      setError("譲るグッズのグループと種別を選んでください");
       return;
     }
-    if (wishes.length === 0) {
-      setError("求める wish を 1 件以上選択してください");
+    if (selectedHaves.length === 0) {
+      setError("譲るグッズを 1 件以上選んでください");
       return;
     }
-    if (orOrViolation) {
-      setError(
-        "両側で複数アイテム × OR は曖昧なため指定できません。どちらかを AND にするか片側を 1 件にしてください。",
-      );
-      return;
+
+    const optionsInput: ListingOptionInput[] = [];
+    for (const o of options) {
+      if (o.isCashOffer) {
+        if (!o.cashAmount || o.cashAmount < 1) {
+          setError(`選択肢 #${o.position}：金額を入力してください`);
+          return;
+        }
+        optionsInput.push({
+          position: o.position,
+          wishIds: [],
+          wishQtys: [],
+          logic: o.logic,
+          exchangeType: o.exchangeType,
+          isCashOffer: true,
+          cashAmount: o.cashAmount,
+        });
+      } else {
+        if (!o.groupId || !o.goodsTypeId) {
+          setError(
+            `選択肢 #${o.position}：グループと種別を選んでください`,
+          );
+          return;
+        }
+        if (o.selected.length === 0) {
+          setError(`選択肢 #${o.position}：wish を 1 件以上選んでください`);
+          return;
+        }
+        optionsInput.push({
+          position: o.position,
+          wishIds: o.selected.map((s) => s.id),
+          wishQtys: o.selected.map((s) => s.qty),
+          logic: o.logic,
+          exchangeType: o.exchangeType,
+          isCashOffer: false,
+        });
+      }
     }
+
     setPending(true);
     const r = await createListing({
-      haveIds: haves.map((s) => s.id),
-      haveQtys: haves.map((s) => s.qty),
+      haveIds: selectedHaves.map((s) => s.id),
+      haveQtys: selectedHaves.map((s) => s.qty),
       haveLogic,
-      wishIds: wishes.map((s) => s.id),
-      wishQtys: wishes.map((s) => s.qty),
-      wishLogic,
+      options: optionsInput,
       note: note.trim() || undefined,
     });
     if (r?.error) {
@@ -168,42 +270,46 @@ export function ListingNewForm({
       <Section
         label="譲るグッズ"
         required
-        hint={`${haves.length} 件選択中 / ${filteredInv.length} 件表示`}
+        hint={`${selectedHaves.length} 件選択中`}
       >
-        <FilterRow
-          label="推し"
-          options={havePushOpts}
-          value={havePushFilter}
-          onChange={setHavePushFilter}
-        />
-        <FilterRow
-          label="種別"
-          options={haveTypeOpts}
-          value={haveTypeFilter}
-          onChange={setHaveTypeFilter}
-        />
+        <div className="mb-2 grid grid-cols-2 gap-2">
+          <SelectField
+            label="グループ"
+            value={haveGroupId}
+            options={groups}
+            onChange={changeHaveGroup}
+          />
+          <SelectField
+            label="種別"
+            value={haveGoodsTypeId}
+            options={goodsTypes}
+            onChange={changeHaveGoodsType}
+          />
+        </div>
 
-        {filteredInv.length === 0 ? (
-          <Empty label="条件に合う譲るグッズがありません" />
+        {!haveGroupId || !haveGoodsTypeId ? (
+          <Empty label="先にグループと種別を選んでください" />
+        ) : filteredHaves.length === 0 ? (
+          <Empty label="この組み合わせの譲がありません" />
         ) : (
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            {filteredInv.map((it) => {
-              const sel = haves.find((s) => s.id === it.id);
+          <div className="grid grid-cols-3 gap-2">
+            {filteredHaves.map((it) => {
+              const sel = selectedHaves.find((s) => s.id === it.id);
               return (
                 <PanelCard
                   key={it.id}
                   item={it}
                   selected={!!sel}
                   qty={sel?.qty ?? 0}
-                  onClick={() => toggleSelect(haves, setHaves, it.id)}
-                  onQty={(d) => setQty(haves, setHaves, it.id, d)}
+                  onClick={() => toggleHave(it.id)}
+                  onQty={(d) => setHaveQty(it.id, d)}
                 />
               );
             })}
           </div>
         )}
 
-        {haves.length > 1 && (
+        {selectedHaves.length > 1 && (
           <LogicToggle
             label="この複数の譲は…"
             value={haveLogic}
@@ -212,66 +318,56 @@ export function ListingNewForm({
         )}
       </Section>
 
-      {/* ─ 求側 ─ */}
-      <Section
-        label="求める wish"
-        required
-        hint={`${wishes.length} 件選択中 / ${filteredWishes.length} 件表示`}
-      >
-        <FilterRow
-          label="推し"
-          options={wishPushOpts}
-          value={wishPushFilter}
-          onChange={setWishPushFilter}
-        />
-        <FilterRow
-          label="種別"
-          options={wishTypeOpts}
-          value={wishTypeFilter}
-          onChange={setWishTypeFilter}
-        />
-
-        {filteredWishes.length === 0 ? (
-          <Empty label="条件に合う wish がありません" />
-        ) : (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {filteredWishes.map((w) => {
-              const sel = wishes.find((s) => s.id === w.id);
-              return (
-                <WishChip
-                  key={w.id}
-                  item={w}
-                  selected={!!sel}
-                  qty={sel?.qty ?? 0}
-                  onClick={() => toggleSelect(wishes, setWishes, w.id)}
-                  onQty={(d) => setQty(wishes, setWishes, w.id, d)}
-                />
-              );
-            })}
-          </div>
-        )}
-
-        {wishes.length > 1 && (
-          <LogicToggle
-            label="この複数の wish は…"
-            value={wishLogic}
-            onChange={setWishLogic}
-          />
-        )}
-      </Section>
-
-      {orOrViolation && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-700">
-          ⚠️
-          譲・求の両方で複数アイテム ×{" "}
-          <b>OR</b>{" "}
-          を選んでいます。「誰がどれを選ぶのか」が曖昧になるため、
-          <b>どちらかは AND</b>
-          にするか、片側のアイテムを 1 件にしてください。
+      {/* ─ 求側選択肢 ─ */}
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[#a695d8]">
+            求める — 選択肢{" "}
+            <span className="text-red-500">*</span>{" "}
+            <span className="text-[10px] text-gray-500">
+              （複数なら相手がどれか1つ選択）
+            </span>
+          </span>
+          <span className="text-[10px] text-gray-500">
+            {options.length} / {MAX_OPTIONS}
+          </span>
         </div>
-      )}
 
-      {/* メモ */}
+        <div className="space-y-3">
+          {options.map((opt, idx) => (
+            <OptionEditor
+              key={idx}
+              option={opt}
+              index={idx}
+              groups={groups}
+              goodsTypes={goodsTypes}
+              wishItems={wishItems}
+              onPatch={(patch) => patchOption(idx, patch)}
+              onToggleWish={(wishId) => toggleOptionWish(idx, wishId)}
+              onWishQty={(wishId, d) => setOptionWishQty(idx, wishId, d)}
+              onRemove={
+                options.length > 1 ? () => removeOption(idx) : undefined
+              }
+              defaultGroupId={haveGroupId}
+              defaultGoodsTypeId={haveGoodsTypeId}
+              parentHaveLogic={haveLogic}
+              parentHaveCount={selectedHaves.length}
+            />
+          ))}
+        </div>
+
+        {options.length < MAX_OPTIONS && (
+          <button
+            type="button"
+            onClick={addOption}
+            className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-[#a695d855] bg-white py-2.5 text-[12px] font-bold text-[#a695d8] active:scale-[0.97]"
+          >
+            ＋ 選択肢を追加（{options.length} / {MAX_OPTIONS}）
+          </button>
+        )}
+      </div>
+
+      {/* ─ メモ ─ */}
       <Section label="メモ" hint={`${note.length} / 500`}>
         <textarea
           value={note}
@@ -289,61 +385,266 @@ export function ListingNewForm({
         </div>
       )}
 
-      <PrimaryButton
-        type="submit"
-        pending={pending}
-        pendingLabel="登録中…"
-        disabled={orOrViolation}
-      >
+      <PrimaryButton type="submit" pending={pending} pendingLabel="登録中…">
         個別募集を作成
       </PrimaryButton>
     </form>
   );
 }
 
-/* ─── helpers ───────────────────────────────────────── */
+/* ─── option editor ─────────────────────────────── */
 
-function collectFilter(
-  arr: { groupName: string | null; characterName: string | null; goodsTypeName: string | null }[],
-  type: "push" | "type",
-): string[] {
-  const set = new Set<string>([ALL]);
-  for (const it of arr) {
-    if (type === "push") {
-      if (it.groupName) set.add(it.groupName);
-      if (it.characterName) set.add(it.characterName);
-    } else {
-      if (it.goodsTypeName) set.add(it.goodsTypeName);
-    }
-  }
-  return Array.from(set);
+function OptionEditor({
+  option,
+  index,
+  groups,
+  goodsTypes,
+  wishItems,
+  onPatch,
+  onToggleWish,
+  onWishQty,
+  onRemove,
+  defaultGroupId,
+  defaultGoodsTypeId,
+  parentHaveLogic,
+  parentHaveCount,
+}: {
+  option: WishOption;
+  index: number;
+  groups: { id: string; name: string }[];
+  goodsTypes: { id: string; name: string }[];
+  wishItems: WishOpt[];
+  onPatch: (patch: Partial<WishOption>) => void;
+  onToggleWish: (wishId: string) => void;
+  onWishQty: (wishId: string, delta: number) => void;
+  onRemove?: () => void;
+  defaultGroupId: string | null;
+  defaultGoodsTypeId: string | null;
+  parentHaveLogic: ListingLogic;
+  parentHaveCount: number;
+}) {
+  const filteredWishes = useMemo(() => {
+    if (option.isCashOffer || !option.groupId || !option.goodsTypeId) return [];
+    return wishItems.filter(
+      (w) => w.groupId === option.groupId && w.goodsTypeId === option.goodsTypeId,
+    );
+  }, [wishItems, option.groupId, option.goodsTypeId, option.isCashOffer]);
+
+  const orOrViolation =
+    !option.isCashOffer &&
+    parentHaveLogic === "or" &&
+    option.logic === "or" &&
+    parentHaveCount > 1 &&
+    option.selected.length > 1;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-[#a695d855] bg-white">
+      <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
+        <span className="rounded-full bg-[#a695d8] px-2 py-[2px] text-[10px] font-extrabold text-white">
+          選択肢 #{index + 1}
+        </span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() =>
+            onPatch({
+              isCashOffer: !option.isCashOffer,
+              groupId: option.isCashOffer ? defaultGroupId : null,
+              goodsTypeId: option.isCashOffer ? defaultGoodsTypeId : null,
+              selected: [],
+              cashAmount: option.isCashOffer ? null : 1000,
+            })
+          }
+          className={`rounded-full px-2.5 py-[3px] text-[10px] font-bold ${
+            option.isCashOffer
+              ? "bg-[#a695d8] text-white"
+              : "border border-[#a695d855] bg-white text-[#a695d8]"
+          }`}
+        >
+          💴 定価交換
+        </button>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-[11px] text-red-500"
+          >
+            削除
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-3 p-3">
+        {option.isCashOffer ? (
+          <CashOfferEditor
+            amount={option.cashAmount ?? 1000}
+            onChange={(amt) => onPatch({ cashAmount: amt })}
+          />
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <SelectField
+                label="グループ"
+                value={option.groupId}
+                options={groups}
+                onChange={(v) =>
+                  onPatch({ groupId: v, selected: [] })
+                }
+              />
+              <SelectField
+                label="種別"
+                value={option.goodsTypeId}
+                options={goodsTypes}
+                onChange={(v) =>
+                  onPatch({ goodsTypeId: v, selected: [] })
+                }
+              />
+            </div>
+
+            <div>
+              <div className="mb-1 px-0.5 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+                交換タイプ
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {EXCHANGE_OPTIONS.map((opt) => {
+                  const active = option.exchangeType === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => onPatch({ exchangeType: opt.value })}
+                      className={`flex flex-col items-center justify-center rounded-lg px-1.5 py-1.5 text-center transition-all ${
+                        active
+                          ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.33)]"
+                          : "border border-[#3a324a14] bg-white text-gray-700"
+                      }`}
+                    >
+                      <span className="text-[11.5px] font-bold">
+                        {opt.label}
+                      </span>
+                      <span
+                        className={`text-[9px] ${active ? "text-white/80" : "text-gray-500"}`}
+                      >
+                        {opt.sub}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {!option.groupId || !option.goodsTypeId ? (
+              <Empty label="先にグループと種別を選んでください" />
+            ) : filteredWishes.length === 0 ? (
+              <Empty label="この組み合わせの wish がありません" />
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {filteredWishes.map((w) => {
+                  const sel = option.selected.find((s) => s.id === w.id);
+                  return (
+                    <WishChip
+                      key={w.id}
+                      item={w}
+                      selected={!!sel}
+                      qty={sel?.qty ?? 0}
+                      onClick={() => onToggleWish(w.id)}
+                      onQty={(d) => onWishQty(w.id, d)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            {option.selected.length > 1 && (
+              <LogicToggle
+                label="この複数の wish は…"
+                value={option.logic}
+                onChange={(v) => onPatch({ logic: v })}
+              />
+            )}
+
+            {orOrViolation && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] leading-relaxed text-amber-700">
+                ⚠️ 譲側 OR × この選択肢 OR × 両側 ≥2 アイテム は曖昧なため指定できません。
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function filterItems<
-  T extends {
-    groupName: string | null;
-    characterName: string | null;
-    goodsTypeName: string | null;
-  },
->(arr: T[], pushFilter: string, typeFilter: string): T[] {
-  return arr.filter((it) => {
-    if (
-      pushFilter !== ALL &&
-      it.groupName !== pushFilter &&
-      it.characterName !== pushFilter
-    ) {
-      return false;
-    }
-    if (typeFilter !== ALL && it.goodsTypeName !== typeFilter) return false;
-    return true;
-  });
+function CashOfferEditor({
+  amount,
+  onChange,
+}: {
+  amount: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1 px-0.5 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+        希望金額（円）
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[16px] font-bold text-[#3a324a8c]">¥</span>
+        <input
+          type="number"
+          min={1}
+          max={9999999}
+          value={amount}
+          onChange={(e) => {
+            const n = parseInt(e.target.value, 10);
+            if (Number.isFinite(n) && n >= 0) onChange(n);
+          }}
+          className="block w-full rounded-xl border border-[#3a324a14] bg-white px-4 py-2.5 text-base font-bold tabular-nums text-gray-900 focus:border-[#a695d8] focus:outline-none"
+        />
+      </div>
+      <p className="mt-1.5 px-1 text-[10.5px] leading-snug text-gray-500">
+        この選択肢では譲るグッズを「定価交換」（金銭授受）で取引します。マッチング演算には参加しません。
+      </p>
+    </div>
+  );
 }
 
-/* ─── 共通 sub-components ──────────────────────────── */
+/* ─── shared sub-components ─────────────────────── */
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  options: { id: string; name: string }[];
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1 px-0.5 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+        {label}
+      </div>
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="block w-full rounded-xl border border-[#3a324a14] bg-white px-3 py-2.5 text-[13px] text-gray-900 focus:border-[#a695d8] focus:outline-none"
+      >
+        <option value="">選択</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 function Empty({ label }: { label: string }) {
   return (
-    <div className="mt-2 rounded-xl border border-dashed border-[#3a324a14] bg-[#fbf9fc] p-4 text-center text-[11px] text-gray-500">
+    <div className="rounded-xl border border-dashed border-[#3a324a14] bg-[#fbf9fc] p-3 text-center text-[11px] text-gray-500">
       {label}
     </div>
   );
@@ -359,15 +660,15 @@ function LogicToggle({
   onChange: (v: ListingLogic) => void;
 }) {
   return (
-    <div className="mt-3 rounded-xl border border-[#3a324a14] bg-[#fbf9fc] p-2.5">
-      <div className="mb-1.5 px-1 text-[11px] font-bold text-[#3a324a8c]">
+    <div className="rounded-xl border border-[#3a324a14] bg-[#fbf9fc] p-2">
+      <div className="mb-1.5 px-1 text-[10.5px] font-bold text-[#3a324a8c]">
         {label}
       </div>
       <div className="flex gap-1">
         {(
           [
-            { v: "and" as const, label: "全部 (AND)", sub: "セットで取引" },
-            { v: "or" as const, label: "いずれか (OR)", sub: "どれか1つでOK" },
+            { v: "and" as const, label: "全部 (AND)", sub: "セット" },
+            { v: "or" as const, label: "いずれか (OR)", sub: "どれか1つ" },
           ]
         ).map((opt) => {
           const active = value === opt.v;
@@ -376,21 +677,19 @@ function LogicToggle({
               key={opt.v}
               type="button"
               onClick={() => onChange(opt.v)}
-              className={`flex-1 rounded-lg px-3 py-2 text-center transition-all ${
+              className={`flex-1 rounded-lg px-2 py-1.5 text-center transition-all ${
                 active
                   ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.33)]"
                   : "bg-white text-gray-700"
               }`}
             >
               <div
-                className={`text-[12px] ${active ? "font-extrabold" : "font-bold"}`}
+                className={`text-[11.5px] ${active ? "font-extrabold" : "font-bold"}`}
               >
                 {opt.label}
               </div>
               <div
-                className={`mt-0.5 text-[9.5px] ${
-                  active ? "text-white/80" : "text-gray-500"
-                }`}
+                className={`mt-0.5 text-[9px] ${active ? "text-white/80" : "text-gray-500"}`}
               >
                 {opt.sub}
               </div>
@@ -402,7 +701,6 @@ function LogicToggle({
   );
 }
 
-/* 譲側のパネルカード */
 function PanelCard({
   item,
   selected,
@@ -449,8 +747,6 @@ function PanelCard({
           loading="lazy"
         />
       )}
-
-      {/* メンバー名 */}
       <div className="pointer-events-none absolute left-1.5 top-1.5 z-10">
         <div
           className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
@@ -461,7 +757,6 @@ function PanelCard({
           {memberName}
         </div>
       </div>
-
       {selected ? (
         <div className="absolute right-1.5 top-1.5 z-20 flex items-center gap-0.5 rounded-full bg-white/95 p-0.5 shadow-[0_2px_6px_rgba(0,0,0,0.15)]">
           <button
@@ -495,7 +790,6 @@ function PanelCard({
           ＋
         </div>
       )}
-
       {!hasPhoto && (
         <div
           className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[28px] font-extrabold text-white/90"
@@ -504,8 +798,6 @@ function PanelCard({
           {memberName[0]}
         </div>
       )}
-
-      {/* 下部ストリップ */}
       <div
         className="pointer-events-none absolute bottom-0 left-0 right-0 px-1.5 pb-1.5 pt-1"
         style={{
@@ -521,7 +813,6 @@ function PanelCard({
   );
 }
 
-/* 求側の chip */
 function WishChip({
   item,
   selected,
@@ -550,22 +841,6 @@ function WishChip({
         className="inline-flex items-center gap-1.5"
       >
         {name}
-        {item.goodsTypeName && (
-          <span
-            className={`text-[9.5px] font-semibold ${
-              selected ? "text-white/80" : "text-gray-500"
-            }`}
-          >
-            · {item.goodsTypeName}
-          </span>
-        )}
-        {item.exchangeType && item.exchangeType !== "any" && (
-          <span
-            className={`text-[9px] font-bold ${selected ? "text-white/85" : "text-[#a695d8]"}`}
-          >
-            {EXCHANGE_LABEL[item.exchangeType]}
-          </span>
-        )}
       </button>
       {selected && (
         <span className="ml-0.5 inline-flex items-center gap-0.5 rounded-full bg-white/25 px-1 py-[1px]">
@@ -597,46 +872,6 @@ function WishChip({
         </span>
       )}
     </span>
-  );
-}
-
-/* ─── filter & section ─────────────────────────────── */
-
-function FilterRow({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: string[];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  if (options.length <= 1) return null;
-  return (
-    <div className="-mx-1 mt-1.5 flex items-center gap-2 overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden">
-      <span className="flex-shrink-0 text-[10px] font-bold text-[#3a324a8c]">
-        {label}
-      </span>
-      {options.map((o) => {
-        const sel = value === o;
-        return (
-          <button
-            key={o}
-            type="button"
-            onClick={() => onChange(o)}
-            className={`flex-shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
-              sel
-                ? "bg-[#a695d8] text-white"
-                : "border border-[#3a324a14] bg-white text-gray-700"
-            }`}
-          >
-            {o}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 

@@ -55,18 +55,17 @@ function matchToCard(
   myInvById: Map<string, MatchInv>,
   myWishById: Map<string, MatchInv>,
 ): MatchCardData {
-  // listing が AND セット形式かを判定（バッジ用）
-  const setListing = m.matchedListings?.some(
-    (ml) => ml.haveLogic === "and" || ml.wishLogic === "and",
+  // listing 経由マッチで、AND が含まれていれば 'set'、それ以外は 'any'
+  const hasAnd = m.matchedListings?.some(
+    (ml) =>
+      ml.haveLogic === "and" ||
+      ml.options.some((o) => o.matched && o.logic === "and"),
   );
-  const orListing = m.matchedListings?.some(
-    (ml) => ml.haveLogic === "or" || ml.wishLogic === "or",
-  );
-  const listingBadge: MatchCardData["listingBadge"] = setListing
-    ? "set"
-    : orListing
-      ? "any"
-      : null;
+  const listingBadge: MatchCardData["listingBadge"] = m.matchedListings?.length
+    ? hasAnd
+      ? "set"
+      : "any"
+    : null;
 
   // モーダル用の listing 詳細を構築
   const matchedListings: MatchCardListingInfo[] | undefined =
@@ -82,27 +81,31 @@ function matchToCard(
           matched: ml.matchedHaveIds.includes(id),
         };
       });
-      // 求側は私の wish（id）= 表示の元 + matched は相手アイテム ID 経由なのでフラグ判定が間接
-      // MVP では「wish にマッチした相手 inv が存在する = この wish を「matched」とする」
-      // これは matchedTheirInvIds.length > 0 と等価で、wish 個別判定はできないため
-      // wishes は全件 matched=true で扱う（OR 候補を全件出さない MVP）
-      const wishes = ml.wishIds.map((id, i) => {
-        const inv = myWishById.get(id);
-        const item: MiniItem = inv
-          ? toMini(inv)
-          : { id, label: "?", goodsTypeName: null, photoUrl: null, hue: 0 };
-        return {
-          item,
-          qty: ml.wishQtys[i] ?? 1,
-          matched: true, // MVP: マッチ成立時は全 wish を表示
-        };
-      });
+      // 各選択肢を MatchCardOption に変換
+      const options = ml.options.map((opt) => ({
+        id: opt.id,
+        position: opt.position,
+        logic: opt.logic,
+        exchangeType: opt.exchangeType,
+        isCashOffer: opt.isCashOffer,
+        cashAmount: opt.cashAmount,
+        matched: opt.matched,
+        wishes: opt.wishIds.map((id, i) => {
+          const inv = myWishById.get(id);
+          const item: MiniItem = inv
+            ? toMini(inv)
+            : { id, label: "?", goodsTypeName: null, photoUrl: null, hue: 0 };
+          return {
+            item,
+            qty: opt.wishQtys[i] ?? 1,
+          };
+        }),
+      }));
       return {
         listingId: ml.listingId,
         haveLogic: ml.haveLogic,
-        wishLogic: ml.wishLogic,
         haves,
-        wishes,
+        options,
       };
     });
 

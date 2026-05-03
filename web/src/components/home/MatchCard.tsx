@@ -20,14 +20,24 @@ export type MiniItem = {
 };
 
 /** 個別募集（listing）の関係図モーダル用データ */
+export type MatchCardOption = {
+  id: string;
+  position: number;
+  logic: "and" | "or";
+  exchangeType: "same_kind" | "cross_kind" | "any";
+  isCashOffer: boolean;
+  cashAmount: number | null;
+  matched: boolean;
+  wishes: { item: MiniItem; qty: number }[];
+};
+
 export type MatchCardListingInfo = {
   listingId: string;
   haveLogic: "and" | "or";
-  wishLogic: "and" | "or";
   /** listing の全ハベ（私の譲）— 表示順 = haveIds の順 */
   haves: { item: MiniItem; qty: number; matched: boolean }[];
-  /** listing の全 wish — 表示順 = wishIds の順 */
-  wishes: { item: MiniItem; qty: number; matched: boolean }[];
+  /** 求側の全選択肢（matched フラグ付き） */
+  options: MatchCardOption[];
 };
 
 export type MatchCardData = {

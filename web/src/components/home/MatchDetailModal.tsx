@@ -1,27 +1,35 @@
 "use client";
 
 /**
- * iter67.3-G：個別募集（listings）経由マッチの **関係図モーダル**。
+ * iter67.4：個別募集（listings）経由マッチの **関係図モーダル**。
  *
  * - 全画面モーダル（モバイル想定）
- * - 譲側（左）と求側（右）を縦並びで表示
+ * - 譲側（左）+ 各「選択肢」（右）を縦に並べて表示
  * - SVG 線で関係を可視化：
  *   - **実線（solid）** = AND（必ずセットで取引）
  *   - **点線（dashed）** = OR（候補のうちいずれか）
  * - 数量バッジ（×N）をアイテム右上に表示
- *
- * Layout:
- *   - アイテムカードは固定サイズ（width 76, height 96）
- *   - 各 listing 1 つにつき 1 区画。複数 listing は縦に並べる
+ * - 成立した選択肢には「✅ 成立」バッジ、未成立も含めて全選択肢を表示
+ * - 定価交換選択肢（is_cash_offer）は金額表示のみ（マッチ対象外）
  */
 
 import { useEffect } from "react";
-import type { MatchCardListingInfo, MiniItem } from "./MatchCard";
+import type {
+  MatchCardListingInfo,
+  MatchCardOption,
+  MiniItem,
+} from "./MatchCard";
 
 const ITEM_W = 76;
 const ITEM_H = 96;
-const ROW_GAP = 18; // アイテム同士の縦余白
-const COL_GAP_X = 110; // 左右の col 間距離
+const ROW_GAP = 18;
+const COL_GAP_X = 110;
+
+const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
+  same_kind: "同種",
+  cross_kind: "異種",
+  any: "同異種",
+};
 
 export function MatchDetailModal({
   partnerHandle,
@@ -32,7 +40,6 @@ export function MatchDetailModal({
   listings: MatchCardListingInfo[];
   onClose: () => void;
 }) {
-  // body scroll lock
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -43,7 +50,6 @@ export function MatchDetailModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
-      {/* Header */}
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
         <button
           type="button"
@@ -68,22 +74,17 @@ export function MatchDetailModal({
           <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
             🔗 関係図
           </span>
-          <b>実線</b>＝AND（セット）/ <b>点線</b>＝OR（いずれか）。数量は各アイテム右上に表示しています。
+          <b>実線</b>＝AND（セット）/ <b>点線</b>＝OR（いずれか）。求側の選択肢のうち
+          相手は <b>いずれか 1 つ</b> を選んで取引します。
         </div>
 
         {listings.map((l, idx) => (
-          <ListingDiagram
-            key={l.listingId}
-            listing={l}
-            index={idx}
-          />
+          <ListingDiagram key={l.listingId} listing={l} index={idx} />
         ))}
       </div>
     </div>
   );
 }
-
-/* ─── 1 listing 分の関係図 ─────────────────────────── */
 
 function ListingDiagram({
   listing,
@@ -92,162 +93,219 @@ function ListingDiagram({
   listing: MatchCardListingInfo;
   index: number;
 }) {
-  const { haves, wishes, haveLogic, wishLogic } = listing;
-
-  // 表示するアイテム = matched に絞る（全件は煩雑なため）
-  // OR の場合「他にも候補あった」を別途注記
-  const visibleHaves = haves.filter((h) => h.matched);
-  const visibleWishes = wishes.filter((w) => w.matched);
-
-  // 候補（unmatched）数
-  const haveOtherCount = haves.length - visibleHaves.length;
-  const wishOtherCount = wishes.length - visibleWishes.length;
-
-  const leftCount = visibleHaves.length || 1;
-  const rightCount = visibleWishes.length || 1;
-  const rows = Math.max(leftCount, rightCount);
-  const containerH = rows * ITEM_H + (rows - 1) * ROW_GAP;
-  const containerW = ITEM_W * 2 + COL_GAP_X;
-
-  // 各アイテムの中心 y 座標（SVG 用）
-  const haveYs = visibleHaves.map(
-    (_, i) => i * (ITEM_H + ROW_GAP) + ITEM_H / 2,
-  );
-  const wishYs = visibleWishes.map(
-    (_, i) => i * (ITEM_H + ROW_GAP) + ITEM_H / 2,
-  );
-
-  const leftRightPairs: Array<{
-    leftIdx: number;
-    rightIdx: number;
-    style: "solid" | "dashed";
-  }> = [];
-  for (let li = 0; li < visibleHaves.length; li++) {
-    for (let ri = 0; ri < visibleWishes.length; ri++) {
-      // 線スタイル: どちらか OR なら点線、両方 AND なら実線
-      const isOr = haveLogic === "or" || wishLogic === "or";
-      leftRightPairs.push({
-        leftIdx: li,
-        rightIdx: ri,
-        style: isOr ? "dashed" : "solid",
-      });
-    }
-  }
-
   return (
-    <section
-      className={`mb-4 overflow-hidden rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white ${
-        index === 0 ? "" : ""
-      }`}
-    >
-      {/* Section header */}
+    <section className="mb-4 overflow-hidden rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white">
       <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
         <span className="text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
           個別募集 #{index + 1}
         </span>
         <div className="flex-1" />
-        <LogicChip side="have" logic={haveLogic} />
-        <span className="text-[10px] font-bold text-[#3a324a8c]">↔</span>
-        <LogicChip side="wish" logic={wishLogic} />
-      </div>
-
-      {/* 上部のラベル行 */}
-      <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <span className="text-[10px] font-bold tracking-[0.4px] text-[#a8d4e6]">
-          あなたの譲（{visibleHaves.length}）
-        </span>
-        <span className="text-[10px] font-bold tracking-[0.4px] text-[#f3c5d4]">
-          相手の譲（{visibleWishes.length}）
-        </span>
-      </div>
-
-      {/* 関係図本体（SVG オーバーレイ） */}
-      <div className="px-3 pb-3">
-        <div
-          className="relative mx-auto"
-          style={{ width: containerW, height: containerH }}
-        >
-          {/* SVG: 接続線（背面） */}
-          <svg
-            width={containerW}
-            height={containerH}
-            className="pointer-events-none absolute left-0 top-0"
+        {listing.haves.length > 1 && (
+          <span
+            className={`rounded-full px-1.5 py-[1px] text-[9.5px] font-extrabold ${
+              listing.haveLogic === "and"
+                ? "bg-[#a695d8] text-white"
+                : "border border-[#a695d855] bg-white text-[#a695d8]"
+            }`}
           >
-            {leftRightPairs.map((p, i) => {
-              const x1 = ITEM_W; // 左カードの右端
-              const x2 = ITEM_W + COL_GAP_X; // 右カードの左端
-              const y1 = haveYs[p.leftIdx];
-              const y2 = wishYs[p.rightIdx];
-              return (
-                <line
-                  key={i}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke="#a695d8"
-                  strokeWidth={p.style === "solid" ? 2.2 : 1.6}
-                  strokeDasharray={p.style === "dashed" ? "5 4" : undefined}
-                  strokeLinecap="round"
-                  opacity={0.85}
-                />
-              );
-            })}
-          </svg>
+            譲 {listing.haveLogic === "and" ? "全部 AND" : "いずれか OR"}
+          </span>
+        )}
+      </div>
 
-          {/* 左カラム：have items */}
-          {visibleHaves.map((h, i) => (
+      {/* 譲群（共通） */}
+      <div className="px-3 pt-3">
+        <div className="mb-1.5 text-[10px] font-bold tracking-[0.4px] text-[#a8d4e6]">
+          あなたの譲（{listing.haves.filter((h) => h.matched).length} /{" "}
+          {listing.haves.length}）
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          {listing.haves.map((h) => (
             <div
               key={h.item.id}
-              className="absolute left-0"
-              style={{
-                top: i * (ITEM_H + ROW_GAP),
-                width: ITEM_W,
-                height: ITEM_H,
-              }}
+              style={{ width: ITEM_W, height: ITEM_H }}
             >
-              <ItemCard item={h.item} qty={h.qty} accent="have" matched />
-            </div>
-          ))}
-
-          {/* 右カラム：wish items */}
-          {visibleWishes.map((w, i) => (
-            <div
-              key={w.item.id}
-              className="absolute"
-              style={{
-                left: ITEM_W + COL_GAP_X,
-                top: i * (ITEM_H + ROW_GAP),
-                width: ITEM_W,
-                height: ITEM_H,
-              }}
-            >
-              <ItemCard item={w.item} qty={w.qty} accent="wish" matched />
+              <ItemCard
+                item={h.item}
+                qty={h.qty}
+                accent="have"
+                matched={h.matched}
+              />
             </div>
           ))}
         </div>
+      </div>
 
-        {/* 候補（unmatched）の注記 */}
-        {(haveOtherCount > 0 || wishOtherCount > 0) && (
-          <div className="mt-3 rounded-[8px] border border-dashed border-[#3a324a14] bg-[#fbf9fc] px-3 py-2 text-[10.5px] leading-relaxed text-[#3a324a8c]">
-            {haveOtherCount > 0 && (
-              <div>
-                ※ 他に {haveOtherCount} 件の譲候補あり（OR の代替）
-              </div>
-            )}
-            {wishOtherCount > 0 && (
-              <div>
-                ※ 他に {wishOtherCount} 件の wish 候補あり（OR の代替）
-              </div>
-            )}
-          </div>
-        )}
+      <div className="my-2 flex items-center justify-center text-[14px] font-bold text-[#3a324a8c]">
+        ↔
+      </div>
+
+      {/* 求側選択肢（縦に並ぶ） */}
+      <div className="space-y-2 px-3 pb-3">
+        <div className="text-[10px] font-bold tracking-[0.4px] text-[#f3c5d4]">
+          求 — 選択肢 {listing.options.length}
+        </div>
+        {listing.options.map((opt) => (
+          <OptionDiagram
+            key={opt.id}
+            option={opt}
+            havesCount={listing.haves.length}
+          />
+        ))}
       </div>
     </section>
   );
 }
 
-/* ─── 1 アイテムカード（写真 or イニシャル + 数量バッジ） ─── */
+function OptionDiagram({
+  option,
+  havesCount,
+}: {
+  option: MatchCardOption;
+  havesCount: number;
+}) {
+  const itemCount = option.wishes.length || 1;
+  const containerH =
+    itemCount * ITEM_H + Math.max(0, itemCount - 1) * ROW_GAP;
+  const wishYs = option.wishes.map(
+    (_, i) => i * (ITEM_H + ROW_GAP) + ITEM_H / 2,
+  );
+  // 譲側の中心座標（モーダル内では譲は外で表示するので、ここでは「左境界の高さ中央」から伸ばす）
+  const haveAnchorY = containerH / 2;
+  const isOr = option.logic === "or";
+
+  return (
+    <div
+      className={`overflow-hidden rounded-xl border ${
+        option.matched
+          ? "border-[#a695d8] bg-[#a695d80a]"
+          : "border-[#3a324a14] bg-white opacity-80"
+      }`}
+    >
+      {/* ヘッダー */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-[#3a324a08] bg-[#fbf9fc] px-2.5 py-1.5">
+        <span className="rounded-full bg-[#f3c5d4] px-1.5 py-[1px] text-[9.5px] font-extrabold text-[#3a324a]">
+          #{option.position}
+        </span>
+        {option.isCashOffer ? (
+          <span className="text-[11px] font-bold text-[#3a324a]">
+            💴 定価交換 ¥
+            <span className="tabular-nums">
+              {option.cashAmount?.toLocaleString() ?? "—"}
+            </span>
+          </span>
+        ) : (
+          <>
+            <span className="rounded-full border border-[#a695d855] bg-white px-1.5 py-[1px] text-[9px] font-extrabold text-[#a695d8]">
+              {EXCHANGE_LABEL[option.exchangeType]}
+            </span>
+            {option.wishes.length > 1 && (
+              <span
+                className={`rounded-full px-1.5 py-[1px] text-[9px] font-extrabold ${
+                  option.logic === "and"
+                    ? "bg-[#a695d8] text-white"
+                    : "border border-[#a695d855] bg-white text-[#a695d8]"
+                }`}
+              >
+                {option.logic === "and" ? "全部 AND" : "いずれか OR"}
+              </span>
+            )}
+          </>
+        )}
+        <div className="flex-1" />
+        {option.matched ? (
+          <span className="rounded-full bg-emerald-500 px-2 py-[2px] text-[9.5px] font-extrabold text-white">
+            ✅ 成立
+          </span>
+        ) : option.isCashOffer ? (
+          <span className="rounded-full bg-[#3a324a14] px-2 py-[2px] text-[9.5px] font-bold text-[#3a324a8c]">
+            演算対象外
+          </span>
+        ) : (
+          <span className="rounded-full bg-[#3a324a14] px-2 py-[2px] text-[9.5px] font-bold text-[#3a324a8c]">
+            未成立
+          </span>
+        )}
+      </div>
+
+      <div className="p-2.5">
+        {option.isCashOffer ? (
+          <div className="text-[11px] leading-relaxed text-[#3a324a8c]">
+            この選択肢は金銭での取引です。マッチング演算には参加せず、UI 表示のみ。
+          </div>
+        ) : option.wishes.length === 0 ? (
+          <div className="text-[10.5px] italic text-[#3a324a4d]">—</div>
+        ) : (
+          <div
+            className="relative mx-auto"
+            style={{ width: ITEM_W * 2 + COL_GAP_X, height: containerH }}
+          >
+            {/* SVG 線 */}
+            <svg
+              width={ITEM_W * 2 + COL_GAP_X}
+              height={containerH}
+              className="pointer-events-none absolute left-0 top-0"
+            >
+              {wishYs.map((y, i) => (
+                <line
+                  key={i}
+                  x1={ITEM_W}
+                  y1={haveAnchorY}
+                  x2={ITEM_W + COL_GAP_X}
+                  y2={y}
+                  stroke="#a695d8"
+                  strokeWidth={isOr ? 1.6 : 2.2}
+                  strokeDasharray={isOr ? "5 4" : undefined}
+                  strokeLinecap="round"
+                  opacity={option.matched ? 0.85 : 0.35}
+                />
+              ))}
+            </svg>
+
+            {/* 譲側ラベル（左） */}
+            <div
+              className="absolute left-0 flex items-center justify-center"
+              style={{
+                top: haveAnchorY - ITEM_H / 2,
+                width: ITEM_W,
+                height: ITEM_H,
+              }}
+            >
+              <div className="flex h-full w-full items-center justify-center rounded-md border border-dashed border-[#a8d4e655] bg-white/50 text-center">
+                <span className="px-1 text-[10px] font-bold leading-tight text-[#3a324a8c]">
+                  あなたの譲
+                  <br />
+                  ({havesCount})
+                </span>
+              </div>
+            </div>
+
+            {/* 求側カード（右） */}
+            {option.wishes.map((w, i) => (
+              <div
+                key={w.item.id}
+                className="absolute"
+                style={{
+                  left: ITEM_W + COL_GAP_X,
+                  top: i * (ITEM_H + ROW_GAP),
+                  width: ITEM_W,
+                  height: ITEM_H,
+                }}
+              >
+                <ItemCard
+                  item={w.item}
+                  qty={w.qty}
+                  accent="wish"
+                  matched={option.matched}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ItemCard({
   item,
@@ -294,11 +352,9 @@ function ItemCard({
           {item.label[0] || "?"}
         </div>
       )}
-      {/* 数量バッジ */}
       <div className="absolute right-1 top-1 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-white backdrop-blur-sm">
         ×{qty}
       </div>
-      {/* ラベル下部 */}
       <div
         className="absolute inset-x-0 bottom-0 px-1 pb-1 pt-2"
         style={{
@@ -316,28 +372,5 @@ function ItemCard({
         )}
       </div>
     </div>
-  );
-}
-
-/* ─── 「全部 AND」 / 「いずれか OR」chip ─── */
-
-function LogicChip({
-  side,
-  logic,
-}: {
-  side: "have" | "wish";
-  logic: "and" | "or";
-}) {
-  void side; // 現状 side は色分けに使わない（共通スタイル）。将来用に保留。
-  return (
-    <span
-      className={`rounded-full px-1.5 py-[1px] text-[9.5px] font-extrabold ${
-        logic === "and"
-          ? "bg-[#a695d8] text-white"
-          : "border border-[#a695d855] bg-white text-[#a695d8]"
-      }`}
-    >
-      {logic === "and" ? "全部 AND" : "いずれか OR"}
-    </span>
   );
 }

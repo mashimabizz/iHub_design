@@ -15,12 +15,17 @@ export default async function ListingNewPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 自分の active な譲 + active な wish を並列 fetch
-  const [{ data: inventoryRows }, { data: wishRows }] = await Promise.all([
+  // 自分の active な譲 + active な wish + マスタを並列 fetch
+  const [
+    { data: inventoryRows },
+    { data: wishRows },
+    { data: groupsData },
+    { data: goodsTypesData },
+  ] = await Promise.all([
     supabase
       .from("goods_inventory")
       .select(
-        "id, title, photo_urls, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+        "id, title, photo_urls, hue, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
       )
       .eq("user_id", user.id)
       .eq("kind", "for_trade")
@@ -29,12 +34,17 @@ export default async function ListingNewPage() {
     supabase
       .from("goods_inventory")
       .select(
-        "id, title, exchange_type, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+        "id, title, exchange_type, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
       )
       .eq("user_id", user.id)
       .eq("kind", "wanted")
       .neq("status", "archived")
       .order("created_at", { ascending: false }),
+    supabase.from("groups_master").select("id, name").order("name"),
+    supabase
+      .from("goods_types_master")
+      .select("id, name")
+      .order("name"),
   ]);
 
   // メンバー名 → hue ハッシュ
@@ -63,6 +73,8 @@ export default async function ListingNewPage() {
       title: r.title,
       photoUrl:
         (r.photo_urls && (r.photo_urls as string[])[0]) ?? null,
+      groupId: (r as { group_id?: string }).group_id ?? null,
+      goodsTypeId: (r as { goods_type_id?: string }).goods_type_id ?? null,
       groupName: grpName,
       characterName: charName,
       goodsTypeName: pickName(r.goods_type),
@@ -80,6 +92,8 @@ export default async function ListingNewPage() {
       | "cross_kind"
       | "any"
       | undefined,
+    groupId: (r as { group_id?: string }).group_id ?? null,
+    goodsTypeId: (r as { goods_type_id?: string }).goods_type_id ?? null,
     groupName: pickName(r.group),
     characterName: pickName(r.character),
     goodsTypeName: pickName(r.goods_type),
@@ -133,6 +147,10 @@ export default async function ListingNewPage() {
         <ListingNewForm
           inventoryItems={inventoryItems}
           wishItems={wishItems}
+          groups={(groupsData ?? []) as { id: string; name: string }[]}
+          goodsTypes={
+            (goodsTypesData ?? []) as { id: string; name: string }[]
+          }
         />
       </div>
     </main>

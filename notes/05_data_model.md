@@ -15,6 +15,7 @@
 | **v2.1** | **2026-05-03** | **iter67 反映（schedules 新設、proposals.message_tone 追加、meetup_scheduled_aw_id 廃止、expose_calendar の対象を AW → schedules に変更）** |
 | **v2.2** | **2026-05-03** | **iter67.1 反映（待ち合わせを「時間帯+地図座標」型に統一：meetup_type/meetup_now_minutes/meetup_scheduled_custom 廃止、meetup_start_at/end_at/place_name/lat/lng 追加）** |
 | **v2.3** | **2026-05-03** | **iter67.3 反映（listings を N×M × AND/OR マトリクス化：have_ids[]/have_qtys[]/have_logic + wish_qtys[]/wish_logic 追加、inventory_id/ratio_*/priority/exchange_type 廃止。wish 側の exchange_type は goods_inventory に既存・UI で必須化）** |
+| **v2.4** | **2026-05-03** | **iter67.4 反映（求側を「複数選択肢」モデルへ再設計：listing_wish_options 新規、listings から wish_*/wish_logic 廃止、have_group_id/have_goods_type_id 追加で同一性検証、定価交換選択肢サポート）** |
 
 ## このドキュメントの位置付け
 
@@ -200,36 +201,61 @@ iter62（Phase A）で `exchange_type` 追加。
 - `flexibility` の具体的な意味（1=完全一致のみ、5=ジャンル一致だけでOK 等）の定義
 - `matched` 状態の継続性（09 未確定項目#5 と紐付け）
 
-### `listings`（個別募集）— iter64 新規 → iter67.3 で N×M × AND/OR に拡張
+### `listings`（個別募集）— iter64 → iter67.3 → iter67.4 で「譲 1 バンドル + 求 N 選択肢」へ
 
 UI 表記は **「個別募集」**。`listing` という英語は出さない（10_glossary §A-7）。
 
-iter67.3 で「譲 1 + wish 複数」モデルから「譲 N × wish M × AND/OR」マトリクスに拡張。
-比率は qty に統合（別概念で持たない）。`listings.exchange_type` は廃止し、各 wish (goods_inventory) の `exchange_type` を source of truth とする。
+iter67.4 で求側を **「複数選択肢」モデル** に再設計。listings は譲側情報のみ持ち、求側は別テーブル `listing_wish_options` に分離。
 
 | カラム | 型 | 説明 |
 |---|---|---|
 | `id` | uuid | PK |
 | `user_id` | uuid | → users（オーナー） |
-| `have_ids` | uuid[] | → goods_inventory（譲側、複数可、`kind=for_trade`） |
-| `have_qtys` | int[] | 各譲の数量（≒比率を内包、各 1〜99） |
-| `have_logic` | text | `'and'`（全部セット）/ `'or'`（いずれか）。default 'and' |
-| `wish_ids` | uuid[] | → goods_inventory（求側、複数可、`kind=wanted`） |
-| `wish_qtys` | int[] | 各 wish の数量（各 1〜99） |
-| `wish_logic` | text | `'and'`（全部セット）/ `'or'`（いずれか）。default 'or' |
-| `status` | text | `active` / `paused` / `matched` / `closed`（09 Listing Lifecycle 参照） |
-| `note` | text nullable | 自由メモ |
+| `have_ids` | uuid[] | → goods_inventory（譲側、`kind=for_trade`） |
+| `have_qtys` | int[] | 各譲の数量（各 1〜99） |
+| `have_logic` | text | `'and'`（全部セット）/ `'or'`（いずれか）、default `'and'` |
+| `have_group_id` | uuid | trigger で全 haves から自動算出（同一性検証） |
+| `have_goods_type_id` | uuid | 同上 |
+| `status` | text | `active` / `paused` / `matched` / `closed` |
+| `note` | text nullable | |
 | `created_at` / `updated_at` | timestamptz | |
 
-制約:
-- `have_ids[]`, `have_qtys[]` の長さ一致 + 1 以上（CHECK）
-- `wish_ids[]`, `wish_qtys[]` の長さ一致 + 1 以上（CHECK）
-- 全 qty >= 1（trigger 検証）
-- **OR × OR × 両側 ≥2 アイテム は禁止**（CHECK）— 誰が選ぶか曖昧 / 組合せ爆発防止
-- have_ids, wish_ids は同 user の自身のものに限る（trigger）
-- have_ids 全件 `kind='for_trade'`、wish_ids 全件 `kind='wanted'`（trigger）
+制約：
+- have_ids 全件が **同 group + 同 goods_type**（trigger 検証）
+- have_qtys 各値 1〜99（trigger）
+- have_ids 全件が listing 所有者の `kind=for_trade` インベントリ
 
-廃止カラム（iter67.3 で削除）：`inventory_id` / `wish_id`（旧）/ `exchange_type` / `ratio_give` / `ratio_receive` / `priority`
+廃止カラム（iter67.4 で削除）：`wish_ids` / `wish_qtys` / `wish_logic`
+
+### `listing_wish_options`（個別募集の求側選択肢）— 新規（iter67.4）
+
+1 listing につき 1〜5 件。選択肢間は **OR**（相手がいずれか 1 つを選んで取引）。
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `id` | uuid | PK |
+| `listing_id` | uuid | → listings（cascade） |
+| `position` | int | 1〜5、表示順（listing_id 内で unique） |
+| `wish_ids` | uuid[] | → goods_inventory（求側、`kind=wanted`） |
+| `wish_qtys` | int[] | 各 wish の数量（各 1〜99） |
+| `logic` | text | `'and'`（全部セット）/ `'or'`（いずれか）、default `'or'` |
+| `exchange_type` | text | `'same_kind'` / `'cross_kind'` / `'any'`、default `'any'` |
+| `is_cash_offer` | bool | true なら定価交換選択肢（マッチング演算対象外） |
+| `cash_amount` | int nullable | is_cash_offer=true の時の希望金額（1〜9,999,999） |
+| `wish_group_id` | uuid nullable | trigger で自動算出（is_cash_offer=true は無視） |
+| `wish_goods_type_id` | uuid nullable | 同上 |
+| `created_at` / `updated_at` | timestamptz | |
+
+制約：
+- 1 listing につき最大 5 選択肢（trigger）
+- 通常選択肢：wish_ids/qtys 長さ一致、qty 1〜99、wish 全件が listing 所有者の `kind=wanted`
+- 通常選択肢：wish_ids 全件が **同 group + 同 goods_type**（trigger）
+- **OR × OR ガード**：listing.have_logic='or' AND option.logic='or' AND 両側 ≥2 アイテム は禁止
+- 定価交換選択肢：wish_ids/qtys 空、cash_amount 必須
+
+RLS：
+- listing 所有者は自身の listing 経由オプションを CRUD
+- listing.status='active' の listing 経由オプションは誰でも SELECT 可（マッチング用）
 
 ### `user_local_mode_settings`（現地モード設定）— 新規（iter63 / Phase B）
 

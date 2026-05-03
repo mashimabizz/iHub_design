@@ -419,6 +419,118 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67.4：listings の求側を「複数選択肢」モデルに再設計
+
+### 背景
+
+iter67.3 で N×M × AND/OR を作ったあと、オーナーがさらに整理：
+
+> 譲として選べるのは、同じグループかつ同じ種別のもののみにしてほしい。なぜなら、それに対して、WISHで登録したものに対して、同種／異種／同異種の指定をすると思うけど、その情報が役に立たないため。違うグループだったり違う種別のものが、譲で登録されていたら、どれに対する同種か異種か判定できなくなるため。
+>
+> 個別募集では、WISHとして下記のような形でも登録できるような設計にして欲しい。
+>
+> 譲る：TWICE、トレカのサナ・モモ　OR条件
+> 求める：
+> 　選択肢①TWICE、トレカ：ナヨン・ジョンヨン　OR条件　１対２の割合で受付
+> 　選択肢②BTS、ぬいぐるみ：ジョングク・V　AND条件
+> 　選択肢③定価交換
+>
+> 譲るは AND や OR で複数選べるけど、選択肢は１つしか選べないイメージ。
+> 求めるは選択肢を増やすイメージ。
+>
+> WISHの選択肢を作る時、グループ名とグッズ種別を選択するように。デフォルト値は譲るグッズで設定したもので。各選択肢に同種／異種／同異種を設定。
+
+### 仕様（合意済み）
+
+- **譲側**：1 つのバンドル（同 group + 同 goods_type 必須、AND/OR）
+- **求側**：**複数の「選択肢」**（最大 5）。選択肢間は OR（相手が 1 つ選ぶ）
+  - 各選択肢は独立に：
+    - group + goods_type（デフォルト = 譲側の値）
+    - exchange_type（同種 / 異種 / 同異種）
+    - 複数アイテム（同 group + 同 goods_type 内）+ AND/OR + qty（=比率）
+  - **定価交換**選択肢：`is_cash_offer=true` で wish_ids 空、cash_amount に金額。マッチング演算には参加しない（UI 表示のみ）
+
+OR×OR ガード：譲側 OR × 求側選択肢 OR × 両側 ≥2 アイテム は曖昧なため禁止（DB CHECK + UI 警告）。
+
+### 変更内容
+
+#### A. DB マイグレーション（`supabase/migrations/20260503190000_listing_wish_options.sql`）
+
+- `listings` から wish 関連カラム削除（`wish_ids`, `wish_qtys`, `wish_logic`）
+- `listings` に譲の代表 group/goods_type 追加（`have_group_id`, `have_goods_type_id` — trigger で自動算出 + 同一性検証）
+- 新規 `listing_wish_options`：
+  - `listing_id` FK + `position` (1〜5) + `wish_ids[]` + `wish_qtys[]` + `logic` + `exchange_type` + `is_cash_offer` + `cash_amount` + `wish_group_id` + `wish_goods_type_id`
+  - trigger `validate_listing_wish_option`：is_cash_offer 分岐、同 group + 同 goods_type 検証、選択肢数 ≤ 5、OR×OR ガード
+  - RLS：listing 所有者は CRUD、active な listing なら誰でも SELECT
+- 既存 listings は削除（dev のみ）
+
+#### B. matching.ts：選択肢モデルへ全面書き直し
+
+- `ListingForMatch` 型に `options: ListingWishOption[]` を追加
+- `MatchedListingInfo` に `options: MatchedOptionInfo[]` を持たせ、各選択肢の matched フラグを伝播
+- `evaluateListingMatch()` 再設計：
+  - 各選択肢を独立に評価（option.logic に従って AND/OR）
+  - listing 全体は **少なくとも 1 つの選択肢が成立** で hit
+  - `is_cash_offer` 選択肢はマッチ対象外（matched=false で記録）
+
+#### C. listings actions / page / View
+
+- `actions.ts` `createListing` の input を `{ haveIds, haveQtys, haveLogic, options[], note }` に変更。listing 本体 + listing_wish_options を 2 段階 INSERT（失敗時は listing 削除でロールバック）
+- `page.tsx` で listings + listing_wish_options を別 query で fetch、group/goods_type マスタも引いて表示用に hydrate
+- `ListingsView`：譲群（1 ブロック） + 求側選択肢（縦に並ぶ複数ブロック）。各選択肢に exchange_type chip と「定価交換」表示
+
+#### D. listing 作成画面（`ListingNewForm.tsx` 全面再構築）
+
+- **譲側**：
+  - 「グループ + 種別」セレクタ → その組み合わせの譲のみグリッド表示
+  - 複数選択 + qty stepper（写真 / イニシャル + ＋／− バッジ）
+  - 複数時に AND/OR トグル
+  - グループ or 種別を変えたら選択リセット
+- **求側選択肢**：
+  - 各選択肢ヘッダーに「グループ + 種別」セレクタ（デフォルト = 譲側と同じ）
+  - 「💴 定価交換」トグルで通常 wish ↔ 金額入力に切替
+  - 通常時：交換タイプ 3 ボタン（同種/異種/同異種）+ 該当 wish chip 一覧 + qty stepper + AND/OR トグル
+  - 「+ 選択肢を追加」ボタン（最大 5 で disabled）
+  - OR×OR ガードを UI 警告 + submit 拒否
+
+#### E. MatchCard / MatchDetailModal：選択肢モデル対応
+
+- `MatchCardOption` 型を新設（id / position / logic / exchangeType / isCashOffer / cashAmount / matched / wishes）
+- `MatchCardListingInfo.wishes` を `options: MatchCardOption[]` に置換
+- `HomeView.matchToCard` を新型に合わせて hydrate
+- `MatchDetailModal` 全面書き直し：
+  - 譲群を共通で 1 行表示
+  - 求側選択肢を縦に並べ、それぞれ独立した SVG 関係図（譲側ラベル ←→ 各 wish）
+  - 成立した選択肢に「✅ 成立」バッジ、未成立も含めて全選択肢表示
+  - 定価交換選択肢は金額のみ、SVG 線なし、「演算対象外」バッジ
+  - 線スタイル：opacity 0.85 (matched) / 0.35 (unmatched)、AND=実線 2.2px、OR=点線 1.6px
+
+### 影響範囲
+
+- DB：listings テーブル変更、listing_wish_options 新規
+- 個別募集の作成 / 一覧画面：UI 完全リニューアル
+- マッチング演算：選択肢モデルへ
+- マッチカード関係図モーダル：選択肢ごとに描画
+- ホームの listings fetch / マッチング呼び出し
+
+### 設計判断
+
+- **同 group + 同 goods_type の制約**は譲側 + 各選択肢それぞれに適用。trigger で強制
+- **比率 = qty** という思想は維持（別概念は持たない）
+- **定価交換**は専用フラグ + cash_amount 列。マッチング演算からは除外しつつ UI には表示
+- **選択肢の最大数 = 5**：UI が長くなり過ぎないため
+- **wish の重複利用**：1 つの wish を複数の listing / 選択肢で使える（DB 制約なし、UI フィルタなし）
+
+### 関連ファイル
+
+- `supabase/migrations/20260503190000_listing_wish_options.sql`（新規）
+- `web/src/lib/matching.ts`（選択肢モデル）
+- `web/src/app/listings/{actions.ts, page.tsx, ListingsView.tsx, new/page.tsx, new/ListingNewForm.tsx}`
+- `web/src/app/page.tsx`（listings + options fetch）
+- `web/src/components/home/{MatchCard.tsx, MatchDetailModal.tsx, HomeView.tsx}`
+
+---
+
 ## イテレーション67.3：listings を「N×M × AND/OR」に拡張、wish exchange_type 復活
 
 ### 背景

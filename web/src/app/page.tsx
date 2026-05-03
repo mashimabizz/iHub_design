@@ -167,11 +167,11 @@ export default async function Home({ searchParams }: Props) {
       .eq("user_id", user.id)
       .eq("kind", "wanted")
       .neq("status", "archived"),
-    // 自分の active な listings（iter67.3 で N×M × AND/OR 化）
+    // 自分の active な listings（iter67.4 で「譲 1 + 求 N 選択肢」化）
     supabase
       .from("listings")
       .select(
-        "id, have_ids, have_qtys, have_logic, wish_ids, wish_qtys, wish_logic",
+        "id, have_ids, have_qtys, have_logic, have_group_id, have_goods_type_id",
       )
       .eq("user_id", user.id)
       .eq("status", "active"),
@@ -216,15 +216,58 @@ export default async function Home({ searchParams }: Props) {
   const myWishes = ((myWishesRaw as GoodsRow[]) ?? [])
     .map(toMatchInv)
     .filter((x): x is MatchInv => !!x);
-  const myListingsForMatch = (myListings ?? []).map((l) => ({
-    id: l.id as string,
-    haveIds: (l.have_ids as string[]) ?? [],
-    haveQtys: (l.have_qtys as number[]) ?? [],
-    haveLogic: (l.have_logic as "and" | "or") ?? "and",
-    wishIds: (l.wish_ids as string[]) ?? [],
-    wishQtys: (l.wish_qtys as number[]) ?? [],
-    wishLogic: (l.wish_logic as "and" | "or") ?? "or",
-  }));
+  // 自分の listings のオプション（求側選択肢）を取得
+  const myListingIds = (myListings ?? []).map((l) => l.id as string);
+  type OptRow = {
+    id: string;
+    listing_id: string;
+    position: number;
+    wish_ids: string[] | null;
+    wish_qtys: number[] | null;
+    logic: "and" | "or";
+    exchange_type: "same_kind" | "cross_kind" | "any";
+    is_cash_offer: boolean;
+    cash_amount: number | null;
+  };
+  let myOptionsByListing = new Map<string, OptRow[]>();
+  if (myListingIds.length > 0) {
+    const { data: optRows } = await supabase
+      .from("listing_wish_options")
+      .select(
+        "id, listing_id, position, wish_ids, wish_qtys, logic, exchange_type, is_cash_offer, cash_amount",
+      )
+      .in("listing_id", myListingIds)
+      .order("position", { ascending: true });
+    if (optRows) {
+      for (const o of optRows as OptRow[]) {
+        const arr = myOptionsByListing.get(o.listing_id) ?? [];
+        arr.push(o);
+        myOptionsByListing.set(o.listing_id, arr);
+      }
+    }
+  }
+
+  const myListingsForMatch = (myListings ?? []).map((l) => {
+    const opts = myOptionsByListing.get(l.id as string) ?? [];
+    return {
+      id: l.id as string,
+      haveIds: (l.have_ids as string[]) ?? [],
+      haveQtys: (l.have_qtys as number[]) ?? [],
+      haveLogic: (l.have_logic as "and" | "or") ?? "and",
+      haveGroupId: (l.have_group_id as string | null) ?? null,
+      haveGoodsTypeId: (l.have_goods_type_id as string | null) ?? null,
+      options: opts.map((o) => ({
+        id: o.id,
+        position: o.position,
+        wishIds: o.wish_ids ?? [],
+        wishQtys: o.wish_qtys ?? [],
+        logic: o.logic,
+        exchangeType: o.exchange_type,
+        isCashOffer: o.is_cash_offer,
+        cashAmount: o.cash_amount,
+      })),
+    };
+  });
 
   // パートナー単位にグループ化
   const partnersMap = new Map<
