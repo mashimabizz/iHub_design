@@ -162,10 +162,18 @@ export function ApproveView({ data }: { data: ApproveData }) {
           <button
             type="button"
             onClick={handleApprove}
-            disabled={pending || data.myApproved}
+            // 自分が承認済 + 相手未承認 のときだけ disable（相手待ち中）
+            // 両者承認済（旧データ救済）or 自分未承認 のときは押せる
+            disabled={
+              pending || (data.myApproved && !data.partnerApproved)
+            }
             className="flex-1 rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-3 text-[15px] font-bold tracking-[0.4px] text-white shadow-[0_6px_16px_rgba(166,149,216,0.31)] disabled:opacity-50"
           >
-            {data.myApproved ? "承認済（相手の承認待ち）" : "承認して完了"}
+            {data.myApproved && !data.partnerApproved
+              ? "承認済（相手の承認待ち）"
+              : data.myApproved && data.partnerApproved
+                ? "完了処理を実行 →"
+                : "承認して完了"}
           </button>
         </div>
       </div>

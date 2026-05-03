@@ -114,7 +114,11 @@ export async function updateArrivalStatus(input: {
 
 /**
  * 撮影した 1 枚を proposal_evidence_photos に追加。
- * 撮影者は approved_by_* も自動で true にする（撮影＝確認済の意思表示）。
+ *
+ * iter68.2 注意：撮影 ≠ 承認に分離。
+ *   - 撮影は単に「証跡を提出」する行為
+ *   - 承認は /approve 画面で明示的に「承認して完了」ボタンを押す
+ *   - 両者承認で initially は status='completed' に遷移
  */
 export async function addEvidencePhoto(input: {
   proposalId: string;
@@ -157,13 +161,10 @@ export async function addEvidencePhoto(input: {
   if (error) return { error: error.message };
 
   // 互換性：proposals.evidence_photo_url が空なら最初の写真をミラー（旧ロジック向け）
+  // iter68.2：撮影 ≠ 承認に分離したので approved_by の自動 true は削除
   const updateFields: Record<string, unknown> = {
     evidence_taken_at: new Date().toISOString(),
     evidence_taken_by: user.id,
-    // 撮影者は自動承認
-    ...(prop.sender_id === user.id
-      ? { approved_by_sender: true }
-      : { approved_by_receiver: true }),
   };
   if (!prop.evidence_photo_url) {
     updateFields.evidence_photo_url = input.photoUrl;
