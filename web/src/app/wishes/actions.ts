@@ -24,6 +24,7 @@ export async function saveWishItem(input: {
   exchangeType?: ExchangeType; // iter62 / Phase A
   note?: string; // description カラムを使う
   quantity: number;
+  photoUrls?: string[]; // iter94: wish 画像
 }): Promise<ActionResult> {
   const title = input.title.trim();
   if (!title || title.length > 100) {
@@ -67,7 +68,7 @@ export async function saveWishItem(input: {
     flex_level: input.flexLevel,
     exchange_type: exchangeType,
     quantity: input.quantity,
-    photo_urls: [],
+    photo_urls: input.photoUrls ?? [],
   });
 
   if (error) {
@@ -93,6 +94,7 @@ export async function updateWishItem(input: {
   title: string;
   note?: string;
   quantity: number;
+  photoUrls?: string[]; // iter94: wish 画像
 }): Promise<ActionResult> {
   const title = input.title.trim();
   if (!title || title.length > 100) {
@@ -114,16 +116,21 @@ export async function updateWishItem(input: {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const updateFields: Record<string, unknown> = {
+    group_id: input.groupId ?? null,
+    character_id: input.characterId ?? null,
+    goods_type_id: input.goodsTypeId,
+    title,
+    description: input.note?.trim() || null,
+    quantity: input.quantity,
+  };
+  if (input.photoUrls !== undefined) {
+    updateFields.photo_urls = input.photoUrls;
+  }
+
   const { error } = await supabase
     .from("goods_inventory")
-    .update({
-      group_id: input.groupId ?? null,
-      character_id: input.characterId ?? null,
-      goods_type_id: input.goodsTypeId,
-      title,
-      description: input.note?.trim() || null,
-      quantity: input.quantity,
-    })
+    .update(updateFields)
     .eq("id", input.id)
     .eq("user_id", user.id)
     .eq("kind", "wanted");

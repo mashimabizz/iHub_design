@@ -32,7 +32,7 @@ export default async function WishEditPage({
     supabase
       .from("goods_inventory")
       .select(
-        "id, user_id, kind, group_id, character_id, goods_type_id, title, description, quantity",
+        "id, user_id, kind, group_id, character_id, goods_type_id, title, description, quantity, photo_urls",
       )
       .eq("id", id)
       .eq("user_id", user.id)
@@ -92,6 +92,7 @@ export default async function WishEditPage({
     title: (wish.title as string) ?? "",
     quantity: (wish.quantity as number) ?? 1,
     note: (wish.description as string | null) ?? "",
+    photoUrls: (wish.photo_urls as string[] | null) ?? [],
   };
 
   return (

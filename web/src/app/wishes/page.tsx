@@ -19,6 +19,7 @@ type WishRow = {
   group_id: string | null;
   character_id: string | null;
   goods_type_id: string | null;
+  photo_urls: string[] | null;
   group: { name: string } | { name: string }[] | null;
   character: { name: string } | { name: string }[] | null;
   goods_type: { name: string } | { name: string }[] | null;
@@ -39,7 +40,7 @@ export default async function WishesPage() {
   const { data: rows } = await supabase
     .from("goods_inventory")
     .select(
-      "id, title, description, priority, flex_level, exchange_type, quantity, created_at, group_id, character_id, goods_type_id, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      "id, title, description, priority, flex_level, exchange_type, quantity, created_at, group_id, character_id, goods_type_id, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
     )
     .eq("user_id", user.id)
     .eq("kind", "wanted")
@@ -92,6 +93,7 @@ export default async function WishesPage() {
       quantity: r.quantity,
       createdAt: r.created_at,
       matchCount: matchCountByWishId.get(r.id) ?? 0,
+      photoUrl: (r.photo_urls && r.photo_urls[0]) ?? null,
     };
   });
 

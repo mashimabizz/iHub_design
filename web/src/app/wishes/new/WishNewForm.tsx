@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   saveWishItem,
@@ -9,6 +9,7 @@ import {
   type WishPriority,
 } from "@/app/wishes/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
 
 type Master = { id: string; name: string };
 type CharacterMaster = { id: string; name: string; group_id: string };
@@ -24,6 +25,7 @@ export type WishFormInitial = {
   title: string;
   quantity: number;
   note: string;
+  photoUrls?: string[];
 };
 
 export function WishNewForm({
@@ -57,6 +59,59 @@ export function WishNewForm({
   const [note, setNote] = useState(initial?.note ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // iter94: 画像（メイン 1 枚）
+  const [photoUrls, setPhotoUrls] = useState<string[]>(
+    initial?.photoUrls ?? [],
+  );
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleSelectPhoto(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("画像ファイルを選んでください");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("10MB 以下の画像にしてください");
+      return;
+    }
+    setError(null);
+    setPhotoUploading(true);
+    try {
+      const supabase = createBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setError("セッションが切れました。再ログインしてください");
+        return;
+      }
+      const ext = file.type.split("/")[1] || "jpg";
+      const path = `${user.id}/${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("goods-photos")
+        .upload(path, file, { contentType: file.type, upsert: false });
+      if (upErr) {
+        setError(`アップロード失敗: ${upErr.message}`);
+        return;
+      }
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("goods-photos").getPublicUrl(path);
+      setPhotoUrls([publicUrl]);
+    } finally {
+      setPhotoUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function handleRemovePhoto() {
+    setPhotoUrls([]);
+  }
 
   // 「その他」種別のとき手動でタイトル入力、それ以外は auto-title
   const selectedGoodsType = goodsTypes.find((g) => g.id === goodsTypeId);
@@ -114,6 +169,7 @@ export function WishNewForm({
             title: finalTitle,
             note: note.trim() || undefined,
             quantity,
+            photoUrls,
           })
         : await saveWishItem({
             groupId: groupId || undefined,
@@ -127,6 +183,7 @@ export function WishNewForm({
             exchangeType: "any",
             note: note.trim() || undefined,
             quantity,
+            photoUrls,
           });
     if (result?.error) {
       setPending(false);
@@ -243,6 +300,83 @@ export function WishNewForm({
       </Section>
 
       {/* iter67.5：交換タイプは wish レベルから再削除。個別募集の選択肢ごとに指定する設計に統一 */}
+
+      {/* iter94: 画像（メイン 1 枚） */}
+      <Section
+        label="画像"
+        hint={photoUrls.length > 0 ? "1 枚登録済" : "任意"}
+      >
+        <div className="rounded-xl border border-[#3a324a14] bg-white p-3">
+          {photoUrls[0] ? (
+            <div className="flex items-start gap-3">
+              <div className="relative h-[88px] w-[68px] flex-shrink-0 overflow-hidden rounded-[10px] border border-[#3a324a14] bg-[#3a324a]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photoUrls[0]}
+                  alt="ウィッシュ画像"
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="text-[11.5px] text-gray-500">
+                  画像を登録しました
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={photoUploading}
+                    className="rounded-[8px] border border-[#a695d855] bg-white px-2.5 py-1 text-[11px] font-bold text-[#a695d8] disabled:opacity-50"
+                  >
+                    {photoUploading ? "アップ中…" : "差し替え"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemovePhoto}
+                    className="rounded-[8px] border border-[#3a324a14] bg-white px-2.5 py-1 text-[11px] font-bold text-[#3a324a8c]"
+                  >
+                    削除
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={photoUploading}
+              className="flex w-full flex-col items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-[#a695d855] bg-[#fbf9fc] py-5 text-[11.5px] font-bold text-[#a695d8] disabled:opacity-50"
+            >
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 22 22"
+                fill="none"
+                stroke="#a695d8"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="6" width="16" height="13" rx="2" />
+                <path d="M3 13l4-4 4 4 3-3 5 5" />
+                <path d="M8 6l1-2h4l1 2" />
+                <circle cx="11" cy="11" r="2.5" />
+              </svg>
+              {photoUploading ? "アップ中…" : "+ 画像を選択"}
+            </button>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              handleSelectPhoto(f);
+            }}
+          />
+        </div>
+      </Section>
 
       {/* メモ */}
       <Section label="メモ" hint={`${note.length} / 200`}>

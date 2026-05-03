@@ -18,6 +18,8 @@ export type WishItem = {
   createdAt: string; // ISO
   /** iter84: 同条件の他ユーザー出品数 */
   matchCount: number;
+  /** iter94: メイン画像 URL */
+  photoUrl: string | null;
 };
 
 // iter67.3 で復活した EXCHANGE_LABEL は iter67.5 で再削除
@@ -154,11 +156,23 @@ export function WishView({ items }: { items: WishItem[] }) {
                     href={`/wishes/${w.id}/edit`}
                     className="block flex gap-3 p-3.5 active:scale-[0.99]"
                   >
-                    {/* サムネ */}
-                    <div className="relative flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-[10px] border border-[#3a324a14] bg-[linear-gradient(135deg,#a695d833,#a8d4e633)]">
-                      <span className="text-[11px] font-extrabold text-[#a695d8]">
-                        IMG
-                      </span>
+                    {/* サムネ（iter94: 画像登録あれば実画像、なければ IMG プレースホルダ） */}
+                    <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-[10px] border border-[#3a324a14] bg-[linear-gradient(135deg,#a695d833,#a8d4e633)]">
+                      {w.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={w.photoUrl}
+                          alt={w.title}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <span className="text-[11px] font-extrabold text-[#a695d8]">
+                            IMG
+                          </span>
+                        </div>
+                      )}
                       {hot && (
                         <span className="absolute -right-1 -top-1 rounded-full bg-[#d9826b] px-1.5 py-[2px] text-[8.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_4px_rgba(217,130,107,0.35)]">
                           HOT
