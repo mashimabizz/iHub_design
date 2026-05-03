@@ -884,7 +884,7 @@ function TradeDetailModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/55 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/55 backdrop-blur-sm sm:items-center"
       onClick={onClose}
     >
       <div
@@ -1012,14 +1012,14 @@ function MapModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col bg-black/65 backdrop-blur-sm"
+      className="fixed inset-0 z-[1000] flex flex-col bg-black/65 backdrop-blur-sm"
       onClick={onClose}
     >
       <button
         type="button"
         onClick={onClose}
         aria-label="閉じる"
-        className="absolute right-4 top-12 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-[#3a324a] shadow-md"
+        className="absolute right-4 top-12 z-[1010] flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-[#3a324a] shadow-md"
       >
         ✕
       </button>
@@ -1080,7 +1080,7 @@ function QrModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 px-6"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 px-6"
       onClick={onClose}
     >
       <div

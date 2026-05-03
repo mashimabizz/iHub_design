@@ -178,11 +178,11 @@ export function MatchDetailModal({
   const selectedCount = selected?.optionIds.size ?? 0;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
+    <div className="fixed inset-0 z-[1000] flex flex-col bg-[#fbf9fc]">
       {/* iter67.8.1：トースト（画面上部・safe-area 内） */}
       {alertMsg && (
         <div
-          className="pointer-events-none fixed inset-x-0 top-0 z-[120] flex justify-center px-4 pt-12"
+          className="pointer-events-none fixed inset-x-0 top-0 z-[1020] flex justify-center px-4 pt-12"
           aria-live="polite"
           role="status"
         >
@@ -298,7 +298,7 @@ export function MatchDetailModal({
 
       {/* フッター固定の「打診に進む」 CTA */}
       {selectedCount > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-[110] border-t border-[#3a324a14] bg-white/95 px-[18px] pb-7 pt-3 backdrop-blur-xl">
+        <div className="fixed inset-x-0 bottom-0 z-[1010] border-t border-[#3a324a14] bg-white/95 px-[18px] pb-7 pt-3 backdrop-blur-xl">
           <div className="mx-auto w-full max-w-md">
             <button
               type="button"
