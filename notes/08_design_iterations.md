@@ -419,6 +419,96 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション67-E：取引タブ追加（フッター）+ `/transactions` 一覧画面
+
+### 背景
+
+オーナーから iter67-D 後にデザイン案の画像（取引タブ・C-2 チャット・C-3 撮影/承認/評価）共有 + フッター指示：
+
+> デザイン案見ました？こんな感じだったと思いますが。
+> 打診を送る画面は別に変えなくていいけど。
+> あとフッターに「取引」を追加してほしい
+
+C-2 / C-3 などの個別画面は別 iter で。今回は **取引タブの導線整備** のみ：
+
+### 変更内容
+
+#### A. `BottomNav.tsx` に「取引」タブ追加
+- 中央に配置：ホーム / 在庫 / **取引** / wish / プロフ
+- アイコンは双方向矢印 SVG（取引のシンボル）
+- アクティブ判定は `pathname.startsWith("/transactions")`
+
+#### B. `/transactions/page.tsx` + `TransactionsView.tsx`（新規）
+
+モックアップ準拠の **3 タブ** 構造：
+
+| タブ | 元データ | 説明 |
+|---|---|---|
+| 打診中 | proposals.status in (sent, negotiating, agreement_one_side) | やり取り中の打診 |
+| 進行中 | proposals.status = agreed | 合意済 → 当日合流予定 / C-2 / C-3 段階 |
+| 過去取引 | proposals.status in (rejected, expired, cancelled) | 終了済の打診 |
+
+`deals` テーブルはまだ無いので、進行中・過去は proposals.status で代用（次イテで合流）。
+
+サーバー側：proposals + 相手 user + 関連 inventory を bulk fetch、サマリ文字列に整形。
+
+クライアント側カード：
+- **進行中カード**：ユーザー視点「受け取る ⇄ 出す」+ 場所 + 時間帯 + **合流カウントダウン**（緑インジケータ）
+  - 「合流まで 3時間」「当日まで 7日」「合流 5分前」など動的計算
+- **打診中 / 過去カード**：状態バッジ + NEW + 期限残日 + 簡易サマリ
+- 過去カードは opacity 0.7 で薄く表示
+
+#### C. ユーザー視点「私が出す ↔ 私が受け取る」
+
+旧（/proposals）：sender → receiver の方向
+新（/transactions）：**ログインユーザー視点**で「あなたが受け取る ⇄ あなたが出す」を統一
+
+```
+direction = sender_id === user.id ? "sent" : "received"
+if (sent)     myGive = senderItems,    myReceive = receiverItems
+if (received) myGive = receiverItems,  myReceive = senderItems
+```
+
+定価交換時：私が受け取る or 私が出す が「💴 ¥金額」になる
+
+#### D. 合流カウントダウン
+
+進行中カード専用の動的表示：
+- 未来：分→時間→日 で粒度切替
+- 過ぎた時刻：分前 → 時間経過 → 日経過
+- 緑のステータスインジケータ + テキスト
+
+### 影響範囲
+
+- 全ページのフッターに「取引」タブが出現
+- 新ルート `/transactions`
+- proposals データを取引視点で再表示（既存 `/proposals` も並存）
+- C-2 / C-3 などの取引中／完了画面は **iter68 以降**
+
+### 設計判断
+
+- **`/transactions` と `/proposals` の併存**：機能重複だが、視点が違う（取引フロー視点 vs 打診サイクル視点）。用途で使い分け
+- **deals テーブルは MVP では proposals で代用**：DB 増やす前に UI で慣らす。次イテで分離検討
+- **「申告中・仲裁中」セクションはスキップ**：dispute 機能未実装のため
+- **進行中カードに合流カウントダウン**：当日感を演出（モックアップの「合流 5分前」「当日まで 7日」を再現）
+
+### TODO（次の iter / iter68 系）
+
+- C-2 取引チャット：messages テーブル + チャット UI + 服装写真シェア + 現在地共有
+- C-3 撮影：取引証跡撮影（カメラ + メタ）
+- C-3 双方承認：写真 + 双方の承認ボタン → 完了
+- C-3 完了 / 評価：評価 + コレクション更新 + X 投稿
+- deals テーブル整備（proposals → deals 分離）
+- 期限自動切替 cron
+
+### 関連ファイル
+
+- `web/src/components/home/BottomNav.tsx`（取引タブ追加）
+- `web/src/app/transactions/page.tsx`（新規）
+- `web/src/app/transactions/TransactionsView.tsx`（新規）
+
+---
+
 ## イテレーション67-D：打診の受信表示 `/proposals` + `/proposals/[id]`
 
 ### 背景

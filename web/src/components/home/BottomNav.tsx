@@ -15,9 +15,11 @@ export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
   const pathname = usePathname();
 
   // iter65.8: AW タブを削除（現地交換モードはホーム画面で完結）
+  // iter67-E: 「取引」タブを追加（中央配置）
   const items = [
     { href: "/", label: "ホーム", icon: "home" as const },
     { href: "/inventory", label: "在庫", icon: "inventory" as const },
+    { href: "/transactions", label: "取引", icon: "transactions" as const },
     { href: "/wishes", label: "wish", icon: "wish" as const },
     { href: "/profile", label: "プロフ", icon: "profile" as const },
   ];
@@ -56,11 +58,28 @@ function NavIcon({
   name,
   active,
 }: {
-  name: "home" | "inventory" | "wish" | "profile";
+  name: "home" | "inventory" | "transactions" | "wish" | "profile";
   active: boolean;
 }) {
   const stroke = active ? "#a695d8" : "#6b6478";
   switch (name) {
+    case "transactions":
+      return (
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          {/* 双方向矢印（取引のシンボル） */}
+          <path d="M7 7h12m-3-3l3 3-3 3" />
+          <path d="M17 17H5m3-3l-3 3 3 3" />
+        </svg>
+      );
     case "home":
       return (
         <svg
