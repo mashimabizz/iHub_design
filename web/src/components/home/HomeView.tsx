@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { logout } from "@/app/auth/actions";
 import {
@@ -365,8 +366,8 @@ export function HomeView({
             </h1>
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
+            <Link
+              href="/search"
               className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white shadow-sm"
               aria-label="検索"
             >
@@ -381,7 +382,7 @@ export function HomeView({
                 <circle cx="6" cy="6" r="4.5" />
                 <path d="M9.5 9.5L13 13" />
               </svg>
-            </button>
+            </Link>
             <button
               type="button"
               className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white shadow-sm"
