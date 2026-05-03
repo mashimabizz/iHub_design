@@ -137,9 +137,18 @@ function ProposalCard({ p }: { p: ProposalRow }) {
       )
     : null;
 
+  // iter90: 一覧から直接チャットに飛ぶ（/transactions と整合性）。
+  // 未応答 (sent) のみ /proposals/[id] 詳細ページ（受信側の初応答画面）。
+  const href =
+    p.status === "negotiating" ||
+    p.status === "agreement_one_side" ||
+    p.status === "agreed"
+      ? `/transactions/${p.id}`
+      : `/proposals/${p.id}`;
+
   return (
     <Link
-      href={`/proposals/${p.id}`}
+      href={href}
       className={`block overflow-hidden rounded-2xl border bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] transition-all active:scale-[0.99] ${
         isUnread
           ? "border-[#a695d8] shadow-[0_4px_14px_rgba(166,149,216,0.16)]"

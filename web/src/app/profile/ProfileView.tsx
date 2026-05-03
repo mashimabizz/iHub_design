@@ -136,40 +136,19 @@ export function ProfileView({
 
         {/* iter86: wish 進捗（コレクションサマリ）は削除 */}
 
-        {/* あなたの活動 */}
-        <Section label="あなたの活動">
-          <Link href="/proposals" className="block">
-            <Row>
-              <RowItem
-                icon="📨"
-                title="打診"
-                sub="送信・受信した打診一覧"
-                chevron
-              />
-            </Row>
-          </Link>
+        {/* iter90: 「打診」「取引履歴」はフッタの「取引」タブと重複するため削除。
+            スケジュール（自分の予定）だけ別 Section に。 */}
+        <Section label="予定">
           <Link href="/schedules" className="block">
             <Row>
               <RowItem
                 icon="📅"
                 title="スケジュール"
-                sub="自分の予定（AW とは別）"
+                sub="自分の予定（取引と無関係の用事も登録可）"
                 chevron
               />
             </Row>
           </Link>
-          <Row>
-            <RowItem
-              icon="📋"
-              title="取引履歴"
-              sub={
-                tradeCount > 0
-                  ? `${tradeCount}件 · 取引完了`
-                  : "まだ取引なし"
-              }
-              comingSoon
-            />
-          </Row>
         </Section>
 
         {/* アイデンティティ */}
