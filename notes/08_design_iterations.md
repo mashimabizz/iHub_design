@@ -419,6 +419,127 @@ Claude Design の現状実装：
 
 ---
 
+## イテレーション68-A：取引チャット（C-2）— messages テーブル + チャット画面
+
+### 背景
+
+iter67-E までで打診サイクル + 取引タブが揃った。次に **合意後の当日運用** が必要。
+モックアップ案の「C-2 チャット」画面：
+- 取引内容＋待ち合わせ（確定済）固定カード
+- 服装写真シェア（双方の状態 + 撮影 CTA）
+- メッセージリスト（テキスト / 写真 / 現在地 / 到着ステータス）
+- 入力欄（＋ メニューで現在地・服装写真・写真添付）
+
+iter68-A は **messages テーブル + テキスト/位置/到着ステータス** を完全実装。
+写真 upload（Storage 整備）と C-3 撮影/承認/評価は別 iter で。
+
+### 変更内容
+
+#### A. DB マイグレーション（`20260503210000_add_messages.sql`）
+
+```
+messages
+  id, proposal_id, sender_id,
+  message_type 'text'|'photo'|'outfit_photo'|'location'|'arrival_status'|'system',
+  body, photo_url,
+  location_lat, location_lng, location_label,
+  meta jsonb,
+  created_at
+```
+
+CHECK 制約：`messages_type_consistency` で各 type に必要なフィールドを担保
+- text → body 必須
+- photo / outfit_photo → photo_url 必須
+- location → lat/lng 必須
+- arrival_status → meta 必須
+
+RLS：proposal の sender or receiver のみ SELECT/INSERT 可（UPDATE/DELETE は許可しない＝追記型）
+
+インデックス：`(proposal_id, created_at)` で取引ごとの時系列取得を高速化
+
+#### B. server actions（`/transactions/actions.ts`）
+
+- `sendTextMessage(proposalId, body)`：テキスト送信、2000 文字以内
+- `sendLocationMessage(proposalId, lat, lng, label?)`：現在地共有
+- `updateArrivalStatus(proposalId, status)`：'enroute' / 'arrived' / 'left' を `arrival_status` メッセージとして追記。最新の status が現在の到着状態として扱われる
+
+各 action 内で proposal 参加者チェック（RLS でも担保）。
+
+#### C. `/transactions/[id]/page.tsx`（server）
+
+- proposal + messages + 関連 inventory + 相手 user を fetch
+- ユーザー視点で「私が出す ↔ 私が受け取る」に整形
+- 双方の最新 arrival_status を計算（partner が「会場到着」中なら header に表示）
+- 双方の最新 outfit_photo を抽出（次イテで写真 upload 実装後に活用）
+- 合意済 / ネゴ中 / 一方合意 のみアクセス可（draft/expired/cancelled は `/proposals/[id]` にリダイレクト）
+
+#### D. `ChatView.tsx`（client）
+
+**レイアウト構成**：
+1. **取引内容カード**（上部固定、紫/青グラデ背景）
+   - 「📦 取引内容＋待ち合わせ（確定済）」+ 「合意済」緑バッジ
+   - 受け取る ⇄ 出す（grid_3、定価交換時は ¥金額カード）
+   - 場所 + 時間帯
+2. **服装写真シェアセクション**
+   - あなた / @partner の双方カード（共有済 ✓ or 未シェア —）
+   - 「📷 服装写真を撮影してシェア」ボタン（実装は次イテ、今は alert）
+3. **メッセージリスト**（自動下スクロール）
+   - text：紫グラデバブル（自分）/ 白枠バブル（相手）
+   - location：📍 + ラベル + 「地図で見る →」（Google Maps リンク）
+   - arrival_status：中央寄せの緑チップ「会場に到着しました ・ 18:43」
+   - photo / outfit_photo：画像表示（実 url が来たら表示）
+   - system：中央寄せのグレーチップ
+4. **入力欄**（下部）
+   - ＋ メニュー（タップで展開）：現在地を送る / 向かう→到着→離脱 / 服装写真（disabled）
+   - textarea（Enter 送信、Shift+Enter で改行、IME 対応）
+   - 紫グラデの送信ボタン
+
+**リアルタイム**：5 秒ごとに `router.refresh()` で polling（Supabase realtime 化は次イテ）
+
+#### E. 進入導線
+
+- **`/proposals/[id]`**：status が `agreed` / `negotiating` / `agreement_one_side` のとき、紫グラデの「💬 取引チャットへ進む →」or「💬 ネゴチャットへ進む →」CTA を表示
+- **`/transactions` 進行中カード**：タップで `/transactions/[id]` へ（既存リンク先 `/proposals/[id]` から変更）
+
+#### F. ヘッダー
+- HeaderBack の sub に「● 会場到着」or「向かっています」or「未到着」+ エリア
+- 状態（合意済以外）の場合のみ右上にステータスバッジ
+
+### 影響範囲
+
+- 新ルート `/transactions/[id]`（取引チャット）
+- `/proposals/[id]` 詳細：合意後の遷移先 CTA 追加
+- `/transactions` 進行中カード：リンク先を `/proposals/[id]` → `/transactions/[id]` に変更
+- DB：messages テーブル新規
+
+### 設計判断
+
+- **チャットは追記型**（UPDATE/DELETE 無し）：訴訟リスク削減、改ざん防止
+- **arrival_status をメッセージで表現**：別カラムにするより簡潔。最新を見るだけで現状把握
+- **5 秒 polling は MVP**：Supabase Realtime 導入は写真 upload 等と同じ iter で
+- **取引内容カードは折り畳まない**（モックアップ準拠）：当日見返す情報なので常時表示
+- **取引内容は不変**：合意した内容なので変更不可、再交渉は新打診
+
+### TODO（次の小iter）
+
+- iter68-B：Supabase Storage 整備 + 服装写真 / 通常写真 upload 実装
+- iter68-C：QR 表示（モックアップでヘッダー右上にあった「QR」ボタン → 取引完了用の本人確認）
+- iter68-D：C-3 取引完了 撮影画面
+- iter68-E：C-3 双方承認 + 完了 → 評価 + コレクション更新
+- iter68-F：deals テーブル整備（proposals → deals 分離）
+- iter68-G：Supabase Realtime（5 秒 polling 撤廃）
+
+### 関連ファイル
+
+- `supabase/migrations/20260503210000_add_messages.sql`（新規）
+- `web/src/app/transactions/actions.ts`（新規）
+- `web/src/app/transactions/[id]/page.tsx`（新規）
+- `web/src/app/transactions/[id]/ChatView.tsx`（新規）
+- `web/src/app/proposals/[id]/ProposalDetailView.tsx`（チャット導線追加）
+- `web/src/app/transactions/TransactionsView.tsx`（リンク先変更）
+
+---
+
 ## イテレーション67-E：取引タブ追加（フッター）+ `/transactions` 一覧画面
 
 ### 背景

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { respondToProposal } from "@/app/propose/actions";
@@ -357,15 +358,29 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
         </div>
       )}
 
+      {/* 合意済 / ネゴ中 → 取引チャットへの導線（双方向） */}
+      {(detail.status === "agreed" ||
+        detail.status === "negotiating" ||
+        detail.status === "agreement_one_side") && (
+        <Link
+          href={`/transactions/${detail.id}`}
+          className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-sm font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] active:scale-[0.97]"
+        >
+          {detail.status === "agreed"
+            ? "💬 取引チャットへ進む →"
+            : "💬 ネゴチャットへ進む →"}
+        </Link>
+      )}
+
       {/* 送信者向けの状態表示 */}
       {detail.isSender && (
         <div className="rounded-2xl border border-[#3a324a14] bg-[#fbf9fc] p-3 text-[11.5px] leading-relaxed text-[#3a324a8c]">
           {detail.status === "sent"
             ? "相手の応答を待っています。期限切れまでに応答がなければ自動で expired になります。"
             : detail.status === "negotiating"
-              ? "ネゴ中です（C-1.5 ネゴチャットは次イテレーションで実装）。"
+              ? "ネゴ中です。チャットで条件を相談できます。"
               : detail.status === "agreed"
-                ? "合意済 ✓ — 取引画面へ進めます（次イテレーションで実装）。"
+                ? "合意済 ✓ — 取引チャットで当日の段取りを進めましょう。"
                 : detail.status === "rejected"
                   ? "拒否されました。"
                   : detail.status === "expired"

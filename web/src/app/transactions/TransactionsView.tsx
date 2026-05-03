@@ -155,7 +155,7 @@ function OngoingCard({ t }: { t: TransactionRow }) {
 
   return (
     <Link
-      href={`/proposals/${t.id}`}
+      href={`/transactions/${t.id}`}
       className="block overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] transition-all active:scale-[0.99]"
     >
       <div className="flex items-start gap-2.5 px-3.5 py-3">
