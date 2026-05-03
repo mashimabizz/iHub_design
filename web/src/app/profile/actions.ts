@@ -12,6 +12,7 @@ const VALID_GENDER = ["female", "male", "other", "no_answer"] as const;
  * プロフィール基本情報を更新（display_name / handle / avatar_url / gender / primary_area）
  *
  * 注: handle 変更時は重複チェックする。
+ * iter96: avatar_url の更新に対応。null を渡すと「削除」として保存される。
  */
 export async function updateProfile(input: {
   handle: string;
@@ -20,6 +21,8 @@ export async function updateProfile(input: {
   // → 現状 schema に bio 列なし。今回は display_name と handle のみ更新。
   gender?: "female" | "male" | "other" | "no_answer";
   primaryArea?: string;
+  /** iter96: アバター画像 URL（クライアントで Storage にアップ済の publicUrl） */
+  avatarUrl?: string | null;
 }): Promise<ActionResult> {
   const handle = input.handle.trim().toLowerCase();
   const displayName = input.displayName.trim();
@@ -37,6 +40,11 @@ export async function updateProfile(input: {
   }
   if (input.primaryArea && input.primaryArea.length > 50) {
     return { error: "活動エリアは 50 文字以内で入力してください" };
+  }
+  // avatarUrl は client 側で同一ユーザー folder の Storage URL を使うので、
+  // ここでは長さの簡易バリデーションのみ
+  if (input.avatarUrl && input.avatarUrl.length > 1000) {
+    return { error: "アバター URL が不正です" };
   }
 
   const supabase = await createClient();
@@ -56,14 +64,27 @@ export async function updateProfile(input: {
     return { error: "このハンドル名は既に使われています" };
   }
 
+  // 「avatarUrl が key ごと undefined」なら touch しない（誤削除防止）
+  // 「avatarUrl が null（明示削除）」または「文字列」なら更新
+  const updateRow: {
+    handle: string;
+    display_name: string;
+    gender: string | null;
+    primary_area: string | null;
+    avatar_url?: string | null;
+  } = {
+    handle,
+    display_name: displayName,
+    gender: input.gender ?? null,
+    primary_area: input.primaryArea?.trim() || null,
+  };
+  if (input.avatarUrl !== undefined) {
+    updateRow.avatar_url = input.avatarUrl;
+  }
+
   const { error } = await supabase
     .from("users")
-    .update({
-      handle,
-      display_name: displayName,
-      gender: input.gender ?? null,
-      primary_area: input.primaryArea?.trim() || null,
-    })
+    .update(updateRow)
     .eq("id", user.id);
 
   if (error) return { error: error.message };

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 import { updateProfile } from "@/app/profile/actions";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { AvatarCropperModal } from "./AvatarCropperModal";
 
 type Gender = "female" | "male" | "other" | "no_answer";
 
@@ -72,6 +74,7 @@ export function ProfileEditForm({
     displayName: string;
     gender: Gender | null;
     primaryArea: string;
+    avatarUrl: string | null;
   };
 }) {
   const router = useRouter();
@@ -81,6 +84,12 @@ export function ProfileEditForm({
   const [primaryArea, setPrimaryArea] = useState(initial.primaryArea);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  // iter96: avatar upload + crop
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(initial.avatarUrl);
+  const [cropSourceUrl, setCropSourceUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     router.prefetch("/profile");
@@ -94,6 +103,7 @@ export function ProfileEditForm({
         displayName,
         gender: gender ?? undefined,
         primaryArea: primaryArea.trim() || undefined,
+        avatarUrl: avatarUrl ?? null,
       });
       if (r?.error) {
         setError(r.error);
@@ -101,6 +111,72 @@ export function ProfileEditForm({
       }
       router.push("/profile");
     });
+  }
+
+  /** ファイル選択 → ObjectURL を作って Cropper を開く */
+  function handleFilePicked(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("画像ファイルを選んでください");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("10MB 以下の画像にしてください");
+      return;
+    }
+    setError(null);
+    const url = URL.createObjectURL(file);
+    setCropSourceUrl(url);
+  }
+
+  /** Cropper で「適用」 → Blob を Storage にアップロード → avatar_url を更新 */
+  async function handleCropApplied(result: { blob: Blob; dataUrl: string }) {
+    // モーダルは閉じる
+    if (cropSourceUrl) URL.revokeObjectURL(cropSourceUrl);
+    setCropSourceUrl(null);
+
+    setUploadingAvatar(true);
+    setError(null);
+    try {
+      const supabase = createBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setError("ログイン情報が取得できませんでした");
+        return;
+      }
+      // 同一ユーザーは同じパスに upsert で上書き（履歴は持たない方針）
+      const path = `${user.id}/avatar_${Date.now()}.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(path, result.blob, {
+          contentType: "image/jpeg",
+          upsert: false,
+        });
+      if (upErr) {
+        setError(upErr.message || "アップロード失敗");
+        return;
+      }
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("avatars").getPublicUrl(path);
+      setAvatarUrl(publicUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "アップロード失敗");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
+
+  function handleCropCancel() {
+    if (cropSourceUrl) URL.revokeObjectURL(cropSourceUrl);
+    setCropSourceUrl(null);
+  }
+
+  function handleRemoveAvatar() {
+    if (!confirm("アイコン画像を削除しますか？")) return;
+    setAvatarUrl(null);
   }
 
   const initialChar = (displayName || handle || "?").charAt(0).toUpperCase();
@@ -113,24 +189,63 @@ export function ProfileEditForm({
       }}
       className="space-y-5"
     >
-      {/* アバター */}
+      {/* アバター（iter96: アップロード + クロップ対応） */}
       <div className="flex items-center gap-4 rounded-2xl border border-[#3a324a0f] bg-white p-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] text-[22px] font-extrabold text-white">
-          {initialChar}
+        <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt="アイコン"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] text-[22px] font-extrabold text-white">
+              {initialChar}
+            </div>
+          )}
         </div>
         <div className="flex-1">
           <div className="text-[13px] font-bold text-gray-900">アイコン画像</div>
           <div className="mt-0.5 text-[11px] text-[#3a324a8c]">
-            画像アップロード機能は準備中
+            {uploadingAvatar
+              ? "アップロード中…"
+              : avatarUrl
+                ? "タップして変更（切り抜きも可能）"
+                : "画像を選んで切り抜き登録"}
           </div>
         </div>
-        <button
-          type="button"
-          disabled
-          className="rounded-[10px] border border-[#a695d855] bg-white px-3 py-1.5 text-[11px] font-bold text-[#a695d8] opacity-50"
-        >
-          変更
-        </button>
+        <div className="flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingAvatar}
+            className="rounded-[10px] border border-[#a695d855] bg-white px-3 py-1.5 text-[11px] font-bold text-[#a695d8] disabled:opacity-50"
+          >
+            {avatarUrl ? "変更" : "選択"}
+          </button>
+          {avatarUrl && (
+            <button
+              type="button"
+              onClick={handleRemoveAvatar}
+              disabled={uploadingAvatar}
+              className="rounded-[10px] border border-[#3a324a14] bg-white px-3 py-1 text-[10px] font-bold text-[#3a324a8c] disabled:opacity-50"
+            >
+              削除
+            </button>
+          )}
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null;
+            handleFilePicked(f);
+            if (e.target) e.target.value = "";
+          }}
+        />
       </div>
 
       {/* 基本情報 */}
@@ -216,6 +331,15 @@ export function ProfileEditForm({
       <PrimaryButton type="submit" pending={pending} pendingLabel="保存中…">
         変更を保存
       </PrimaryButton>
+
+      {/* iter96: クロップモーダル */}
+      {cropSourceUrl && (
+        <AvatarCropperModal
+          sourceUrl={cropSourceUrl}
+          onApply={handleCropApplied}
+          onClose={handleCropCancel}
+        />
+      )}
     </form>
   );
 }

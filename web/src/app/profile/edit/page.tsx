@@ -16,7 +16,7 @@ export default async function ProfileEditPage() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("handle, display_name, gender, primary_area")
+    .select("handle, display_name, gender, primary_area, avatar_url")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -36,6 +36,7 @@ export default async function ProfileEditPage() {
                 | "no_answer"
                 | null) ?? null,
             primaryArea: profile?.primary_area ?? "",
+            avatarUrl: (profile?.avatar_url as string | null) ?? null,
           }}
         />
       </div>
