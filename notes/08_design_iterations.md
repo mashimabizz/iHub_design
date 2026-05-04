@@ -4,6 +4,52 @@
 
 ---
 
+## イテレーション151.8：注目マッチの現地ON/OFFカードサイズを統一
+
+### 背景・問題意識
+
+オーナーから、注目マッチのマッチングパネルについて「現地交換モードOFF中とON中とで、大きさが違っているので不自然。OFFモードの方の大きさに統一してほしい」と指摘があった。
+
+原因は iter151.6 で、現地ONカードだけ外周オーラ用に `-m-3 p-3` を wrapper に持たせたこと。エフェクトは安定したが、注目マッチ内でカード本体の見え方が OFF カードより大きくなっていた。
+
+### 変更内容
+
+#### `web/src/components/home/MatchCard.tsx`
+- local match wrapper の `-m-3 p-3` を削除。
+- 現地ON/OFFともにカード本体のレイアウト寸法が同じになるよう `rounded-2xl` の通常 wrapper に統一。
+
+#### `web/src/app/globals.css`
+- 外周オーラ / 火花は wrapper の余白ではなく、疑似要素の negative inset で外側に出す方式へ調整。
+- spark の配置をカード外側へ移し、カード本体サイズには影響しないようにした。
+
+### 影響範囲
+
+- ホーム / マッチング画面 `/`
+- 注目マッチの `localAvailable=true` カード
+- 通常マッチ一覧の `localAvailable=true` カード
+
+### 確認方法
+
+- `npx eslint src/components/home/MatchCard.tsx src/app/globals.css`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/home/MatchCard.tsx`
+- `web/src/app/globals.css`
+
+### セルフレビュー結果
+
+- ✅ 現地ONカードだけ wrapper padding / negative margin で大きくなる問題を解消
+- ✅ OFFカードと同じカード本体サイズに統一
+- ✅ エフェクトは疑似要素だけで外側に出し、カード寸法へ影響しない構造に変更
+- ✅ `notes/09_state_machines.md` は状態変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 TSX ESLint / build 成功
+
+---
+
 ## イテレーション151.7：取引一覧の初期タブと表示アニメーションを修正
 
 ### 背景・問題意識

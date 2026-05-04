@@ -146,9 +146,9 @@ body {
 .match-card-local-aura::before {
   content: "";
   position: absolute;
-  inset: 3px;
+  inset: -10px;
   z-index: -2;
-  border-radius: 30px;
+  border-radius: 28px;
   background:
     radial-gradient(28px 78px at 12% 4%, rgba(166, 149, 216, 0.86), transparent 70%),
     radial-gradient(24px 84px at 31% -2%, rgba(118, 80, 210, 0.88), transparent 72%),
@@ -166,9 +166,9 @@ body {
 .match-card-local-aura::after {
   content: "";
   position: absolute;
-  inset: 7px;
+  inset: -4px;
   z-index: -1;
-  border-radius: 25px;
+  border-radius: 24px;
   border: 1.5px solid rgba(166, 149, 216, 0.72);
   box-shadow:
     0 0 13px rgba(166, 149, 216, 0.74),
@@ -201,19 +201,19 @@ body {
 .match-card-local-spark-1 {
   --spark-rotate: -8deg;
   left: 17%;
-  top: 3px;
+  top: -10px;
 }
 
 .match-card-local-spark-2 {
   --spark-rotate: 7deg;
   right: 19%;
-  top: 0;
+  top: -13px;
   animation-delay: 180ms;
 }
 
 .match-card-local-spark-3 {
   --spark-rotate: -5deg;
-  right: 3px;
+  right: -8px;
   top: 42%;
   animation-delay: 340ms;
 }

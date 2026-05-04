@@ -225,7 +225,7 @@ function CardShell({
     <div
       className={
         local
-          ? "match-card-local-aura -m-3 rounded-[26px] p-3"
+          ? "match-card-local-aura rounded-2xl"
           : "rounded-2xl"
       }
     >
