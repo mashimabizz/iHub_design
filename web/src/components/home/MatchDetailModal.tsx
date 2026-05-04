@@ -92,6 +92,53 @@ export function MatchDetailModal({
   const router = useRouter();
 
   /**
+   * iter121: OR 条件の haves でどれを選ぶか（listingId → 選択中 inv id Set）
+   * - haveLogic === "or" + haves >= 2 の listing のみ key として登場
+   * - 初期値：最初の matched have（無ければ haves[0]）を 1 件選択
+   */
+  const [selectedHavesByListing, setSelectedHavesByListing] = useState<
+    Map<string, Set<string>>
+  >(() => {
+    const m = new Map<string, Set<string>>();
+    for (const l of [...myListings, ...partnerListings]) {
+      if (l.haveLogic === "or" && l.haves.length >= 2) {
+        const first = l.haves.find((h) => h.matched) ?? l.haves[0];
+        if (first) m.set(l.listingId, new Set([first.item.id]));
+      }
+    }
+    return m;
+  });
+
+  function isHaveSelected(listingId: string, haveInvId: string): boolean {
+    return selectedHavesByListing.get(listingId)?.has(haveInvId) ?? false;
+  }
+
+  function toggleHave(listingId: string, haveInvId: string) {
+    setSelectedHavesByListing((prev) => {
+      const next = new Map(prev);
+      const set = new Set(next.get(listingId) ?? []);
+      if (set.has(haveInvId)) set.delete(haveInvId);
+      else set.add(haveInvId);
+      next.set(listingId, set);
+      return next;
+    });
+  }
+
+  /**
+   * 各 listing の「実際に対象になる haves」を返す。
+   * - AND or 単一：全 haves
+   * - OR with >=2：選択中の haves のみ
+   */
+  function getEffectiveHaves(listing: MatchCardListingInfo) {
+    if (listing.haveLogic === "or" && listing.haves.length >= 2) {
+      const sel = selectedHavesByListing.get(listing.listingId);
+      if (!sel || sel.size === 0) return [];
+      return listing.haves.filter((h) => sel.has(h.item.id));
+    }
+    return listing.haves;
+  }
+
+  /**
    * iter111: 在庫超過判定
    *
    * - 自分の listing が選択中 → listing.haves（私の inv）を qty 分出す必要
@@ -114,8 +161,8 @@ export function MatchDetailModal({
       const listing = listingById.get(listingId);
       if (!listing) continue;
       if (listing.isMyListing) {
-        // 私の listing → haves（私の inv）を qty 分出す
-        for (const h of listing.haves) {
+        // 私の listing → 効果的な haves（OR 選択を反映）の qty 分出す
+        for (const h of getEffectiveHaves(listing)) {
           giveQtyById.set(
             h.item.id,
             (giveQtyById.get(h.item.id) ?? 0) + h.qty,
@@ -250,20 +297,22 @@ export function MatchDetailModal({
       if (!listing) continue;
       referencedListings.add(listingId);
 
+      // iter121: OR 選択を反映した effective haves を使う
+      const effectiveHaves = getEffectiveHaves(listing);
       if (listing.isMyListing) {
-        // 私の listing：listing.haves（私の inv）を出す + 候補（相手の inv）を受け取る
-        for (const h of listing.haves) addUniq(givesItems, giveIdSet, h.item);
+        // 私の listing：effective haves（私の inv）を出す + 候補（相手の inv）を受け取る
+        for (const h of effectiveHaves) addUniq(givesItems, giveIdSet, h.item);
         for (const cid of candidateIds) {
           const item = candidateItemById.get(cid);
           if (item) addUniq(receivesItems, receiveIdSet, item);
         }
       } else {
-        // 相手の listing：候補（私の inv）を出す + listing.haves（相手の inv）を受け取る
+        // 相手の listing：候補（私の inv）を出す + effective haves（相手の inv）を受け取る
         for (const cid of candidateIds) {
           const item = candidateItemById.get(cid);
           if (item) addUniq(givesItems, giveIdSet, item);
         }
-        for (const h of listing.haves) addUniq(receivesItems, receiveIdSet, h.item);
+        for (const h of effectiveHaves) addUniq(receivesItems, receiveIdSet, h.item);
       }
     }
 
@@ -274,7 +323,13 @@ export function MatchDetailModal({
       receiveIds: [...receiveIdSet],
       referencedListingIds: [...referencedListings],
     };
-  }, [selection, totalSelected, myListings, partnerListings]);
+  }, [
+    selection,
+    totalSelected,
+    myListings,
+    partnerListings,
+    selectedHavesByListing,
+  ]);
 
   const proposeHref = useMemo(() => {
     if (totalSelected === 0) return null;
@@ -321,6 +376,21 @@ export function MatchDetailModal({
         ? `あなたの個別募集 #${idx + 1}`
         : `@${partnerHandle} の個別募集 #${idx + 1}`;
 
+      const reasons: string[] = [];
+
+      // iter121: OR 譲の選択チェック
+      if (listing.haveLogic === "or" && listing.haves.length >= 2) {
+        const haveSel = selectedHavesByListing.get(listingId);
+        if (!haveSel || haveSel.size === 0) {
+          reasons.push(
+            isMine
+              ? "OR 譲：どれを譲るか未選択"
+              : "OR 譲：どれを受け取るか未選択",
+          );
+        }
+      }
+
+      // 既存：option 満足チェック（AND / OR / 単一）
       let anySatisfied = false;
       const reasonCandidates: string[] = [];
 
@@ -348,7 +418,6 @@ export function MatchDetailModal({
             anySatisfied = true;
             break;
           }
-          // 単一 wish の場合は「未選択」と理由化
           reasonCandidates.push(
             `#${opt.position}：いずれの wish にも候補が未選択`,
           );
@@ -356,7 +425,11 @@ export function MatchDetailModal({
       }
 
       if (!anySatisfied && reasonCandidates.length > 0) {
-        issues.push({ listingLabel, reasons: reasonCandidates });
+        reasons.push(...reasonCandidates);
+      }
+
+      if (reasons.length > 0) {
+        issues.push({ listingLabel, reasons });
       }
     }
 
@@ -421,6 +494,8 @@ export function MatchDetailModal({
                 viewpoint="mine"
                 partnerHandle={partnerHandle}
                 isSelected={(cid) => isSelected(l.listingId, cid)}
+                isHaveSelected={isHaveSelected}
+                onToggleHave={toggleHave}
                 onOpenPopup={(target) => setPopupTarget(target)}
               />
             ))}
@@ -441,6 +516,8 @@ export function MatchDetailModal({
                 viewpoint="partner"
                 partnerHandle={partnerHandle}
                 isSelected={(cid) => isSelected(l.listingId, cid)}
+                isHaveSelected={isHaveSelected}
+                onToggleHave={toggleHave}
                 onOpenPopup={(target) => setPopupTarget(target)}
               />
             ))}
@@ -722,6 +799,8 @@ function ListingTree({
   viewpoint,
   partnerHandle,
   isSelected,
+  isHaveSelected,
+  onToggleHave,
   onOpenPopup,
 }: {
   listing: MatchCardListingInfo;
@@ -729,6 +808,8 @@ function ListingTree({
   viewpoint: "mine" | "partner";
   partnerHandle: string;
   isSelected: (candidateInvId: string) => boolean;
+  isHaveSelected: (listingId: string, haveInvId: string) => boolean;
+  onToggleHave: (listingId: string, haveInvId: string) => void;
   onOpenPopup: (target: PopupTarget) => void;
 }) {
   // 全 option から wish を flat にして集計（同一 wishId は merge）
@@ -829,7 +910,11 @@ function ListingTree({
             />
           ) : (
             // partner: 左 = haves（相手の譲、私が受け取る）
-            <HaveList listing={listing} />
+            <HaveList
+              listing={listing}
+              isHaveSelected={isHaveSelected}
+              onToggleHave={onToggleHave}
+            />
           )}
         </div>
 
@@ -841,7 +926,11 @@ function ListingTree({
           </div>
           {viewpoint === "mine" ? (
             // mine: 右 = haves（自分の譲）
-            <HaveList listing={listing} />
+            <HaveList
+              listing={listing}
+              isHaveSelected={isHaveSelected}
+              onToggleHave={onToggleHave}
+            />
           ) : (
             // partner: 右 = wishes（option 単位で AND 表現）
             <OptionList
@@ -861,21 +950,71 @@ function ListingTree({
   );
 }
 
-/* ─── iter116: have リスト（静的に listing.haves を縦並び表示） ─── */
+/* ─── iter116: have リスト（iter121: OR の場合は選択可） ───
+ * - haveLogic === "or" + haves.length >= 2: 各 have をタップで toggle、
+ *   選択中は紫リング + ✓ バッジ
+ * - その他（AND or 単一）: 静的表示（タップ不可、全部参加）
+ */
 
-function HaveList({ listing }: { listing: MatchCardListingInfo }) {
+function HaveList({
+  listing,
+  isHaveSelected,
+  onToggleHave,
+}: {
+  listing: MatchCardListingInfo;
+  isHaveSelected: (listingId: string, haveInvId: string) => boolean;
+  onToggleHave: (listingId: string, haveInvId: string) => void;
+}) {
+  const interactive =
+    listing.haveLogic === "or" && listing.haves.length >= 2;
+
   return (
     <div className="flex flex-col items-center gap-2">
-      {listing.haves.map((h) => (
-        <ItemPhoto
-          key={h.item.id}
-          item={h.item}
-          qty={h.qty}
-          size={HAVE_THUMB}
-          variant="have"
-          dim={!h.matched}
-        />
-      ))}
+      {listing.haves.map((h) => {
+        if (!interactive) {
+          // AND or 単一：そのまま表示
+          return (
+            <ItemPhoto
+              key={h.item.id}
+              item={h.item}
+              qty={h.qty}
+              size={HAVE_THUMB}
+              variant="have"
+              dim={!h.matched}
+            />
+          );
+        }
+        // OR：タップで toggle
+        const sel = isHaveSelected(listing.listingId, h.item.id);
+        return (
+          <button
+            key={h.item.id}
+            type="button"
+            onClick={() => onToggleHave(listing.listingId, h.item.id)}
+            aria-pressed={sel}
+            className={`relative rounded-md p-0.5 transition-all active:scale-[0.95] ${
+              sel
+                ? "bg-[#a695d80f] ring-2 ring-[#a695d8]"
+                : "opacity-50"
+            }`}
+          >
+            <ItemPhoto
+              item={h.item}
+              qty={h.qty}
+              size={HAVE_THUMB}
+              variant="have"
+            />
+            {sel && (
+              <span
+                aria-hidden="true"
+                className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#a695d8] text-[10px] font-extrabold text-white shadow-[0_1px_3px_rgba(166,149,216,0.4)]"
+              >
+                ✓
+              </span>
+            )}
+          </button>
+        );
+      })}
       {listing.haves.length > 1 && (
         <span
           className={`rounded-full px-1.5 py-[2px] text-[9.5px] font-extrabold ${
@@ -884,7 +1023,7 @@ function HaveList({ listing }: { listing: MatchCardListingInfo }) {
               : "border border-[#a695d855] bg-white text-[#a695d8]"
           }`}
         >
-          {listing.haveLogic === "and" ? "全部 AND" : "いずれか OR"}
+          {listing.haveLogic === "and" ? "全部 AND" : "いずれか OR ─ 選択可"}
         </span>
       )}
     </div>
