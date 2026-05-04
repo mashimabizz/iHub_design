@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type {
   MatchCardListingInfo,
+  MatchCardOption,
   MiniItem,
 } from "./MatchCard";
 
@@ -644,39 +645,23 @@ function ListingTree({
         )}
       </div>
 
-      {/* iter116: 左右レイアウト（左=受け取る / 右=譲る で listing 種別問わず統一） */}
-      {/* 「あなたが受け取る」 = mine では wishes、partner では haves */}
-      {/* 「あなたが譲る」 = mine では haves、partner では wishes */}
+      {/* iter116: 左右レイアウト（左=受け取る / 右=譲る、listing 種別問わず統一）
+          iter117: 矢印（← →）撤廃 */}
       <div className="flex">
-        {/* LEFT：あなたが受け取る側（紫アクセント） */}
+        {/* LEFT：あなたが受け取る側（ピンクアクセント） */}
         <div className="flex-1 border-r border-[#3a324a08] px-2.5 py-2.5">
           <div className="mb-1.5 flex items-center gap-1 text-[10px] font-bold tracking-[0.4px]">
-            <span className="text-[#3a324a8c]">←</span>
-            {viewpoint === "mine" ? (
-              <>
-                <MiniAvatar name={`@${partnerHandle}`} color="#f3c5d4" />
-                <span style={{ color: "#f3c5d4" }}>
-                  @{partnerHandle} が譲るもの
-                </span>
-              </>
-            ) : (
-              <>
-                <MiniAvatar name={`@${partnerHandle}`} color="#f3c5d4" />
-                <span style={{ color: "#f3c5d4" }}>
-                  @{partnerHandle} が譲るもの
-                </span>
-              </>
-            )}
+            <MiniAvatar name={`@${partnerHandle}`} color="#f3c5d4" />
+            <span style={{ color: "#f3c5d4" }}>@{partnerHandle} が譲るもの</span>
           </div>
           {viewpoint === "mine" ? (
-            // mine: 左 = wishes（受け取る候補）
-            <WishList
-              wishes={flattenedWishes}
+            // mine: 左 = wishes（option 単位で AND 表現）
+            <OptionList
+              listing={listing}
               fallbackHavePhoto={fallbackHavePhoto}
               fallbackHaveLabel={fallbackHaveLabel}
               isSelected={isSelected}
               onOpenPopup={onOpenPopup}
-              listing={listing}
               viewpoint={viewpoint}
             />
           ) : (
@@ -685,30 +670,36 @@ function ListingTree({
           )}
         </div>
 
-        {/* RIGHT：あなたが譲る側（水色アクセント） */}
+        {/* RIGHT：あなたが譲る側（紫アクセント） */}
         <div className="flex-1 px-2.5 py-2.5">
           <div className="mb-1.5 flex items-center justify-end gap-1 text-[10px] font-bold tracking-[0.4px]">
             <MiniAvatar name="あなた" color="#a695d8" />
             <span style={{ color: "#a695d8" }}>あなた が譲るもの</span>
-            <span className="text-[#3a324a8c]">→</span>
           </div>
           {viewpoint === "mine" ? (
             // mine: 右 = haves（自分の譲）
             <HaveList listing={listing} />
           ) : (
-            // partner: 右 = wishes（相手の wish に対する自分の譲候補）
-            <WishList
-              wishes={flattenedWishes}
+            // partner: 右 = wishes（option 単位で AND 表現）
+            <OptionList
+              listing={listing}
               fallbackHavePhoto={fallbackHavePhoto}
               fallbackHaveLabel={fallbackHaveLabel}
               isSelected={isSelected}
               onOpenPopup={onOpenPopup}
-              listing={listing}
               viewpoint={viewpoint}
             />
           )}
         </div>
       </div>
+
+      {/* iter117: 一番下の結論サマリー */}
+      <ListingSummary
+        listing={listing}
+        viewpoint={viewpoint}
+        partnerHandle={partnerHandle}
+        isSelected={isSelected}
+      />
     </section>
   );
 }
@@ -743,32 +734,28 @@ function HaveList({ listing }: { listing: MatchCardListingInfo }) {
   );
 }
 
-/* ─── iter116: wish リスト（タップで popup を開く wish 行を縦並び） ─── */
+/* ─── iter117: option リスト（AND 構造を視覚化） ───
+   listing.options を option 単位で表示。
+   logic === "and" + wishes.length > 1 → 紫枠で囲み「セットで」バッジ
+   logic === "or" or 単一 wish → 通常表示 */
 
-function WishList({
-  wishes,
+function OptionList({
+  listing,
   fallbackHavePhoto,
   fallbackHaveLabel,
   isSelected,
   onOpenPopup,
-  listing,
   viewpoint,
 }: {
-  wishes: {
-    wishId: string;
-    item: MiniItem;
-    qty: number;
-    candidates: { item: MiniItem; qty: number }[];
-    exchangeType: "same_kind" | "cross_kind" | "any";
-  }[];
+  listing: MatchCardListingInfo;
   fallbackHavePhoto: string | null;
   fallbackHaveLabel: string;
   isSelected: (candidateInvId: string) => boolean;
   onOpenPopup: (target: PopupTarget) => void;
-  listing: MatchCardListingInfo;
   viewpoint: "mine" | "partner";
 }) {
-  if (wishes.length === 0) {
+  const validOptions = listing.options.filter((o) => !o.isCashOffer);
+  if (validOptions.length === 0) {
     return (
       <div className="text-[10.5px] italic text-[#3a324a4d]">
         wish が登録されていません
@@ -776,31 +763,212 @@ function WishList({
     );
   }
   return (
-    <div className="space-y-1.5">
-      {wishes.map((w) => (
-        <WishRow
-          key={w.wishId}
-          wishItem={w.item}
-          qty={w.qty}
-          candidates={w.candidates}
-          exchangeType={w.exchangeType}
+    <div className="space-y-2">
+      {validOptions.map((opt) => (
+        <OptionGroup
+          key={opt.id}
+          option={opt}
+          listing={listing}
           fallbackHavePhoto={fallbackHavePhoto}
           fallbackHaveLabel={fallbackHaveLabel}
           isSelected={isSelected}
-          onOpen={() =>
-            onOpenPopup({
-              listingId: listing.listingId,
-              viewpoint,
-              wishItem: w.item,
-              wishQty: w.qty,
-              candidates: w.candidates,
-              exchangeType: w.exchangeType,
-              fallbackHavePhoto,
-              fallbackHaveLabel,
-            })
-          }
+          onOpenPopup={onOpenPopup}
+          viewpoint={viewpoint}
         />
       ))}
+    </div>
+  );
+}
+
+/* ─── iter117: 1 option 分のグループ（AND の場合は紫枠 + セットバッジ） ─── */
+
+function OptionGroup({
+  option,
+  listing,
+  fallbackHavePhoto,
+  fallbackHaveLabel,
+  isSelected,
+  onOpenPopup,
+  viewpoint,
+}: {
+  option: MatchCardOption;
+  listing: MatchCardListingInfo;
+  fallbackHavePhoto: string | null;
+  fallbackHaveLabel: string;
+  isSelected: (candidateInvId: string) => boolean;
+  onOpenPopup: (target: PopupTarget) => void;
+  viewpoint: "mine" | "partner";
+}) {
+  const isAndGroup = option.logic === "and" && option.wishes.length > 1;
+  const isOrGroup = option.logic === "or" && option.wishes.length > 1;
+
+  const renderRow = (w: typeof option.wishes[number]) => (
+    <WishRow
+      key={w.item.id}
+      wishItem={w.item}
+      qty={w.qty}
+      candidates={w.candidates}
+      exchangeType={option.exchangeType}
+      fallbackHavePhoto={fallbackHavePhoto}
+      fallbackHaveLabel={fallbackHaveLabel}
+      isSelected={isSelected}
+      onOpen={() =>
+        onOpenPopup({
+          listingId: listing.listingId,
+          viewpoint,
+          wishItem: w.item,
+          wishQty: w.qty,
+          candidates: w.candidates,
+          exchangeType: option.exchangeType,
+          fallbackHavePhoto,
+          fallbackHaveLabel,
+        })
+      }
+    />
+  );
+
+  // AND グループ：紫枠で囲んで「セット」を強調
+  if (isAndGroup) {
+    return (
+      <div className="rounded-[12px] border-2 border-[#a695d8] bg-[#a695d808] p-1.5">
+        <div className="mb-1 flex items-center gap-1 px-1 text-[9px]">
+          <span className="rounded-full bg-[#a695d8] px-1.5 py-[1px] font-extrabold text-white">
+            #{option.position} セット (AND)
+          </span>
+          <span className="text-[#3a324a8c]">全部一緒に</span>
+        </div>
+        <div className="space-y-1">{option.wishes.map(renderRow)}</div>
+      </div>
+    );
+  }
+
+  // OR グループ：薄い紫枠 + 「OR」バッジ
+  if (isOrGroup) {
+    return (
+      <div className="rounded-[12px] border border-dashed border-[#a695d855] bg-[#a695d804] p-1.5">
+        <div className="mb-1 flex items-center gap-1 px-1 text-[9px]">
+          <span className="rounded-full border border-[#a695d855] bg-white px-1.5 py-[1px] font-extrabold text-[#a695d8]">
+            #{option.position} いずれか (OR)
+          </span>
+          <span className="text-[#3a324a8c]">どれか 1 つで OK</span>
+        </div>
+        <div className="space-y-1">{option.wishes.map(renderRow)}</div>
+      </div>
+    );
+  }
+
+  // 単一 wish：そのまま 1 行
+  return <>{option.wishes.map(renderRow)}</>;
+}
+
+/* ─── iter117: listing カード一番下の結論サマリー ───
+   横並びコンパクトで「あなたが譲：[t][t] / もらう：[t][t][t]」
+   選択状態に応じて変化（mine の haves は常時、partner の haves も常時、
+   候補は選択中のもののみ表示） */
+
+function ListingSummary({
+  listing,
+  viewpoint,
+  partnerHandle: _partnerHandle,
+  isSelected,
+}: {
+  listing: MatchCardListingInfo;
+  viewpoint: "mine" | "partner";
+  partnerHandle: string;
+  isSelected: (candidateInvId: string) => boolean;
+}) {
+  // 選択中の候補（unique）を集める
+  const selectedCandidates: MiniItem[] = [];
+  const seen = new Set<string>();
+  for (const opt of listing.options) {
+    for (const w of opt.wishes) {
+      for (const c of w.candidates) {
+        if (isSelected(c.item.id) && !seen.has(c.item.id)) {
+          selectedCandidates.push(c.item);
+          seen.add(c.item.id);
+        }
+      }
+    }
+  }
+
+  const haveItems: MiniItem[] = listing.haves.map((h) => h.item);
+
+  let givesItems: MiniItem[];
+  let receivesItems: MiniItem[];
+  if (viewpoint === "mine") {
+    // mine: 譲 = 自分の haves（常時）、受 = 選択中の候補
+    givesItems = haveItems;
+    receivesItems = selectedCandidates;
+  } else {
+    // partner: 譲 = 選択中の候補、受 = 相手の haves（常時）
+    givesItems = selectedCandidates;
+    receivesItems = haveItems;
+  }
+
+  return (
+    <div className="flex items-center gap-2 border-t border-[#3a324a08] bg-[#fbf9fc] px-2.5 py-1.5">
+      <span className="rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
+        譲
+      </span>
+      <SummaryThumbStrip items={givesItems} />
+      <span className="text-[11px] font-bold text-[#3a324a8c]">⇄</span>
+      <span className="rounded-full bg-[#f3c5d4] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
+        受
+      </span>
+      <SummaryThumbStrip items={receivesItems} />
+    </div>
+  );
+}
+
+function SummaryThumbStrip({
+  items,
+  max = 4,
+}: {
+  items: MiniItem[];
+  max?: number;
+}) {
+  if (items.length === 0) {
+    return <span className="text-[10px] italic text-[#3a324a4d]">未選択</span>;
+  }
+  const visible = items.slice(0, max);
+  const overflow = items.length - visible.length;
+  return (
+    <div className="flex flex-shrink-0 gap-0.5">
+      {visible.map((item) => (
+        <SummaryThumb key={item.id} item={item} />
+      ))}
+      {overflow > 0 && (
+        <span className="self-center text-[9px] font-bold text-[#3a324a8c]">
+          +{overflow}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SummaryThumb({ item }: { item: MiniItem }) {
+  const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 86%) 0 4px, hsl(${item.hue}, 28%, 78%) 4px 8px)`;
+  const hasPhoto = !!item.photoUrl;
+  return (
+    <div
+      className="relative h-6 w-6 flex-shrink-0 overflow-hidden rounded border border-white/60 shadow-[0_1px_2px_rgba(58,50,74,0.12)]"
+      style={{ background: hasPhoto ? "#3a324a" : stripeBg }}
+      title={item.label}
+    >
+      {hasPhoto && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.photoUrl!}
+          alt={item.label}
+          className="absolute inset-0 h-full w-full object-cover"
+          loading="lazy"
+        />
+      )}
+      {!hasPhoto && (
+        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-extrabold text-white/95">
+          {item.label[0] ?? "?"}
+        </span>
+      )}
     </div>
   );
 }
