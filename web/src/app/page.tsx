@@ -127,7 +127,7 @@ export default async function Home({ searchParams }: Props) {
   ] = await Promise.all([
     supabase
       .from("users")
-      .select("handle, display_name")
+      .select("handle, display_name, avatar_url")
       .eq("id", user.id)
       .maybeSingle(),
     supabase
@@ -194,10 +194,10 @@ export default async function Home({ searchParams }: Props) {
       .eq("kind", "wanted")
       .neq("status", "archived")
       .limit(500),
-    // 他者の users
+    // 他者の users（iter125: avatar_url も取得）
     supabase
       .from("users")
-      .select("id, handle, display_name, primary_area")
+      .select("id, handle, display_name, primary_area, avatar_url")
       .neq("id", user.id)
       .limit(500),
     // 他者の AW（現地マッチ用）
@@ -367,6 +367,7 @@ export default async function Home({ searchParams }: Props) {
         handle: u.handle,
         displayName: u.display_name,
         primaryArea: u.primary_area,
+        avatarUrl: (u.avatar_url as string | null) ?? null,
       },
       inventory: [],
       wishes: [],

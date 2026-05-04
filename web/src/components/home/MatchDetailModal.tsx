@@ -57,6 +57,8 @@ type PopupTarget = {
 export function MatchDetailModal({
   partnerHandle,
   partnerId,
+  partnerAvatarUrl,
+  myAvatarUrl,
   myListings,
   partnerListings,
   myInventoryQty,
@@ -64,6 +66,9 @@ export function MatchDetailModal({
 }: {
   partnerHandle: string;
   partnerId: string;
+  /** iter125: モーダル内ミニアバター用 */
+  partnerAvatarUrl: string | null;
+  myAvatarUrl: string | null;
   myListings: MatchCardListingInfo[];
   partnerListings: MatchCardListingInfo[];
   /** iter111: 自分の inventory id → 在庫数（quantity）の Map。capacity 超過判定用 */
@@ -493,6 +498,8 @@ export function MatchDetailModal({
                 index={idx}
                 viewpoint="mine"
                 partnerHandle={partnerHandle}
+                partnerAvatarUrl={partnerAvatarUrl}
+                myAvatarUrl={myAvatarUrl}
                 isSelected={(cid) => isSelected(l.listingId, cid)}
                 isHaveSelected={isHaveSelected}
                 onToggleHave={toggleHave}
@@ -515,6 +522,8 @@ export function MatchDetailModal({
                 index={idx}
                 viewpoint="partner"
                 partnerHandle={partnerHandle}
+                partnerAvatarUrl={partnerAvatarUrl}
+                myAvatarUrl={myAvatarUrl}
                 isSelected={(cid) => isSelected(l.listingId, cid)}
                 isHaveSelected={isHaveSelected}
                 onToggleHave={toggleHave}
@@ -581,6 +590,8 @@ export function MatchDetailModal({
         <WishPopup
           target={popupTarget}
           partnerHandle={partnerHandle}
+          partnerAvatarUrl={partnerAvatarUrl}
+          myAvatarUrl={myAvatarUrl}
           isSelected={(cid) => isSelected(popupTarget.listingId, cid)}
           onToggleCandidate={(cid) =>
             toggleCandidate(popupTarget.listingId, cid)
@@ -600,12 +611,16 @@ export function MatchDetailModal({
 function WishPopup({
   target,
   partnerHandle,
+  partnerAvatarUrl,
+  myAvatarUrl,
   isSelected,
   onToggleCandidate,
   onClose,
 }: {
   target: PopupTarget;
   partnerHandle: string;
+  partnerAvatarUrl: string | null;
+  myAvatarUrl: string | null;
   isSelected: (candidateInvId: string) => boolean;
   onToggleCandidate: (candidateInvId: string) => void;
   onClose: () => void;
@@ -618,6 +633,8 @@ function WishPopup({
     target.viewpoint === "mine" ? `@${partnerHandle}` : "あなた";
   const candidateOwnerColor =
     target.viewpoint === "mine" ? "#f3c5d4" : "#a695d8";
+  const candidateOwnerAvatarUrl =
+    target.viewpoint === "mine" ? partnerAvatarUrl : myAvatarUrl;
   // iter124: selectedCount は撤廃（選択中サムネで十分視覚化）
 
   return (
@@ -696,6 +713,7 @@ function WishPopup({
               <MiniAvatar
                 name={candidateOwnerName}
                 color={candidateOwnerColor}
+                avatarUrl={candidateOwnerAvatarUrl}
               />
               <span style={{ color: candidateOwnerColor }}>
                 {candidateOwnerName} が譲るもの
@@ -794,6 +812,8 @@ function ListingTree({
   index,
   viewpoint,
   partnerHandle,
+  partnerAvatarUrl,
+  myAvatarUrl,
   isSelected,
   isHaveSelected,
   onToggleHave,
@@ -803,6 +823,8 @@ function ListingTree({
   index: number;
   viewpoint: "mine" | "partner";
   partnerHandle: string;
+  partnerAvatarUrl: string | null;
+  myAvatarUrl: string | null;
   isSelected: (candidateInvId: string) => boolean;
   isHaveSelected: (listingId: string, haveInvId: string) => boolean;
   onToggleHave: (listingId: string, haveInvId: string) => void;
@@ -845,7 +867,11 @@ function ListingTree({
         {/* LEFT：あなたが受け取る側（ピンクアクセント） */}
         <div className="flex-1 border-r border-[#3a324a08] px-2.5 py-2.5">
           <div className="mb-1.5 flex items-center gap-1 text-[10px] font-bold tracking-[0.4px]">
-            <MiniAvatar name={`@${partnerHandle}`} color="#f3c5d4" />
+            <MiniAvatar
+              name={`@${partnerHandle}`}
+              color="#f3c5d4"
+              avatarUrl={partnerAvatarUrl}
+            />
             <span style={{ color: "#f3c5d4" }}>@{partnerHandle} が譲るもの</span>
           </div>
           {viewpoint === "mine" ? (
@@ -871,7 +897,11 @@ function ListingTree({
         {/* RIGHT：あなたが譲る側（紫アクセント） */}
         <div className="flex-1 px-2.5 py-2.5">
           <div className="mb-1.5 flex items-center justify-end gap-1 text-[10px] font-bold tracking-[0.4px]">
-            <MiniAvatar name="あなた" color="#a695d8" />
+            <MiniAvatar
+              name="あなた"
+              color="#a695d8"
+              avatarUrl={myAvatarUrl}
+            />
             <span style={{ color: "#a695d8" }}>あなた が譲るもの</span>
           </div>
           {viewpoint === "mine" ? (
@@ -1510,11 +1540,37 @@ function ValidationAlert({
   );
 }
 
-/* ─── iter115: ミニアバター（誰の譲かを視覚的に示す丸アイコン） ─── */
+/* ─── iter115: ミニアバター（誰の譲かを視覚的に示す丸アイコン）
+       iter125: avatarUrl があれば実画像、なければイニシャル + 役色 ─── */
 
-function MiniAvatar({ name, color }: { name: string; color: string }) {
+function MiniAvatar({
+  name,
+  color,
+  avatarUrl,
+}: {
+  name: string;
+  color: string;
+  avatarUrl?: string | null;
+}) {
   // name の先頭 1 文字（@ は除外）
   const ch = name.replace(/^@/, "")[0]?.toUpperCase() ?? "?";
+  if (avatarUrl) {
+    return (
+      <span
+        aria-hidden="true"
+        className="inline-flex h-5 w-5 flex-shrink-0 overflow-hidden rounded-full shadow-[0_1px_3px_rgba(58,50,74,0.18)]"
+        style={{ border: `1.5px solid ${color}` }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={avatarUrl}
+          alt=""
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
+      </span>
+    );
+  }
   return (
     <span
       aria-hidden="true"

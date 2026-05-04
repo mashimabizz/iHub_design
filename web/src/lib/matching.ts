@@ -31,6 +31,8 @@ export type UserSummary = {
   handle: string;
   displayName: string;
   primaryArea: string | null;
+  /** iter125: アバター URL（avatars バケットの publicUrl） */
+  avatarUrl: string | null;
 };
 
 export type Match = {

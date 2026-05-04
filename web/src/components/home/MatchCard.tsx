@@ -13,6 +13,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { MatchDetailModal } from "./MatchDetailModal";
+import { Avatar } from "@/components/common/Avatar";
 
 export type MiniItem = {
   id: string;
@@ -72,6 +73,8 @@ export type MatchCardData = {
   partnerId: string;
   userName: string;
   userHandle: string;
+  /** iter125: パートナーのアバター URL */
+  userAvatarUrl: string | null;
   myGives: MiniItem[];
   theirGives: MiniItem[];
   matchType: "complete" | "they_want_you" | "you_want_them";
@@ -102,11 +105,18 @@ const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
 
 /* ─── dispatcher ─────────────────────────────────────── */
 
-export function MatchCard({ card }: { card: MatchCardData }) {
+export function MatchCard({
+  card,
+  myAvatarUrl,
+}: {
+  card: MatchCardData;
+  /** iter125: 自分のアバター URL（モーダル内 MiniAvatar 用） */
+  myAvatarUrl: string | null;
+}) {
   const isListingMatch =
     !!(card.myMatchedListings?.length || card.partnerMatchedListings?.length);
   return isListingMatch ? (
-    <ListingMatchCard card={card} />
+    <ListingMatchCard card={card} myAvatarUrl={myAvatarUrl} />
   ) : (
     <SimpleMatchCard card={card} />
   );
@@ -114,7 +124,13 @@ export function MatchCard({ card }: { card: MatchCardData }) {
 
 /* ─── 個別募集マッチカード（リッチ） ────────────────── */
 
-function ListingMatchCard({ card }: { card: MatchCardData }) {
+function ListingMatchCard({
+  card,
+  myAvatarUrl,
+}: {
+  card: MatchCardData;
+  myAvatarUrl: string | null;
+}) {
   const [modalOpen, setModalOpen] = useState(false);
   const matchLabel =
     card.matchType === "complete"
@@ -202,9 +218,12 @@ function ListingMatchCard({ card }: { card: MatchCardData }) {
         <div className="p-3.5">
           {/* Header */}
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[15px] font-bold text-[#a695d8]">
-              {card.userName[0] || "?"}
-            </div>
+            <Avatar
+              url={card.userAvatarUrl}
+              fallbackName={card.userName}
+              size={40}
+              variant="circle"
+            />
             <div className="min-w-0 flex-1">
               <div className="text-[13.5px] font-bold text-gray-900">
                 @{card.userHandle}
@@ -302,6 +321,8 @@ function ListingMatchCard({ card }: { card: MatchCardData }) {
         <MatchDetailModal
           partnerHandle={card.userHandle}
           partnerId={card.partnerId}
+          partnerAvatarUrl={card.userAvatarUrl}
+          myAvatarUrl={myAvatarUrl}
           myListings={card.myMatchedListings ?? []}
           partnerListings={card.partnerMatchedListings ?? []}
           myInventoryQty={card.myInventoryQty ?? {}}
@@ -353,9 +374,12 @@ function SimpleMatchCard({ card }: { card: MatchCardData }) {
       </div>
 
       <div className="relative flex items-center gap-2.5 pr-24">
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[15px] font-bold text-[#a695d8]">
-          {card.userName[0] || "?"}
-        </div>
+        <Avatar
+          url={card.userAvatarUrl}
+          fallbackName={card.userName}
+          size={40}
+          variant="circle"
+        />
         <div className="min-w-0 flex-1">
           <div className="text-[13.5px] font-bold text-gray-900">
             @{card.userHandle}

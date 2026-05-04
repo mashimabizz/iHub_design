@@ -249,6 +249,7 @@ function matchToCard(
     partnerId: m.partner.id,
     userName: m.partner.displayName || m.partner.handle,
     userHandle: m.partner.handle,
+    userAvatarUrl: m.partner.avatarUrl,
     myGives: m.myGives.map(toMini),
     theirGives: m.theirGives.map(toMini),
     matchType: m.matchType,
@@ -280,7 +281,11 @@ export function HomeView({
   tagsByInvId,
   unreadNotificationCount = 0,
 }: {
-  profile: { handle: string; display_name: string } | null;
+  profile: {
+    handle: string;
+    display_name: string;
+    avatar_url?: string | null;
+  } | null;
   localMode: LocalModeSettings | null;
   currentAW: SimpleAW | null;
   carryingItems: SimpleItem[];
@@ -587,7 +592,13 @@ export function HomeView({
                 : "現在マッチがありません"}
             </div>
           ) : (
-            cards.map((c) => <MatchCard key={c.id} card={c} />)
+            cards.map((c) => (
+              <MatchCard
+                key={c.id}
+                card={c}
+                myAvatarUrl={profile?.avatar_url ?? null}
+              />
+            ))
           )}
 
           {tab === 0 && cards.length > 0 && (
