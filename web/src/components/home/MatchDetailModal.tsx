@@ -31,8 +31,11 @@ import type {
 const HAVE_THUMB = 56;
 const CAND_THUMB = 56;
 
-/** 選択：listing 単位 + 候補 inv id Set */
-type Selection = { listingId: string; candidateIds: Set<string> } | null;
+/**
+ * 選択状態（iter109: 複数 listing 跨ぎに対応）
+ *   listingId → 選択された候補 inv id の Set
+ */
+type Selection = Map<string, Set<string>>;
 
 export function MatchDetailModal({
   partnerHandle,
@@ -55,36 +58,83 @@ export function MatchDetailModal({
     };
   }, []);
 
-  const [selection, setSelection] = useState<Selection>(null);
+  const [selection, setSelection] = useState<Selection>(new Map());
 
-  /** candidate タップ：同一 listing 内なら toggle、別 listing なら切替 */
+  /** candidate タップ：listing ごとに独立して toggle（別 listing をリセットしない） */
   function toggleCandidate(listingId: string, candidateInvId: string) {
     setSelection((prev) => {
-      if (!prev || prev.listingId !== listingId) {
-        return { listingId, candidateIds: new Set([candidateInvId]) };
+      const next = new Map(prev);
+      const current = next.get(listingId) ?? new Set<string>();
+      const updated = new Set(current);
+      if (updated.has(candidateInvId)) {
+        updated.delete(candidateInvId);
+      } else {
+        updated.add(candidateInvId);
       }
-      const next = new Set(prev.candidateIds);
-      if (next.has(candidateInvId)) {
-        next.delete(candidateInvId);
-        return next.size === 0 ? null : { ...prev, candidateIds: next };
+      if (updated.size === 0) {
+        next.delete(listingId);
+      } else {
+        next.set(listingId, updated);
       }
-      next.add(candidateInvId);
-      return { ...prev, candidateIds: next };
+      return next;
     });
   }
 
   function isSelected(listingId: string, candidateInvId: string): boolean {
-    return (
-      !!selection &&
-      selection.listingId === listingId &&
-      selection.candidateIds.has(candidateInvId)
-    );
+    return selection.get(listingId)?.has(candidateInvId) ?? false;
   }
 
-  const proposeHref =
-    selection && selection.candidateIds.size > 0
-      ? `/propose/${partnerId}?listing=${selection.listingId}&candidates=${[...selection.candidateIds].join(",")}`
-      : null;
+  const totalSelected = useMemo(() => {
+    let n = 0;
+    for (const set of selection.values()) n += set.size;
+    return n;
+  }, [selection]);
+
+  /**
+   * iter109: 複数 listing 跨ぎの aggregated 打診を生成
+   *
+   * - selection に登場する listing ごとに：
+   *   - my listing → gives += listing.haves（私の inv） / receives += 候補（相手の inv）
+   *   - partner listing → gives += 候補（私の inv） / receives += listing.haves（相手の inv）
+   * - 全部 union（dedupe）して、/propose に gives / receives を渡す
+   * - propose page.tsx は新形式 ?gives=...&receives=... を解釈する
+   */
+  const proposeHref = useMemo(() => {
+    if (totalSelected === 0) return null;
+
+    const allListings = [...myListings, ...partnerListings];
+    const listingById = new Map(
+      allListings.map((l) => [l.listingId, l] as const),
+    );
+
+    const gives = new Set<string>();
+    const receives = new Set<string>();
+    const referencedListings = new Set<string>();
+
+    for (const [listingId, candidateIds] of selection) {
+      const listing = listingById.get(listingId);
+      if (!listing) continue;
+      referencedListings.add(listingId);
+
+      if (listing.isMyListing) {
+        // 私の listing：listing.haves（私の inv）を出す + 候補（相手の inv）を受け取る
+        for (const h of listing.haves) gives.add(h.item.id);
+        for (const cid of candidateIds) receives.add(cid);
+      } else {
+        // 相手の listing：候補（私の inv）を出す + listing.haves（相手の inv）を受け取る
+        for (const cid of candidateIds) gives.add(cid);
+        for (const h of listing.haves) receives.add(h.item.id);
+      }
+    }
+
+    const params = new URLSearchParams();
+    if (gives.size > 0) params.set("gives", [...gives].join(","));
+    if (receives.size > 0) params.set("receives", [...receives].join(","));
+    if (referencedListings.size > 0)
+      params.set("listings", [...referencedListings].join(","));
+
+    return `/propose/${partnerId}?${params.toString()}`;
+  }, [selection, totalSelected, myListings, partnerListings, partnerId]);
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
@@ -130,9 +180,6 @@ export function MatchDetailModal({
                 viewpoint="mine"
                 isSelected={(cid) => isSelected(l.listingId, cid)}
                 onToggleCandidate={(cid) => toggleCandidate(l.listingId, cid)}
-                otherListingActive={
-                  !!selection && selection.listingId !== l.listingId
-                }
               />
             ))}
           </SectionGroup>
@@ -152,9 +199,6 @@ export function MatchDetailModal({
                 viewpoint="partner"
                 isSelected={(cid) => isSelected(l.listingId, cid)}
                 onToggleCandidate={(cid) => toggleCandidate(l.listingId, cid)}
-                otherListingActive={
-                  !!selection && selection.listingId !== l.listingId
-                }
               />
             ))}
           </SectionGroup>
@@ -168,12 +212,12 @@ export function MatchDetailModal({
       </div>
 
       {/* フッター（1 件以上選択時のみ） */}
-      {selection && selection.candidateIds.size > 0 && proposeHref && (
+      {totalSelected > 0 && proposeHref && (
         <div className="border-t border-[#3a324a14] bg-white/96 backdrop-blur-xl">
           <div className="mx-auto flex w-full max-w-md items-center gap-2.5 px-[18px] pt-3 pb-[max(env(safe-area-inset-bottom),12px)]">
             <button
               type="button"
-              onClick={() => setSelection(null)}
+              onClick={() => setSelection(new Map())}
               className="rounded-[10px] border border-[#3a324a14] bg-white px-3 py-2.5 text-[11px] font-bold text-[#3a324a8c]"
             >
               リセット
@@ -183,7 +227,7 @@ export function MatchDetailModal({
               onClick={onClose}
               className="flex-1 rounded-[12px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-3 text-center text-[13.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] active:scale-[0.98]"
             >
-              打診に進む（{selection.candidateIds.size} 件）→
+              打診に進む（{totalSelected} 件）→
             </Link>
           </div>
         </div>
@@ -232,14 +276,12 @@ function ListingTree({
   viewpoint,
   isSelected,
   onToggleCandidate,
-  otherListingActive,
 }: {
   listing: MatchCardListingInfo;
   index: number;
   viewpoint: "mine" | "partner";
   isSelected: (candidateInvId: string) => boolean;
   onToggleCandidate: (candidateInvId: string) => void;
-  otherListingActive: boolean;
 }) {
   // 全 option から wish を flat にして集計（同一 wishId は merge）
   const flattenedWishes = useMemo(() => {
@@ -287,8 +329,7 @@ function ListingTree({
       ? "相手の譲から候補"
       : "あなたの譲から候補（出せるもの）";
 
-  // 別 listing が選択中なら全体を dim（タップしたら切替する仕様）
-  const dimCls = otherListingActive ? "opacity-60" : "";
+  // iter109: 複数 listing を同時に選択可能にしたので、dim 処理は撤廃
 
   // ヘッダー summary
   const totalCandidates = flattenedWishes.reduce(
@@ -297,9 +338,8 @@ function ListingTree({
   );
 
   return (
-    <section
-      className={`mb-3 overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] transition-opacity ${dimCls}`}
-    >
+    <section className="mb-3 overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)]">
+
       {/* ヘッダー */}
       <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
         <span className="text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">

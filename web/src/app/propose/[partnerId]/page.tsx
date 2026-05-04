@@ -58,6 +58,14 @@ type Props = {
      * inventory_id をカンマ区切りで指定（"uuid1,uuid2,uuid3" など）
      */
     candidates?: string;
+    /**
+     * iter109: 複数 listing 跨ぎの aggregated 打診
+     * gives = 私が出す inv_id（自分側）、receives = 私が受け取る inv_id（相手側）。
+     * いずれもカンマ区切り。listings は参照する listing_id（任意・トレース用）。
+     */
+    gives?: string;
+    receives?: string;
+    listings?: string;
     /** iter70-C: 再打診時の元 proposal id */
     proposalId?: string;
     revise?: string;
@@ -76,6 +84,9 @@ export default async function ProposePage({ params, searchParams }: Props) {
     option: optionRaw,
     options: optionsRaw,
     candidates: candidatesRaw,
+    gives: givesRaw,
+    receives: receivesRaw,
+    listings: listingsRaw,
     proposalId: reviseProposalIdRaw,
     revise: reviseFlagRaw,
     meetupStart: meetupStartOverride,
@@ -296,10 +307,50 @@ export default async function ProposePage({ params, searchParams }: Props) {
     if (Number.isFinite(p) && p >= 1 && p <= 5) positions.push(p);
   }
 
+  /* ─ iter109: gives / receives（複数 listing 跨ぎ aggregated）プリフィル ─
+     関係図ツリー型から両 listing の選択を 1 つに集約して渡される。
+     listing 単位の候補（candidates）より先に評価。 */
+  if (givesRaw || receivesRaw) {
+    const isUuid = (s: string) => /^[0-9a-f-]+$/i.test(s) && s.length >= 30;
+    const giveIds = (givesRaw ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(isUuid);
+    const recvIds = (receivesRaw ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(isUuid);
+
+    // 所有チェック：gives は myInv、receives は theirInv に存在することを確認
+    const validGives = giveIds.filter((id) =>
+      myInvWithFlag.some((m) => m.id === id),
+    );
+    const validRecvs = recvIds.filter((id) =>
+      theirInvWithFlag.some((t) => t.id === id),
+    );
+
+    if (validGives.length > 0 || validRecvs.length > 0) {
+      // listings query 参照（任意。最初の 1 件を listing_id に紐付け、
+      // 複数なら null = 「特定 listing 紐付けなし」として打診を作成）
+      const listingIds = (listingsRaw ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(isUuid);
+
+      initial = {
+        senderHaveIds: validGives,
+        senderHaveQtys: validGives.map(() => 1),
+        receiverHaveIds: validRecvs,
+        receiverHaveQtys: validRecvs.map(() => 1),
+        listingId: listingIds.length === 1 ? listingIds[0] : undefined,
+      };
+    }
+  }
+
   /* ─ iter108: 候補（candidates）レベルプリフィル ─
      関係図ツリー型から「特定の inv 候補を選んで打診」する場合、
      listing + candidates=invid1,invid2 で渡される。option ベースより優先。 */
-  if (listingIdRaw && candidatesRaw) {
+  if (!initial && listingIdRaw && candidatesRaw) {
     const candidateIds = candidatesRaw
       .split(",")
       .map((s) => s.trim())
