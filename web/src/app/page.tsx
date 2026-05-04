@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+  createServiceRoleClient,
+} from "@/lib/supabase/server";
 import { IHubLogo } from "@/components/auth/IHubLogo";
 import { PrimaryLinkButton } from "@/components/auth/PrimaryButton";
 import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
@@ -105,6 +108,7 @@ export default async function Home({ searchParams }: Props) {
   }
 
   const supabase = await createClient();
+  const serviceSupabase = createServiceRoleClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -220,7 +224,10 @@ export default async function Home({ searchParams }: Props) {
       .eq("status", "enabled")
       .limit(500),
     // iter136: 他者の現地モード ON フラグ（user_id 配列）
-    supabase
+    // user_local_mode_settings は RLS で本人行のみ参照可。
+    // マッチングのサーバー処理では enabled な user_id だけ必要なので、
+    // service role で最小列だけ読む（last_lat/lng 等は取得しない）。
+    serviceSupabase
       .from("user_local_mode_settings")
       .select("user_id")
       .eq("enabled", true)

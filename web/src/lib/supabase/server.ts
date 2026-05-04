@@ -48,6 +48,8 @@ export async function createClient() {
  *   - 管理用 cron 処理
  *   - dispute 仲裁時のデータ操作
  *   - 通報処理
+ *   - RLS では直接公開しない派生情報のサーバー内集計
+ *     （例：現地モード ON の user_id だけをマッチングで参照）
  *
  * 通常の業務処理では createClient() を使うこと（RLS で保護）。
  */

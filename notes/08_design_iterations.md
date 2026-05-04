@@ -4,6 +4,51 @@
 
 ---
 
+## イテレーション151.1：現地モード候補が RLS で消える不具合修正
+
+### 背景・問題意識
+
+オーナーから「交換場所と交換時間、そしてグッズの情報的にマッチできるはずだけど、現地交換モードにしても候補に出ない」と報告があった。
+
+原因は、ホームの現地モード絞り込みで「相手が現地モード ON か」を `user_local_mode_settings` から読む必要がある一方、このテーブルの RLS が本人行のみ参照可になっていたこと。通常の session client で他者の `enabled=true` 行を読めず、結果として `othersLocalModeOnRows` が空になり、相手 AW がすべて除外されていた。
+
+### 変更内容
+
+#### `web/src/app/page.tsx`
+- `createServiceRoleClient` を import。
+- `othersLocalModeOnRows` の取得だけ service role client に切り替え。
+- 取得列は `user_id` のみに限定し、`last_lat` / `last_lng` / `selected_carrying_ids` / `selected_wish_ids` は取得しない。
+- これにより RLS を緩めずに、サーバー内のマッチング処理だけが「相手が現地モード ON か」を判定できるようにした。
+
+#### `web/src/lib/supabase/server.ts`
+- service role client の使用シーンコメントに「RLS では直接公開しない派生情報のサーバー内集計」を追加。
+
+### 影響範囲
+
+- ホーム / マッチング画面 `/`
+- 現地交換モードの候補表示
+- 現地交換可能カードの `localMatch` / 炎フレーム表示
+
+### 確認方法
+
+- `npx eslint src/app/page.tsx src/lib/supabase/server.ts src/lib/matching.ts`
+- `npm run build`
+- Supabase 実データ確認：service role では `enabled=true` の local mode rows が取得でき、通常 client では RLS により 0 件になることを確認
+
+### 関連ファイル
+
+- `web/src/app/page.tsx`
+- `web/src/lib/supabase/server.ts`
+
+### セルフレビュー結果
+
+- ✅ RLS を緩めず、サーバー側だけで `enabled=true` の user_id を取得
+- ✅ 位置情報や選択グッズ配列は取得していない
+- ✅ 状態遷移・用語・DBスキーマ変更なし
+- ✅ 対象ファイル ESLint と build 成功
+
+---
+
 ## イテレーション151：マッチング注目枠と候補パターン表示
 
 ### 背景・問題意識
