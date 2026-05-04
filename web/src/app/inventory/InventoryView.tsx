@@ -116,7 +116,7 @@ export function InventoryView({
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[140px]">
       {/* ヘッダー */}
-      <div className="border-b border-[#3a324a14] bg-white px-[18px] pb-2 pt-12">
+      <div className="border-b border-[#3a324a14] bg-white px-[18px] pb-3 pt-12">
         <div className="mx-auto flex max-w-md items-center justify-between">
           <h1 className="text-[19px] font-extrabold tracking-wide text-gray-900">
             マイ在庫

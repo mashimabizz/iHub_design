@@ -251,15 +251,12 @@ export default async function TransactionsPage() {
           color: "#3a324a",
         }}
       >
-        <div className="h-[60px]" />
-        <div className="border-b border-[#3a324a0f] bg-white px-[18px] pb-3 pt-3">
-          <div className="mx-auto max-w-md">
-            <div className="text-[19px] font-extrabold tracking-[0.3px] text-[#3a324a]">
+        {/* iter141: ヘッダーをプロフ画面と同じパターンに統一 */}
+        <div className="border-b border-[#3a324a14] bg-white px-[18px] pb-3 pt-12">
+          <div className="mx-auto flex max-w-md items-center justify-between">
+            <h1 className="text-[19px] font-extrabold tracking-wide text-gray-900">
               取引
-            </div>
-            <div className="mt-[1px] text-[11px] text-[#3a324a8c]">
-              打診中・進行中・過去の取引を一覧表示
-            </div>
+            </h1>
           </div>
         </div>
 
