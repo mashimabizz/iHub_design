@@ -936,18 +936,19 @@ function GlobalSummary({
         <span>結論：この交換</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="flex items-center gap-1">
-          <span className="rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
-            あなたが譲
-          </span>
-          <SummaryThumbStrip items={givesItems} max={6} />
-        </span>
-        <span className="text-[12px] font-bold text-[#3a324a8c]">⇄</span>
+        {/* iter119: listing 表示の左右順（左=受け取る / 右=譲る）に合わせて入れ替え */}
         <span className="flex items-center gap-1">
           <span className="rounded-full bg-[#f3c5d4] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
             あなたが受
           </span>
           <SummaryThumbStrip items={receivesItems} max={6} />
+        </span>
+        <span className="text-[12px] font-bold text-[#3a324a8c]">⇄</span>
+        <span className="flex items-center gap-1">
+          <span className="rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
+            あなたが譲
+          </span>
+          <SummaryThumbStrip items={givesItems} max={6} />
         </span>
       </div>
     </div>
