@@ -54,7 +54,8 @@ type Selectable = ProposeInv & {
   selectedQty: number;
 };
 
-type Step = "select" | "message" | "confirm";
+// iter138: "message" step は廃止（confirm でメッセージ入力可）
+type Step = "select" | "confirm";
 type Tab = "mine" | "theirs" | "meetup";
 type Tone = "standard" | "casual" | "polite";
 
@@ -370,12 +371,9 @@ export function ProposeFlow({
   const [step, setStep] = useState<Step>("select");
   const [tab, setTab] = useState<Tab>("mine");
 
-  /* ── メッセージ ── */
-  const [tone, setTone] = useState<Tone>("standard");
-  const [exposeCalendar, setExposeCalendar] = useState(false);
-  const [messageEdited, setMessageEdited] = useState<string | null>(
-    initial?.message ?? null,
-  );
+  /* ── メッセージ（iter138: tone / 自動テンプレ廃止、空文字スタート） ── */
+  const [exposeCalendar, setExposeCalendar] = useState(true); // iter138: デフォルト ON
+  const [message, setMessage] = useState<string>(initial?.message ?? "");
 
   /* ── 送信状態 ── */
   const [pending, startTransition] = useTransition();
@@ -400,30 +398,7 @@ export function ProposeFlow({
     ? myCount > 0 && meetupSet
     : myCount > 0 && theirCount > 0 && meetupSet;
 
-  /** 自動メッセージ */
-  const autoMessage = useMemo(() => {
-    return templateFor({
-      tone,
-      partnerHandle: `@${partner.handle}`,
-      myItems: myItems.filter((i) => i.selected),
-      theirItems: theirItems.filter((i) => i.selected),
-      meetupStart,
-      meetupEnd,
-      meetupPlace,
-      matchType,
-    });
-  }, [
-    tone,
-    partner.handle,
-    myItems,
-    theirItems,
-    meetupStart,
-    meetupEnd,
-    meetupPlace,
-    matchType,
-  ]);
-
-  const message = messageEdited ?? autoMessage;
+  // iter138: 自動テンプレ廃止。メッセージは confirm 画面で任意入力。
 
   /* 地図中心が動いた時の reverse geocoding（自動で場所名を埋める） */
   const reverseAbortRef = useRef<AbortController | null>(null);
@@ -613,7 +588,8 @@ export function ProposeFlow({
         receiverHaveIds: isCashMode ? [] : receiverHaveIds,
         receiverHaveQtys: isCashMode ? [] : receiverHaveQtys,
         message,
-        messageTone: tone,
+        // iter138: tone 廃止 → DB 互換のため "standard" で固定送信
+        messageTone: "standard",
         meetupStartAt: localToIso(meetupStart),
         meetupEndAt: localToIso(meetupEnd),
         meetupPlaceName: meetupPlace.trim(),
@@ -647,9 +623,7 @@ export function ProposeFlow({
             <button
               type="button"
               aria-label="戻る"
-              onClick={() =>
-                setStep(step === "confirm" ? "message" : "select")
-              }
+              onClick={() => setStep("select")}
               className="flex-shrink-0"
             >
               <ChevronLeft />
@@ -657,19 +631,16 @@ export function ProposeFlow({
           )}
           <div className="flex-1">
             <div className="text-[15px] font-bold text-gray-900">
-              {step === "select"
-                ? "提示物の選択"
-                : step === "message"
-                  ? "メッセージ作成"
-                  : "送信確認"}
+              {step === "select" ? "提示物の選択" : "送信確認"}
             </div>
             <div className="mt-0.5 text-[11px] text-[#3a324a8c]">
               @{partner.handle}
               {partner.primaryArea ? ` ・${partner.primaryArea}` : ""}
             </div>
           </div>
+          {/* iter138: STEP X/2 に変更（message ステップ廃止） */}
           <span className="rounded-full bg-[#a695d814] px-2.5 py-1 text-[10.5px] font-extrabold tracking-[0.3px] text-[#a695d8]">
-            STEP {step === "select" ? 1 : step === "message" ? 2 : 3}/3
+            STEP {step === "select" ? 1 : 2}/2
           </span>
         </div>
 
@@ -687,7 +658,10 @@ export function ProposeFlow({
         )}
 
         {step === "select" && (
-          <div className="-mx-[18px] mt-3 flex border-b border-[#3a324a14] px-3">
+          // iter137: PC でタブが横一杯に広がっていた問題を修正
+          //   外側 div を mx-auto max-w-md でスマホ幅に固定
+          <div className="-mx-[18px] mt-3 border-b border-[#3a324a14]">
+            <div className="mx-auto flex max-w-md px-3">
             {(
               [
                 { id: "mine", label: "私が出す", count: myCount },
@@ -736,6 +710,7 @@ export function ProposeFlow({
                 </button>
               );
             })}
+            </div>
           </div>
         )}
       </header>
@@ -791,19 +766,7 @@ export function ProposeFlow({
           </>
         )}
 
-        {step === "message" && (
-          <MessageStep
-            tone={tone}
-            setTone={(t) => {
-              setTone(t);
-              setMessageEdited(null);
-            }}
-            message={message}
-            onChange={setMessageEdited}
-            exposeCalendar={exposeCalendar}
-            setExposeCalendar={setExposeCalendar}
-          />
-        )}
+        {/* iter138: message step は廃止 ─ confirm 内でメッセージ + 共有設定を入力 */}
 
         {step === "confirm" && (
           <ConfirmStep
@@ -815,8 +778,9 @@ export function ProposeFlow({
             meetupPlace={meetupPlace}
             meetupCenter={meetupCenter}
             message={message}
-            tone={tone}
+            onMessageChange={setMessage}
             exposeCalendar={exposeCalendar}
+            onExposeCalendarChange={setExposeCalendar}
             error={error}
           />
         )}
@@ -829,24 +793,14 @@ export function ProposeFlow({
             <button
               type="button"
               disabled={!canProceedSelect}
-              onClick={() => setStep("message")}
+              onClick={() => setStep("confirm")}
               className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-sm font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
             >
               {canProceedSelect
-                ? "次へ：メッセージ作成 →"
+                ? "次へ：送信確認 →"
                 : myCount === 0 || theirCount === 0
                   ? "提示物を両方から選んでください"
                   : "待ち合わせを設定してください"}
-            </button>
-          )}
-          {step === "message" && (
-            <button
-              type="button"
-              disabled={!message.trim()}
-              onClick={() => setStep("confirm")}
-              className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-sm font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              次へ：送信確認 →
             </button>
           )}
           {step === "confirm" && (
@@ -1356,8 +1310,9 @@ function ConfirmStep({
   meetupPlace,
   meetupCenter,
   message,
-  tone,
+  onMessageChange,
   exposeCalendar,
+  onExposeCalendarChange,
   error,
 }: {
   partnerHandle: string;
@@ -1368,8 +1323,9 @@ function ConfirmStep({
   meetupPlace: string;
   meetupCenter: [number, number];
   message: string;
-  tone: Tone;
+  onMessageChange: (m: string) => void;
   exposeCalendar: boolean;
+  onExposeCalendarChange: (b: boolean) => void;
   error: string | null;
 }) {
   return (
@@ -1430,30 +1386,60 @@ function ConfirmStep({
         </div>
       </Section>
 
-      <Section
-        label="メッセージ"
-        hint={
-          tone === "casual"
-            ? "カジュアル"
-            : tone === "polite"
-              ? "丁寧"
-              : "標準"
-        }
-      >
-        <pre className="whitespace-pre-wrap break-words rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white p-3 text-[13px] leading-relaxed text-[#3a324a]">
-          {message}
-        </pre>
+      {/* iter138: メッセージ入力（任意・空でも送信可能）+ スケジュール共有トグル */}
+      <Section label="メッセージ（任意）" hint={`${message.length} / 400`}>
+        <textarea
+          value={message}
+          onChange={(e) => onMessageChange(e.target.value)}
+          rows={5}
+          maxLength={400}
+          placeholder="一言ひとこと書いておくとスムーズです（例：当日よろしくお願いします）"
+          className="block w-full resize-none rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white p-3 text-[13px] leading-relaxed text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
+        />
       </Section>
 
-      <Section label="その他">
-        <div className="rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white px-3 py-3 text-[12px] text-[#3a324a]">
-          スケジュール共有：
+      <Section label="スケジュール共有">
+        <button
+          type="button"
+          onClick={() => onExposeCalendarChange(!exposeCalendar)}
+          className={`flex w-full items-start gap-2.5 rounded-[14px] p-3 text-left transition-colors ${
+            exposeCalendar
+              ? "border-[1.5px] border-[#a695d8] bg-[#a695d810]"
+              : "border-[0.5px] border-[#3a324a14] bg-white"
+          }`}
+        >
           <span
-            className={`ml-1 font-bold ${exposeCalendar ? "text-[#a695d8]" : "text-[#3a324a8c]"}`}
+            className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-[1.5px] ${
+              exposeCalendar
+                ? "border-[#a695d8] bg-[#a695d8]"
+                : "border-[#3a324a14] bg-white"
+            }`}
           >
-            {exposeCalendar ? "ON" : "OFF"}
+            {exposeCalendar && (
+              <svg width="11" height="11" viewBox="0 0 11 11">
+                <path
+                  d="M2 5.5L4.5 8L9 3"
+                  stroke="#fff"
+                  strokeWidth="2"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
           </span>
-        </div>
+          <span className="flex-1">
+            <span className="block text-[12.5px] font-bold text-[#3a324a]">
+              スケジュールを共有する
+              <span className="ml-1 text-[10px] font-normal text-[#3a324a8c]">
+                {exposeCalendar ? "ON" : "OFF"}
+              </span>
+            </span>
+            <span className="mt-0.5 block text-[10.5px] leading-snug text-[#3a324a8c]">
+              あなたの予定（取引以外も含む）が相手に表示されます。日時を相談するときに便利。
+            </span>
+          </span>
+        </button>
       </Section>
 
       {error && (
