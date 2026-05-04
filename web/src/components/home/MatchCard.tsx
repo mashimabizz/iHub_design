@@ -105,10 +105,10 @@ function ListingMatchCard({ card }: { card: MatchCardData }) {
   const [modalOpen, setModalOpen] = useState(false);
   const matchLabel =
     card.matchType === "complete"
-      ? "COMPLETE"
+      ? "両方向 候補"
       : card.matchType === "they_want_you"
-        ? "あなたを求めてる"
-        : "あなたの欲しいを持つ";
+        ? "あなたを求めてる 候補"
+        : "あなたの欲しいを持つ 候補";
 
   const hasMyListing = !!card.myMatchedListings?.length;
   const hasPartnerListing = !!card.partnerMatchedListings?.length;
@@ -303,10 +303,10 @@ function ListingMatchCard({ card }: { card: MatchCardData }) {
 function SimpleMatchCard({ card }: { card: MatchCardData }) {
   const isComplete = card.matchType === "complete";
   const matchLabel = isComplete
-    ? "COMPLETE"
+    ? "両方向 候補"
     : card.matchType === "they_want_you"
-      ? "あなたを求めてる"
-      : "あなたの欲しいを持つ";
+      ? "あなたを求めてる 候補"
+      : "あなたの欲しいを持つ 候補";
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-[#a695d830] bg-white p-3.5 shadow-[0_8px_24px_rgba(166,149,216,0.10)]">

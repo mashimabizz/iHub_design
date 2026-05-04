@@ -22,8 +22,11 @@ import {
 } from "./LocalModeSheet";
 import { type Match } from "@/lib/matching";
 
+// iter102: 「完全マッチ」表記を「両方向 候補」に変更
+//   システム側は goods_type + group/character の一致でしか判定できないため
+//   「完全」と断言せず「候補」を強調する
 const TABS = [
-  { id: 0, label: "完全マッチ" },
+  { id: 0, label: "両方向 候補" },
   { id: 1, label: "私の譲が欲しい人" },
   { id: 2, label: "私が欲しい譲を持つ人" },
   { id: 3, label: "探索" },

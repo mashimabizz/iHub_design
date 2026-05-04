@@ -869,9 +869,10 @@ function ItemTab({
   onToggle: (id: string) => void;
   onQty: (id: string, delta: number) => void;
 }) {
+  // iter102: 「完全マッチ」表記を「両方向候補」に変更
   const scenarioLabel =
     matchType === "perfect"
-      ? "完全マッチからの打診"
+      ? "両方向候補 からの打診"
       : matchType === "forward"
         ? "私の譲が欲しい人 への打診"
         : "私が欲しい譲を持つ人 への打診";

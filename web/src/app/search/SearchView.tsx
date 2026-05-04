@@ -228,7 +228,7 @@ function HitCard({ hit }: { hit: SearchHit }) {
               background: "linear-gradient(135deg, #a695d8, #f3c5d4)",
             }}
           >
-            完全マッチ
+            wish 候補
           </span>
         ) : (
           <span className="rounded-full bg-emerald-500 px-2 py-[3px] text-[9px] font-extrabold tracking-[0.3px] text-white">
