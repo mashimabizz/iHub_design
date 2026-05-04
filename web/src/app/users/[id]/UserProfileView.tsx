@@ -278,8 +278,9 @@ function InventoryPanel({ items }: { items: PartnerInventoryItem[] }) {
               該当するグッズがありません
             </div>
           ) : (
+            // iter147: 各パネルがスタガーで pop-in
             <div className="mt-1 grid grid-cols-3 gap-2.5">
-              {filtered.map((it) => {
+              {filtered.map((it, i) => {
                 const card: ItemCardData = {
                   id: it.id,
                   memberName: it.memberName,
@@ -291,7 +292,15 @@ function InventoryPanel({ items }: { items: PartnerInventoryItem[] }) {
                   photoUrl: it.photoUrl,
                   isPending: false,
                 };
-                return <ItemCard key={it.id} item={card} />;
+                return (
+                  <div
+                    key={it.id}
+                    className="animate-panel-pop"
+                    style={{ animationDelay: `${i * 45}ms` }}
+                  >
+                    <ItemCard item={card} />
+                  </div>
+                );
               })}
             </div>
           )}

@@ -219,14 +219,22 @@ function WishPanel({ items }: { items: WishItem[] }) {
           </Link>
         </div>
       ) : (
+        // iter147: 各パネルがスタガーで pop-in
         <div className="grid grid-cols-3 gap-2.5">
-          <AddCard href="/wishes/new" />
-          {items.map((w) => (
-            <WishCardWrapper
+          <div className="animate-panel-pop" style={{ animationDelay: "0ms" }}>
+            <AddCard href="/wishes/new" />
+          </div>
+          {items.map((w, i) => (
+            <div
               key={w.id}
-              item={w}
-              onDelete={() => handleDelete(w.id)}
-            />
+              className="animate-panel-pop"
+              style={{ animationDelay: `${(i + 1) * 45}ms` }}
+            >
+              <WishCardWrapper
+                item={w}
+                onDelete={() => handleDelete(w.id)}
+              />
+            </div>
           ))}
         </div>
       )}

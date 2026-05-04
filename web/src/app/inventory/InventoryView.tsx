@@ -305,9 +305,16 @@ function SubPanel({
         </div>
       )}
 
-      {/* グリッド */}
+      {/* グリッド（iter147: 各パネルがスタガーで pop-in） */}
       <div className="grid grid-cols-3 gap-2.5">
-        {subId === "active" && <AddCard href="/inventory/new" />}
+        {subId === "active" && (
+          <div
+            className="animate-panel-pop"
+            style={{ animationDelay: "0ms" }}
+          >
+            <AddCard href="/inventory/new" />
+          </div>
+        )}
         {items.length === 0 && subId !== "active" && (
           <div className="col-span-3 rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
             {subId === "keep"
@@ -315,14 +322,23 @@ function SubPanel({
               : "譲ったアイテムはまだありません"}
           </div>
         )}
-        {items.map((item) => (
-          <ItemCardWrapper
-            key={item.id}
-            item={item}
-            currentSub={subId}
-            router={router}
-          />
-        ))}
+        {items.map((item, i) => {
+          // iter147: AddCard が active のとき index 0 を取るので +1 ずらす
+          const idx = subId === "active" ? i + 1 : i;
+          return (
+            <div
+              key={item.id}
+              className="animate-panel-pop"
+              style={{ animationDelay: `${idx * 45}ms` }}
+            >
+              <ItemCardWrapper
+                item={item}
+                currentSub={subId}
+                router={router}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );
