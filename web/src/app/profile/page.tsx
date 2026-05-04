@@ -43,7 +43,7 @@ export default async function ProfilePage() {
     supabase
       .from("users")
       .select(
-        "handle, display_name, gender, primary_area, email_verified_at, account_status",
+        "handle, display_name, gender, primary_area, email_verified_at, account_status, avatar_url",
       )
       .eq("id", user.id)
       .maybeSingle(),
@@ -109,6 +109,7 @@ export default async function ProfilePage() {
           gender: profile?.gender ?? null,
           primaryArea: profile?.primary_area ?? null,
           emailVerifiedAt: profile?.email_verified_at ?? null,
+          avatarUrl: (profile?.avatar_url as string | null) ?? null,
         }}
         oshiGroups={oshiSummary}
         awCount={awCount ?? 0}

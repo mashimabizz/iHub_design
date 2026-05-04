@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import { logout } from "@/app/auth/actions";
+import { Avatar } from "@/components/common/Avatar";
 
 type Props = {
   profile: {
@@ -11,6 +12,8 @@ type Props = {
     gender: string | null;
     primaryArea: string | null;
     emailVerifiedAt: string | null;
+    /** iter122: プロフ画像 URL（avatars バケット publicUrl） */
+    avatarUrl: string | null;
   };
   oshiGroups: {
     groupId: string;
@@ -48,9 +51,6 @@ export function ProfileView({
   listingsCount,
   tradeCount,
 }: Props) {
-  const initial = (profile.displayName || profile.handle || "?")
-    .charAt(0)
-    .toUpperCase();
   const oshiSummaryText = oshiGroups
     .slice(0, 2)
     .map(
@@ -101,9 +101,13 @@ export function ProfileView({
         <div className="relative mb-[18px] overflow-hidden rounded-[18px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] p-[18px] text-white shadow-[0_10px_24px_rgba(166,149,216,0.22)]">
           <div className="pointer-events-none absolute -right-5 -top-5 h-[120px] w-[120px] rounded-full bg-white/10" />
           <div className="mb-3 flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-white/30 bg-white/25 text-[22px] font-extrabold">
-              {initial}
-            </div>
+            <Avatar
+              url={profile.avatarUrl}
+              fallbackName={profile.displayName || profile.handle}
+              size={56}
+              variant="rounded"
+              className="border-2 border-white/30"
+            />
             <div className="flex-1 min-w-0">
               <div className="text-[16px] font-extrabold">
                 @{profile.handle || "未設定"}

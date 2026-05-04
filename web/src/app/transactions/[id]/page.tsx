@@ -133,10 +133,10 @@ export default async function TransactionChatPage({
   const isMeSender = p.sender_id === user.id;
   const partnerId = isMeSender ? p.receiver_id : p.sender_id;
 
-  // 相手 user
+  // 相手 user（iter122: avatar_url も取得）
   const { data: partner } = await supabase
     .from("users")
-    .select("id, handle, display_name, primary_area")
+    .select("id, handle, display_name, primary_area, avatar_url")
     .eq("id", partnerId)
     .maybeSingle();
 
@@ -210,6 +210,7 @@ export default async function TransactionChatPage({
       handle: partner?.handle ?? "?",
       displayName: partner?.display_name ?? "?",
       primaryArea: partner?.primary_area ?? null,
+      avatarUrl: (partner?.avatar_url as string | null) ?? null,
     },
     me: {
       id: user.id,

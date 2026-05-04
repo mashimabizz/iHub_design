@@ -23,6 +23,7 @@ import {
   type CalEvent,
 } from "@/components/schedule/CalendarOverlayModal";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { Avatar } from "@/components/common/Avatar";
 
 const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
   ssr: false,
@@ -58,6 +59,8 @@ export type ChatProposal = {
     handle: string;
     displayName: string;
     primaryArea: string | null;
+    /** iter122: パートナーのアバター URL（null = 未登録） */
+    avatarUrl: string | null;
   };
   me: { id: string };
   hasEvidence: boolean;
@@ -626,9 +629,12 @@ function ChatHeaderBar({
       aria-label={`@${proposal.partner.handle} のプロフィールを開く`}
       className="flex items-center gap-2.5 border-b border-[#3a324a14] bg-white px-3.5 py-2 transition-colors active:bg-[#a695d80a]"
     >
-      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[13px] font-bold text-[#a695d8]">
-        {proposal.partner.displayName[0] || "?"}
-      </div>
+      <Avatar
+        url={proposal.partner.avatarUrl}
+        fallbackName={proposal.partner.displayName || proposal.partner.handle}
+        size={32}
+        variant="circle"
+      />
       <div className="min-w-0 flex-1">
         <div className="text-[13.5px] font-bold text-[#3a324a]">
           @{proposal.partner.handle}

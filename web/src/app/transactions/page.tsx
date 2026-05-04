@@ -128,17 +128,25 @@ export default async function TransactionsPage() {
       list.map((r) => (r.sender_id === user.id ? r.receiver_id : r.sender_id)),
     ),
   );
-  let usersById = new Map<string, { handle: string; displayName: string }>();
+  // iter122: avatar_url も取得
+  let usersById = new Map<
+    string,
+    { handle: string; displayName: string; avatarUrl: string | null }
+  >();
   if (partnerIds.length > 0) {
     const { data: users } = await supabase
       .from("users")
-      .select("id, handle, display_name")
+      .select("id, handle, display_name, avatar_url")
       .in("id", partnerIds);
     if (users) {
       usersById = new Map(
         users.map((u) => [
           u.id,
-          { handle: u.handle, displayName: u.display_name },
+          {
+            handle: u.handle,
+            displayName: u.display_name,
+            avatarUrl: (u.avatar_url as string | null) ?? null,
+          },
         ]),
       );
     }
@@ -211,6 +219,7 @@ export default async function TransactionsPage() {
       partnerId,
       partnerHandle: partner?.handle ?? "?",
       partnerDisplayName: partner?.displayName ?? "?",
+      partnerAvatarUrl: partner?.avatarUrl ?? null,
       status: r.status as TransactionRow["status"],
       cashOffer: r.cash_offer,
       cashAmount: r.cash_amount,

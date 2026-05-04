@@ -10,6 +10,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { Avatar } from "@/components/common/Avatar";
 
 export type TransactionRow = {
   id: string;
@@ -17,6 +18,8 @@ export type TransactionRow = {
   partnerId: string;
   partnerHandle: string;
   partnerDisplayName: string;
+  /** iter122: パートナーのアバター URL */
+  partnerAvatarUrl: string | null;
   status:
     | "sent"
     | "negotiating"
@@ -211,9 +214,12 @@ function PendingCard({ t }: { t: TransactionRow }) {
       className="block overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] transition-all active:scale-[0.99]"
     >
       <div className="flex items-start gap-2.5 px-3.5 py-3">
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[13px] font-extrabold text-[#a695d8]">
-          {t.partnerDisplayName[0] || "?"}
-        </div>
+        <Avatar
+          url={t.partnerAvatarUrl}
+          fallbackName={t.partnerDisplayName || t.partnerHandle}
+          size={36}
+          variant="square"
+        />
         <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex items-center gap-1.5">
             <span
@@ -312,15 +318,18 @@ function OngoingCard({ t }: { t: TransactionRow }) {
       }`}
     >
       <div className="flex items-start gap-2.5 px-3.5 py-3">
-        <div
-          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] text-[15px] font-bold ${
-            t.openDispute
-              ? "bg-[#d9826b22] text-[#d9826b]"
-              : "bg-[linear-gradient(135deg,#a695d822,#a8d4e622)] text-[#a695d8]"
-          }`}
-        >
-          {t.openDispute ? "!" : t.partnerDisplayName[0] || "?"}
-        </div>
+        {t.openDispute ? (
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#d9826b22] text-[15px] font-bold text-[#d9826b]">
+            !
+          </div>
+        ) : (
+          <Avatar
+            url={t.partnerAvatarUrl}
+            fallbackName={t.partnerDisplayName || t.partnerHandle}
+            size={40}
+            variant="square"
+          />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="text-[13.5px] font-bold text-[#3a324a]">
