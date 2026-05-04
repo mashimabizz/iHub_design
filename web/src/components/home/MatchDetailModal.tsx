@@ -115,26 +115,26 @@ export function MatchDetailModal({
     return over;
   }
 
-  /** candidate タップ：listing ごとに独立して toggle */
+  /**
+   * candidate タップ：listing ごとに独立して toggle
+   *
+   * iter111.1: 追加時のみ capacity check。超過するなら追加を拒否して toast 表示。
+   * 解除（deselect）は常に許可（在庫を圧迫しないため）。
+   */
   function toggleCandidate(listingId: string, candidateInvId: string) {
-    setSelection((prev) => {
-      const next = new Map(prev);
-      const current = next.get(listingId) ?? new Set<string>();
-      const updated = new Set(current);
-      if (updated.has(candidateInvId)) {
-        updated.delete(candidateInvId);
-      } else {
-        updated.add(candidateInvId);
-      }
-      if (updated.size === 0) {
-        next.delete(listingId);
-      } else {
-        next.set(listingId, updated);
-      }
+    const current = selection.get(listingId) ?? new Set<string>();
+    const isAdding = !current.has(candidateInvId);
 
-      // iter111: 超過チェック → 超過があれば toast
-      const over = computeOvercapacity(next);
+    if (isAdding) {
+      // 仮に追加した状態を作って capacity を試算
+      const trial = new Map(selection);
+      const updated = new Set(current);
+      updated.add(candidateInvId);
+      trial.set(listingId, updated);
+
+      const over = computeOvercapacity(trial);
       if (over.length > 0) {
+        // 追加を拒否、toast で通知
         const lines = over.map(
           (o) => `（必要 ${o.needed}・在庫 ${o.inStock}）`,
         );
@@ -142,10 +142,21 @@ export function MatchDetailModal({
           message: `在庫が足りません ${lines.join(" ")}`,
           key: Date.now(),
         });
+        return; // selection は変更しない
       }
 
-      return next;
-    });
+      setSelection(trial);
+    } else {
+      // 解除：capacity は気にしない
+      setSelection((prev) => {
+        const next = new Map(prev);
+        const set = new Set(next.get(listingId) ?? []);
+        set.delete(candidateInvId);
+        if (set.size === 0) next.delete(listingId);
+        else next.set(listingId, set);
+        return next;
+      });
+    }
   }
 
   function isSelected(listingId: string, candidateInvId: string): boolean {
