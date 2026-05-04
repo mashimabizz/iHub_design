@@ -75,6 +75,11 @@ export type Match = {
    * 私と相手の最短距離（m）。現地モード ON 時のみ計算される（iter67.6）
    */
   distanceMeters?: number;
+  /**
+   * 自分/相手ともに現地交換モードで、AW の日時・範囲が重なった候補。
+   * 距離が取れない環境でも「現地交換できる可能性」は示せるよう distanceMeters と分ける。
+   */
+  localMatch?: boolean;
 };
 
 export type MatchedListingInfo = {

@@ -27,10 +27,10 @@ import { type Match } from "@/lib/matching";
 //   システム側は goods_type + group/character の一致でしか判定できないため
 //   「完全」と断言せず「候補」を強調する
 const TABS = [
-  { id: 0, label: "両方向 候補" },
-  { id: 1, label: "私の譲が欲しい人" },
-  { id: 2, label: "私が欲しい譲を持つ人" },
-  { id: 3, label: "探索" },
+  { id: 0, label: "成立しそう" },
+  { id: 1, label: "相手が欲しい" },
+  { id: 2, label: "私が欲しい" },
+  { id: 3, label: "探す" },
 ];
 
 // メンバー名 / グループ名 → hue (色相) ハッシュ
@@ -150,7 +150,7 @@ function matchToCard(
             // タグ類似度（Jaccard）降順、同点は元の順
             .sort((a, b) => b._score - a._score)
             // 表示型に合わせて _score を落とす
-            .map(({ _score: _, item, qty }) => ({ item, qty }));
+            .map(({ item, qty }) => ({ item, qty }));
           return {
             item,
             qty: opt.wishQtys[i] ?? 1,
@@ -263,6 +263,7 @@ function matchToCard(
     bothSidesListingMatch: m.bothSidesListingMatch,
     listingMatchKind: m.listingMatchKind,
     distanceText,
+    localAvailable: m.localMatch === true,
     myInventoryQty,
   };
 }
@@ -350,6 +351,10 @@ export function HomeView({
       2: cardsByTab[2]?.length ?? 0,
       3: cardsByTab[3]?.length ?? 0,
     }),
+    [cardsByTab],
+  );
+  const featuredCards = useMemo(
+    () => (cardsByTab[3] ?? []).slice(0, 3),
     [cardsByTab],
   );
 
@@ -656,6 +661,38 @@ export function HomeView({
               設定
             </button>
           </div>
+        )}
+
+        {featuredCards.length > 0 && (
+          <section className="mt-4">
+            <div className="mb-2 flex items-center justify-between px-5">
+              <div>
+                <div className="text-[14px] font-extrabold tracking-[0.2px] text-gray-900">
+                  注目マッチ
+                </div>
+                <div className="mt-0.5 text-[10.5px] font-medium text-gray-500">
+                  条件が強い候補を先に表示
+                </div>
+              </div>
+              <div className="rounded-full bg-[#a695d814] px-2.5 py-1 text-[10px] font-extrabold tabular-nums text-[#a695d8]">
+                {featuredCards.length}件
+              </div>
+            </div>
+            <div className="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-2 pt-1 [&::-webkit-scrollbar]:hidden">
+              {featuredCards.map((c) => (
+                <div
+                  key={`featured-${c.id}`}
+                  className="w-[88%] max-w-[360px] flex-shrink-0 snap-center"
+                >
+                  <MatchCard
+                    card={c}
+                    myAvatarUrl={profile?.avatar_url ?? null}
+                    featured
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* Tab chips */}

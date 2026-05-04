@@ -106,6 +106,7 @@
 | **backward match** | — | 「私の譲が欲しい人」（trigger=私の譲） | propose-select.jsx |
 | **wish一致** | wish match | 自分の wish と相手の譲が一致しているマーク | UI バッジ |
 | **マッチング相手** | — | ホームに表示される候補ユーザー | home-v2.jsx |
+| **注目マッチ** | featured match | ホーム上部に大きめ表示する上位候補。個別募集・双方向一致・現地交換可能性など、成立期待が高い候補を先に見せる UI セクション | iter151 |
 | **保存検索** | saved search | カスタム検索条件を保存・繰り返し利用 | iter23 |
 | **広域マッチ** | global match、時空無制限 | 譲 × wish のみで全国マッチ。AW 不要。ホームのデフォルト（iter62〜） | notes/18 §B |
 | **現地マッチ** | local match、時空マッチ | AW + 携帯グッズ + 選択 wish で時空交差した相手のみ表示（iter63〜） | notes/18 §B |

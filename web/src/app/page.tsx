@@ -268,7 +268,7 @@ export default async function Home({ searchParams }: Props) {
     is_cash_offer: boolean;
     cash_amount: number | null;
   };
-  let myOptionsByListing = new Map<string, OptRow[]>();
+  const myOptionsByListing = new Map<string, OptRow[]>();
   if (myListingIds.length > 0) {
     const { data: optRows } = await supabase
       .from("listing_wish_options")
@@ -320,7 +320,7 @@ export default async function Home({ searchParams }: Props) {
   };
   const othersListings = (othersListingsRaw ?? []) as OthersListingRow[];
   const othersListingIds = othersListings.map((l) => l.id);
-  let othersOptionsByListing = new Map<string, OptRow[]>();
+  const othersOptionsByListing = new Map<string, OptRow[]>();
   if (othersListingIds.length > 0) {
     const { data: othersOpts } = await supabase
       .from("listing_wish_options")
@@ -456,7 +456,7 @@ export default async function Home({ searchParams }: Props) {
     redirect("/");
   }
 
-  if (isLocal && currentAW && !isNationalView) {
+  if (isLocal && currentAW) {
     // 他者 AW を user_id で集約
     const partnerAWs = new Map<string, AWRow[]>();
     // iter136: 現地モード OFF のユーザーの AW は無視
@@ -478,9 +478,10 @@ export default async function Home({ searchParams }: Props) {
       centerLng: currentAW.center_lng,
       radiusM: currentAW.radius_m,
     };
-    matches = matches.filter((m) => {
+    const localMatchPartnerIds = new Set<string>();
+    for (const m of matches) {
       const aws = partnerAWs.get(m.partner.id) ?? [];
-      return aws.some((a) =>
+      if (aws.some((a) =>
         awsOverlap(myAWForOverlap, {
           startAt: a.start_at,
           endAt: a.end_at,
@@ -488,8 +489,16 @@ export default async function Home({ searchParams }: Props) {
           centerLng: a.center_lng,
           radiusM: a.radius_m,
         }),
-      );
-    });
+      )) {
+        localMatchPartnerIds.add(m.partner.id);
+      }
+    }
+    if (!isNationalView) {
+      matches = matches.filter((m) => localMatchPartnerIds.has(m.partner.id));
+    }
+    matches = matches.map((m) =>
+      localMatchPartnerIds.has(m.partner.id) ? { ...m, localMatch: true } : m,
+    );
 
     // 距離（m）を最短 AW から算出（iter67.6）
     if (

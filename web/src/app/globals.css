@@ -103,6 +103,70 @@ body {
 }
 
 /*
+ * iter151: マッチカードの現地交換可能エフェクト
+ * 自分/相手ともに現地交換モードで AW が重なった候補だけ、紫の炎のように枠を揺らす。
+ */
+@keyframes matchFlameFlicker {
+  0%, 100% {
+    filter: hue-rotate(0deg) saturate(1);
+    transform: translateZ(0) scale(1);
+  }
+  35% {
+    filter: hue-rotate(-8deg) saturate(1.18);
+    transform: translateZ(0) scale(1.006);
+  }
+  68% {
+    filter: hue-rotate(10deg) saturate(1.08);
+    transform: translateZ(0) scale(0.998);
+  }
+}
+
+.match-card-local-flame {
+  position: relative;
+  isolation: isolate;
+  background:
+    conic-gradient(
+      from 210deg,
+      rgba(166, 149, 216, 0.95),
+      rgba(243, 197, 212, 0.72),
+      rgba(168, 212, 230, 0.82),
+      rgba(166, 149, 216, 0.98),
+      rgba(243, 197, 212, 0.68),
+      rgba(166, 149, 216, 0.95)
+    );
+  box-shadow:
+    0 0 0 1px rgba(166, 149, 216, 0.35),
+    0 10px 34px rgba(166, 149, 216, 0.36),
+    0 0 28px rgba(166, 149, 216, 0.42);
+  animation: matchFlameFlicker 2.4s ease-in-out infinite;
+}
+
+.match-card-local-flame::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(243, 197, 212, 0.62), transparent 28%),
+    radial-gradient(circle at 82% 14%, rgba(168, 212, 230, 0.55), transparent 30%),
+    radial-gradient(circle at 50% 110%, rgba(166, 149, 216, 0.72), transparent 48%);
+  filter: blur(10px);
+  opacity: 0.78;
+}
+
+.match-card-local-flame .match-card-inner {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match-card-local-flame {
+    animation: none;
+  }
+}
+
+/*
  * iter147: グッズパネルの登場アニメーション
  *
  * 「奥から手前にぐわっときて、一度ふわっと拡大して、適切なサイズに落ち着く」
