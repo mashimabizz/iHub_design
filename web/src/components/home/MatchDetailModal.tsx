@@ -42,12 +42,15 @@ export function MatchDetailModal({
   partnerId,
   myListings,
   partnerListings,
+  myInventoryQty,
   onClose,
 }: {
   partnerHandle: string;
   partnerId: string;
   myListings: MatchCardListingInfo[];
   partnerListings: MatchCardListingInfo[];
+  /** iter111: 自分の inventory id → 在庫数（quantity）の Map。capacity 超過判定用 */
+  myInventoryQty: Record<string, number>;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -59,8 +62,60 @@ export function MatchDetailModal({
   }, []);
 
   const [selection, setSelection] = useState<Selection>(new Map());
+  /** iter111: 在庫超過警告トースト */
+  const [toast, setToast] = useState<{ message: string; key: number } | null>(
+    null,
+  );
 
-  /** candidate タップ：listing ごとに独立して toggle（別 listing をリセットしない） */
+  /**
+   * iter111: 在庫超過判定
+   *
+   * - 自分の listing が選択中 → listing.haves（私の inv）を qty 分出す必要
+   * - 相手の listing で候補（私の inv）が選択中 → 各候補 1 個出す
+   * - 同じ inv id が複数の選択ソースで重なると、合計が myInventoryQty[id] を
+   *   超える可能性 → toast で警告
+   *
+   * 戻り値：超過している inv id と「必要数 vs 在庫数」のリスト
+   */
+  function computeOvercapacity(sel: Selection): {
+    invId: string;
+    needed: number;
+    inStock: number;
+  }[] {
+    const allListings = [...myListings, ...partnerListings];
+    const listingById = new Map(allListings.map((l) => [l.listingId, l] as const));
+    const giveQtyById = new Map<string, number>();
+
+    for (const [listingId, candidateIds] of sel) {
+      const listing = listingById.get(listingId);
+      if (!listing) continue;
+      if (listing.isMyListing) {
+        // 私の listing → haves（私の inv）を qty 分出す
+        for (const h of listing.haves) {
+          giveQtyById.set(
+            h.item.id,
+            (giveQtyById.get(h.item.id) ?? 0) + h.qty,
+          );
+        }
+      } else {
+        // 相手の listing → 候補（私の inv）を 1 個ずつ出す
+        for (const cid of candidateIds) {
+          giveQtyById.set(cid, (giveQtyById.get(cid) ?? 0) + 1);
+        }
+      }
+    }
+
+    const over: { invId: string; needed: number; inStock: number }[] = [];
+    for (const [invId, needed] of giveQtyById) {
+      const inStock = myInventoryQty[invId] ?? 0;
+      if (needed > inStock) {
+        over.push({ invId, needed, inStock });
+      }
+    }
+    return over;
+  }
+
+  /** candidate タップ：listing ごとに独立して toggle */
   function toggleCandidate(listingId: string, candidateInvId: string) {
     setSelection((prev) => {
       const next = new Map(prev);
@@ -76,6 +131,19 @@ export function MatchDetailModal({
       } else {
         next.set(listingId, updated);
       }
+
+      // iter111: 超過チェック → 超過があれば toast
+      const over = computeOvercapacity(next);
+      if (over.length > 0) {
+        const lines = over.map(
+          (o) => `（必要 ${o.needed}・在庫 ${o.inStock}）`,
+        );
+        setToast({
+          message: `在庫が足りません ${lines.join(" ")}`,
+          key: Date.now(),
+        });
+      }
+
       return next;
     });
   }
@@ -232,6 +300,28 @@ export function MatchDetailModal({
           </div>
         </div>
       )}
+
+      {/* iter111: 在庫超過トースト */}
+      {toast && <CapacityToast key={toast.key} message={toast.message} />}
+    </div>
+  );
+}
+
+/* ─── iter111: 在庫超過トースト ─── */
+
+function CapacityToast({ message }: { message: string }) {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(false), 2800);
+    return () => clearTimeout(t);
+  }, []);
+  if (!visible) return null;
+  return (
+    <div className="pointer-events-none fixed left-1/2 top-[72px] z-[110] -translate-x-1/2">
+      <div className="flex items-center gap-2 rounded-full bg-[#d9826b] px-4 py-2 text-white shadow-[0_8px_24px_rgba(217,130,107,0.45)] backdrop-blur-xl">
+        <span className="text-[14px]">⚠️</span>
+        <span className="text-[12px] font-bold leading-tight">{message}</span>
+      </div>
     </div>
   );
 }

@@ -304,6 +304,7 @@ function ListingMatchCard({ card }: { card: MatchCardData }) {
           partnerId={card.partnerId}
           myListings={card.myMatchedListings ?? []}
           partnerListings={card.partnerMatchedListings ?? []}
+          myInventoryQty={card.myInventoryQty ?? {}}
           onClose={() => setModalOpen(false)}
         />
       )}
