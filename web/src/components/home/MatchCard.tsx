@@ -225,15 +225,15 @@ function CardShell({
     <div
       className={
         local
-          ? "match-card-local-flame rounded-[22px] p-[2px]"
+          ? "match-card-local-flame rounded-2xl"
           : "rounded-2xl"
       }
     >
       <div
         className={`match-card-inner relative overflow-hidden rounded-2xl border bg-white ${
-          local ? "border-white/85" : pattern.borderClass
+          local ? "border-[#3a324a14]" : pattern.borderClass
         } ${pattern.shadowClass} ${featured ? "p-4" : "p-3.5"}`}
-        style={{ background: pattern.background }}
+        style={{ background: local ? "#ffffff" : pattern.background }}
       >
         {children}
       </div>

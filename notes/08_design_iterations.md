@@ -4,6 +4,54 @@
 
 ---
 
+## イテレーション151.4：現地マッチ炎を外向きエフェクトに限定
+
+### 背景・問題意識
+
+オーナーから、現地交換で成立できそうなマッチカードについて「またパネル内に色がついてしまっている。色はつけなくていい。パネルの枠が外側に向かってエフェクトがでてる感じにしたい」と再指摘があった。
+
+iter151.2 では `conic-gradient` を撤去したが、`match-card-local-flame` wrapper 自体に背景グラデーションが残っており、カード外周の padding / 角部分に色面が見えていた。また、local card でも match pattern の淡い背景色がそのまま残るため、「パネル内に色がつく」印象を消し切れていなかった。
+
+### 変更内容
+
+#### `web/src/app/globals.css`
+- `.match-card-local-flame` 本体の背景を完全に透明化。
+- 紫の炎表現は `::before` / `::after` の疑似要素だけに移動。
+- 疑似要素をカード背面かつ外側へ広げ、カード本体の白背景で内側が覆われる構造にした。
+- inset / blur / radial gradient を調整し、外側に向かって漏れる発光へ変更。
+
+#### `web/src/components/home/MatchCard.tsx`
+- local match の wrapper から `p-[2px]` を削除し、色付き padding が出ない構造に変更。
+- `localAvailable=true` のカード本体背景を `#ffffff` に固定。
+- local match のカード本体 border はニュートラルに戻し、紫の表現は外側エフェクトだけに限定。
+
+### 影響範囲
+
+- ホーム / マッチング画面 `/`
+- `localAvailable=true` のマッチカード外周エフェクト
+
+### 確認方法
+
+- `npx eslint src/components/home/MatchCard.tsx src/app/globals.css`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/globals.css`
+- `web/src/components/home/MatchCard.tsx`
+
+### セルフレビュー結果
+
+- ✅ wrapper の背景グラデーションを撤去
+- ✅ local match のカード本体背景を白に固定
+- ✅ 紫の表現は疑似要素による外向き glow / flame のみに限定
+- ✅ `notes/09_state_machines.md` は状態変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 TSX ESLint / build 成功
+
+---
+
 ## イテレーション151.3：マイ在庫メニューを削除導線へ整理
 
 ### 背景・問題意識
