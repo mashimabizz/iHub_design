@@ -105,12 +105,15 @@ const FALLBACK_CENTER: [number, number] = [35.6595, 139.7005];
 export function LocalModeSheet({
   open,
   onClose,
+  onApplied,
   initial,
   currentAW,
   carryingItems,
 }: {
   open: boolean;
   onClose: () => void;
+  /** iter129: AW 適用成功時に呼ばれる（cancel でキャンセル時には呼ばれない） */
+  onApplied?: () => void;
   initial: LocalModeSettings;
   currentAW: SimpleAW | null;
   carryingItems: SimpleItem[];
@@ -243,6 +246,8 @@ export function LocalModeSheet({
         setError(r.error);
         return;
       }
+      // iter129: 適用成功を親に通知してから閉じる
+      onApplied?.();
       onClose();
     });
   }

@@ -76,3 +76,28 @@ body {
 .animate-fadeIn {
   animation: fadeIn 200ms ease-out forwards;
 }
+
+/*
+ * iter130: 現地交換モード時の ambient glow
+ * 画面の縁をふわっとラベンダー〜ピンクで光らせて高揚感を演出
+ */
+@keyframes localGlowPulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 50px rgba(166, 149, 216, 0.30),
+      inset 0 0 120px rgba(243, 197, 212, 0.18);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 80px rgba(166, 149, 216, 0.45),
+      inset 0 0 160px rgba(243, 197, 212, 0.28);
+  }
+}
+
+.local-mode-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  animation: localGlowPulse 3.5s ease-in-out infinite;
+}

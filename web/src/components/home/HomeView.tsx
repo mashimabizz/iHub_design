@@ -351,6 +351,14 @@ export function HomeView({
 
   // 現地モード state（DB から取得した初期値）
   const [sheetOpen, setSheetOpen] = useState(autoOpenLocalSheet);
+  /**
+   * iter129: 現地モード ON で開いた直後の sheet で、ユーザーが apply せず
+   * close した場合に「全国」へ戻すための追跡フラグ
+   * - handleEnableLocal で true にする
+   * - sheet の onApplied で false にする
+   * - sheet の onClose で「true のままなら disable して revert」
+   */
+  const [needsRevertOnClose, setNeedsRevertOnClose] = useState(false);
   const [pending, startTransition] = useTransition();
 
   // ?openLocalMode=1 で戻ってきたとき：URL パラメータを掃除しつつシート開く
@@ -375,6 +383,7 @@ export function HomeView({
 
   // 現地モード ON 切替時に GPS 取得
   function handleEnableLocal() {
+    setNeedsRevertOnClose(true); // iter129: apply せずに閉じたら revert
     if (typeof window === "undefined" || !navigator.geolocation) {
       // Geolocation なくても ON にする（fallback として last_lat/lng を維持）
       startTransition(async () => {
@@ -415,6 +424,9 @@ export function HomeView({
 
   return (
     <main className="relative flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
+      {/* iter130: 現地交換モード時の ambient glow（画面縁をふわっと光らせる） */}
+      {isLocal && <div aria-hidden="true" className="local-mode-glow" />}
+
       {/* モード切替・適用中のローディングオーバーレイ */}
       {pending && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 backdrop-blur-sm">
@@ -493,10 +505,7 @@ export function HomeView({
                 : "bg-transparent text-[#3a324a8c]"
             } disabled:opacity-50`}
           >
-            🌐 広域
-            <span className="ml-1 text-[10px] font-semibold">
-              {!isLocal ? "（時空無制限）" : ""}
-            </span>
+            🌐 全国交換モード
           </button>
           <button
             type="button"
@@ -508,10 +517,7 @@ export function HomeView({
                 : "bg-transparent text-[#3a324a8c]"
             } disabled:opacity-50`}
           >
-            📍 現地交換
-            <span className="ml-1 text-[10px] font-semibold">
-              {isLocal ? "（AW 連動）" : ""}
-            </span>
+            📍 今すぐ現地交換モード
           </button>
         </div>
 
@@ -535,12 +541,12 @@ export function HomeView({
               <div className="truncate text-[13.5px] font-bold leading-tight text-gray-900">
                 {chosenAW
                   ? chosenAW.venue
-                  : "AW 未選択（タップで設定）"}
+                  : "交換場所／時間／グッズを選択（タップ）"}
               </div>
               <div className="mt-0.5 text-[11px] tabular-nums text-gray-600">
                 {chosenAW
-                  ? `半径 ${chosenAW.radiusM >= 1000 ? `${(chosenAW.radiusM / 1000).toFixed(1)}km` : `${chosenAW.radiusM}m`}（AW 設定値）`
-                  : "範囲は AW 設定値を使用"}
+                  ? `半径 ${chosenAW.radiusM >= 1000 ? `${(chosenAW.radiusM / 1000).toFixed(1)}km` : `${chosenAW.radiusM}m`}`
+                  : "範囲は設定値を使用"}
                 {" · "}
                 持参 {settings.selectedCarryingIds.length} 件
               </div>
@@ -639,10 +645,23 @@ export function HomeView({
         </div>
       </div>
 
-      {/* 現地モード設定シート */}
+      {/* 現地モード設定シート（iter129: apply 無しで close したら全国へ revert） */}
       <LocalModeSheet
         open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
+        onClose={() => {
+          setSheetOpen(false);
+          if (needsRevertOnClose) {
+            // 適用せずに閉じた → 全国モードに戻す
+            startTransition(async () => {
+              await disableLocalMode();
+            });
+          }
+          setNeedsRevertOnClose(false);
+        }}
+        onApplied={() => {
+          // 適用成功 → revert フラグをクリア（モード ON で確定）
+          setNeedsRevertOnClose(false);
+        }}
         initial={settings}
         currentAW={currentAW}
         carryingItems={carryingItems}
