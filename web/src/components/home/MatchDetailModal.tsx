@@ -684,7 +684,10 @@ function WishPopup({
                   size={104}
                   variant="have"
                 />
-                <span className="mt-1.5 rounded-full bg-[#a695d8] px-2 py-[2px] text-[9.5px] font-extrabold text-white">
+                <span
+                  className="mt-1.5 rounded-full px-2 py-[2px] text-[9.5px] font-extrabold text-white shadow-[0_1px_3px_rgba(58,50,74,0.2)]"
+                  style={exchangeChipStyle(target.exchangeType)}
+                >
                   {EXCHANGE_LABEL_FULL[target.exchangeType]}
                 </span>
                 <span className="mt-1 max-w-[110px] truncate px-1 text-center text-[9px] text-[#3a324a8c]">
@@ -1255,6 +1258,25 @@ const EXCHANGE_LABEL_FULL: Record<"same_kind" | "cross_kind" | "any", string> = 
   any: "同異種",
 };
 
+/**
+ * iter123: 同種・異種・同異種の chip 色を自分側（紫）と被らないように差し替え
+ *   - 同種 = #5fa884（mint green：「同じ種類」のマッチ感）
+ *   - 異種 = #d9826b（coral：「違う種類」の対比感）
+ *   - 同異種 = 上記 2 色のグラデ（混ぜたものとして表現）
+ */
+const EXCHANGE_SAME_COLOR = "#5fa884";
+const EXCHANGE_CROSS_COLOR = "#d9826b";
+
+function exchangeChipStyle(
+  type: "same_kind" | "cross_kind" | "any",
+): React.CSSProperties {
+  if (type === "same_kind") return { background: EXCHANGE_SAME_COLOR };
+  if (type === "cross_kind") return { background: EXCHANGE_CROSS_COLOR };
+  return {
+    background: `linear-gradient(135deg, ${EXCHANGE_SAME_COLOR}, ${EXCHANGE_CROSS_COLOR})`,
+  };
+}
+
 function WishRow({
   wishItem,
   qty,
@@ -1300,7 +1322,10 @@ function WishRow({
             variant="wish"
           />
           {showFallback && (
-            <span className="absolute -bottom-1 -right-1 rounded-full bg-[#a695d8] px-1 py-[1px] text-[8.5px] font-extrabold text-white shadow-[0_1px_3px_rgba(166,149,216,0.4)]">
+            <span
+              className="absolute -bottom-1 -right-1 rounded-full px-1 py-[1px] text-[8.5px] font-extrabold text-white shadow-[0_1px_3px_rgba(58,50,74,0.3)]"
+              style={exchangeChipStyle(exchangeType)}
+            >
               {EXCHANGE_LABEL_FULL[exchangeType]}
             </span>
           )}

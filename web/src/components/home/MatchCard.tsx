@@ -395,7 +395,15 @@ function SimpleMatchCard({ card }: { card: MatchCardData }) {
 
       {card.exchangeType && card.exchangeType !== "any" && (
         <div className="mt-2 flex items-center gap-1.5">
-          <span className="rounded-full border border-[#a695d855] bg-[#a695d80a] px-2 py-0.5 text-[10px] font-bold text-[#a695d8]">
+          <span
+            className="rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+            style={{
+              background:
+                card.exchangeType === "same_kind"
+                  ? "#5fa884"
+                  : "#d9826b",
+            }}
+          >
             {EXCHANGE_LABEL[card.exchangeType]}
           </span>
           <span className="text-[9.5px] text-gray-500">

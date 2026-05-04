@@ -357,7 +357,17 @@ function OptionRow({ option }: { option: ListingOption }) {
             #{option.position}
           </span>
           {!option.isCashOffer && (
-            <span className="rounded-full border border-[#a695d855] bg-white px-1 py-[1px] font-bold text-[#a695d8]">
+            <span
+              className="rounded-full px-1 py-[1px] font-extrabold text-white"
+              style={{
+                background:
+                  option.exchangeType === "same_kind"
+                    ? "#5fa884"
+                    : option.exchangeType === "cross_kind"
+                      ? "#d9826b"
+                      : "linear-gradient(135deg, #5fa884, #d9826b)",
+              }}
+            >
               {EXCHANGE_LABEL[option.exchangeType]}
             </span>
           )}
