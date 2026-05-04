@@ -261,40 +261,72 @@ function WishCardWrapper({
   item: WishItem;
   onDelete: () => void;
 }) {
+  const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
+  // iter149: メニュー内ボタン押下時にパネルを跳ねさせる
+  const [bouncing, setBouncing] = useState(false);
+  const BOUNCE_MS = 580;
+
+  /**
+   * メニュー内ボタン押下：
+   *   1. メニューを閉じる
+   *   2. パネルを跳ねさせる（580ms）
+   *   3. 着地後に実際のアクションを発火
+   */
+  function bounceThen(action: () => void) {
+    setShowMenu(false);
+    setBouncing(true);
+    window.setTimeout(() => {
+      setBouncing(false);
+      action();
+    }, BOUNCE_MS);
+  }
+
   return (
     <div className="relative">
-      <button
-        type="button"
-        onClick={() => setShowMenu(!showMenu)}
-        className="block w-full"
-      >
-        <WishCard item={item} />
-      </button>
-      {showMenu && (
+      <div className={bouncing ? "animate-panel-bounce" : undefined}>
+        <button
+          type="button"
+          onClick={() => !bouncing && setShowMenu(!showMenu)}
+          className="block w-full"
+        >
+          <WishCard item={item} />
+        </button>
+      </div>
+      {showMenu && !bouncing && (
         <div className="absolute inset-0 z-10 flex flex-col items-stretch justify-center gap-1.5 rounded-xl bg-black/70 p-2">
-          <Link
-            href={`/wishes/${item.id}/edit`}
-            className="rounded-lg bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-1.5 text-center text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
-          >
-            編集する
-          </Link>
-          {/* iter143: いつでも個別募集の追加を可能にする
-              （既に紐付け済でも、別条件の追加募集を作れるように） */}
-          <Link
-            href={`/listings/new?wishId=${item.id}`}
-            className="rounded-lg bg-white py-1.5 text-center text-[10px] font-bold text-gray-900"
-          >
-            {item.linkedListings.length === 0
-              ? "個別募集を作る"
-              : "+ 個別募集を追加"}
-          </Link>
+          {/* iter149: Link → button に変更してアニメーション後に遷移 */}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setShowMenu(false);
-              onDelete();
+              bounceThen(() => router.push(`/wishes/${item.id}/edit`));
+            }}
+            className="rounded-lg bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-1.5 text-center text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
+          >
+            編集する
+          </button>
+          {/* iter143: いつでも個別募集の追加を可能にする
+              （既に紐付け済でも、別条件の追加募集を作れるように） */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              bounceThen(() =>
+                router.push(`/listings/new?wishId=${item.id}`),
+              );
+            }}
+            className="rounded-lg bg-white py-1.5 text-[10px] font-bold text-gray-900"
+          >
+            {item.linkedListings.length === 0
+              ? "個別募集を作る"
+              : "+ 個別募集を追加"}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              bounceThen(() => onDelete());
             }}
             className="rounded-lg bg-red-500/90 py-1.5 text-[10px] font-bold text-white"
           >

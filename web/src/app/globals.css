@@ -172,3 +172,42 @@ body {
     animation: none;
   }
 }
+
+/*
+ * iter149: WISH パネルのメニュー内ボタンを押したときのバウンス
+ * 「上にピョンと飛び跳ねって着地する」
+ *
+ * 使い方：ボタン押下時に親要素にこのクラスを付与し、
+ *        animation-iteration-count はデフォルト 1 なので 600ms 後に自動で外せる。
+ */
+@keyframes panelBounce {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  28% {
+    transform: translateY(-22px) scale(1.06);
+  }
+  52% {
+    transform: translateY(0) scale(0.95);
+  }
+  72% {
+    transform: translateY(-6px) scale(1.02);
+  }
+  88% {
+    transform: translateY(0) scale(0.99);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-panel-bounce {
+  animation: panelBounce 580ms cubic-bezier(0.22, 1.2, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-panel-bounce {
+    animation: none;
+  }
+}
