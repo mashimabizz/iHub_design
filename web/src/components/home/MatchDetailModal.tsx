@@ -618,9 +618,7 @@ function WishPopup({
     target.viewpoint === "mine" ? `@${partnerHandle}` : "あなた";
   const candidateOwnerColor =
     target.viewpoint === "mine" ? "#f3c5d4" : "#a695d8";
-  const selectedCount = target.candidates.filter((c) =>
-    isSelected(c.item.id),
-  ).length;
+  // iter124: selectedCount は撤廃（選択中サムネで十分視覚化）
 
   return (
     <div
@@ -640,11 +638,6 @@ function WishPopup({
             </div>
             <div className="text-[10px] text-[#3a324a8c]">
               wish ×{target.wishQty}・{target.candidates.length} 件の候補
-              {selectedCount > 0 && (
-                <span className="ml-1.5 rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[9.5px] font-extrabold text-white">
-                  {selectedCount} 件選択中
-                </span>
-              )}
             </div>
           </div>
           <button
@@ -815,46 +808,8 @@ function ListingTree({
   onToggleHave: (listingId: string, haveInvId: string) => void;
   onOpenPopup: (target: PopupTarget) => void;
 }) {
-  // 全 option から wish を flat にして集計（同一 wishId は merge）
-  // iter112: exchangeType もキャプチャ（先に出てきた option のものを採用）
-  const flattenedWishes = useMemo(() => {
-    type Entry = {
-      wishId: string;
-      item: MiniItem;
-      qty: number;
-      candidates: { item: MiniItem; qty: number }[];
-      exchangeType: "same_kind" | "cross_kind" | "any";
-    };
-    const map = new Map<string, Entry>();
-    for (const opt of listing.options) {
-      if (opt.isCashOffer) continue;
-      for (const w of opt.wishes) {
-        const existing = map.get(w.item.id);
-        if (existing) {
-          // candidates をマージ（重複排除）
-          const seen = new Set(existing.candidates.map((c) => c.item.id));
-          for (const c of w.candidates) {
-            if (!seen.has(c.item.id)) {
-              existing.candidates.push(c);
-              seen.add(c.item.id);
-            }
-          }
-          // qty は最大値を採用
-          existing.qty = Math.max(existing.qty, w.qty);
-          // exchangeType は最初に出てきたものを保持（変更しない）
-        } else {
-          map.set(w.item.id, {
-            wishId: w.item.id,
-            item: w.item,
-            qty: w.qty,
-            candidates: [...w.candidates],
-            exchangeType: opt.exchangeType,
-          });
-        }
-      }
-    }
-    return Array.from(map.values());
-  }, [listing.options]);
+  // iter124: flattenedWishes は撤廃（OptionList が直接 listing.options を参照）
+  // ヘッダーの選択肢数は listing.options.filter(!isCashOffer).length で算出
 
   // fallback 用：listing.haves の先頭
   const fallbackHave = listing.haves[0]?.item ?? null;
@@ -862,27 +817,19 @@ function ListingTree({
   const fallbackHaveLabel = fallbackHave?.label ?? "—";
 
   const cashOption = listing.options.find((o) => o.isCashOffer);
-  // iter116: viewpoint は左右レイアウトで使うが、ownerName/Color は inline 化済
-
-  // iter109: 複数 listing を同時に選択可能にしたので、dim 処理は撤廃
-
-  // ヘッダー summary
-  const totalCandidates = flattenedWishes.reduce(
-    (s, w) => s + w.candidates.length,
-    0,
-  );
 
   return (
     <section className="mb-3 overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)]">
 
       {/* ヘッダー */}
       <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
-        <span className="text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-          #{index + 1}
-        </span>
+        {/* iter124: ヘッダー表記を「個別募集N（選択肢X件）」に変更 */}
         <div className="flex-1 min-w-0">
-          <span className="text-[10.5px] font-bold text-[#3a324a]">
-            {flattenedWishes.length} wish · 候補 {totalCandidates} 件
+          <span className="text-[11px] font-extrabold tracking-[0.3px] text-[#3a324a]">
+            個別募集{index + 1}
+          </span>
+          <span className="ml-1 text-[10px] text-[#3a324a8c]">
+            （選択肢 {listing.options.filter((o) => !o.isCashOffer).length} 件）
           </span>
         </div>
         {cashOption && (
@@ -1348,11 +1295,7 @@ function WishRow({
             ) : (
               <>候補なし</>
             )}
-            {selectedCands.length > 0 && (
-              <span className="ml-1.5 rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[9px] font-extrabold text-white">
-                {selectedCands.length} 件選択中
-              </span>
-            )}
+            {/* iter124: 「N 件選択中」表示は撤廃。選択中候補のサムネは行下に出る */}
           </div>
         </div>
 
