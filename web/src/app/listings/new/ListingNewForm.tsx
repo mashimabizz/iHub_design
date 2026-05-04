@@ -726,53 +726,6 @@ function OptionEditor({
               />
             </div>
 
-            {/* iter145: 交換タイプ — 選択中 wish が全て画像ありなら非表示
-                （画像で wish が一意に特定できるため、同種/異種 の指定は不要） */}
-            {option.selected.length > 0 && allSelectedHaveImages ? (
-              <div className="rounded-[10px] bg-[#a695d80a] px-3 py-2 text-[10.5px] leading-snug text-[#3a324a8c]">
-                ✓ 画像のある wish のみ選択中。同種 / 異種 の指定は不要です。
-              </div>
-            ) : (
-              <div>
-                <div className="mb-1 flex items-baseline justify-between gap-2 px-0.5">
-                  <span className="text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-                    交換タイプ
-                  </span>
-                  {option.selected.length > 0 && (
-                    <span className="text-[9.5px] text-[#3a324a8c]">
-                      ⚠️ 画像なしの wish があるため指定が必要
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {EXCHANGE_OPTIONS.map((opt) => {
-                    const active = option.exchangeType === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => onPatch({ exchangeType: opt.value })}
-                        className={`flex flex-col items-center justify-center rounded-lg px-1.5 py-1.5 text-center transition-all ${
-                          active
-                            ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.33)]"
-                            : "border border-[#3a324a14] bg-white text-gray-700"
-                        }`}
-                      >
-                        <span className="text-[11.5px] font-bold">
-                          {opt.label}
-                        </span>
-                        <span
-                          className={`text-[9px] ${active ? "text-white/80" : "text-gray-500"}`}
-                        >
-                          {opt.sub}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
             {/* iter145: 求める wish 選択（画像付き mini panel） */}
             {!option.groupId || !option.goodsTypeId ? (
               <Empty label="先にグループと種別を選んでください" />
@@ -795,6 +748,53 @@ function OptionEditor({
                 })}
               </div>
             )}
+
+            {/* iter145.1: 交換タイプ — wish 選択 1+ 件かつ 1 つでも画像なしの時のみ表示。
+                位置はグッズ panels の下。
+                全画像ありなら不要 note のみ。何も選択していない時は何も出さない。 */}
+            {option.selected.length > 0 &&
+              (allSelectedHaveImages ? (
+                <div className="rounded-[10px] bg-[#a695d80a] px-3 py-2 text-[10.5px] leading-snug text-[#3a324a8c]">
+                  ✓ 画像のある wish のみ選択中。同種 / 異種 の指定は不要です。
+                </div>
+              ) : (
+                <div>
+                  <div className="mb-1 flex items-baseline justify-between gap-2 px-0.5">
+                    <span className="text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+                      交換タイプ
+                    </span>
+                    <span className="text-[9.5px] text-[#3a324a8c]">
+                      ⚠️ 画像なしの wish があるため指定が必要
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {EXCHANGE_OPTIONS.map((opt) => {
+                      const active = option.exchangeType === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => onPatch({ exchangeType: opt.value })}
+                          className={`flex flex-col items-center justify-center rounded-lg px-1.5 py-1.5 text-center transition-all ${
+                            active
+                              ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.33)]"
+                              : "border border-[#3a324a14] bg-white text-gray-700"
+                          }`}
+                        >
+                          <span className="text-[11.5px] font-bold">
+                            {opt.label}
+                          </span>
+                          <span
+                            className={`text-[9px] ${active ? "text-white/80" : "text-gray-500"}`}
+                          >
+                            {opt.sub}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
 
             {option.selected.length > 1 && (
               <LogicToggle
