@@ -61,6 +61,17 @@ export default async function WishEditPage({
 
   if (!wish) notFound();
 
+  // iter145: この wish が個別募集（active/paused/matched）で使われているか
+  //         使用中 + 画像登録済みなら画像削除を不許可（同種/異種 の再設定回避のため）
+  const { data: linkedOpts } = await supabase
+    .from("listing_wish_options")
+    .select("id, listing_id, listing:listings!inner(status)")
+    .contains("wish_ids", [id]);
+  const wishLinkedToActiveListing = (linkedOpts ?? []).some((o) => {
+    const lst = Array.isArray(o.listing) ? o.listing[0] : o.listing;
+    return lst && (lst as { status?: string }).status !== "closed";
+  });
+
   // 自分の推し group をプライマリに、その他の groups も dropdown 候補として表示
   const groupMap = new Map<string, { id: string; name: string }>();
   for (const o of userOshi ?? []) {
@@ -122,6 +133,9 @@ export default async function WishEditPage({
           mode="edit"
           wishId={wish.id as string}
           initial={initial}
+          // iter145: 個別募集と紐付け中なら画像削除をロック
+          //   削除すると listing 側の同種/異種 設定が再度必要になるため
+          lockPhotoRemoval={wishLinkedToActiveListing}
         />
       </div>
     </main>

@@ -123,6 +123,40 @@ export async function updateWishItem(input: {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // iter145: 個別募集と紐付け中の wish は画像削除を禁止する。
+  //   「画像あり = 同種/異種 不要」のロジックを破壊しないためのガード。
+  //   差し替え（photoUrls.length > 0）は許可、削除（length=0 or undefined）は拒否。
+  if (input.photoUrls !== undefined && input.photoUrls.length === 0) {
+    // 既存の photo_urls を確認
+    const { data: existing } = await supabase
+      .from("goods_inventory")
+      .select("photo_urls")
+      .eq("id", input.id)
+      .eq("user_id", user.id)
+      .eq("kind", "wanted")
+      .maybeSingle();
+    const hadPhoto =
+      Array.isArray(existing?.photo_urls) &&
+      (existing!.photo_urls as string[]).length > 0;
+    if (hadPhoto) {
+      // 紐付け中の listing があるか確認
+      const { data: linkedOpts } = await supabase
+        .from("listing_wish_options")
+        .select("id, listing:listings!inner(status)")
+        .contains("wish_ids", [input.id]);
+      const linked = (linkedOpts ?? []).some((o) => {
+        const lst = Array.isArray(o.listing) ? o.listing[0] : o.listing;
+        return lst && (lst as { status?: string }).status !== "closed";
+      });
+      if (linked) {
+        return {
+          error:
+            "この WISH は個別募集で使用中のため画像を削除できません（差し替えは可能）",
+        };
+      }
+    }
+  }
+
   const updateFields: Record<string, unknown> = {
     group_id: input.groupId ?? null,
     character_id: input.characterId ?? null,

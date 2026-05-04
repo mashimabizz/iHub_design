@@ -119,7 +119,8 @@ export default async function ListingEditPage({
     supabase
       .from("goods_inventory")
       .select(
-        "id, title, exchange_type, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
+        // iter145: WishMiniPanel + exchangeType 出し分けに使用するため photo_urls も取得
+"id, title, exchange_type, group_id, goods_type_id, photo_urls, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
       )
       .eq("user_id", user.id)
       .eq("kind", "wanted")
@@ -154,7 +155,8 @@ export default async function ListingEditPage({
     const { data } = await supabase
       .from("goods_inventory")
       .select(
-        "id, title, exchange_type, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
+        // iter145: WishMiniPanel + exchangeType 出し分けに使用するため photo_urls も取得
+"id, title, exchange_type, group_id, goods_type_id, photo_urls, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
       )
       .in("id", wishIdsToFetch);
     if (data) extraWishRows.push(...data);
@@ -206,6 +208,11 @@ export default async function ListingEditPage({
     groupName: pickName(r.group),
     characterName: pickName(r.character),
     goodsTypeName: pickName(r.goods_type),
+    // iter145: 画像 URL
+    photoUrl:
+      ((r as { photo_urls?: string[] }).photo_urls?.[0] as
+        | string
+        | undefined) ?? null,
   }));
 
   function uniqueOptions<T extends { id: string; name: string }>(

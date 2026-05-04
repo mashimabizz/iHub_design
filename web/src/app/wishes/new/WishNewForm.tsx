@@ -39,6 +39,7 @@ export function WishNewForm({
   mode = "create",
   wishId,
   initial,
+  lockPhotoRemoval = false,
 }: {
   groups: Master[];
   characters: CharacterMaster[];
@@ -49,6 +50,12 @@ export function WishNewForm({
   wishId?: string;
   /** edit モード時の初期値 */
   initial?: WishFormInitial;
+  /**
+   * iter145：個別募集に紐付け中の wish は画像削除を禁止する。
+   * 削除すると listing 側の「同種/異種」設定が再度必要になり、
+   * iter145 で導入した「画像あり = 同種/異種 不要」のロジックを破壊するため。
+   */
+  lockPhotoRemoval?: boolean;
 }) {
   const router = useRouter();
   const [groupId, setGroupId] = useState<string>(initial?.groupId ?? "");
@@ -362,14 +369,21 @@ export function WishNewForm({
                   >
                     {photoUploading ? "アップ中…" : "差し替え"}
                   </button>
+                  {/* iter145: 個別募集と紐付け中は削除ロック */}
                   <button
                     type="button"
                     onClick={handleRemovePhoto}
-                    className="rounded-[8px] border border-[#3a324a14] bg-white px-2.5 py-1 text-[11px] font-bold text-[#3a324a8c]"
+                    disabled={lockPhotoRemoval}
+                    className="rounded-[8px] border border-[#3a324a14] bg-white px-2.5 py-1 text-[11px] font-bold text-[#3a324a8c] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     削除
                   </button>
                 </div>
+                {lockPhotoRemoval && (
+                  <div className="rounded-[8px] bg-[#a695d80a] px-2.5 py-1.5 text-[10.5px] leading-snug text-[#3a324a8c]">
+                    🔒 個別募集で使用中のため削除できません。差し替えは可能です。
+                  </div>
+                )}
               </div>
             </div>
           ) : (

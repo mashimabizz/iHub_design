@@ -52,6 +52,8 @@ type WishOpt = {
   groupName: string | null;
   characterName: string | null;
   goodsTypeName: string | null;
+  /** iter145: 画像 URL（あれば exchangeType の指定が不要になる） */
+  photoUrl: string | null;
 };
 
 type SelectedItem = { id: string; qty: number };
@@ -622,6 +624,28 @@ function OptionEditor({
     );
   }, [wishItems, option.groupId, option.goodsTypeId, option.isCashOffer]);
 
+  // iter145: 選択中 wish が全て画像ありか？
+  //   全部画像あり → exchangeType セレクター非表示 + "any" に reset
+  //   1 つでも画像なし or 未選択 → 通常の選択肢を表示
+  const allSelectedHaveImages = useMemo(() => {
+    if (option.isCashOffer) return false;
+    if (option.selected.length === 0) return false;
+    return option.selected.every((s) => {
+      const w = wishItems.find((x) => x.id === s.id);
+      return !!w?.photoUrl;
+    });
+  }, [option.selected, option.isCashOffer, wishItems]);
+
+  // iter145: 全画像になった瞬間に exchangeType を "any" に reset
+  //         （非表示中は値を意識しないで済むため）
+  useEffect(() => {
+    if (allSelectedHaveImages && option.exchangeType !== "any") {
+      onPatch({ exchangeType: "any" });
+    }
+    // option.exchangeType を deps に入れると無限ループ気味になるので意図的に外す
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allSelectedHaveImages]);
+
   const orOrViolation =
     !option.isCashOffer &&
     parentHaveLogic === "or" &&
@@ -702,38 +726,54 @@ function OptionEditor({
               />
             </div>
 
-            <div>
-              <div className="mb-1 px-0.5 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-                交換タイプ
+            {/* iter145: 交換タイプ — 選択中 wish が全て画像ありなら非表示
+                （画像で wish が一意に特定できるため、同種/異種 の指定は不要） */}
+            {option.selected.length > 0 && allSelectedHaveImages ? (
+              <div className="rounded-[10px] bg-[#a695d80a] px-3 py-2 text-[10.5px] leading-snug text-[#3a324a8c]">
+                ✓ 画像のある wish のみ選択中。同種 / 異種 の指定は不要です。
               </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {EXCHANGE_OPTIONS.map((opt) => {
-                  const active = option.exchangeType === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => onPatch({ exchangeType: opt.value })}
-                      className={`flex flex-col items-center justify-center rounded-lg px-1.5 py-1.5 text-center transition-all ${
-                        active
-                          ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.33)]"
-                          : "border border-[#3a324a14] bg-white text-gray-700"
-                      }`}
-                    >
-                      <span className="text-[11.5px] font-bold">
-                        {opt.label}
-                      </span>
-                      <span
-                        className={`text-[9px] ${active ? "text-white/80" : "text-gray-500"}`}
+            ) : (
+              <div>
+                <div className="mb-1 flex items-baseline justify-between gap-2 px-0.5">
+                  <span className="text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+                    交換タイプ
+                  </span>
+                  {option.selected.length > 0 && (
+                    <span className="text-[9.5px] text-[#3a324a8c]">
+                      ⚠️ 画像なしの wish があるため指定が必要
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {EXCHANGE_OPTIONS.map((opt) => {
+                    const active = option.exchangeType === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => onPatch({ exchangeType: opt.value })}
+                        className={`flex flex-col items-center justify-center rounded-lg px-1.5 py-1.5 text-center transition-all ${
+                          active
+                            ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.33)]"
+                            : "border border-[#3a324a14] bg-white text-gray-700"
+                        }`}
                       >
-                        {opt.sub}
-                      </span>
-                    </button>
-                  );
-                })}
+                        <span className="text-[11.5px] font-bold">
+                          {opt.label}
+                        </span>
+                        <span
+                          className={`text-[9px] ${active ? "text-white/80" : "text-gray-500"}`}
+                        >
+                          {opt.sub}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
+            {/* iter145: 求める wish 選択（画像付き mini panel） */}
             {!option.groupId || !option.goodsTypeId ? (
               <Empty label="先にグループと種別を選んでください" />
             ) : filteredWishes.length === 0 ? (
@@ -743,7 +783,7 @@ function OptionEditor({
                 {filteredWishes.map((w) => {
                   const sel = option.selected.find((s) => s.id === w.id);
                   return (
-                    <WishChip
+                    <WishMiniPanel
                       key={w.id}
                       item={w}
                       selected={!!sel}
@@ -1019,7 +1059,13 @@ function PanelCard({
   );
 }
 
-function WishChip({
+/**
+ * iter145：求める wish 選択用の mini panel（譲側 PanelCard の小型版）。
+ * - 画像があれば写真フルブリード、なければ hue 縞 + イニシャル
+ * - 同 character の wish が複数あっても画像で区別できる
+ * - 選択時：紫枠 + 上端に ×qty + −/+ ボタン
+ */
+function WishMiniPanel({
   item,
   selected,
   qty,
@@ -1033,23 +1079,71 @@ function WishChip({
   onQty: (delta: number) => void;
 }) {
   const name = item.characterName ?? item.groupName ?? item.title;
+  // メンバー名 → hue ハッシュ（ItemCard / PanelCard と同方式）
+  const hue = useMemo(() => {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = (hash << 5) - hash + name.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash) % 360;
+  }, [name]);
+  const stripeBg = `repeating-linear-gradient(135deg, hsl(${hue}, 28%, 88%) 0 6px, hsl(${hue}, 28%, 82%) 6px 11px)`;
+  const memberLabelColor = `hsl(${hue}, 35%, 28%)`;
+  const initialShadow = `0 2px 6px hsla(${hue}, 30%, 30%, 0.4)`;
+  const hasPhoto = !!item.photoUrl;
+
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11.5px] font-bold transition-all ${
+    <div
+      className={`relative overflow-hidden rounded-xl border shadow-[0_2px_6px_rgba(58,50,74,0.08)] transition-all ${
         selected
-          ? "bg-[#a695d8] text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
-          : "border border-[#3a324a14] bg-white text-gray-700"
+          ? "border-[2px] border-[#a695d8] shadow-[0_6px_16px_rgba(166,149,216,0.45)]"
+          : "border-[#3a324a14]"
       }`}
+      style={{
+        width: 80,
+        aspectRatio: "3 / 4",
+        background: hasPhoto ? "#3a324a" : stripeBg,
+      }}
     >
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center gap-1.5"
-      >
-        {name}
-      </button>
-      {selected && (
-        <span className="ml-0.5 inline-flex items-center gap-0.5 rounded-full bg-white/25 px-1 py-[1px]">
+        className="absolute inset-0 z-0 active:scale-[0.97]"
+        aria-label={selected ? "選択解除" : "選択"}
+      />
+      {hasPhoto && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.photoUrl!}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          loading="lazy"
+        />
+      )}
+      {/* 上部左：character / group ラベル */}
+      <div className="pointer-events-none absolute left-1 top-1 z-10">
+        <div
+          className={`max-w-[60px] truncate rounded-md px-1 py-[1px] text-[8.5px] font-bold ${
+            hasPhoto ? "bg-black/55 text-white backdrop-blur-sm" : "bg-white/85"
+          }`}
+          style={hasPhoto ? undefined : { color: memberLabelColor }}
+        >
+          {name}
+        </div>
+      </div>
+      {/* 中央：イニシャル（写真なしのみ） */}
+      {!hasPhoto && (
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[22px] font-extrabold text-white/90"
+          style={{ textShadow: initialShadow }}
+        >
+          {name[0]}
+        </div>
+      )}
+      {/* 上部右：選択時 qty コントロール / 未選択時 + マーク */}
+      {selected ? (
+        <div className="absolute right-1 top-1 z-20 flex items-center gap-0.5 rounded-full bg-white/95 p-0.5 shadow-[0_2px_6px_rgba(0,0,0,0.15)]">
           <button
             type="button"
             disabled={qty <= 1}
@@ -1057,11 +1151,11 @@ function WishChip({
               e.stopPropagation();
               onQty(-1);
             }}
-            className="flex h-4 w-4 items-center justify-center rounded-full bg-white/95 text-[10px] font-bold text-[#a695d8] disabled:opacity-50"
+            className="flex h-4 w-4 items-center justify-center rounded-full bg-[#a695d8] text-[10px] font-bold text-white disabled:bg-gray-200 disabled:text-gray-400"
           >
             −
           </button>
-          <span className="min-w-[18px] text-center text-[10px] font-extrabold tabular-nums">
+          <span className="min-w-[16px] text-center text-[9.5px] font-extrabold tabular-nums">
             ×{qty}
           </span>
           <button
@@ -1071,13 +1165,29 @@ function WishChip({
               e.stopPropagation();
               onQty(1);
             }}
-            className="flex h-4 w-4 items-center justify-center rounded-full bg-white/95 text-[10px] font-bold text-[#a695d8] disabled:opacity-50"
+            className="flex h-4 w-4 items-center justify-center rounded-full bg-[#a695d8] text-[10px] font-bold text-white disabled:bg-gray-200 disabled:text-gray-400"
           >
             ＋
           </button>
-        </span>
+        </div>
+      ) : (
+        <div className="pointer-events-none absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] border-white bg-white/55 text-[#a695d8] shadow-[0_2px_6px_rgba(0,0,0,0.15)]">
+          <span className="text-[10px] font-bold">＋</span>
+        </div>
       )}
-    </span>
+      {/* 下部ストリップ：goods_type 名 */}
+      <div
+        className="pointer-events-none absolute bottom-0 left-0 right-0 px-1 pb-1 pt-0.5"
+        style={{
+          background:
+            "linear-gradient(180deg, transparent, rgba(255,255,255,0.95))",
+        }}
+      >
+        <div className="truncate text-[9px] font-bold leading-tight text-gray-900">
+          {item.goodsTypeName ?? "?"}
+        </div>
+      </div>
+    </div>
   );
 }
 
