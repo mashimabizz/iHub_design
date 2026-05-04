@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { updateInventoryStatus } from "./actions";
+import { deleteInventoryItem, updateInventoryStatus } from "./actions";
 import { AddCard, ItemCard, type ItemCardData } from "./ItemCard";
 import { BottomNav } from "@/components/home/BottomNav";
 
@@ -29,7 +29,6 @@ export function InventoryView({
 }) {
   const router = useRouter();
   const [sub, setSub] = useState<SubTab>("active");
-  const [pending, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // iter98: フィルタを実データ駆動に。
@@ -333,7 +332,6 @@ function SubPanel({
             >
               <ItemCardWrapper
                 item={item}
-                currentSub={subId}
                 router={router}
               />
             </div>
@@ -421,11 +419,9 @@ export function FilterRow({
 
 function ItemCardWrapper({
   item,
-  currentSub,
   router,
 }: {
   item: InventoryItemFull;
-  currentSub: SubTab;
   router: ReturnType<typeof useRouter>;
 }) {
   const [showMenu, setShowMenu] = useState(false);
@@ -435,6 +431,21 @@ function ItemCardWrapper({
   ) {
     setShowMenu(false);
     const result = await updateInventoryStatus(item.id, status);
+    if (result?.error) {
+      alert(result.error);
+    } else {
+      router.refresh();
+    }
+  }
+
+  async function deleteItem() {
+    const ok = window.confirm(
+      "この在庫を削除します。元に戻せません。よろしいですか？",
+    );
+    if (!ok) return;
+
+    setShowMenu(false);
+    const result = await deleteInventoryItem(item.id);
     if (result?.error) {
       alert(result.error);
     } else {
@@ -453,39 +464,26 @@ function ItemCardWrapper({
       </button>
       {showMenu && (
         <div className="absolute inset-0 z-10 flex flex-col items-stretch justify-center gap-1.5 rounded-xl bg-black/70 p-2">
-          {currentSub !== "active" && (
-            <button
-              type="button"
-              onClick={() => changeStatus("active")}
-              className="rounded-lg bg-white py-1.5 text-[10px] font-bold text-gray-900"
-            >
-              譲る候補に
-            </button>
-          )}
-          {currentSub !== "keep" && (
-            <button
-              type="button"
-              onClick={() => changeStatus("keep")}
-              className="rounded-lg bg-white py-1.5 text-[10px] font-bold text-gray-900"
-            >
-              キープに
-            </button>
-          )}
-          {currentSub !== "traded" && (
-            <button
-              type="button"
-              onClick={() => changeStatus("traded")}
-              className="rounded-lg bg-white py-1.5 text-[10px] font-bold text-gray-900"
-            >
-              譲渡履歴へ
-            </button>
-          )}
           <Link
             href={`/inventory/${item.id}`}
             className="rounded-lg bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-1.5 text-center text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
           >
             編集する
           </Link>
+          <button
+            type="button"
+            onClick={() => changeStatus("keep")}
+            className="rounded-lg bg-white py-1.5 text-[10px] font-bold text-gray-900"
+          >
+            自分キープへ
+          </button>
+          <button
+            type="button"
+            onClick={deleteItem}
+            className="rounded-lg bg-[#fff1f2] py-1.5 text-[10px] font-bold text-[#be123c]"
+          >
+            削除
+          </button>
           <button
             type="button"
             onClick={() => setShowMenu(false)}

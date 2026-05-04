@@ -4,6 +4,53 @@
 
 ---
 
+## イテレーション151.3：マイ在庫メニューを削除導線へ整理
+
+### 背景・問題意識
+
+オーナーから、マイ在庫のパネルタップ時メニューについて「譲渡履歴へ」はなくし、「削除」を追加したいとの指示があった。
+
+現在のメニューはステータス移動を中心に「譲る候補に」「キープに」「譲渡履歴へ」「編集する」「閉じる」が条件付きで並び、目的の操作順が読み取りにくかった。頻度の高い編集、自分用キープ、削除、閉じるだけに整理する。
+
+### 変更内容
+
+#### `web/src/app/inventory/InventoryView.tsx`
+- パネルタップ時のメニューを上から「編集する」「自分キープへ」「削除」「閉じる」の固定順に変更。
+- 「譲渡履歴へ」を削除。
+- 「譲る候補に」「キープに」の条件分岐を廃止し、指定された操作だけを表示するよう整理。
+- 「削除」は既存の `deleteInventoryItem` server action に接続し、実行前に確認ダイアログを出すようにした。
+- 未使用だった `useTransition` を削除。
+
+#### `web/src/app/inventory/ItemCard.tsx`
+- ItemCardWrapper のメニュー説明コメントを実装後の4項目に更新。
+
+### 影響範囲
+
+- `/inventory` マイ在庫一覧
+- 在庫パネルをタップした時のオーバーレイメニュー
+
+### 確認方法
+
+- `npx eslint src/app/inventory/InventoryView.tsx src/app/inventory/ItemCard.tsx src/app/inventory/actions.ts`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/inventory/InventoryView.tsx`
+- `web/src/app/inventory/ItemCard.tsx`
+
+### セルフレビュー結果
+
+- ✅ メニュー順を「編集する」「自分キープへ」「削除」「閉じる」に統一
+- ✅ 「譲渡履歴へ」は表示されない
+- ✅ 削除は確認後に既存の削除 server action を呼ぶ
+- ✅ `notes/09_state_machines.md` は既存の在庫削除遷移で表現済みのため更新不要
+- ✅ `notes/10_glossary.md` は既存の「自分用キープ」「削除」で表現済みのため更新不要
+- ✅ `notes/05_data_model.md` は新規フィールドなしのため更新不要
+- ✅ 対象ファイル ESLint / build 成功
+
+---
+
 ## イテレーション151.2：現地マッチ炎エフェクトを枠外周だけに修正
 
 ### 背景・問題意識
