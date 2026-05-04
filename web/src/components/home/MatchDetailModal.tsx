@@ -29,10 +29,17 @@ import type {
 /* レイアウト数値（/listings の Diagram と統一） */
 const HAVE_W = 64;
 const HAVE_H = 84;
-const OPT_H = 64;
-const OPT_GAP = 8;
-const SVG_W = 56;
-const RIGHT_W = 220;
+const OPT_GAP = 10;
+const SVG_W = 48;
+const RIGHT_W = 240;
+/* iter104: option カードの構成要素ごとの高さ（可変高さ計算用） */
+const OPT_HEADER_H = 32;
+const OPT_WISH_ROW_LABEL_H = 16;
+const OPT_WISH_ROW_THUMBS_H = 38;
+const OPT_WISH_ROW_GAP = 4;
+const OPT_PADDING_Y = 14;
+const OPT_CASH_H = 60; // cash offer は wish が無いので別の固定高
+const OPT_NO_CANDIDATES_H = 28; // 候補なしの代わりに表示する 1 行
 
 const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
   same_kind: "同種",
@@ -347,7 +354,28 @@ function CheckChip({
   );
 }
 
-/* ─── 関係図 — 左に譲 / 中央 SVG 実線 / 右に選択肢縦並び ─── */
+/* ─── 関係図 — 左に譲 / 中央 SVG 実線 / 右に選択肢縦並び（可変高さ） ─── */
+
+/** option カードの動的高さを計算（候補の表示行数による） */
+function calcOptionHeight(opt: MatchCardOption): number {
+  if (opt.isCashOffer) return OPT_CASH_H;
+  // wish が 0 件のケース（理論上ないが安全策）
+  const wishes = opt.wishes.length === 0 ? 1 : opt.wishes.length;
+  // 1 wish あたり：ラベル行 + 候補サムネ行（候補なしなら短い 1 行）
+  const wishesH = opt.wishes.reduce((sum, w) => {
+    return (
+      sum +
+      OPT_WISH_ROW_LABEL_H +
+      (w.candidates.length > 0
+        ? OPT_WISH_ROW_THUMBS_H
+        : OPT_NO_CANDIDATES_H) +
+      OPT_WISH_ROW_GAP
+    );
+  }, 0);
+  // wishes が 0 のとき空ガード
+  const safeWishesH = opt.wishes.length === 0 ? wishes * 28 : wishesH;
+  return OPT_HEADER_H + safeWishesH + OPT_PADDING_Y;
+}
 
 function Diagram({
   listing,
@@ -361,12 +389,19 @@ function Diagram({
   const sortedOptions = [...listing.options].sort(
     (a, b) => a.position - b.position,
   );
+  // iter104: 各 option の高さを動的計算
+  const optionHeights = sortedOptions.map(calcOptionHeight);
   const containerH =
-    sortedOptions.length * OPT_H +
+    optionHeights.reduce((s, h) => s + h, 0) +
     Math.max(0, sortedOptions.length - 1) * OPT_GAP;
-  const optionYs = sortedOptions.map(
-    (_, i) => i * (OPT_H + OPT_GAP) + OPT_H / 2,
-  );
+  // 各 option の Y 中心座標（SVG 線の終点）
+  const optionTops: number[] = [];
+  let acc = 0;
+  for (let i = 0; i < sortedOptions.length; i++) {
+    optionTops.push(acc);
+    acc += optionHeights[i] + OPT_GAP;
+  }
+  const optionCenters = optionTops.map((top, i) => top + optionHeights[i] / 2);
   const haveAnchorY = containerH / 2;
   const totalW = HAVE_W + SVG_W + RIGHT_W;
 
@@ -390,7 +425,7 @@ function Diagram({
                 x1={HAVE_W}
                 y1={haveAnchorY}
                 x2={HAVE_W + SVG_W}
-                y2={optionYs[i]}
+                y2={optionCenters[i]}
                 stroke="#a695d8"
                 strokeWidth={sel ? 2.6 : 1.8}
                 strokeLinecap="round"
@@ -444,7 +479,7 @@ function Diagram({
           )}
         </div>
 
-        {/* 右カラム：選択肢縦並び（タップで toggle） */}
+        {/* 右カラム：選択肢縦並び（タップで toggle・可変高さ） */}
         {sortedOptions.map((opt, i) => {
           const sel = isSelected(opt.position);
           return (
@@ -457,9 +492,9 @@ function Diagram({
               className="absolute block transition-all active:scale-[0.98]"
               style={{
                 left: HAVE_W + SVG_W,
-                top: i * (OPT_H + OPT_GAP),
+                top: optionTops[i],
                 width: RIGHT_W,
-                height: OPT_H,
+                height: optionHeights[i],
               }}
             >
               <OptionRow option={opt} selected={sel} />
@@ -471,7 +506,7 @@ function Diagram({
   );
 }
 
-/* ─── 選択肢 1 行（タップ可・選択中は紫太枠） ─── */
+/* ─── 選択肢カード（iter104: wish ごとに候補サムネを表示） ─── */
 
 function OptionRow({
   option,
@@ -487,75 +522,158 @@ function OptionRow({
     ? "border-[2px] border-[#a695d8] bg-[#a695d80f] shadow-[0_2px_10px_rgba(166,149,216,0.25)]"
     : option.matched
       ? "border border-[#a695d855] bg-white"
-      : "border border-[#3a324a14] bg-white opacity-70";
+      : "border border-[#3a324a14] bg-white opacity-80";
 
   return (
     <div
-      className={`flex h-full w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left ${containerCls}`}
+      className={`flex h-full w-full flex-col rounded-[10px] px-2.5 py-1.5 text-left ${containerCls}`}
     >
+      {/* ヘッダー行：position / kind chip / logic chip / 選択中 ✓ */}
+      <div className="flex items-center gap-1 text-[9.5px]">
+        <span className="rounded-full bg-[#3a324a08] px-1 py-[1px] font-extrabold text-[#3a324a8c]">
+          #{option.position}
+        </span>
+        {!option.isCashOffer && (
+          <span className="rounded-full border border-[#a695d855] bg-white px-1 py-[1px] font-bold text-[#a695d8]">
+            {EXCHANGE_LABEL[option.exchangeType]}
+          </span>
+        )}
+        {!option.isCashOffer && option.wishes.length > 1 && (
+          <span
+            className={`rounded-full px-1 py-[1px] font-extrabold ${
+              option.logic === "and"
+                ? "bg-[#a695d8] text-white"
+                : "border border-[#a695d855] bg-white text-[#a695d8]"
+            }`}
+          >
+            {option.logic === "and" ? "AND" : "OR"}
+          </span>
+        )}
+        <div className="flex-1" />
+        <span
+          aria-hidden="true"
+          className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold ${
+            selected
+              ? "bg-[#a695d8] text-white"
+              : "border border-[#3a324a14] text-transparent"
+          }`}
+        >
+          ✓
+        </span>
+      </div>
+
+      {/* 本体：cash か wishes */}
       {option.isCashOffer ? (
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-[#7a9a8a55] bg-[#7a9a8a14] text-[16px]">
-          💴
+        <div className="mt-1 flex items-center gap-1.5 text-[12px] font-extrabold text-[#7a9a8a]">
+          <span className="text-[14px]">💴</span>
+          <span>¥{option.cashAmount?.toLocaleString() ?? "—"}</span>
+          <span className="text-[9px] font-bold text-[#3a324a8c]">
+            （マッチング対象外）
+          </span>
         </div>
       ) : (
-        <div className="flex flex-shrink-0 gap-0.5">
-          {option.wishes.slice(0, 2).map((w) => (
-            <ItemThumb
-              key={w.item.id}
-              item={w.item}
-              qty={w.qty}
-              kind="wish"
-              matched={option.matched}
-            />
+        <div className="mt-1 flex flex-col gap-1">
+          {option.wishes.map((w) => (
+            <WishWithCandidates key={w.item.id} wish={w} />
           ))}
-          {option.wishes.length > 2 && (
-            <span className="self-center text-[8.5px] text-[#3a324a8c]">
-              +{option.wishes.length - 2}
-            </span>
-          )}
         </div>
       )}
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1 text-[9.5px]">
-          <span className="rounded-full bg-[#3a324a08] px-1 py-[1px] font-extrabold text-[#3a324a8c]">
-            #{option.position}
-          </span>
-          {!option.isCashOffer && (
-            <span className="rounded-full border border-[#a695d855] bg-white px-1 py-[1px] font-bold text-[#a695d8]">
-              {EXCHANGE_LABEL[option.exchangeType]}
-            </span>
-          )}
-          {!option.isCashOffer && option.wishes.length > 1 && (
-            <span
-              className={`rounded-full px-1 py-[1px] font-extrabold ${
-                option.logic === "and"
-                  ? "bg-[#a695d8] text-white"
-                  : "border border-[#a695d855] bg-white text-[#a695d8]"
-              }`}
-            >
-              {option.logic === "and" ? "AND" : "OR"}
-            </span>
-          )}
-        </div>
-        <div className="mt-0.5 truncate text-[10px] font-bold text-[#3a324a]">
-          {option.isCashOffer
-            ? `¥${option.cashAmount?.toLocaleString() ?? "—"}`
-            : option.wishes
-                .map((w) => `${w.item.label} ×${w.qty}`)
-                .join(" / ")}
-        </div>
+    </div>
+  );
+}
+
+/**
+ * iter104: 1 wish + その候補サムネ群
+ *
+ * - 上：wish のラベル（× qty）と候補件数バッジ
+ * - 下：候補サムネ（写真 or イニシャル、最大 5 件まで横並び。それ以上は +N）
+ *   候補が 0 件の場合は「該当なし」を表示
+ */
+function WishWithCandidates({
+  wish,
+}: {
+  wish: { item: MiniItem; qty: number; candidates: { item: MiniItem; qty: number }[] };
+}) {
+  const visibleMax = 5;
+  const visible = wish.candidates.slice(0, visibleMax);
+  const overflow = wish.candidates.length - visible.length;
+  const hasCands = wish.candidates.length > 0;
+
+  return (
+    <div>
+      <div className="flex items-center gap-1 text-[10px]">
+        <span className="font-bold text-[#3a324a]">
+          {wish.item.label}
+        </span>
+        <span className="font-bold tabular-nums text-[#3a324a8c]">
+          ×{wish.qty}
+        </span>
+        <div className="flex-1" />
+        <span
+          className={`rounded-full px-1.5 py-[1px] text-[8.5px] font-extrabold ${
+            hasCands
+              ? "bg-[#a695d8] text-white"
+              : "bg-[#3a324a08] text-[#3a324a8c]"
+          }`}
+        >
+          {hasCands ? `候補 ${wish.candidates.length}` : "候補なし"}
+        </span>
       </div>
-      {/* 選択中インジケーター */}
-      <span
-        aria-hidden="true"
-        className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold ${
-          selected
-            ? "bg-[#a695d8] text-white"
-            : "border border-[#3a324a14] text-transparent"
-        }`}
-      >
-        ✓
-      </span>
+      {hasCands ? (
+        <div className="mt-1 flex items-center gap-1">
+          {visible.map((c) => (
+            <CandidateThumb key={c.item.id} item={c.item} />
+          ))}
+          {overflow > 0 && (
+            <span className="text-[9px] font-bold text-[#3a324a8c]">
+              +{overflow}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="mt-0.5 text-[9.5px] italic text-[#3a324a4d]">
+          相手の譲に該当する候補がありません
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** iter104: 候補専用のサムネ（matched=true 前提・小さめ） */
+function CandidateThumb({ item }: { item: MiniItem }) {
+  const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 86%) 0 4px, hsl(${item.hue}, 28%, 78%) 4px 8px)`;
+  const initialShadow = `0 1px 2px hsla(${item.hue}, 30%, 30%, 0.5)`;
+  const hasPhoto = !!item.photoUrl;
+  const W = 30;
+  const H = 30;
+
+  return (
+    <div
+      className="relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded border border-[#a8d4e6] shadow-[0_1px_3px_rgba(58,50,74,0.15)]"
+      style={{
+        width: W,
+        height: H,
+        background: hasPhoto ? "#3a324a" : stripeBg,
+      }}
+      title={item.label}
+    >
+      {hasPhoto && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.photoUrl!}
+          alt={item.label}
+          className="absolute inset-0 h-full w-full object-cover"
+          loading="lazy"
+        />
+      )}
+      {!hasPhoto && (
+        <span
+          className="text-[12px] font-extrabold text-white/95"
+          style={{ textShadow: initialShadow }}
+        >
+          {item.label[0] ?? "?"}
+        </span>
+      )}
     </div>
   );
 }

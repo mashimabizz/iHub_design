@@ -102,6 +102,13 @@ export type MatchedOptionInfo = {
   matched: boolean;
   /** この選択肢に該当した相手の inventory id 群（matched=true の時のみ） */
   matchedTheirInvIds: string[];
+  /**
+   * iter104: wish ごとに、ヒットした相手 inventory id を保持。
+   * 関係図で「wish A → 候補1, 候補2, ...」を写真で並べるため。
+   * 順序は opt.wishIds と一致。matched=false の wish には [] が入る。
+   * 単一 wish の場合は [{ wishId: opt.wishIds[0], theirInvIds: [...] }] となる。
+   */
+  matchedHitsByWish: { wishId: string; theirInvIds: string[] }[];
 };
 
 /**
@@ -417,6 +424,7 @@ function evaluateListingMatch(
         cashAmount: opt.cashAmount,
         matched: false,
         matchedTheirInvIds: [],
+        matchedHitsByWish: [],
       });
       continue;
     }
@@ -439,6 +447,12 @@ function evaluateListingMatch(
         ? opt.wishIds.every((wid) => matchedByWishId.has(wid))
         : matchedByWishId.size > 0;
 
+    // iter104: wish 順に対応する hits 配列を作る（matched 時のみ値、未 matched は []）
+    const matchedHitsByWish = opt.wishIds.map((wid) => ({
+      wishId: wid,
+      theirInvIds: optMatched ? matchedByWishId.get(wid) ?? [] : [],
+    }));
+
     optionResults.push({
       id: opt.id,
       position: opt.position,
@@ -452,6 +466,7 @@ function evaluateListingMatch(
       matchedTheirInvIds: optMatched
         ? Array.from(new Set(Array.from(matchedByWishId.values()).flat()))
         : [],
+      matchedHitsByWish,
     });
   }
 

@@ -22,6 +22,14 @@ export type MiniItem = {
   hue: number;
 };
 
+/**
+ * iter104: 関係図に「相手の譲から候補」を写真で並べるため、
+ * 各 wish に candidates: 相手の inventory item 配列を持たせる。
+ *
+ * - my listing context: candidates = 相手 (partner) の inv で、my wish にヒットしたもの
+ * - partner listing context: candidates = 私 (me) の inv で、partner の wish にヒットしたもの
+ *   （= 私が出せる候補）
+ */
 export type MatchCardOption = {
   id: string;
   position: number;
@@ -30,7 +38,12 @@ export type MatchCardOption = {
   isCashOffer: boolean;
   cashAmount: number | null;
   matched: boolean;
-  wishes: { item: MiniItem; qty: number }[];
+  wishes: {
+    item: MiniItem;
+    qty: number;
+    /** iter104: この wish にヒットした「相手側 inv 候補」 */
+    candidates: { item: MiniItem; qty: number }[];
+  }[];
   /**
    * iter67.8: この選択肢を有効化したときに **追加で** 自分が出すアイテム + qty
    * - 自分の listing：[]（譲は listing 共通なので listing.perOptionMyCommitment 側で）

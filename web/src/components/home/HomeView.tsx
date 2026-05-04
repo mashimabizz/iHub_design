@@ -85,6 +85,11 @@ function matchToCard(
           matched: ml.matchedHaveIds.includes(id),
         };
       });
+      // iter104: 候補（相手側 inv）lookup
+      //   my listing なら相手の inv（partnersInvById）から候補を引く
+      //   partner listing なら私の inv（myInvById）から候補を引く
+      const candidateLookup = isMyListing ? partnersInvById : myInvById;
+
       const options = ml.options.map((opt) => ({
         id: opt.id,
         position: opt.position,
@@ -98,9 +103,27 @@ function matchToCard(
           const item: MiniItem = inv
             ? toMini(inv)
             : { id, label: "?", goodsTypeName: null, photoUrl: null, hue: 0 };
+          // iter104: この wish にヒットした候補（相手側 inv）を hydrate
+          const wishHits = opt.matchedHitsByWish.find((h) => h.wishId === id);
+          const candidates = (wishHits?.theirInvIds ?? []).map((cid) => {
+            const cinv = candidateLookup.get(cid);
+            return {
+              item: cinv
+                ? toMini(cinv)
+                : {
+                    id: cid,
+                    label: "?",
+                    goodsTypeName: null,
+                    photoUrl: null,
+                    hue: 0,
+                  },
+              qty: 1, // 候補側の qty は表示上 1 件で OK（在庫数は別途）
+            };
+          });
           return {
             item,
             qty: opt.wishQtys[i] ?? 1,
+            candidates,
           };
         }),
         /**
