@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type {
   MatchCardListingInfo,
   MatchCardOption,
@@ -85,6 +85,11 @@ export function MatchDetailModal({
   );
   /** iter112: wish 詳細ポップアップ */
   const [popupTarget, setPopupTarget] = useState<PopupTarget | null>(null);
+  /** iter120: 個別募集の条件不一致 確認ダイアログ */
+  const [validationAlert, setValidationAlert] = useState<
+    { listingLabel: string; reasons: string[] }[] | null
+  >(null);
+  const router = useRouter();
 
   /**
    * iter111: 在庫超過判定
@@ -289,6 +294,89 @@ export function MatchDetailModal({
     partnerId,
   ]);
 
+  /**
+   * iter120: 個別募集の条件チェック
+   *
+   * - listing が「選択に含まれている」 = selection の key に listingId がある
+   * - その listing 内のいずれかの option が「満たされている」必要
+   *   - AND option: 全 wish に対して、選択中の inv id が候補に含まれている
+   *   - OR / 単一 wish option: いずれか 1 つの wish が満たされている
+   * - 全 option が未満足 → アラート対象
+   */
+  function validateSelection(): { listingLabel: string; reasons: string[] }[] {
+    const issues: { listingLabel: string; reasons: string[] }[] = [];
+    const allListings = [...myListings, ...partnerListings];
+    const listingById = new Map(
+      allListings.map((l) => [l.listingId, l] as const),
+    );
+
+    for (const [listingId, candidateIds] of selection) {
+      const listing = listingById.get(listingId);
+      if (!listing) continue;
+      const isMine = listing.isMyListing;
+      const idx = (isMine ? myListings : partnerListings).findIndex(
+        (l) => l.listingId === listingId,
+      );
+      const listingLabel = isMine
+        ? `あなたの個別募集 #${idx + 1}`
+        : `@${partnerHandle} の個別募集 #${idx + 1}`;
+
+      let anySatisfied = false;
+      const reasonCandidates: string[] = [];
+
+      for (const opt of listing.options) {
+        if (opt.isCashOffer) continue;
+
+        if (opt.logic === "and" && opt.wishes.length > 1) {
+          // AND：全 wish が候補選択でカバーされている必要
+          const missing = opt.wishes.filter(
+            (w) => !w.candidates.some((c) => candidateIds.has(c.item.id)),
+          );
+          if (missing.length === 0) {
+            anySatisfied = true;
+            break;
+          }
+          reasonCandidates.push(
+            `#${opt.position} (セット AND)：${missing.map((w) => w.item.label).join("・")} の候補が未選択`,
+          );
+        } else {
+          // OR / 単一：いずれか 1 つの wish に候補があれば OK
+          const hasOne = opt.wishes.some((w) =>
+            w.candidates.some((c) => candidateIds.has(c.item.id)),
+          );
+          if (hasOne) {
+            anySatisfied = true;
+            break;
+          }
+          // 単一 wish の場合は「未選択」と理由化
+          reasonCandidates.push(
+            `#${opt.position}：いずれの wish にも候補が未選択`,
+          );
+        }
+      }
+
+      if (!anySatisfied && reasonCandidates.length > 0) {
+        issues.push({ listingLabel, reasons: reasonCandidates });
+      }
+    }
+
+    return issues;
+  }
+
+  /** 「打診に進む」クリック：validation → OK なら遷移、NG なら確認ポップアップ */
+  function handleProposeClick(skipValidation = false) {
+    if (!proposeHref) return;
+    if (!skipValidation) {
+      const issues = validateSelection();
+      if (issues.length > 0) {
+        setValidationAlert(issues);
+        return;
+      }
+    }
+    onClose();
+    router.push(proposeHref);
+  }
+
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
@@ -385,19 +473,31 @@ export function MatchDetailModal({
             >
               リセット
             </button>
-            <Link
-              href={proposeHref}
-              onClick={onClose}
+            <button
+              type="button"
+              onClick={() => handleProposeClick(false)}
               className="flex-1 rounded-[12px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-3 text-center text-[13.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] active:scale-[0.98]"
             >
               打診に進む（{totalSelected} 件）→
-            </Link>
+            </button>
           </div>
         </div>
       )}
 
       {/* iter111: 在庫超過トースト */}
       {toast && <CapacityToast key={toast.key} message={toast.message} />}
+
+      {/* iter120: 個別募集の条件不一致 確認ダイアログ */}
+      {validationAlert && (
+        <ValidationAlert
+          issues={validationAlert}
+          onCancel={() => setValidationAlert(null)}
+          onProceed={() => {
+            setValidationAlert(null);
+            handleProposeClick(true);
+          }}
+        />
+      )}
 
       {/* iter112: wish 詳細ポップアップ */}
       {popupTarget && (
@@ -1219,6 +1319,86 @@ function ItemPhoto({
           ×{qty}
         </span>
       )}
+    </div>
+  );
+}
+
+/* ─── iter120: 個別募集の条件不一致 確認ダイアログ ─── */
+
+function ValidationAlert({
+  issues,
+  onCancel,
+  onProceed,
+}: {
+  issues: { listingLabel: string; reasons: string[] }[];
+  onCancel: () => void;
+  onProceed: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 px-4 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm overflow-hidden rounded-[18px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* ヘッダー */}
+        <div className="border-b border-[#3a324a08] bg-[#fff5f0] px-4 pb-3 pt-4">
+          <div className="flex items-center gap-2">
+            <span className="text-[20px]">⚠️</span>
+            <span className="text-[14px] font-extrabold text-[#d9826b]">
+              個別募集の条件を満たしていません
+            </span>
+          </div>
+        </div>
+
+        {/* 本体：未満足の listing と理由 */}
+        <div className="max-h-[50vh] overflow-y-auto px-4 py-3">
+          <div className="mb-2 text-[11.5px] leading-relaxed text-[#3a324a]">
+            以下の個別募集の条件は未満足のまま打診されます：
+          </div>
+          <ul className="space-y-2">
+            {issues.map((iss, i) => (
+              <li
+                key={i}
+                className="rounded-[10px] border border-[#d9826b40] bg-[#fff5f0] px-3 py-2"
+              >
+                <div className="text-[11.5px] font-extrabold text-[#3a324a]">
+                  {iss.listingLabel}
+                </div>
+                <ul className="mt-1 space-y-0.5 text-[10.5px] text-[#3a324a8c]">
+                  {iss.reasons.map((r, j) => (
+                    <li key={j}>・{r}</li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 text-[10.5px] leading-relaxed text-[#3a324a8c]">
+            このまま進む場合、相手から「条件を満たしていない」と判断されて
+            拒否される可能性があります。
+          </div>
+        </div>
+
+        {/* フッター */}
+        <div className="flex gap-2 border-t border-[#3a324a08] bg-[#fbf9fc] px-4 py-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-[10px] border border-[#3a324a14] bg-white py-2.5 text-[12px] font-extrabold text-[#3a324a]"
+          >
+            戻って調整
+          </button>
+          <button
+            type="button"
+            onClick={onProceed}
+            className="flex-1 rounded-[10px] bg-[#d9826b] py-2.5 text-[12px] font-extrabold text-white shadow-[0_2px_6px_rgba(217,130,107,0.35)]"
+          >
+            このまま打診へ
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
