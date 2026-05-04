@@ -116,6 +116,24 @@ function sortByWishFirst<T extends { wishMatch?: boolean }>(arr: T[]): T[] {
   });
 }
 
+/**
+ * iter110: 関係図で選んだ項目（preselectedIds に含まれる）を最上位、
+ * 次に wishMatch、次に残り の順でソート
+ */
+function sortBySelectionFirst<T extends { id: string; wishMatch?: boolean }>(
+  arr: T[],
+  preselectedIds: Set<string>,
+): T[] {
+  return [...arr].sort((a, b) => {
+    const aSel = preselectedIds.has(a.id) ? 1 : 0;
+    const bSel = preselectedIds.has(b.id) ? 1 : 0;
+    if (aSel !== bSel) return bSel - aSel;
+    const aw = a.wishMatch ? 1 : 0;
+    const bw = b.wishMatch ? 1 : 0;
+    return bw - aw;
+  });
+}
+
 function buildSummaryText(items: Selectable[]): string {
   return items
     .filter((i) => i.selected)
@@ -261,8 +279,18 @@ export function ProposeFlow({
     return m;
   }, [initial]);
 
+  // iter110: 関係図で選んだ項目を最上位に
+  //   initial がある（関係図経由）→ initialSenderIdSet/initialReceiverIdSet 優先
+  //   なし → 従来通り wishMatch 優先
+  const myItemsSorted = initial
+    ? sortBySelectionFirst(myInv, initialSenderIdSet)
+    : sortByWishFirst(myInv);
+  const theirItemsSorted = initial
+    ? sortBySelectionFirst(theirInv, initialReceiverIdSet)
+    : sortByWishFirst(theirInv);
+
   const [myItems, setMyItems] = useState<Selectable[]>(() =>
-    sortByWishFirst(myInv).map((i) => {
+    myItemsSorted.map((i) => {
       const checked = initial
         ? initialSenderIdSet.has(i.id)
         : (matchType === "perfect" || matchType === "forward") &&
@@ -278,7 +306,7 @@ export function ProposeFlow({
     }),
   );
   const [theirItems, setTheirItems] = useState<Selectable[]>(() =>
-    sortByWishFirst(theirInv).map((i) => {
+    theirItemsSorted.map((i) => {
       const checked = initial
         ? initialReceiverIdSet.has(i.id)
         : (matchType === "perfect" || matchType === "backward") &&
