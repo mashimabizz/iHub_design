@@ -53,6 +53,26 @@ function toMini(inv: MatchInv): MiniItem {
   };
 }
 
+/**
+ * iter114: 2 つのタグ id 配列の Jaccard 類似度（0.0〜1.0）
+ *
+ * - 完全に同じタグ集合 = 1.0
+ * - 重複タグ無し = 0.0
+ * - 片方タグ無し = 0.0（共通要素ゼロのため）
+ *
+ * 関係図で「wish のタグと候補のタグがどれだけ一致するか」のスコア。
+ * 高いほど類似 → 候補リストの上位に並べる。
+ */
+function jaccardScore(a: string[], b: string[]): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  const setA = new Set(a);
+  const setB = new Set(b);
+  let intersect = 0;
+  for (const x of setA) if (setB.has(x)) intersect++;
+  const union = setA.size + setB.size - intersect;
+  return union > 0 ? intersect / union : 0;
+}
+
 /** Match を MatchCard 用データに変換（iter67.6: partner listings 対応 / iter67.8: 在庫情報） */
 function matchToCard(
   m: Match,
@@ -61,6 +81,7 @@ function matchToCard(
   partnersInvById: Map<string, MatchInv>,
   partnersWishById: Map<string, MatchInv>,
   myInventoryQty: Record<string, number>,
+  tagsByInvId: Record<string, string[]>,
 ): MatchCardData {
   /**
    * iter67.8：listing 情報を hydrate する際、commitments 情報も計算
@@ -104,22 +125,31 @@ function matchToCard(
             ? toMini(inv)
             : { id, label: "?", goodsTypeName: null, photoUrl: null, hue: 0 };
           // iter104: この wish にヒットした候補（相手側 inv）を hydrate
+          // iter114: タグ Jaccard 類似度の高い候補を上位に並べる
           const wishHits = opt.matchedHitsByWish.find((h) => h.wishId === id);
-          const candidates = (wishHits?.theirInvIds ?? []).map((cid) => {
-            const cinv = candidateLookup.get(cid);
-            return {
-              item: cinv
-                ? toMini(cinv)
-                : {
-                    id: cid,
-                    label: "?",
-                    goodsTypeName: null,
-                    photoUrl: null,
-                    hue: 0,
-                  },
-              qty: 1, // 候補側の qty は表示上 1 件で OK（在庫数は別途）
-            };
-          });
+          const wishTags = tagsByInvId[id] ?? [];
+          const candidates = (wishHits?.theirInvIds ?? [])
+            .map((cid) => {
+              const cinv = candidateLookup.get(cid);
+              const candTags = tagsByInvId[cid] ?? [];
+              return {
+                item: cinv
+                  ? toMini(cinv)
+                  : {
+                      id: cid,
+                      label: "?",
+                      goodsTypeName: null,
+                      photoUrl: null,
+                      hue: 0,
+                    },
+                qty: 1, // 候補側の qty は表示上 1 件で OK（在庫数は別途）
+                _score: jaccardScore(wishTags, candTags),
+              };
+            })
+            // タグ類似度（Jaccard）降順、同点は元の順
+            .sort((a, b) => b._score - a._score)
+            // 表示型に合わせて _score を落とす
+            .map(({ _score: _, item, qty }) => ({ item, qty }));
           return {
             item,
             qty: opt.wishQtys[i] ?? 1,
@@ -247,6 +277,7 @@ export function HomeView({
   partnersInventory,
   partnersWishes,
   myInventoryQty,
+  tagsByInvId,
   unreadNotificationCount = 0,
 }: {
   profile: { handle: string; display_name: string } | null;
@@ -262,6 +293,8 @@ export function HomeView({
   partnersWishes: MatchInv[];
   /** 自分の inv id → quantity（在庫オーバーチェック用、iter67.8） */
   myInventoryQty: Record<string, number>;
+  /** iter114: inventory_id → tag_id[]（候補のタグ類似度ソート用） */
+  tagsByInvId: Record<string, string[]>;
   /** iter92: 通知の未読数（ホームヘッダーのベルバッジ用） */
   unreadNotificationCount?: number;
 }) {
@@ -281,6 +314,7 @@ export function HomeView({
         partnersInvById,
         partnersWishById,
         myInventoryQty,
+        tagsByInvId,
       ),
     );
     return {
@@ -296,6 +330,7 @@ export function HomeView({
     partnersInventory,
     partnersWishes,
     myInventoryQty,
+    tagsByInvId,
   ]);
   const cards = cardsByTab[tab] ?? [];
 

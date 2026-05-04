@@ -393,6 +393,28 @@ export default async function Home({ searchParams }: Props) {
     partners: Array.from(partnersMap.values()),
   });
 
+  // iter114: タグ類似度マッチ用に、関係する全 inventory のタグをロード
+  //   matchToCard で wish と候補のタグを Jaccard 比較して候補を並び替える
+  const allInvIds = new Set<string>();
+  for (const inv of myInventory) allInvIds.add(inv.id);
+  for (const w of myWishes) allInvIds.add(w.id);
+  for (const p of partnersMap.values()) {
+    for (const inv of p.inventory) allInvIds.add(inv.id);
+    for (const w of p.wishes) allInvIds.add(w.id);
+  }
+  const tagsByInvId: Record<string, string[]> = {};
+  if (allInvIds.size > 0) {
+    const { data: tagPairs } = await supabase
+      .from("goods_inventory_tags")
+      .select("inventory_id, tag_id")
+      .in("inventory_id", Array.from(allInvIds));
+    for (const r of (tagPairs as { inventory_id: string; tag_id: string }[]) ?? []) {
+      const list = tagsByInvId[r.inventory_id] ?? [];
+      list.push(r.tag_id);
+      tagsByInvId[r.inventory_id] = list;
+    }
+  }
+
   // ─── 現地モード時の時空交差フィルタ ──────────────────────
   const isLocal = localMode?.enabled ?? false;
   const currentAW =
@@ -500,6 +522,7 @@ export default async function Home({ searchParams }: Props) {
           (p) => p.wishes,
         )}
         myInventoryQty={myInventoryQty}
+        tagsByInvId={tagsByInvId}
         unreadNotificationCount={unreadNotificationCount ?? 0}
       />
       <BottomNav />
