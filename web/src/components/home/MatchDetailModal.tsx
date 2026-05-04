@@ -232,7 +232,7 @@ function SectionGroup({
   );
 }
 
-/* ─── 1 listing 分のカード（ヘッダー + Diagram） ─── */
+/* ─── 1 listing 分のカード（ヘッダー + 信頼度 + Diagram） ─── */
 
 function ListingCard({
   listing,
@@ -258,11 +258,92 @@ function ListingCard({
         </span>
       </div>
 
+      {/* iter103: 信頼度チェックリスト */}
+      <ConfidenceChecklist listing={listing} />
+
       {/* 関係図 */}
       <div className="px-2 py-2.5">
         <Diagram listing={listing} isSelected={isSelected} onToggle={onToggle} />
       </div>
     </section>
+  );
+}
+
+/* ─── iter103: 信頼度チェックリスト ───
+ *
+ * 候補に対する確認項目を表示。「写真で確認・推しで判断」という前提を明示する。
+ *
+ * 現状の項目（Phase A）：
+ * - ✅ グループ・キャラ・種別 一致（matching 条件そのものなので常に true）
+ * - 📷 写真：listing.haves と option.wishes 全アイテムの photoUrl カバレッジ
+ * - 🏷 シリーズタグ：未登録（タグ機能リリースで対応予定 — Phase C）
+ * - 🤝 この相手との過去取引：件数取得は別 query 要なので Phase B 以降
+ */
+function ConfidenceChecklist({ listing }: { listing: MatchCardListingInfo }) {
+  // 写真カバレッジ：listing.haves + 全 option.wishes
+  const allItems = [
+    ...listing.haves.map((h) => h.item),
+    ...listing.options.flatMap((o) => o.wishes.map((w) => w.item)),
+  ];
+  const total = allItems.length;
+  const withPhoto = allItems.filter((it) => !!it.photoUrl).length;
+  const photoLevel: "full" | "partial" | "none" =
+    total === 0
+      ? "none"
+      : withPhoto === total
+        ? "full"
+        : withPhoto === 0
+          ? "none"
+          : "partial";
+
+  return (
+    <div className="border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
+      <div className="mb-1 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+        🔍 候補の確認ポイント
+      </div>
+      <div className="flex flex-wrap gap-1">
+        <CheckChip status="ok" label="グループ・キャラ・種別 一致" />
+        <CheckChip
+          status={photoLevel === "full" ? "ok" : photoLevel === "partial" ? "warn" : "missing"}
+          label={
+            photoLevel === "full"
+              ? "写真 全あり"
+              : photoLevel === "partial"
+                ? `写真 ${withPhoto}/${total}`
+                : "写真なし — 要確認"
+          }
+        />
+        <CheckChip status="missing" label="シリーズタグ 未登録" />
+      </div>
+      <div className="mt-1 text-[9.5px] leading-relaxed text-[#3a324a8c]">
+        ※ 同種/異種の判断やシリーズ確認は<b>写真と本人</b>で。完全マッチではなく可能性の高い候補です。
+      </div>
+    </div>
+  );
+}
+
+function CheckChip({
+  status,
+  label,
+}: {
+  status: "ok" | "warn" | "missing";
+  label: string;
+}) {
+  const cls =
+    status === "ok"
+      ? "bg-[#a695d814] border-[#a695d855] text-[#a695d8]"
+      : status === "warn"
+        ? "bg-amber-50 border-amber-200 text-amber-700"
+        : "bg-[#3a324a06] border-[#3a324a14] text-[#3a324a8c]";
+  const icon =
+    status === "ok" ? "✓" : status === "warn" ? "△" : "○";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-[2px] text-[9.5px] font-bold ${cls}`}
+    >
+      <span aria-hidden="true">{icon}</span>
+      {label}
+    </span>
   );
 }
 
