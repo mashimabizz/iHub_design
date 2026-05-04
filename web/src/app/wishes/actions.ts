@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 type ActionResult = { error?: string } | undefined;
+/** iter106: 新規作成時の戻り値（クライアント側でタグ attach に使う id） */
+type CreateResult = { error?: string; id?: string } | undefined;
 
 const VALID_PRIORITIES = ["top", "second", "flexible"] as const;
 const VALID_FLEX = ["exact", "character_any", "series_any"] as const;
@@ -25,7 +27,7 @@ export async function saveWishItem(input: {
   note?: string; // description カラムを使う
   quantity: number;
   photoUrls?: string[]; // iter94: wish 画像
-}): Promise<ActionResult> {
+}): Promise<CreateResult> {
   const title = input.title.trim();
   if (!title || title.length > 100) {
     return { error: "タイトルは 1〜100 文字で入力してください" };
@@ -56,27 +58,32 @@ export async function saveWishItem(input: {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { error } = await supabase.from("goods_inventory").insert({
-    user_id: user.id,
-    kind: "wanted",
-    group_id: input.groupId ?? null,
-    character_id: input.characterId ?? null,
-    goods_type_id: input.goodsTypeId,
-    title,
-    description: input.note?.trim() || null,
-    priority: input.priority,
-    flex_level: input.flexLevel,
-    exchange_type: exchangeType,
-    quantity: input.quantity,
-    photo_urls: input.photoUrls ?? [],
-  });
+  // iter106: id を取得してクライアントでのタグ attach に使えるようにする
+  const { data: inserted, error } = await supabase
+    .from("goods_inventory")
+    .insert({
+      user_id: user.id,
+      kind: "wanted",
+      group_id: input.groupId ?? null,
+      character_id: input.characterId ?? null,
+      goods_type_id: input.goodsTypeId,
+      title,
+      description: input.note?.trim() || null,
+      priority: input.priority,
+      flex_level: input.flexLevel,
+      exchange_type: exchangeType,
+      quantity: input.quantity,
+      photo_urls: input.photoUrls ?? [],
+    })
+    .select("id")
+    .single();
 
   if (error) {
     return { error: error.message };
   }
 
   revalidatePath("/wishes");
-  return undefined;
+  return { id: (inserted as { id: string }).id };
 }
 
 /**

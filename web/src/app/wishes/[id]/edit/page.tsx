@@ -22,12 +22,13 @@ export default async function WishEditPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 編集対象 wish + マスタを並列取得
+  // 編集対象 wish + マスタ + タグ（iter106）を並列取得
   const [
     { data: wish },
     { data: userOshi },
     { data: characters },
     { data: goodsTypes },
+    { data: tagRows },
   ] = await Promise.all([
     supabase
       .from("goods_inventory")
@@ -51,6 +52,11 @@ export default async function WishEditPage({
       .from("goods_types_master")
       .select("id, name")
       .order("display_order", { ascending: true }),
+    // iter106: 紐づくタグをロード
+    supabase
+      .from("goods_inventory_tags")
+      .select("tag:tags_master(id, label)")
+      .eq("inventory_id", id),
   ]);
 
   if (!wish) notFound();
@@ -85,6 +91,12 @@ export default async function WishEditPage({
     .filter((c) => c.group_id && groupIds.has(c.group_id))
     .map((c) => ({ id: c.id, name: c.name, group_id: c.group_id! }));
 
+  // iter106: タグ取得
+  type TagRow = { tag: { id: string; label: string } | { id: string; label: string }[] | null };
+  const tags = ((tagRows as TagRow[]) ?? [])
+    .map((r) => (Array.isArray(r.tag) ? r.tag[0] : r.tag))
+    .filter((t): t is { id: string; label: string } => !!t);
+
   const initial: WishFormInitial = {
     groupId: (wish.group_id as string | null) ?? "",
     characterId: (wish.character_id as string | null) ?? "",
@@ -93,6 +105,7 @@ export default async function WishEditPage({
     quantity: (wish.quantity as number) ?? 1,
     note: (wish.description as string | null) ?? "",
     photoUrls: (wish.photo_urls as string[] | null) ?? [],
+    tags,
   };
 
   return (

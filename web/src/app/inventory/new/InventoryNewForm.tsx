@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveInventoryItem } from "@/app/inventory/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
+import { TagInput, type TagInputValue } from "@/components/common/TagInput";
+import { attachInventoryTag } from "@/lib/tags";
 
 type Master = { id: string; name: string };
 type CharacterMaster = { id: string; name: string; group_id: string };
@@ -40,6 +42,8 @@ export function InventoryNewForm({
   >("good");
   const [quantity, setQuantity] = useState(1);
   const [startCarrying, setStartCarrying] = useState(false);
+  // iter106: タグ
+  const [tags, setTags] = useState<TagInputValue[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +92,18 @@ export function InventoryNewForm({
       setError(result.error);
       return;
     }
+
+    // iter106: 在庫作成成功後、タグを attach
+    if (result?.id && tags.length > 0) {
+      for (const t of tags) {
+        const r = await attachInventoryTag(result.id, t.label);
+        if ("error" in r) {
+          // タグの失敗は致命的でないため警告のみ（在庫自体は登録済）
+          console.warn(`tag attach failed: ${t.label}`, r.error);
+        }
+      }
+    }
+
     router.push("/inventory");
   }
 
@@ -252,6 +268,22 @@ export function InventoryNewForm({
             </div>
           </Field>
         </div>
+      </Section>
+
+      {/* iter106: セクション: タグ（イベント名・シリーズ等。マッチング優先度に使う） */}
+      <Section title="タグ（任意）">
+        <Field
+          label="イベント名・シリーズ"
+          hint="（マッチ優先度に使われます）"
+        >
+          <TagInput
+            value={tags}
+            onChange={setTags}
+            max={5}
+            placeholder="例：LUMENA Debut Album、Type A など"
+            helperText="同じシリーズ・イベントの相手とマッチが上位に出やすくなります。表記揺れは曖昧マッチで吸収。"
+          />
+        </Field>
       </Section>
 
       {/* セクション: メモ */}

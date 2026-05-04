@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 type ActionResult = { error?: string } | undefined;
+/**
+ * iter106: 新規作成時の戻り値（クライアント側でタグ attach に使う id）
+ */
+type CreateResult = { error?: string; id?: string } | undefined;
 
 const VALID_CONDITIONS = ["sealed", "mint", "good", "fair", "poor"] as const;
 
@@ -126,7 +130,7 @@ export async function saveInventoryItem(input: {
   quantity: number;
   hue?: number;
   startCarrying?: boolean;
-}): Promise<ActionResult> {
+}): Promise<CreateResult> {
   const title = input.title.trim();
   if (!title || title.length > 100) {
     return { error: "タイトルは 1〜100 文字で入力してください" };
@@ -150,28 +154,33 @@ export async function saveInventoryItem(input: {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { error } = await supabase.from("goods_inventory").insert({
-    user_id: user.id,
-    kind: "for_trade",
-    group_id: input.groupId ?? null,
-    character_id: input.characterId ?? null,
-    goods_type_id: input.goodsTypeId,
-    title,
-    series: input.series?.trim() || null,
-    description: input.description?.trim() || null,
-    condition: input.condition ?? null,
-    quantity: input.quantity,
-    hue: input.hue ?? null,
-    photo_urls: [],
-    carrying: input.startCarrying ?? false,
-  });
+  // iter106: id を取得してクライアントでのタグ attach に使えるようにする
+  const { data: inserted, error } = await supabase
+    .from("goods_inventory")
+    .insert({
+      user_id: user.id,
+      kind: "for_trade",
+      group_id: input.groupId ?? null,
+      character_id: input.characterId ?? null,
+      goods_type_id: input.goodsTypeId,
+      title,
+      series: input.series?.trim() || null,
+      description: input.description?.trim() || null,
+      condition: input.condition ?? null,
+      quantity: input.quantity,
+      hue: input.hue ?? null,
+      photo_urls: [],
+      carrying: input.startCarrying ?? false,
+    })
+    .select("id")
+    .single();
 
   if (error) {
     return { error: error.message };
   }
 
   revalidatePath("/inventory");
-  return undefined;
+  return { id: (inserted as { id: string }).id };
 }
 
 // active / keep / traded / archived のステータス変更

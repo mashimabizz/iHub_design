@@ -10,6 +10,8 @@ import {
 } from "@/app/wishes/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { TagInput, type TagInputValue } from "@/components/common/TagInput";
+import { attachInventoryTag, syncInventoryTags, type AttachedTag } from "@/lib/tags";
 
 type Master = { id: string; name: string };
 type CharacterMaster = { id: string; name: string; group_id: string };
@@ -26,6 +28,8 @@ export type WishFormInitial = {
   quantity: number;
   note: string;
   photoUrls?: string[];
+  /** iter106: 編集時にロード済の既存タグ */
+  tags?: AttachedTag[];
 };
 
 export function WishNewForm({
@@ -57,6 +61,12 @@ export function WishNewForm({
   const [title, setTitle] = useState(initial?.title ?? "");
   const [quantity, setQuantity] = useState(initial?.quantity ?? 1);
   const [note, setNote] = useState(initial?.note ?? "");
+  // iter106: タグ
+  const initialTags: TagInputValue[] = (initial?.tags ?? []).map((t) => ({
+    id: t.id,
+    label: t.label,
+  }));
+  const [tags, setTags] = useState<TagInputValue[]>(initialTags);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -190,6 +200,28 @@ export function WishNewForm({
       setError(result.error);
       return;
     }
+
+    // iter106: タグ反映
+    //   - 新規 (mode=create)：result.id を使って attach
+    //   - 編集 (mode=edit)：syncInventoryTags で diff（追加/削除）
+    if (mode === "edit" && wishId) {
+      const existing = initial?.tags ?? [];
+      const r = await syncInventoryTags(wishId, tags, existing);
+      if (r.errors.length > 0) {
+        console.warn("tag sync warnings:", r.errors);
+      }
+    } else if (mode === "create") {
+      const newId = (result as { id?: string } | undefined)?.id;
+      if (newId && tags.length > 0) {
+        for (const t of tags) {
+          const r = await attachInventoryTag(newId, t.label);
+          if ("error" in r) {
+            console.warn(`tag attach failed: ${t.label}`, r.error);
+          }
+        }
+      }
+    }
+
     router.push("/wishes");
   }
 
@@ -376,6 +408,17 @@ export function WishNewForm({
             }}
           />
         </div>
+      </Section>
+
+      {/* iter106: タグ */}
+      <Section label="タグ（任意）" hint="マッチ優先度に使用">
+        <TagInput
+          value={tags}
+          onChange={setTags}
+          max={5}
+          placeholder="例：LUMENA Debut Album、Type A など"
+          helperText="同じシリーズ・イベントを探している相手とマッチが上位に出やすくなります。"
+        />
       </Section>
 
       {/* メモ */}
