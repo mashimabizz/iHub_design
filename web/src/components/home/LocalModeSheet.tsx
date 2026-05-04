@@ -344,14 +344,24 @@ export function LocalModeSheet({
       setError("場所を入力してください");
       return;
     }
+    // iter135: 開始時刻は適用した瞬間に強制
+    //   ユーザーがシート上で過去の時刻を入力していても、
+    //   「今すぐ現地交換モード」の趣旨に合わせて常に now に上書きする
+    const nowIso = new Date().toISOString();
+    // 終了時刻が now より前なら、now + 既存の duration（最低 30 分）に補正
+    const existingDurMs =
+      new Date(endAt).getTime() - new Date(startAt).getTime();
+    const minDurMs = 30 * 60_000;
+    const durMs = Math.max(minDurMs, existingDurMs);
+    const newEndIso = new Date(Date.now() + durMs).toISOString();
     startTransition(async () => {
       const r = await applyLocalModeAW({
         venue,
         centerLat: center[0],
         centerLng: center[1],
         radiusM,
-        startAt: isoToDatetimeLocal(startAt),
-        endAt: isoToDatetimeLocal(endAt),
+        startAt: isoToDatetimeLocal(nowIso),
+        endAt: isoToDatetimeLocal(newEndIso),
       });
       if (r?.error) {
         setError(r.error);
@@ -550,9 +560,9 @@ export function LocalModeSheet({
             </div>
           </Section>
 
-          {/* 時間 */}
+          {/* 時間（iter135: 開始時刻は常に「今」、ユーザーは duration のみ調整） */}
           <Section
-            title={`有効時間 / ${fmtTime(startAt)} 〜 ${fmtTime(endAt)} (${durationMin}分)`}
+            title={`有効時間 / 今すぐ開始 (${durationMin} 分)`}
           >
             <div className="mb-2 flex flex-wrap gap-1.5">
               {DURATION_OPTIONS.map((d) => {
@@ -578,22 +588,12 @@ export function LocalModeSheet({
               onClick={() => setShowAdvanced((v) => !v)}
               className="text-[10.5px] font-bold text-[#a695d8]"
             >
-              {showAdvanced ? "詳細を閉じる" : "開始時刻も指定する"}
+              {showAdvanced ? "詳細を閉じる" : "終了時刻を細かく指定"}
             </button>
             {showAdvanced && (
               <div className="mt-2 space-y-1.5">
-                <div>
-                  <div className="mb-0.5 text-[10px] font-bold text-[#3a324a8c]">
-                    開始
-                  </div>
-                  <input
-                    type="datetime-local"
-                    value={isoToDatetimeLocal(startAt)}
-                    onChange={(e) =>
-                      setStartAt(new Date(e.target.value).toISOString())
-                    }
-                    className="block w-full rounded-lg border border-[#3a324a14] bg-white px-2.5 py-1.5 text-[12px] text-gray-900 focus:border-[#a695d8] focus:outline-none"
-                  />
+                <div className="text-[10.5px] text-[#3a324a8c]">
+                  開始：適用した瞬間（自動）
                 </div>
                 <div>
                   <div className="mb-0.5 text-[10px] font-bold text-[#3a324a8c]">
