@@ -351,6 +351,8 @@ export function HomeView({
 
   // 現地モード state（DB から取得した初期値）
   const [sheetOpen, setSheetOpen] = useState(autoOpenLocalSheet);
+  /** iter133: 現地交換モード OFF 確認ダイアログ */
+  const [showOffConfirm, setShowOffConfirm] = useState(false);
   /**
    * iter129: 現地モード ON で開いた直後の sheet で、ユーザーが apply せず
    * close した場合に「全国」へ戻すための追跡フラグ
@@ -446,7 +448,27 @@ export function HomeView({
               マッチング
             </h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {/* iter133: 現地交換モード ON 時のみ chip 表示（タップで OFF 確認） */}
+            {isLocal && (
+              <button
+                type="button"
+                onClick={() => setShowOffConfirm(true)}
+                className="flex h-9 items-center gap-1.5 rounded-full border border-[#a695d855] bg-[#a695d80a] px-3 shadow-sm transition-colors active:bg-[#a695d814]"
+                aria-label="現地交換モードを OFF にする"
+              >
+                <span className="text-[11px] font-extrabold tracking-[0.3px] text-[#a695d8]">
+                  📍 現地交換モード
+                </span>
+                {/* 小さなトグル ON アイコン */}
+                <span
+                  aria-hidden="true"
+                  className="flex h-3.5 w-6 items-center rounded-full bg-[#a695d8] px-0.5"
+                >
+                  <span className="ml-auto block h-2.5 w-2.5 rounded-full bg-white" />
+                </span>
+              </button>
+            )}
             <Link
               href="/search"
               className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white shadow-sm"
@@ -550,6 +572,13 @@ export function HomeView({
                 {" · "}
                 持参 {settings.selectedCarryingIds.length} 件
               </div>
+              {/* iter133: 時間帯と残り時間表示 */}
+              {chosenAW && (
+                <ActiveAWTimeRow
+                  startAt={chosenAW.startAt}
+                  endAt={chosenAW.endAt}
+                />
+              )}
             </div>
             <button
               type="button"
@@ -666,6 +695,122 @@ export function HomeView({
         currentAW={currentAW}
         carryingItems={carryingItems}
       />
+
+      {/* iter133: 現地交換モード OFF 確認ダイアログ */}
+      {showOffConfirm && (
+        <ConfirmOffDialog
+          onCancel={() => setShowOffConfirm(false)}
+          onConfirm={() => {
+            setShowOffConfirm(false);
+            handleDisableLocal();
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+/* ─── iter133: AW の時間帯 + 残り時間表示 ─── */
+
+function ActiveAWTimeRow({
+  startAt,
+  endAt,
+}: {
+  startAt: string;
+  endAt: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  // 1 分ごとに残り時間を更新
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  const hh = (d: Date) =>
+    `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const remainMs = end.getTime() - now;
+  const beforeStart = now < start.getTime();
+
+  let remainText: string;
+  if (beforeStart) {
+    const minsToStart = Math.max(0, Math.floor((start.getTime() - now) / 60000));
+    if (minsToStart >= 60) {
+      remainText = `あと ${Math.floor(minsToStart / 60)}h ${minsToStart % 60}m で開始`;
+    } else {
+      remainText = `あと ${minsToStart} 分で開始`;
+    }
+  } else if (remainMs > 0) {
+    const mins = Math.floor(remainMs / 60000);
+    if (mins >= 60) {
+      remainText = `あと ${Math.floor(mins / 60)}h ${mins % 60}m で終了`;
+    } else {
+      remainText = `あと ${mins} 分で終了`;
+    }
+  } else {
+    remainText = "終了済み";
+  }
+
+  return (
+    <div className="mt-0.5 flex items-center gap-1 text-[11px] tabular-nums text-[#a695d8]">
+      <span>🕒</span>
+      <span className="font-bold">
+        {hh(start)} - {hh(end)}
+      </span>
+      <span className="text-[#3a324a8c]">·</span>
+      <span className={remainMs > 0 ? "font-extrabold" : ""}>{remainText}</span>
+    </div>
+  );
+}
+
+/* ─── iter133: 現地交換モード OFF 確認ダイアログ ─── */
+
+function ConfirmOffDialog({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 px-4 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm overflow-hidden rounded-[18px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 pt-4 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[20px]">📍</span>
+            <span className="text-[14px] font-extrabold text-[#3a324a]">
+              現地交換モードを OFF にしますか？
+            </span>
+          </div>
+          <div className="mt-2 text-[11.5px] leading-relaxed text-[#3a324a8c]">
+            全国交換モードに切り替わります。設定した場所・時間・持参グッズは
+            保存されたまま、いつでも再開できます。
+          </div>
+        </div>
+        <div className="flex gap-2 border-t border-[#3a324a08] bg-[#fbf9fc] px-4 py-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-[10px] border border-[#3a324a14] bg-white py-2.5 text-[12px] font-extrabold text-[#3a324a]"
+          >
+            このまま続ける
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 rounded-[10px] bg-[#3a324a] py-2.5 text-[12px] font-extrabold text-white shadow-[0_2px_6px_rgba(58,50,74,0.25)]"
+          >
+            OFF にする
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
