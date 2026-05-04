@@ -158,7 +158,7 @@ export default async function TransactionsPage() {
     for (const id of r.sender_have_ids ?? []) allInvIds.add(id);
     for (const id of r.receiver_have_ids ?? []) allInvIds.add(id);
   }
-  let invById = new Map<
+  const invById = new Map<
     string,
     { label: string; goodsTypeName: string | null }
   >();
@@ -252,7 +252,7 @@ export default async function TransactionsPage() {
         }}
       >
         {/* iter141: ヘッダーをプロフ画面と同じパターンに統一 */}
-        <div className="border-b border-[#3a324a14] bg-white px-[18px] pb-3 pt-12">
+        <div className="bg-white px-[18px] pb-3 pt-12">
           <div className="mx-auto flex max-w-md items-center justify-between">
             <h1 className="text-[19px] font-extrabold tracking-wide text-gray-900">
               取引

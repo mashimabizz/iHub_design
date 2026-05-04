@@ -71,8 +71,9 @@ export function TransactionsView({
 }: {
   transactions: TransactionRow[];
 }) {
-  const [tab, setTab] = useState<TabId>("ongoing");
+  const [tab, setTab] = useState<TabId>("pending");
   const [pastFilter, setPastFilter] = useState<PastFilter>("all");
+  const [now] = useState(() => Date.now());
 
   const grouped = useMemo(() => {
     const pending: TransactionRow[] = [];
@@ -186,17 +187,25 @@ export function TransactionsView({
         {/* 打診中 */}
         <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pt-3 pb-4">
           {grouped.pending.length === 0 ? (
-            <EmptyState tab="pending" />
+            <EmptyState tab="pending" active={tab === "pending"} />
           ) : (
-            <PendingList list={grouped.pending} />
+            <PendingList
+              list={grouped.pending}
+              active={tab === "pending"}
+              now={now}
+            />
           )}
         </div>
         {/* 進行中 */}
         <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pt-3 pb-4">
           {grouped.ongoing.length === 0 ? (
-            <EmptyState tab="ongoing" />
+            <EmptyState tab="ongoing" active={tab === "ongoing"} />
           ) : (
-            <OngoingList list={grouped.ongoing} />
+            <OngoingList
+              list={grouped.ongoing}
+              active={tab === "ongoing"}
+              now={now}
+            />
           )}
         </div>
         {/* 過去取引 */}
@@ -205,6 +214,7 @@ export function TransactionsView({
             list={grouped.past}
             filter={pastFilter}
             onFilterChange={setPastFilter}
+            active={tab === "past"}
           />
         </div>
       </div>
@@ -214,7 +224,15 @@ export function TransactionsView({
 
 /* ─── 打診中 ─── */
 
-function PendingList({ list }: { list: TransactionRow[] }) {
+function PendingList({
+  list,
+  active,
+  now,
+}: {
+  list: TransactionRow[];
+  active: boolean;
+  now: number;
+}) {
   return (
     <div className="mb-2">
       <div className="mb-2 text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
@@ -222,15 +240,21 @@ function PendingList({ list }: { list: TransactionRow[] }) {
         <span className="ml-1 font-normal text-[#3a324a4d]">· 新着順</span>
       </div>
       <div className="space-y-2">
-        {list.map((t) => (
-          <PendingCard key={t.id} t={t} />
+        {list.map((t, i) => (
+          <div
+            key={t.id}
+            className={active ? "animate-section-fade-down" : undefined}
+            style={active ? { animationDelay: `${i * 65}ms` } : undefined}
+          >
+            <PendingCard t={t} now={now} />
+          </div>
         ))}
       </div>
     </div>
   );
 }
 
-function PendingCard({ t }: { t: TransactionRow }) {
+function PendingCard({ t, now }: { t: TransactionRow; now: number }) {
   // ネゴ系はチャットへ直送、未応答 (sent) は受信側なら詳細ページへ
   const href =
     t.status === "negotiating" || t.status === "agreement_one_side"
@@ -253,7 +277,7 @@ function PendingCard({ t }: { t: TransactionRow }) {
     ? Math.max(
         0,
         Math.ceil(
-          (new Date(t.expiresAt).getTime() - Date.now()) /
+          (new Date(t.expiresAt).getTime() - now) /
             (1000 * 60 * 60 * 24),
         ),
       )
@@ -337,28 +361,42 @@ function PendingCard({ t }: { t: TransactionRow }) {
 
 /* ─── 進行中（合意済み）：合流時刻までのカウントダウン強調 ─── */
 
-function OngoingList({ list }: { list: TransactionRow[] }) {
+function OngoingList({
+  list,
+  active,
+  now,
+}: {
+  list: TransactionRow[];
+  active: boolean;
+  now: number;
+}) {
   return (
     <div>
       <div className="mb-2 text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
         進行中
       </div>
       <div className="space-y-2">
-        {list.map((t) => (
-          <OngoingCard key={t.id} t={t} />
+        {list.map((t, i) => (
+          <div
+            key={t.id}
+            className={active ? "animate-section-fade-down" : undefined}
+            style={active ? { animationDelay: `${i * 65}ms` } : undefined}
+          >
+            <OngoingCard t={t} now={now} />
+          </div>
         ))}
       </div>
     </div>
   );
 }
 
-function OngoingCard({ t }: { t: TransactionRow }) {
+function OngoingCard({ t, now }: { t: TransactionRow; now: number }) {
   const meetupSummary =
     t.meetupStartAt && t.meetupEndAt
       ? formatRange(t.meetupStartAt, t.meetupEndAt)
       : "—";
   const countdown = t.meetupStartAt
-    ? formatCountdown(t.meetupStartAt)
+    ? formatCountdown(t.meetupStartAt, now)
     : null;
   const isImminent = !!t.meetupStartAt && countdown?.startsWith("合流");
 
@@ -439,10 +477,12 @@ function PastView({
   list,
   filter,
   onFilterChange,
+  active,
 }: {
   list: TransactionRow[];
   filter: PastFilter;
   onFilterChange: (f: PastFilter) => void;
+  active: boolean;
 }) {
   // フィルタ counts
   const filterCounts = useMemo(() => {
@@ -480,7 +520,7 @@ function PastView({
     return Array.from(groups.entries());
   }, [filtered]);
 
-  if (list.length === 0) return <EmptyState tab="past" />;
+  if (list.length === 0) return <EmptyState tab="past" active={active} />;
 
   return (
     <div>
@@ -523,11 +563,16 @@ function PastView({
 
       {/* 月別セクション */}
       {monthlyGroups.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c]">
+        <div
+          className={`rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c] ${
+            active ? "animate-section-fade-down" : ""
+          }`}
+          style={active ? { animationDelay: "65ms" } : undefined}
+        >
           該当する取引がありません
         </div>
       ) : (
-        monthlyGroups.map(([monthLabel, items]) => (
+        monthlyGroups.map(([monthLabel, items], monthIndex) => (
           <div key={monthLabel} className="mb-4">
             <div className="mb-2 flex items-baseline justify-between px-1">
               <span className="text-[11px] font-bold tracking-[0.4px] text-[#3a324a]">
@@ -536,8 +581,18 @@ function PastView({
               <span className="text-[10px] text-[#3a324a8c]">新着順</span>
             </div>
             <div className="space-y-1.5">
-              {items.map((t) => (
-                <PastCard key={t.id} t={t} />
+              {items.map((t, i) => (
+                <div
+                  key={t.id}
+                  className={active ? "animate-section-fade-down" : undefined}
+                  style={
+                    active
+                      ? { animationDelay: `${(monthIndex + i) * 55}ms` }
+                      : undefined
+                  }
+                >
+                  <PastCard t={t} />
+                </div>
               ))}
             </div>
           </div>
@@ -611,7 +666,7 @@ function PastCard({ t }: { t: TransactionRow }) {
 
 /* ─── empty state ─── */
 
-function EmptyState({ tab }: { tab: TabId }) {
+function EmptyState({ tab, active = true }: { tab: TabId; active?: boolean }) {
   const msg =
     tab === "pending"
       ? "打診中の取引はありません"
@@ -619,7 +674,11 @@ function EmptyState({ tab }: { tab: TabId }) {
         ? "進行中の取引はありません（合意済の打診がここに表示されます）"
         : "過去の取引はまだありません";
   return (
-    <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c]">
+    <div
+      className={`rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c] ${
+        active ? "animate-section-fade-down" : ""
+      }`}
+    >
       {msg}
     </div>
   );
@@ -643,9 +702,8 @@ function formatRange(startIso: string, endIso: string): string {
     : `${dateFmt(s)} ${timeFmt(s)} 〜 ${dateFmt(e)}`;
 }
 
-function formatCountdown(startIso: string): string {
+function formatCountdown(startIso: string, now: number): string {
   const start = new Date(startIso).getTime();
-  const now = Date.now();
   const diffMs = start - now;
   if (diffMs <= 0) {
     const mins = Math.floor((now - start) / 60_000);

@@ -4,6 +4,59 @@
 
 ---
 
+## イテレーション151.7：取引一覧の初期タブと表示アニメーションを修正
+
+### 背景・問題意識
+
+オーナーから、取引一覧画面について以下の指摘があった。
+
+- 初期画面は「打診中」のはずだが、画面上部では「進行中」が選択されている表示になっている
+- 「取引」ヘッダーと「打診中 / 進行中 / 過去取引」タブヘッダーの間に少し溝があり不自然
+- それぞれのパネルが、プロフ画面のコンポーネントと同様に最初に現れる時に表示されてほしい
+
+原因は `TransactionsView` の初期タブ state が `ongoing` になっていたこと。横スクロールの先頭は打診中だが、選択状態だけ進行中を指していた。また、上位の「取引」ヘッダーに border があり、直下のタブヘッダーとの境目が二段の区切りに見えていた。
+
+### 変更内容
+
+#### `web/src/app/transactions/TransactionsView.tsx`
+- 初期タブを `ongoing` から `pending` に修正。
+- `PendingList` / `OngoingList` / `PastView` に active 状態を渡し、表示中のタブだけカードへ `animate-section-fade-down` を付けるようにした。
+- カードごとに `animationDelay` を付け、プロフ画面と同じ上からふわっと現れるスタガー表示にした。
+- EmptyState も表示中タブでは同じ fade-down を使うようにした。
+- React 19 purity rule に合わせ、`Date.now()` を render 中に呼ばず、初期 state の `now` をカードへ渡す形に整理。
+
+#### `web/src/app/transactions/page.tsx`
+- 「取引」ヘッダーの下 border を削除し、タブヘッダーと白背景が連続して見えるようにした。
+- `invById` を `const` に変更し、対象 lint を通した。
+
+### 影響範囲
+
+- `/transactions` 取引一覧
+- 打診中 / 進行中 / 過去取引のタブ選択表示
+- 取引一覧カードの初期表示アニメーション
+
+### 確認方法
+
+- `npx eslint src/app/transactions/TransactionsView.tsx src/app/transactions/page.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/transactions/TransactionsView.tsx`
+- `web/src/app/transactions/page.tsx`
+
+### セルフレビュー結果
+
+- ✅ 初期選択タブは「打診中」
+- ✅ 取引ヘッダーとタブヘッダーの間の余計な区切りを削除
+- ✅ 取引カード / 空状態にプロフ画面と同じ `animate-section-fade-down` を適用
+- ✅ `notes/09_state_machines.md` は状態変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象ファイル ESLint / build 成功
+
+---
+
 ## イテレーション151.6：現地マッチを外周オーラ表現へ変更
 
 ### 背景・問題意識
