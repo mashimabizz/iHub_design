@@ -1,8 +1,25 @@
 "use client";
 
+/**
+ * iter143：WISH 画面を 2 タブ swipe + パネル形式に再設計。
+ *
+ * - Tab 1「WISH」：マイ在庫と同じ 3 カラム panel グリッド
+ *   - 個別募集に紐付けされていない wish には「未紐付け」バッジ + 個別募集作成導線
+ *   - 紐付けされている wish には「個別募集 N件」バッジ
+ * - Tab 2「個別募集」：既存 ListingsView を再利用
+ * - 「マッチ X件 検出中」バナーは廃止（ノイズになっていた）
+ */
+
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteWishItem } from "./actions";
+import { ListingsView, type ListingItem } from "../listings/ListingsView";
+
+export type WishLink = {
+  listingId: string;
+  status: "active" | "paused" | "matched" | "closed";
+};
 
 export type WishItem = {
   id: string;
@@ -15,21 +32,168 @@ export type WishItem = {
   flexLevel: "exact" | "character_any" | "series_any" | null;
   exchangeType: "same_kind" | "cross_kind" | "any";
   quantity: number;
+  /** 0–360（ItemCard と同じ着色基準） */
+  hue: number;
   createdAt: string; // ISO
-  /** iter84: 同条件の他ユーザー出品数 */
-  matchCount: number;
-  /** iter94: メイン画像 URL */
+  /** メイン画像 URL */
   photoUrl: string | null;
+  /** iter143: 紐付け中の個別募集（active/paused/matched） */
+  linkedListings: WishLink[];
 };
 
-// iter67.3 で復活した EXCHANGE_LABEL は iter67.5 で再削除
-// （wish レベルの exchange_type は使わない設計に統一）
+type Tab = "wish" | "listings";
+const TAB_IDS: Tab[] = ["wish", "listings"];
 
-export function WishView({ items }: { items: WishItem[] }) {
+export function WishView({
+  wishItems,
+  listingItems,
+}: {
+  wishItems: WishItem[];
+  listingItems: ListingItem[];
+}) {
+  const [tab, setTab] = useState<Tab>("wish");
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // スワイプ位置 → タブ同期（debounce 付き）
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    let frame: number | null = null;
+    function onScroll() {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (!container) return;
+        const idx = Math.round(container.scrollLeft / container.clientWidth);
+        const next = TAB_IDS[idx];
+        if (next && next !== tab) setTab(next);
+      });
+    }
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [tab]);
+
+  function selectTab(target: Tab) {
+    setTab(target);
+    const container = scrollRef.current;
+    if (!container) return;
+    const idx = TAB_IDS.indexOf(target);
+    container.scrollTo({
+      left: idx * container.clientWidth,
+      behavior: "smooth",
+    });
+  }
+
+  return (
+    <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
+      {/* ヘッダー（プロフ画面と同じパターン） */}
+      <div className="border-b border-[#3a324a14] bg-white px-[18px] pb-3 pt-12">
+        <div className="mx-auto flex max-w-md items-center justify-between">
+          <h1 className="text-[19px] font-extrabold tracking-wide text-gray-900">
+            ウィッシュ
+          </h1>
+          {tab === "wish" ? (
+            <Link
+              href="/wishes/new"
+              className="flex h-9 items-center gap-1.5 rounded-full bg-[#a695d8] px-3.5 text-[11px] font-bold text-white transition-all duration-150 active:scale-[0.97]"
+            >
+              <PlusIcon />
+              wish を追加
+            </Link>
+          ) : (
+            <Link
+              href="/listings/new"
+              className="flex h-9 items-center gap-1.5 rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3.5 text-[11px] font-bold text-white shadow-[0_4px_10px_rgba(166,149,216,0.31)] transition-all duration-150 active:scale-[0.97]"
+            >
+              <PlusIcon />
+              募集を追加
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* タブバー */}
+      <div className="mx-auto w-full max-w-md px-4 pt-2.5">
+        <div className="flex gap-1">
+          <TabButton
+            active={tab === "wish"}
+            label="WISH"
+            count={wishItems.length}
+            onClick={() => selectTab("wish")}
+            color="#a695d8"
+          />
+          <TabButton
+            active={tab === "listings"}
+            label="個別募集"
+            count={listingItems.length}
+            onClick={() => selectTab("listings")}
+            color="#a8d4e6"
+          />
+        </div>
+      </div>
+
+      {/* スワイプコンテナ */}
+      <div
+        ref={scrollRef}
+        className="mx-auto flex w-full max-w-md flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
+        style={{ scrollbarWidth: "none" }}
+      >
+        <WishPanel items={wishItems} />
+        <ListingsPanel items={listingItems} />
+      </div>
+    </main>
+  );
+}
+
+function TabButton({
+  active,
+  label,
+  count,
+  onClick,
+  color,
+}: {
+  active: boolean;
+  label: string;
+  count: number;
+  onClick: () => void;
+  color: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex flex-1 items-center justify-center gap-1 rounded-xl py-2 transition-all ${
+        active
+          ? "border-[1.5px] border-solid bg-white"
+          : "border-[0.5px] border-solid border-[#3a324a14] bg-[#3a324a08]"
+      }`}
+      style={{ borderColor: active ? color : undefined }}
+    >
+      <span
+        className={`text-[12px] ${
+          active
+            ? "font-extrabold text-gray-900"
+            : "font-semibold text-gray-500"
+        }`}
+      >
+        {label}
+      </span>
+      <span
+        className="text-[10px] font-bold tabular-nums"
+        style={{ color: active ? color : "#6b6478" }}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
+/* ─── Tab 1: WISH パネル一覧 ───────────────────────────── */
+
+function WishPanel({ items }: { items: WishItem[] }) {
   const router = useRouter();
-  const filtered = items;
-  // iter84: 全 wish の合計マッチ数
-  const totalMatches = items.reduce((s, w) => s + (w.matchCount ?? 0), 0);
 
   async function handleDelete(id: string) {
     if (!confirm("このウィッシュを削除しますか？")) return;
@@ -41,216 +205,231 @@ export function WishView({ items }: { items: WishItem[] }) {
     }
   }
 
-  function daysSince(iso: string): number {
-    const diffMs = Date.now() - new Date(iso).getTime();
-    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-  }
-
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
-      {/* ヘッダー */}
-      <div className="border-b border-[#3a324a14] bg-white px-[18px] pb-3 pt-12">
-        <div className="mx-auto flex max-w-md items-start justify-between">
-          <div>
-            <h1 className="text-[19px] font-extrabold tracking-wide text-gray-900">
-              ウィッシュ
-            </h1>
-            <p className="mt-0.5 text-[11px] text-gray-500">
-              探したいグッズを管理 ·{" "}
-              <span className="tabular-nums">{items.length}</span>件登録 ·{" "}
-              <Link href="/listings" className="font-bold text-[#a695d8]">
-                個別募集 →
-              </Link>
-            </p>
-          </div>
+    <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pb-4 pt-3">
+      {items.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
+          まだ wish がありません
+          <br />
           <Link
             href="/wishes/new"
-            className="flex h-9 items-center gap-1.5 rounded-full bg-[#a695d8] px-3.5 text-[11px] font-bold text-white transition-all duration-150 active:scale-[0.97]"
+            className="mt-2 inline-block font-bold text-[#a695d8]"
           >
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 11 11"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
-              <path d="M5.5 1v9M1 5.5h9" />
-            </svg>
-            追加
+            + 探したいグッズを登録
           </Link>
         </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-2.5">
+          <AddCard href="/wishes/new" />
+          {items.map((w) => (
+            <WishCardWrapper
+              key={w.id}
+              item={w}
+              onDelete={() => handleDelete(w.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Tab 2: 個別募集（既存 ListingsView を流用） ───────── */
+
+function ListingsPanel({ items }: { items: ListingItem[] }) {
+  return (
+    <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pb-4 pt-3">
+      <ListingsView items={items} />
+    </div>
+  );
+}
+
+/* ─── WISH パネル（マイ在庫の ItemCard と同じ 3:4） ─────── */
+
+function WishCardWrapper({
+  item,
+  onDelete,
+}: {
+  item: WishItem;
+  onDelete: () => void;
+}) {
+  const [showMenu, setShowMenu] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setShowMenu(!showMenu)}
+        className="block w-full"
+      >
+        <WishCard item={item} />
+      </button>
+      {showMenu && (
+        <div className="absolute inset-0 z-10 flex flex-col items-stretch justify-center gap-1.5 rounded-xl bg-black/70 p-2">
+          <Link
+            href={`/wishes/${item.id}/edit`}
+            className="rounded-lg bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-1.5 text-center text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
+          >
+            編集する
+          </Link>
+          {/* iter143: いつでも個別募集の追加を可能にする
+              （既に紐付け済でも、別条件の追加募集を作れるように） */}
+          <Link
+            href={`/listings/new?wishId=${item.id}`}
+            className="rounded-lg bg-white py-1.5 text-center text-[10px] font-bold text-gray-900"
+          >
+            {item.linkedListings.length === 0
+              ? "個別募集を作る"
+              : "+ 個別募集を追加"}
+          </Link>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(false);
+              onDelete();
+            }}
+            className="rounded-lg bg-red-500/90 py-1.5 text-[10px] font-bold text-white"
+          >
+            削除
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(false);
+            }}
+            className="rounded-lg bg-black/30 py-1.5 text-[10px] font-bold text-white"
+          >
+            閉じる
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WishCard({ item }: { item: WishItem }) {
+  const memberLabel = item.characterName ?? item.groupName ?? "?";
+  const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 82%) 6px 11px)`;
+  const memberLabelColor = `hsl(${item.hue}, 35%, 28%)`;
+  const initialShadow = `0 2px 6px hsla(${item.hue}, 30%, 30%, 0.4)`;
+  const hasPhoto = !!item.photoUrl;
+  const linkedCount = item.linkedListings.length;
+  const isUnlinked = linkedCount === 0;
+
+  return (
+    <div
+      className="relative block overflow-hidden rounded-xl border border-[#3a324a14] shadow-[0_2px_6px_rgba(58,50,74,0.08)]"
+      style={{
+        aspectRatio: "3 / 4",
+        background: hasPhoto ? "#3a324a" : stripeBg,
+      }}
+    >
+      {/* 写真（存在時） */}
+      {hasPhoto && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.photoUrl!}
+          alt={memberLabel}
+          className="absolute inset-0 h-full w-full object-cover"
+          loading="lazy"
+        />
+      )}
+
+      {/* 上部：左にメンバー名 / 右に紐付けバッジ */}
+      <div className="absolute inset-x-1.5 top-1.5 z-10 flex items-start justify-between gap-1">
+        <div
+          className={`min-w-0 truncate rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
+            hasPhoto ? "bg-black/55 text-white backdrop-blur-sm" : "bg-white/85"
+          }`}
+          style={hasPhoto ? undefined : { color: memberLabelColor }}
+        >
+          {memberLabel}
+        </div>
+        {isUnlinked ? (
+          <span className="flex-shrink-0 rounded-md bg-[#d9826b] px-1.5 py-0.5 text-[8.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_4px_rgba(217,130,107,0.35)]">
+            未紐付け
+          </span>
+        ) : (
+          <span className="flex-shrink-0 rounded-md bg-[#a695d8] px-1.5 py-0.5 text-[8.5px] font-extrabold tabular-nums tracking-[0.3px] text-white shadow-[0_2px_4px_rgba(166,149,216,0.35)]">
+            募集 {linkedCount}
+          </span>
+        )}
       </div>
 
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-[18px] pt-3.5">
-        {/* マッチサマリーバナー（マッチ数は将来 iter63 で実データ） */}
-        <div className="mb-3.5 flex items-center gap-3 rounded-2xl border border-[#a695d830] bg-[linear-gradient(135deg,#a695d81a,#a8d4e61a)] px-3.5 py-3">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-white">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="#a695d8"
-              strokeWidth="1.6"
-              strokeLinejoin="round"
-            >
-              <path d="M10 17l-1-1c-3.5-3-6-5-6-8a3.5 3.5 0 016-2.5A3.5 3.5 0 0117 8c0 3-2.5 5-6 8l-1 1z" />
-            </svg>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[12.5px] font-extrabold text-gray-900">
-              マッチ <span className="text-[#a695d8]">{totalMatches} 件</span> 検出中
-            </div>
-            <div className="text-[10.5px] text-gray-500">
-              {items.length === 0
-                ? "ウィッシュを登録するとマッチが表示されます"
-                : `${items.length} 件のウィッシュ・条件に合う出品を集計中`}
-            </div>
-          </div>
-          <Link
-            href="/"
-            className="flex-shrink-0 rounded-[10px] bg-[#a695d8] px-3 py-1.5 text-[11px] font-bold text-white transition-all active:scale-[0.97]"
-          >
-            ホームで見る
-          </Link>
+      {/* 中央：イニシャル（写真なしのみ） */}
+      {!hasPhoto && (
+        <div
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[28px] font-extrabold text-white/90"
+          style={{ textShadow: initialShadow }}
+        >
+          {memberLabel[0]}
         </div>
+      )}
 
-        {/* 優先度フィルタは iter65.7 で廃止（priority 区分がなくなったため） */}
-
-        {/* Wish カード一覧 */}
-        <div className="space-y-2.5">
-          {filtered.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
-              {items.length === 0 ? (
-                <>
-                  まだウィッシュがありません
-                  <br />
-                  <Link
-                    href="/wishes/new"
-                    className="mt-2 inline-block font-bold text-[#a695d8]"
-                  >
-                    + 探したいグッズを登録
-                  </Link>
-                </>
-              ) : (
-                <>該当するウィッシュがありません</>
-              )}
+      {/* 下部ストリップ：種別 + 数量 */}
+      <div
+        className="absolute bottom-0 left-0 right-0 flex items-end justify-between px-1.5 pb-1.5 pt-1"
+        style={{
+          background:
+            "linear-gradient(180deg, transparent, rgba(255,255,255,0.95))",
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[10px] font-bold leading-tight text-gray-900">
+            {item.goodsTypeName}
+          </div>
+          {item.groupName && item.characterName && (
+            <div className="mt-0.5 truncate text-[8.5px] leading-tight text-gray-500">
+              {item.groupName}
             </div>
-          ) : (
-            filtered.map((w) => {
-              // iter84: マッチ数 5 件以上で HOT、1〜4 はマッチあり
-              const hot = w.matchCount >= 5;
-              const hasMatch = w.matchCount > 0;
-              return (
-                <div
-                  key={w.id}
-                  className={`overflow-hidden rounded-2xl border bg-white ${
-                    hot
-                      ? "border-[#a695d855] shadow-[0_6px_16px_rgba(166,149,216,0.20)]"
-                      : "border-[#3a324a14]"
-                  }`}
-                >
-                  <Link
-                    href={`/wishes/${w.id}/edit`}
-                    className="block flex gap-3 p-3.5 active:scale-[0.99]"
-                  >
-                    {/* サムネ（iter94: 画像登録あれば実画像、なければ IMG プレースホルダ） */}
-                    <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-[10px] border border-[#3a324a14] bg-[linear-gradient(135deg,#a695d833,#a8d4e633)]">
-                      {w.photoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={w.photoUrl}
-                          alt={w.title}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <span className="text-[11px] font-extrabold text-[#a695d8]">
-                            IMG
-                          </span>
-                        </div>
-                      )}
-                      {hot && (
-                        <span className="absolute -right-1 -top-1 rounded-full bg-[#d9826b] px-1.5 py-[2px] text-[8.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_4px_rgba(217,130,107,0.35)]">
-                          HOT
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      {/* タイトル */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="text-[13px] font-extrabold text-gray-900">
-                            {w.title}
-                          </div>
-                          <div className="mt-0.5 text-[10.5px] text-gray-500">
-                            {w.goodsTypeName}・{w.groupName ?? ""}
-                            {w.characterName ? ` / ${w.characterName}` : ""}
-                            {w.quantity > 1 ? ` · ×${w.quantity}` : ""}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDelete(w.id);
-                          }}
-                          className="flex-shrink-0 text-[10px] text-gray-400 hover:text-red-500"
-                        >
-                          削除
-                        </button>
-                      </div>
-
-                      {/* 探し中ステータス + マッチ数 */}
-                      <div
-                        className={`mt-2 rounded-lg px-2.5 py-1.5 text-[10.5px] leading-snug ${
-                          hasMatch
-                            ? "bg-[#a695d80f]"
-                            : "bg-[#3a324a08]"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
-                              hasMatch ? "bg-[#a695d8]" : "bg-gray-400"
-                            } ${hasMatch ? "animate-pulse" : ""}`}
-                          />
-                          <span
-                            className={`font-extrabold ${
-                              hasMatch ? "text-[#a695d8]" : "text-gray-500"
-                            }`}
-                          >
-                            {hasMatch
-                              ? `探し中 · ${daysSince(w.createdAt)}日前から`
-                              : `探し中 · まだマッチなし · ${daysSince(w.createdAt)}日前から`}
-                          </span>
-                        </div>
-                        {hasMatch && (
-                          <div className="mt-0.5 pl-[10px] text-[#3a324a]">
-                            マッチ <b>{w.matchCount}件</b>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* メモ */}
-                      {w.note && (
-                        <div className="mt-1.5 italic text-[10.5px] leading-snug text-gray-500">
-                          ”{w.note}”
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-                </div>
-              );
-            })
           )}
         </div>
+        {item.quantity > 1 && (
+          <div className="flex-shrink-0 rounded-md bg-[#a695d8] px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums text-white">
+            ×{item.quantity}
+          </div>
+        )}
       </div>
-    </main>
+    </div>
+  );
+}
+
+function AddCard({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-[#a695d888] bg-white text-[#a695d8] transition-all duration-150 active:scale-[0.97]"
+      style={{ aspectRatio: "3 / 4" }}
+    >
+      <svg
+        width="28"
+        height="28"
+        viewBox="0 0 28 28"
+        fill="none"
+        stroke="#a695d8"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      >
+        <path d="M14 4v20M4 14h20" />
+      </svg>
+      <span className="text-[10px] font-bold tracking-wide">追加</span>
+    </a>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 11 11"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <path d="M5.5 1v9M1 5.5h9" />
+    </svg>
   );
 }

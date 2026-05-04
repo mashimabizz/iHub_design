@@ -8,7 +8,17 @@ export const metadata = {
   title: "個別募集を追加 — iHub",
 };
 
-export default async function ListingNewPage() {
+type Props = {
+  searchParams: Promise<{
+    /** iter143: WISH 画面の「未紐付け」から飛んできた時のプリセット wish */
+    wishId?: string;
+  }>;
+};
+
+export default async function ListingNewPage({ searchParams }: Props) {
+  const params = await searchParams;
+  const preselectWishId = params.wishId ?? null;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -183,6 +193,7 @@ export default async function ListingNewPage() {
           inventoryGoodsTypes={inventoryGoodsTypes}
           wishGroups={wishGroups}
           wishGoodsTypes={wishGoodsTypes}
+          preselectWishId={preselectWishId}
         />
       </div>
     </main>

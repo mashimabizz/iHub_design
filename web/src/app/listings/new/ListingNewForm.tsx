@@ -90,6 +90,7 @@ export function ListingNewForm({
   mode = "create",
   listingId,
   initialValues,
+  preselectWishId,
 }: {
   inventoryItems: InventoryOpt[];
   wishItems: WishOpt[];
@@ -105,15 +106,28 @@ export function ListingNewForm({
   listingId?: string;
   /** edit モード時の初期値 */
   initialValues?: ListingFormInitialValues;
+  /**
+   * iter143：WISH 画面から「未紐付け wish を募集化」で飛んできた時のプリセット。
+   * 求側選択肢 #1 にこの wish を選択済みでスタートする。
+   * その wish の group/goodsType も合わせて prefill する。
+   */
+  preselectWishId?: string | null;
 }) {
+  // iter143：preselect wish を解決（initialValues 未指定 = 新規作成時のみ有効）
+  const preselectWish =
+    !initialValues && preselectWishId
+      ? wishItems.find((w) => w.id === preselectWishId) ?? null
+      : null;
   const router = useRouter();
 
   /* ─ 譲側 ─ */
+  // iter143：preselectWish があれば、譲側 group/goodsType も wish と同じものをデフォルトにする
+  //         （多くの場合、同 group・同種別で character 違いの交換になるため）
   const [haveGroupId, setHaveGroupId] = useState<string | null>(
-    initialValues?.haveGroupId ?? null,
+    initialValues?.haveGroupId ?? preselectWish?.groupId ?? null,
   );
   const [haveGoodsTypeId, setHaveGoodsTypeId] = useState<string | null>(
-    initialValues?.haveGoodsTypeId ?? null,
+    initialValues?.haveGoodsTypeId ?? preselectWish?.goodsTypeId ?? null,
   );
   const [selectedHaves, setSelectedHaves] = useState<SelectedItem[]>(
     initialValues?.selectedHaves ?? [],
@@ -137,18 +151,33 @@ export function ListingNewForm({
       isCashOffer: o.isCashOffer,
       cashAmount: o.cashAmount,
     })) ?? [
-      {
-        position: 1,
-        groupId: null,
-        goodsTypeId: null,
-        groupCustomized: false,
-        goodsTypeCustomized: false,
-        selected: [],
-        logic: "or",
-        exchangeType: "any",
-        isCashOffer: false,
-        cashAmount: null,
-      },
+      // iter143：preselectWish があれば求側 #1 にプリセット
+      preselectWish
+        ? {
+            position: 1,
+            groupId: preselectWish.groupId,
+            goodsTypeId: preselectWish.goodsTypeId,
+            // user が wish 選択時にこの group/goodsType を選んだものとみなす
+            groupCustomized: true,
+            goodsTypeCustomized: true,
+            selected: [{ id: preselectWish.id, qty: 1 }],
+            logic: "or",
+            exchangeType: "any",
+            isCashOffer: false,
+            cashAmount: null,
+          }
+        : {
+            position: 1,
+            groupId: null,
+            goodsTypeId: null,
+            groupCustomized: false,
+            goodsTypeCustomized: false,
+            selected: [],
+            logic: "or",
+            exchangeType: "any",
+            isCashOffer: false,
+            cashAmount: null,
+          },
     ],
   );
 
