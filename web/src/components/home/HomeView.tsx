@@ -591,8 +591,12 @@ export function HomeView({
                   // 既に現地 view → sheet を開いて設定変更
                   setSheetOpen(true);
                 }
+              } else if (currentAW) {
+                // iter142.1: AW 設定済 + 現地 OFF → 即時 ON（chip と同じ挙動）
+                //   sheet を開かない・revert flag も立てない
+                handleQuickReenable();
               } else {
-                // 初回セットアップ
+                // 初回セットアップ（AW 未設定 → sheet 必須）
                 handleEnableLocal();
               }
             }}
