@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   applyLocalModeAW,
   resetLocalModeSelections,
@@ -96,6 +96,57 @@ function isoToDatetimeLocal(iso: string): string {
 
 const FALLBACK_CENTER: [number, number] = [35.6595, 139.7005];
 
+/* iter132: シート内 draft（localStorage 保存）─ グッズ選択画面など別画面に
+   行って戻ってくる時のフォーム途中状態を引き継ぐため */
+const DRAFT_KEY = "ihub:localModeSheet:draft";
+const DRAFT_TTL_MS = 30 * 60 * 1000; // 30 分
+
+type SheetDraft = {
+  venue: string;
+  centerLat: number;
+  centerLng: number;
+  radiusM: number;
+  startAt: string;
+  endAt: string;
+  savedAt: number;
+};
+
+function saveDraft(draft: Omit<SheetDraft, "savedAt">) {
+  if (typeof window === "undefined") return;
+  try {
+    const full: SheetDraft = { ...draft, savedAt: Date.now() };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(full));
+  } catch {
+    // localStorage が使えない場合は黙って無視
+  }
+}
+
+function loadDraft(): SheetDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SheetDraft;
+    if (typeof parsed.savedAt !== "number") return null;
+    if (Date.now() - parsed.savedAt > DRAFT_TTL_MS) {
+      localStorage.removeItem(DRAFT_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * 現地交換モード設定シート — iter65.8 でリッチ化。
  *
@@ -144,21 +195,81 @@ export function LocalModeSheet({
   const [geolocating, setGeolocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // iter132: グッズ選択画面への navigation 用
+  const router = useRouter();
   const [resetting, startReset] = useTransition();
 
-  // open のたびに DB 値で再初期化
+  // iter132: ユーザーが venue を手入力中なら center 変化で上書きしない
+  const venueManuallyEditedRef = useRef(false);
+
+  // iter132: open のたびに draft → DB 値の順で再初期化
+  //   draft（localStorage）：グッズ選択画面など別画面に行って戻ってきた時の途中状態
+  //   draft が無ければ DB 値（currentAW）を使う
   useEffect(() => {
     if (open) {
-      setVenue(currentAW?.venue ?? "");
-      if (currentAW?.centerLat && currentAW?.centerLng) {
-        setCenter([currentAW.centerLat, currentAW.centerLng]);
+      const draft = loadDraft();
+      if (draft) {
+        setVenue(draft.venue);
+        setCenter([draft.centerLat, draft.centerLng]);
+        setRadiusM(draft.radiusM);
+        setStartAt(draft.startAt);
+        setEndAt(draft.endAt);
+        venueManuallyEditedRef.current = !!draft.venue;
+      } else {
+        setVenue(currentAW?.venue ?? "");
+        if (currentAW?.centerLat && currentAW?.centerLng) {
+          setCenter([currentAW.centerLat, currentAW.centerLng]);
+        }
+        setRadiusM(currentAW?.radiusM ?? initial.radiusM);
+        setStartAt(currentAW?.startAt ?? new Date().toISOString());
+        setEndAt(currentAW?.endAt ?? nowPlusMinutesISO(120));
+        venueManuallyEditedRef.current = !!currentAW?.venue;
       }
-      setRadiusM(currentAW?.radiusM ?? initial.radiusM);
-      setStartAt(currentAW?.startAt ?? new Date().toISOString());
-      setEndAt(currentAW?.endAt ?? nowPlusMinutesISO(120));
       setError(null);
     }
   }, [open, initial, currentAW]);
+
+  // iter132: center 変化で reverse geocode → 自動で venue を埋める
+  //   ただし「ユーザーが venue を手入力済」の場合は上書きしない
+  useEffect(() => {
+    if (!open) return;
+    if (venueManuallyEditedRef.current) return;
+    const lat = center[0];
+    const lng = center[1];
+    if (!isFinite(lat) || !isFinite(lng)) return;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/geocode?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lng))}`,
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as
+          | { display_name?: string; address?: Record<string, string> }
+          | { error: string };
+        if ("error" in data) return;
+        const addr = data.address ?? {};
+        // address parts から場所名候補を組み立て
+        const candidate =
+          addr.attraction ||
+          addr.tourism ||
+          addr.amenity ||
+          addr.building ||
+          addr.shop ||
+          addr.station ||
+          [addr.city, addr.suburb, addr.neighbourhood]
+            .filter(Boolean)
+            .join(" ") ||
+          data.display_name?.split(",").slice(0, 2).join("、") ||
+          "";
+        if (candidate && !venueManuallyEditedRef.current) {
+          setVenue(candidate);
+        }
+      } catch {
+        // ignore
+      }
+    }, 600); // debounce
+    return () => clearTimeout(t);
+  }, [center, open]);
 
   // body scroll lock
   useEffect(() => {
@@ -247,6 +358,8 @@ export function LocalModeSheet({
         return;
       }
       // iter129: 適用成功を親に通知してから閉じる
+      // iter132: 適用成功なら draft を消す
+      clearDraft();
       onApplied?.();
       onClose();
     });
@@ -405,12 +518,15 @@ export function LocalModeSheet({
               </div>
             </div>
 
-            {/* 場所名 */}
+            {/* 場所名（iter132: 手入力中は center 変化での自動上書きを止める） */}
             <input
               type="text"
               value={venue}
-              onChange={(e) => setVenue(e.target.value)}
-              placeholder="場所の名前（例: 渋谷駅周辺）"
+              onChange={(e) => {
+                setVenue(e.target.value);
+                venueManuallyEditedRef.current = true;
+              }}
+              placeholder="場所を選ぶと自動で入ります（手入力も可）"
               maxLength={100}
               className="mt-2 block w-full rounded-xl border border-[#3a324a14] bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-900 placeholder:font-medium placeholder:text-gray-400 focus:border-[#a695d8] focus:outline-none"
             />
@@ -496,12 +612,23 @@ export function LocalModeSheet({
             )}
           </Section>
 
-          {/* 持参グッズ — 別画面リンク */}
+          {/* 持参グッズ — 別画面リンク（iter132: 遷移前に draft を保存） */}
           <Section title="持参するグッズ">
             <div className="flex items-center gap-2">
-              <Link
-                href="/inventory/select-carrying?return=local-mode"
-                className="flex flex-1 items-center gap-3 rounded-xl border border-[#3a324a14] bg-white p-3 transition-all active:scale-[0.99]"
+              <button
+                type="button"
+                onClick={() => {
+                  saveDraft({
+                    venue,
+                    centerLat: center[0],
+                    centerLng: center[1],
+                    radiusM,
+                    startAt,
+                    endAt,
+                  });
+                  router.push("/inventory/select-carrying?return=local-mode");
+                }}
+                className="flex flex-1 items-center gap-3 rounded-xl border border-[#3a324a14] bg-white p-3 text-left transition-all active:scale-[0.99]"
               >
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#a695d80a]">
                   <svg
@@ -538,7 +665,7 @@ export function LocalModeSheet({
                 >
                   <path d="M5 2l5 5-5 5" />
                 </svg>
-              </Link>
+              </button>
               {selectedCarryingCount > 0 && (
                 <button
                   type="button"
