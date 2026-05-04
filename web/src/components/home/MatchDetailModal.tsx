@@ -7,16 +7,18 @@
  *   - 左：譲（listing.haves をサムネ縦並び）
  *   - 中央：SVG 実線 fan（譲アンカーから各 option へ）
  *   - 右：選択肢カード縦並び
- *   - 各選択肢カードは <Link> で /propose/[partnerId]?listing=L&option=N へ遷移
- *     → ProposePage の prefill (iter67.7) でその option の内容が初期セットされる
  *
- *   - 線は **実線のみ**（AND/OR の区別をしない）
- *   - 点線（OR）廃止 — UI の単純化、ユーザー指示
- *   - section header (mine / partner) は iter94.1 の自分視点ラベルを継承
- *   - matched=false の option はタップ可だが半透明で dim
+ * iter101: 複数選択 + フッター「打診に進む」ボタン
+ *   - 「✓ 成立」緑タグ撤去（matched は border 色で表現）
+ *   - 「ALL MATCHED / N 成立」ヘッダーバッジ撤去
+ *   - 選択肢タップ → 紫の太枠で選択中表示
+ *   - 1 件以上選択 → 画面下にフッター「打診に進む（N 件）」表示
+ *   - 複数選択 → /propose/[partnerId]?listing=L&options=1,2,3
+ *     （page.tsx は iter67.8 で multi-option prefill 実装済）
+ *   - 選択は **同一 listing 内のみ**。別 listing をタップすると選択リセット
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type {
   MatchCardListingInfo,
@@ -38,6 +40,9 @@ const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
   any: "同異種",
 };
 
+/** 選択中の listing + option position 群（iter101） */
+type Selection = { listingId: string; positions: number[] } | null;
+
 export function MatchDetailModal({
   partnerHandle,
   partnerId,
@@ -46,7 +51,7 @@ export function MatchDetailModal({
   onClose,
 }: {
   partnerHandle: string;
-  /** iter100: option タップで /propose/[partnerId] に遷移するため必要 */
+  /** option タップで /propose/[partnerId] に遷移するため必要 */
   partnerId: string;
   /** 私の listing が成立したもの */
   myListings: MatchCardListingInfo[];
@@ -61,6 +66,40 @@ export function MatchDetailModal({
       document.body.style.overflow = prev;
     };
   }, []);
+
+  // iter101: 選択中の listing + option positions
+  const [selection, setSelection] = useState<Selection>(null);
+
+  /**
+   * option タップ：同一 listing なら toggle、別 listing なら listing 切り替え
+   */
+  function toggleOption(listingId: string, position: number) {
+    setSelection((prev) => {
+      if (!prev || prev.listingId !== listingId) {
+        // 別 listing or 未選択 → この listing に切り替え
+        return { listingId, positions: [position] };
+      }
+      // 同一 listing 内 toggle
+      if (prev.positions.includes(position)) {
+        const next = prev.positions.filter((p) => p !== position);
+        return next.length === 0 ? null : { ...prev, positions: next };
+      }
+      return { ...prev, positions: [...prev.positions, position] };
+    });
+  }
+
+  function isSelected(listingId: string, position: number): boolean {
+    return (
+      !!selection &&
+      selection.listingId === listingId &&
+      selection.positions.includes(position)
+    );
+  }
+
+  const proposeHref =
+    selection && selection.positions.length > 0
+      ? `/propose/${partnerId}?listing=${selection.listingId}&options=${[...selection.positions].sort((a, b) => a - b).join(",")}`
+      : null;
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
@@ -88,7 +127,7 @@ export function MatchDetailModal({
           <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
             🔗 関係図
           </span>
-          <b>選択肢</b>をタップすると、その内容で<b>打診画面</b>が開きます。
+          <b>選択肢</b>をタップで選び、下の「打診に進む」で打診画面へ進みます（複数選択可）。
         </div>
 
         {/* 私の個別募集（自分視点：譲＝あなたが出す / 求＝あなたが受け取る） */}
@@ -103,8 +142,8 @@ export function MatchDetailModal({
                 key={l.listingId}
                 listing={l}
                 index={idx}
-                partnerId={partnerId}
-                onSelect={onClose}
+                isSelected={(p) => isSelected(l.listingId, p)}
+                onToggle={(p) => toggleOption(l.listingId, p)}
               />
             ))}
           </SectionGroup>
@@ -122,8 +161,8 @@ export function MatchDetailModal({
                 key={l.listingId}
                 listing={l}
                 index={idx}
-                partnerId={partnerId}
-                onSelect={onClose}
+                isSelected={(p) => isSelected(l.listingId, p)}
+                onToggle={(p) => toggleOption(l.listingId, p)}
               />
             ))}
           </SectionGroup>
@@ -135,6 +174,28 @@ export function MatchDetailModal({
           </div>
         )}
       </div>
+
+      {/* iter101: フッター（1 件以上選択時のみ表示） */}
+      {selection && selection.positions.length > 0 && proposeHref && (
+        <div className="border-t border-[#3a324a14] bg-white/96 backdrop-blur-xl">
+          <div className="mx-auto flex w-full max-w-md items-center gap-2.5 px-[18px] pt-3 pb-[max(env(safe-area-inset-bottom),12px)]">
+            <button
+              type="button"
+              onClick={() => setSelection(null)}
+              className="rounded-[10px] border border-[#3a324a14] bg-white px-3 py-2.5 text-[11px] font-bold text-[#3a324a8c]"
+            >
+              リセット
+            </button>
+            <Link
+              href={proposeHref}
+              onClick={onClose}
+              className="flex-1 rounded-[12px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-3 text-center text-[13.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] active:scale-[0.98]"
+            >
+              打診に進む（{selection.positions.length} 件）→
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -176,30 +237,21 @@ function SectionGroup({
 function ListingCard({
   listing,
   index,
-  partnerId,
-  onSelect,
+  isSelected,
+  onToggle,
 }: {
   listing: MatchCardListingInfo;
   index: number;
-  partnerId: string;
-  onSelect: () => void;
+  isSelected: (position: number) => boolean;
+  onToggle: (position: number) => void;
 }) {
-  const matchedOptions = listing.options.filter((o) => o.matched).length;
-
   return (
     <section className="mb-3 overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)]">
-      {/* ヘッダー */}
+      {/* ヘッダー（iter101: 「成立」バッジは撤去・選択肢数だけ表示） */}
       <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
         <span className="text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
           #{index + 1}
         </span>
-        {matchedOptions > 0 && (
-          <span className="rounded-full bg-emerald-500 px-2 py-[2px] text-[9.5px] font-extrabold tracking-[0.4px] text-white">
-            {matchedOptions === listing.options.length
-              ? "ALL MATCHED"
-              : `${matchedOptions} 成立`}
-          </span>
-        )}
         <div className="flex-1" />
         <span className="text-[9.5px] text-[#3a324a8c]">
           {listing.options.length} 選択肢
@@ -208,7 +260,7 @@ function ListingCard({
 
       {/* 関係図 */}
       <div className="px-2 py-2.5">
-        <Diagram listing={listing} partnerId={partnerId} onSelect={onSelect} />
+        <Diagram listing={listing} isSelected={isSelected} onToggle={onToggle} />
       </div>
     </section>
   );
@@ -218,12 +270,12 @@ function ListingCard({
 
 function Diagram({
   listing,
-  partnerId,
-  onSelect,
+  isSelected,
+  onToggle,
 }: {
   listing: MatchCardListingInfo;
-  partnerId: string;
-  onSelect: () => void;
+  isSelected: (position: number) => boolean;
+  onToggle: (position: number) => void;
 }) {
   const sortedOptions = [...listing.options].sort(
     (a, b) => a.position - b.position,
@@ -243,25 +295,28 @@ function Diagram({
         className="relative mx-auto"
         style={{ width: totalW, height: containerH }}
       >
-        {/* SVG 実線（matched は濃く・非 matched は薄く） */}
+        {/* SVG 実線（matched は濃く・非 matched は薄く・選択中は太く） */}
         <svg
           width={totalW}
           height={containerH}
           className="pointer-events-none absolute left-0 top-0"
         >
-          {sortedOptions.map((opt, i) => (
-            <line
-              key={opt.id}
-              x1={HAVE_W}
-              y1={haveAnchorY}
-              x2={HAVE_W + SVG_W}
-              y2={optionYs[i]}
-              stroke="#a695d8"
-              strokeWidth={1.8}
-              strokeLinecap="round"
-              opacity={opt.matched ? 0.85 : 0.3}
-            />
-          ))}
+          {sortedOptions.map((opt, i) => {
+            const sel = isSelected(opt.position);
+            return (
+              <line
+                key={opt.id}
+                x1={HAVE_W}
+                y1={haveAnchorY}
+                x2={HAVE_W + SVG_W}
+                y2={optionYs[i]}
+                stroke="#a695d8"
+                strokeWidth={sel ? 2.6 : 1.8}
+                strokeLinecap="round"
+                opacity={sel ? 1 : opt.matched ? 0.85 : 0.3}
+              />
+            );
+          })}
         </svg>
 
         {/* 左カラム：譲群 */}
@@ -308,38 +363,54 @@ function Diagram({
           )}
         </div>
 
-        {/* 右カラム：選択肢縦並び（各カードがタップ可な Link） */}
-        {sortedOptions.map((opt, i) => (
-          <Link
-            key={opt.id}
-            href={`/propose/${partnerId}?listing=${listing.listingId}&option=${opt.position}`}
-            onClick={onSelect}
-            className="absolute block transition-all active:scale-[0.98]"
-            style={{
-              left: HAVE_W + SVG_W,
-              top: i * (OPT_H + OPT_GAP),
-              width: RIGHT_W,
-              height: OPT_H,
-            }}
-          >
-            <OptionRow option={opt} />
-          </Link>
-        ))}
+        {/* 右カラム：選択肢縦並び（タップで toggle） */}
+        {sortedOptions.map((opt, i) => {
+          const sel = isSelected(opt.position);
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onToggle(opt.position)}
+              aria-pressed={sel}
+              aria-label={`選択肢 #${opt.position} ${sel ? "選択解除" : "選択"}`}
+              className="absolute block transition-all active:scale-[0.98]"
+              style={{
+                left: HAVE_W + SVG_W,
+                top: i * (OPT_H + OPT_GAP),
+                width: RIGHT_W,
+                height: OPT_H,
+              }}
+            >
+              <OptionRow option={opt} selected={sel} />
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/* ─── 選択肢 1 行（タップ可・matched で色変化） ─── */
+/* ─── 選択肢 1 行（タップ可・選択中は紫太枠） ─── */
 
-function OptionRow({ option }: { option: MatchCardOption }) {
+function OptionRow({
+  option,
+  selected,
+}: {
+  option: MatchCardOption;
+  selected: boolean;
+}) {
+  // 選択中：紫太枠 + 紫薄塗り
+  // 非選択 + matched：紫薄枠 + 白背景
+  // 非選択 + 非 matched：グレー枠 + dim
+  const containerCls = selected
+    ? "border-[2px] border-[#a695d8] bg-[#a695d80f] shadow-[0_2px_10px_rgba(166,149,216,0.25)]"
+    : option.matched
+      ? "border border-[#a695d855] bg-white"
+      : "border border-[#3a324a14] bg-white opacity-70";
+
   return (
     <div
-      className={`flex h-full w-full items-center gap-2 rounded-[10px] border bg-white px-2 py-1.5 ${
-        option.matched
-          ? "border-[#a695d8] shadow-[0_2px_6px_rgba(166,149,216,0.15)]"
-          : "border-[#3a324a14] opacity-70"
-      }`}
+      className={`flex h-full w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left ${containerCls}`}
     >
       {option.isCashOffer ? (
         <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-[#7a9a8a55] bg-[#7a9a8a14] text-[16px]">
@@ -384,11 +455,6 @@ function OptionRow({ option }: { option: MatchCardOption }) {
               {option.logic === "and" ? "AND" : "OR"}
             </span>
           )}
-          {option.matched && (
-            <span className="rounded-full bg-emerald-500 px-1 py-[1px] font-extrabold text-white">
-              ✓ 成立
-            </span>
-          )}
         </div>
         <div className="mt-0.5 truncate text-[10px] font-bold text-[#3a324a]">
           {option.isCashOffer
@@ -398,8 +464,16 @@ function OptionRow({ option }: { option: MatchCardOption }) {
                 .join(" / ")}
         </div>
       </div>
-      <span className="flex-shrink-0 text-[14px] font-bold text-[#a695d8]">
-        ›
+      {/* 選択中インジケーター */}
+      <span
+        aria-hidden="true"
+        className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold ${
+          selected
+            ? "bg-[#a695d8] text-white"
+            : "border border-[#3a324a14] text-transparent"
+        }`}
+      >
+        ✓
       </span>
     </div>
   );
