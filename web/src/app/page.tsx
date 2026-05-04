@@ -122,7 +122,8 @@ export default async function Home({ searchParams }: Props) {
     { data: othersInventoryRaw },
     { data: othersWishesRaw },
     { data: otherUsersRaw },
-    { data: othersAWsRaw },
+    { data: othersAWsRawAll },
+    { data: othersLocalModeOnRows },
     { data: othersListingsRaw },
   ] = await Promise.all([
     supabase
@@ -201,6 +202,8 @@ export default async function Home({ searchParams }: Props) {
       .neq("id", user.id)
       .limit(500),
     // 他者の AW（現地マッチ用）
+    // iter136: AW は現地モード OFF 時も DB に残るので、
+    //   ここで取得後 user_local_mode_settings.enabled でフィルタする必要あり
     supabase
       .from("activity_windows")
       .select(
@@ -209,6 +212,12 @@ export default async function Home({ searchParams }: Props) {
       .neq("user_id", user.id)
       .eq("status", "enabled")
       .limit(500),
+    // iter136: 他者の現地モード ON フラグ（user_id 配列）
+    supabase
+      .from("user_local_mode_settings")
+      .select("user_id")
+      .eq("enabled", true)
+      .neq("user_id", user.id),
     // 他者の active な listings（iter67.6 で追加）
     supabase
       .from("listings")
@@ -424,7 +433,14 @@ export default async function Home({ searchParams }: Props) {
   if (isLocal && currentAW) {
     // 他者 AW を user_id で集約
     const partnerAWs = new Map<string, AWRow[]>();
-    for (const a of (othersAWsRaw as AWRow[]) ?? []) {
+    // iter136: 現地モード OFF のユーザーの AW は無視
+    const localModeOnUserIds = new Set(
+      (othersLocalModeOnRows ?? []).map((r) => r.user_id as string),
+    );
+    const othersAWsRaw = ((othersAWsRawAll as AWRow[]) ?? []).filter((a) =>
+      localModeOnUserIds.has(a.user_id),
+    );
+    for (const a of othersAWsRaw) {
       const arr = partnerAWs.get(a.user_id) ?? [];
       arr.push(a);
       partnerAWs.set(a.user_id, arr);

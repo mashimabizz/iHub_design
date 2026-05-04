@@ -181,11 +181,13 @@ export async function applyLocalModeAW(input: {
 }
 
 /**
- * 広域モードに戻す（enabled=false）
+ * 全国モードに戻す（enabled=false）
  *
- * iter86: AW（activity_windows）も 'disabled' にする。
- * 現地モード OFF 時に自分の AW が enabled で残ると、他者の現地マッチや
- * カレンダー overlay に意図せず引っ掛かるため。
+ * iter136: AW は disabled にしない（設定は保持）
+ *   現地⇄全国 のトグルを非破壊にして、再 ON 時に AW 設定を再入力不要にする。
+ *   他者から「現地モード OFF のユーザーの AW」が見えないようにするのは、
+ *   page.tsx 側で user_local_mode_settings.enabled を JOIN して
+ *   フィルタすることで担保する（iter136）。
  */
 export async function disableLocalMode(): Promise<ActionResult> {
   const supabase = await createClient();
@@ -202,12 +204,7 @@ export async function disableLocalMode(): Promise<ActionResult> {
     );
   if (error) return { error: error.message };
 
-  // 自分の enabled な AW を全て disabled に
-  await supabase
-    .from("activity_windows")
-    .update({ status: "disabled" })
-    .eq("user_id", user.id)
-    .eq("status", "enabled");
+  // iter136: AW status は触らない（設定保持）
 
   revalidatePath("/");
   return undefined;
