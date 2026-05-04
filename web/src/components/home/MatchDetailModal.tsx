@@ -37,6 +37,22 @@ const CAND_THUMB = 56;
  */
 type Selection = Map<string, Set<string>>;
 
+/**
+ * iter112: ポップアップ表示中の wish ターゲット情報
+ */
+type PopupTarget = {
+  listingId: string;
+  viewpoint: "mine" | "partner";
+  wishItem: MiniItem;
+  wishQty: number;
+  candidates: { item: MiniItem; qty: number }[];
+  exchangeType: "same_kind" | "cross_kind" | "any";
+  /** wish 画像が無いときの fallback：listing.haves の最初の photo */
+  fallbackHavePhoto: string | null;
+  /** fallback 用：listing.haves の最初の item label（ラベル表示用） */
+  fallbackHaveLabel: string;
+};
+
 export function MatchDetailModal({
   partnerHandle,
   partnerId,
@@ -66,6 +82,8 @@ export function MatchDetailModal({
   const [toast, setToast] = useState<{ message: string; key: number } | null>(
     null,
   );
+  /** iter112: wish 詳細ポップアップ */
+  const [popupTarget, setPopupTarget] = useState<PopupTarget | null>(null);
 
   /**
    * iter111: 在庫超過判定
@@ -258,7 +276,7 @@ export function MatchDetailModal({
                 index={idx}
                 viewpoint="mine"
                 isSelected={(cid) => isSelected(l.listingId, cid)}
-                onToggleCandidate={(cid) => toggleCandidate(l.listingId, cid)}
+                onOpenPopup={(target) => setPopupTarget(target)}
               />
             ))}
           </SectionGroup>
@@ -277,7 +295,7 @@ export function MatchDetailModal({
                 index={idx}
                 viewpoint="partner"
                 isSelected={(cid) => isSelected(l.listingId, cid)}
-                onToggleCandidate={(cid) => toggleCandidate(l.listingId, cid)}
+                onOpenPopup={(target) => setPopupTarget(target)}
               />
             ))}
           </SectionGroup>
@@ -314,6 +332,154 @@ export function MatchDetailModal({
 
       {/* iter111: 在庫超過トースト */}
       {toast && <CapacityToast key={toast.key} message={toast.message} />}
+
+      {/* iter112: wish 詳細ポップアップ */}
+      {popupTarget && (
+        <WishPopup
+          target={popupTarget}
+          isSelected={(cid) => isSelected(popupTarget.listingId, cid)}
+          onToggleCandidate={(cid) =>
+            toggleCandidate(popupTarget.listingId, cid)
+          }
+          onClose={() => setPopupTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── iter112: wish 詳細ポップアップ ───
+   左：wish 画像（または fallback：listing.have 写真 + 同種/異種/同異種 chip）
+   右：候補グリッド（タップで toggle、選択即反映）
+   フッター：閉じるボタンのみ（タップごとに即反映するため適用ボタンは無し） */
+
+function WishPopup({
+  target,
+  isSelected,
+  onToggleCandidate,
+  onClose,
+}: {
+  target: PopupTarget;
+  isSelected: (candidateInvId: string) => boolean;
+  onToggleCandidate: (candidateInvId: string) => void;
+  onClose: () => void;
+}) {
+  const hasWishPhoto = !!target.wishItem.photoUrl;
+  const candidateOriginLabel =
+    target.viewpoint === "mine"
+      ? "相手の譲から候補"
+      : "あなたの譲から候補（あなたが出せるもの）";
+  const selectedCount = target.candidates.filter((c) =>
+    isSelected(c.item.id),
+  ).length;
+
+  return (
+    <div
+      className="fixed inset-0 z-[105] flex items-end justify-center bg-black/55 backdrop-blur-sm sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-t-[20px] bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.25)] sm:rounded-[20px]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* ヘッダー */}
+        <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2.5">
+          <span className="text-[12px]">🎯</span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12.5px] font-extrabold text-[#3a324a]">
+              {target.wishItem.label}
+            </div>
+            <div className="text-[10px] text-[#3a324a8c]">
+              wish ×{target.wishQty}・{target.candidates.length} 件の候補
+              {selectedCount > 0 && (
+                <span className="ml-1.5 rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[9.5px] font-extrabold text-white">
+                  {selectedCount} 件選択中
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="閉じる"
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#3a324a08] text-[#3a324a8c]"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* 本体：左 image / 右 候補 */}
+        <div className="flex gap-3 p-3">
+          {/* 左：wish 画像 or fallback */}
+          <div className="flex w-[110px] flex-shrink-0 flex-col items-center">
+            {hasWishPhoto ? (
+              <>
+                <ItemPhoto
+                  item={target.wishItem}
+                  qty={target.wishQty}
+                  size={104}
+                  variant="wish"
+                />
+                <span className="mt-1.5 rounded-full border border-[#f3c5d4] bg-[#f3c5d414] px-2 py-[2px] text-[9.5px] font-extrabold text-[#f3c5d4]">
+                  wish 画像
+                </span>
+              </>
+            ) : (
+              <>
+                <ItemPhoto
+                  item={{
+                    ...target.wishItem,
+                    photoUrl: target.fallbackHavePhoto,
+                  }}
+                  qty={1}
+                  size={104}
+                  variant="have"
+                />
+                <span className="mt-1.5 rounded-full bg-[#a695d8] px-2 py-[2px] text-[9.5px] font-extrabold text-white">
+                  {EXCHANGE_LABEL_FULL[target.exchangeType]}
+                </span>
+                <span className="mt-1 max-w-[110px] truncate px-1 text-center text-[9px] text-[#3a324a8c]">
+                  ↑ あなたの譲：{target.fallbackHaveLabel}
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* 右：候補グリッド */}
+          <div className="min-w-0 flex-1">
+            <div className="mb-1.5 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+              {candidateOriginLabel}（タップで選択）
+            </div>
+            {target.candidates.length === 0 ? (
+              <div className="text-[10.5px] italic text-[#3a324a4d]">
+                候補がありません
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-1.5">
+                {target.candidates.map((c) => (
+                  <CandidateButton
+                    key={c.item.id}
+                    item={c.item}
+                    selected={isSelected(c.item.id)}
+                    onClick={() => onToggleCandidate(c.item.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* フッター：閉じる */}
+        <div className="border-t border-[#3a324a08] bg-[#fbf9fc] px-3 py-2.5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="block w-full rounded-[10px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-2.5 text-center text-[12.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_8px_rgba(166,149,216,0.3)]"
+          >
+            戻る
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -376,21 +542,23 @@ function ListingTree({
   index,
   viewpoint,
   isSelected,
-  onToggleCandidate,
+  onOpenPopup,
 }: {
   listing: MatchCardListingInfo;
   index: number;
   viewpoint: "mine" | "partner";
   isSelected: (candidateInvId: string) => boolean;
-  onToggleCandidate: (candidateInvId: string) => void;
+  onOpenPopup: (target: PopupTarget) => void;
 }) {
   // 全 option から wish を flat にして集計（同一 wishId は merge）
+  // iter112: exchangeType もキャプチャ（先に出てきた option のものを採用）
   const flattenedWishes = useMemo(() => {
     type Entry = {
       wishId: string;
       item: MiniItem;
       qty: number;
       candidates: { item: MiniItem; qty: number }[];
+      exchangeType: "same_kind" | "cross_kind" | "any";
     };
     const map = new Map<string, Entry>();
     for (const opt of listing.options) {
@@ -408,12 +576,14 @@ function ListingTree({
           }
           // qty は最大値を採用
           existing.qty = Math.max(existing.qty, w.qty);
+          // exchangeType は最初に出てきたものを保持（変更しない）
         } else {
           map.set(w.item.id, {
             wishId: w.item.id,
             item: w.item,
             qty: w.qty,
             candidates: [...w.candidates],
+            exchangeType: opt.exchangeType,
           });
         }
       }
@@ -421,14 +591,16 @@ function ListingTree({
     return Array.from(map.values());
   }, [listing.options]);
 
+  // fallback 用：listing.haves の先頭
+  const fallbackHave = listing.haves[0]?.item ?? null;
+  const fallbackHavePhoto = fallbackHave?.photoUrl ?? null;
+  const fallbackHaveLabel = fallbackHave?.label ?? "—";
+
   const cashOption = listing.options.find((o) => o.isCashOffer);
 
   // ラベル：viewpoint に応じて
   const haveLabel = viewpoint === "mine" ? "あなたが出す（譲）" : "あなたが受け取る（相手の譲）";
-  const candidateOriginLabel =
-    viewpoint === "mine"
-      ? "相手の譲から候補"
-      : "あなたの譲から候補（出せるもの）";
+  // iter112: candidateOriginLabel は popup 内で表示するためここでは使わない
 
   // iter109: 複数 listing を同時に選択可能にしたので、dim 処理は撤廃
 
@@ -488,8 +660,8 @@ function ListingTree({
         </div>
       </div>
 
-      {/* wish + 候補ブロック */}
-      <div className="space-y-2.5 px-3 py-3">
+      {/* wish 一覧（タップで popup 表示） */}
+      <div className="space-y-2 px-3 py-3">
         {flattenedWishes.length === 0 ? (
           <div className="text-[11px] italic text-[#3a324a4d]">
             wish が登録されていません
@@ -501,9 +673,22 @@ function ListingTree({
               wishItem={w.item}
               qty={w.qty}
               candidates={w.candidates}
-              candidateOriginLabel={candidateOriginLabel}
+              exchangeType={w.exchangeType}
+              fallbackHavePhoto={fallbackHavePhoto}
+              fallbackHaveLabel={fallbackHaveLabel}
               isSelected={isSelected}
-              onToggleCandidate={onToggleCandidate}
+              onOpen={() =>
+                onOpenPopup({
+                  listingId: listing.listingId,
+                  viewpoint,
+                  wishItem: w.item,
+                  wishQty: w.qty,
+                  candidates: w.candidates,
+                  exchangeType: w.exchangeType,
+                  fallbackHavePhoto,
+                  fallbackHaveLabel,
+                })
+              }
             />
           ))
         )}
@@ -512,67 +697,108 @@ function ListingTree({
   );
 }
 
-/* ─── wish 1 件 + 候補サムネ群 ─── */
+/* ─── wish 1 行（タップで popup 起動・選択済を inline 表示） ─── */
+
+const EXCHANGE_LABEL_FULL: Record<"same_kind" | "cross_kind" | "any", string> = {
+  same_kind: "同種",
+  cross_kind: "異種",
+  any: "同異種",
+};
 
 function WishRow({
   wishItem,
   qty,
   candidates,
-  candidateOriginLabel,
+  exchangeType,
+  fallbackHavePhoto,
   isSelected,
-  onToggleCandidate,
+  onOpen,
 }: {
   wishItem: MiniItem;
   qty: number;
   candidates: { item: MiniItem; qty: number }[];
-  candidateOriginLabel: string;
+  exchangeType: "same_kind" | "cross_kind" | "any";
+  fallbackHavePhoto: string | null;
+  fallbackHaveLabel: string;
   isSelected: (candidateInvId: string) => boolean;
-  onToggleCandidate: (candidateInvId: string) => void;
+  onOpen: () => void;
 }) {
   const hasCandidates = candidates.length > 0;
-  return (
-    <div className="rounded-[10px] border border-[#3a324a08] bg-[#fbf9fc] p-2.5">
-      {/* wish 情報 */}
-      <div className="mb-1.5 flex items-center gap-1.5">
-        <span className="text-[10px]">🎯</span>
-        <span className="text-[11.5px] font-extrabold text-[#3a324a]">
-          wish: {wishItem.label}
-        </span>
-        <span className="text-[10.5px] font-bold tabular-nums text-[#3a324a8c]">
-          ×{qty}
-        </span>
-        <div className="flex-1" />
-        <span
-          className={`rounded-full px-1.5 py-[1px] text-[9px] font-extrabold ${
-            hasCandidates
-              ? "bg-[#a695d814] text-[#a695d8]"
-              : "bg-[#3a324a08] text-[#3a324a8c]"
-          }`}
-        >
-          候補 {candidates.length}
-        </span>
-      </div>
+  const selectedCands = candidates.filter((c) => isSelected(c.item.id));
+  const hasWishPhoto = !!wishItem.photoUrl;
+  const showFallback = !hasWishPhoto && !!fallbackHavePhoto;
 
-      {/* 候補サムネ群（タップで選択） */}
-      {hasCandidates ? (
-        <>
-          <div className="mb-1 px-0.5 text-[9.5px] text-[#3a324a8c]">
-            {candidateOriginLabel}（タップで選択）
+  return (
+    <div className="rounded-[10px] border border-[#3a324a08] bg-[#fbf9fc]">
+      {/* wish 行（タップで popup） */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left active:bg-[#a695d80a]"
+      >
+        {/* 左：wish サムネ（写真 or fallback：have 写真 + chip） */}
+        <div className="relative flex-shrink-0">
+          <ItemPhoto
+            item={hasWishPhoto ? wishItem : { ...wishItem, photoUrl: fallbackHavePhoto }}
+            qty={1}
+            size={42}
+            variant="wish"
+          />
+          {showFallback && (
+            <span className="absolute -bottom-1 -right-1 rounded-full bg-[#a695d8] px-1 py-[1px] text-[8.5px] font-extrabold text-white shadow-[0_1px_3px_rgba(166,149,216,0.4)]">
+              {EXCHANGE_LABEL_FULL[exchangeType]}
+            </span>
+          )}
+        </div>
+
+        {/* 中：wish 情報 */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 text-[11.5px]">
+            <span className="text-[10px]">🎯</span>
+            <span className="truncate font-extrabold text-[#3a324a]">
+              {wishItem.label}
+            </span>
+            <span className="font-bold tabular-nums text-[#3a324a8c]">
+              ×{qty}
+            </span>
+          </div>
+          <div className="mt-0.5 text-[10px] text-[#3a324a8c]">
+            {hasCandidates ? (
+              <>候補 {candidates.length} 件</>
+            ) : (
+              <>候補なし</>
+            )}
+            {selectedCands.length > 0 && (
+              <span className="ml-1.5 rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[9px] font-extrabold text-white">
+                {selectedCands.length} 件選択中
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 右：chevron */}
+        <span className="flex-shrink-0 text-[14px] font-bold text-[#a695d8]">
+          ›
+        </span>
+      </button>
+
+      {/* 選択済の候補サムネを inline で表示（fold-out） */}
+      {selectedCands.length > 0 && (
+        <div className="border-t border-[#3a324a08] px-2.5 py-1.5">
+          <div className="mb-1 text-[9.5px] font-bold text-[#3a324a8c]">
+            選択中：
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {candidates.map((c) => (
-              <CandidateButton
+            {selectedCands.map((c) => (
+              <ItemPhoto
                 key={c.item.id}
                 item={c.item}
-                selected={isSelected(c.item.id)}
-                onClick={() => onToggleCandidate(c.item.id)}
+                qty={1}
+                size={38}
+                variant="candidate"
               />
             ))}
           </div>
-        </>
-      ) : (
-        <div className="text-[10.5px] italic text-[#3a324a4d]">
-          候補がありません（タグや具体的なシリーズで wish を絞ると見つかる可能性があります）
         </div>
       )}
     </div>
@@ -630,13 +856,15 @@ function ItemPhoto({
   item: MiniItem;
   qty: number;
   size: number;
-  variant: "have" | "candidate";
+  variant: "have" | "candidate" | "wish";
   dim?: boolean;
 }) {
   const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 86%) 0 4px, hsl(${item.hue}, 28%, 78%) 4px 8px)`;
   const initialShadow = `0 1px 2px hsla(${item.hue}, 30%, 30%, 0.5)`;
   const hasPhoto = !!item.photoUrl;
-  const borderColor = variant === "have" ? "border-[#a8d4e6]" : "border-[#f3c5d4]";
+  // wish / candidate はピンク系、have は水色系
+  const borderColor =
+    variant === "have" ? "border-[#a8d4e6]" : "border-[#f3c5d4]";
 
   return (
     <div
