@@ -290,8 +290,36 @@ body {
   will-change: transform, opacity;
 }
 
+/*
+ * iter151.9: 取引一覧パネル専用のゆっくりした登場
+ * 最初はかなり薄く、少しだけ奥/上から浮き出る。
+ */
+@keyframes transactionPanelIn {
+  0% {
+    opacity: 0.08;
+    transform: translateY(-18px) scale(0.985);
+    filter: blur(1.5px);
+  }
+  48% {
+    opacity: 0.72;
+    transform: translateY(-5px) scale(0.997);
+    filter: blur(0.4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.animate-transaction-panel-in {
+  animation: transactionPanelIn 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity, filter;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-section-fade-down {
+  .animate-section-fade-down,
+  .animate-transaction-panel-in {
     animation: none;
   }
 }

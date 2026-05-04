@@ -243,8 +243,8 @@ function PendingList({
         {list.map((t, i) => (
           <div
             key={t.id}
-            className={active ? "animate-section-fade-down" : undefined}
-            style={active ? { animationDelay: `${i * 65}ms` } : undefined}
+            className={active ? "animate-transaction-panel-in" : undefined}
+            style={active ? { animationDelay: `${i * 95}ms` } : undefined}
           >
             <PendingCard t={t} now={now} />
           </div>
@@ -379,8 +379,8 @@ function OngoingList({
         {list.map((t, i) => (
           <div
             key={t.id}
-            className={active ? "animate-section-fade-down" : undefined}
-            style={active ? { animationDelay: `${i * 65}ms` } : undefined}
+            className={active ? "animate-transaction-panel-in" : undefined}
+            style={active ? { animationDelay: `${i * 95}ms` } : undefined}
           >
             <OngoingCard t={t} now={now} />
           </div>
@@ -565,9 +565,9 @@ function PastView({
       {monthlyGroups.length === 0 ? (
         <div
           className={`rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c] ${
-            active ? "animate-section-fade-down" : ""
+            active ? "animate-transaction-panel-in" : ""
           }`}
-          style={active ? { animationDelay: "65ms" } : undefined}
+          style={active ? { animationDelay: "95ms" } : undefined}
         >
           該当する取引がありません
         </div>
@@ -584,10 +584,10 @@ function PastView({
               {items.map((t, i) => (
                 <div
                   key={t.id}
-                  className={active ? "animate-section-fade-down" : undefined}
+                  className={active ? "animate-transaction-panel-in" : undefined}
                   style={
                     active
-                      ? { animationDelay: `${(monthIndex + i) * 55}ms` }
+                      ? { animationDelay: `${(monthIndex + i) * 85}ms` }
                       : undefined
                   }
                 >
@@ -676,7 +676,7 @@ function EmptyState({ tab, active = true }: { tab: TabId; active?: boolean }) {
   return (
     <div
       className={`rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c] ${
-        active ? "animate-section-fade-down" : ""
+        active ? "animate-transaction-panel-in" : ""
       }`}
     >
       {msg}

@@ -4,6 +4,55 @@
 
 ---
 
+## イテレーション151.9：取引一覧パネルの登場をゆっくり薄く調整
+
+### 背景・問題意識
+
+オーナーから、取引一覧のパネルについて「もう少しゆっくり出てくるようにしてほしい。最初は薄い状態から出てきて欲しい」と指示があった。
+
+iter151.7 ではプロフ画面と同じ `animate-section-fade-down` を流用したが、取引一覧のカード群には少し速く、初期の薄さも弱かった。取引一覧専用の登場アニメーションに分離し、よりゆっくり、薄い状態から現れるようにする。
+
+### 変更内容
+
+#### `web/src/app/globals.css`
+- `transactionPanelIn` keyframes を追加。
+- 初期状態を `opacity: 0.08`、軽い `blur`、少し上方向の `translateY` に設定。
+- duration を `760ms` にし、プロフ用の `460ms` よりゆっくり表示されるようにした。
+- `prefers-reduced-motion` では既存どおりアニメーションを停止。
+
+#### `web/src/app/transactions/TransactionsView.tsx`
+- 取引一覧カード / 空状態のアニメーション class を `animate-section-fade-down` から `animate-transaction-panel-in` に変更。
+- 打診中 / 進行中カードの stagger delay を `65ms` から `95ms` に拡大。
+- 過去取引カードの stagger delay を `55ms` から `85ms` に拡大。
+
+### 影響範囲
+
+- `/transactions` 取引一覧
+- 打診中 / 進行中 / 過去取引のカード登場アニメーション
+- 取引一覧の空状態表示
+
+### 確認方法
+
+- `npx eslint src/app/transactions/TransactionsView.tsx src/app/globals.css`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/globals.css`
+- `web/src/app/transactions/TransactionsView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 取引一覧専用のゆっくりした登場アニメーションを追加
+- ✅ 初期 opacity をかなり低くし、薄い状態から出るように変更
+- ✅ stagger delay を広げ、カード群が急に出すぎないよう調整
+- ✅ `notes/09_state_machines.md` は状態変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 TSX ESLint / build 成功
+
+---
+
 ## イテレーション151.8：注目マッチの現地ON/OFFカードサイズを統一
 
 ### 背景・問題意識
