@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 import {
@@ -39,6 +39,8 @@ type InventoryOpt = {
   characterName: string | null;
   goodsTypeName: string | null;
   hue: number;
+  /** iter144: 在庫数（譲側の qty 上限。これを超えて選択できない） */
+  availableQty: number;
 };
 
 type WishOpt = {
@@ -129,8 +131,14 @@ export function ListingNewForm({
   const [haveGoodsTypeId, setHaveGoodsTypeId] = useState<string | null>(
     initialValues?.haveGoodsTypeId ?? preselectWish?.goodsTypeId ?? null,
   );
+  // iter144: edit 時の初期値は、現在の在庫数を超えていたら clamp する
+  //         （listing 作成後に在庫数が減っているケースのフェイルセーフ）
   const [selectedHaves, setSelectedHaves] = useState<SelectedItem[]>(
-    initialValues?.selectedHaves ?? [],
+    (initialValues?.selectedHaves ?? []).map((s) => {
+      const cap =
+        inventoryItems.find((it) => it.id === s.id)?.availableQty ?? 1;
+      return { ...s, qty: Math.min(Math.max(1, s.qty), cap) };
+    }),
   );
   const [haveLogic, setHaveLogic] = useState<ListingLogic>(
     initialValues?.haveLogic ?? "and",
@@ -185,10 +193,35 @@ export function ListingNewForm({
   const [note, setNote] = useState(initialValues?.note ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // iter144: 在庫上限超過などの一時的なお知らせ用 toast
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2400);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     router.prefetch("/listings");
   }, [router]);
+
+  /** iter144: id の在庫数（見つからなければ 1 を返す） */
+  function getAvailableQty(id: string): number {
+    const it = inventoryItems.find((x) => x.id === id);
+    return it?.availableQty ?? 1;
+  }
 
   /* ─ 譲側のフィルタ済みインベントリ ─ */
   const filteredHaves = useMemo(() => {
@@ -226,19 +259,35 @@ export function ListingNewForm({
 
   /* ─ 操作 ─ */
   function toggleHave(id: string) {
-    setSelectedHaves((prev) =>
-      prev.find((s) => s.id === id)
-        ? prev.filter((s) => s.id !== id)
-        : [...prev, { id, qty: 1 }],
-    );
+    setSelectedHaves((prev) => {
+      const existing = prev.find((s) => s.id === id);
+      if (existing) return prev.filter((s) => s.id !== id);
+      // iter144: 在庫数 0 のものは選択不可（防御的、active inventory なら通常 ≥ 1）
+      const cap = getAvailableQty(id);
+      if (cap < 1) {
+        showToast("このグッズは在庫がありません");
+        return prev;
+      }
+      return [...prev, { id, qty: 1 }];
+    });
   }
   function setHaveQty(id: string, delta: number) {
+    // iter144: 譲側 qty は 1 〜 在庫数 の範囲で clamp。
+    //         在庫数を超える操作は無視 + toast でお知らせ。
+    const cap = getAvailableQty(id);
     setSelectedHaves((prev) =>
-      prev.map((s) =>
-        s.id === id
-          ? { ...s, qty: Math.max(1, Math.min(99, s.qty + delta)) }
-          : s,
-      ),
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const next = s.qty + delta;
+        if (delta > 0 && next > cap) {
+          showToast(`在庫数（${cap}）が上限です`);
+          return { ...s, qty: cap };
+        }
+        return {
+          ...s,
+          qty: Math.max(1, Math.min(cap, next)),
+        };
+      }),
     );
   }
 
@@ -518,6 +567,19 @@ export function ListingNewForm({
       >
         {mode === "edit" ? "個別募集を更新" : "個別募集を作成"}
       </PrimaryButton>
+
+      {/* iter144: 在庫上限超過などの一時的なお知らせ */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed inset-x-0 bottom-[100px] z-[100] flex justify-center px-4"
+        >
+          <div className="pointer-events-auto max-w-sm rounded-full bg-[#3a324a] px-4 py-2.5 text-[12.5px] font-bold text-white shadow-[0_8px_20px_rgba(58,50,74,0.35)]">
+            {toast}
+          </div>
+        </div>
+      )}
     </form>
   );
 }
@@ -911,15 +973,20 @@ function PanelCard({
           </button>
           <span className="min-w-[22px] text-center text-[10.5px] font-extrabold tabular-nums">
             ×{qty}
+            {/* iter144: 在庫上限を inline で参考表示 */}
+            <span className="ml-0.5 text-[8.5px] font-bold text-gray-400">
+              /{item.availableQty}
+            </span>
           </span>
+          {/* iter144: 在庫数で disabled だと toast が発火しないので、
+              click は許可して setHaveQty 側で clamp + toast */}
           <button
             type="button"
-            disabled={qty >= 99}
             onClick={(e) => {
               e.stopPropagation();
               onQty(1);
             }}
-            className="flex h-5 w-5 items-center justify-center rounded-full bg-[#a695d8] text-[12px] font-bold text-white disabled:bg-gray-200 disabled:text-gray-400"
+            className="flex h-5 w-5 items-center justify-center rounded-full bg-[#a695d8] text-[12px] font-bold text-white"
           >
             ＋
           </button>

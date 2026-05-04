@@ -109,7 +109,8 @@ export default async function ListingEditPage({
     supabase
       .from("goods_inventory")
       .select(
-        "id, title, photo_urls, hue, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
+        // iter144: 譲側の選択上限を在庫数に揃えるため quantity も取得
+"id, title, photo_urls, hue, quantity, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
       )
       .eq("user_id", user.id)
       .eq("kind", "for_trade")
@@ -143,7 +144,8 @@ export default async function ListingEditPage({
     const { data } = await supabase
       .from("goods_inventory")
       .select(
-        "id, title, photo_urls, hue, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
+        // iter144: 譲側の選択上限を在庫数に揃えるため quantity も取得
+"id, title, photo_urls, hue, quantity, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
       )
       .in("id", haveIdsToFetch);
     if (data) extraInventoryRows.push(...data);
@@ -186,6 +188,8 @@ export default async function ListingEditPage({
       hue:
         ((r as { hue?: number }).hue as number | undefined) ??
         nameToHue(memberName),
+      // iter144: 在庫数（譲側の qty 上限として form に渡す）
+      availableQty: ((r as { quantity?: number }).quantity as number | undefined) ?? 1,
     };
   });
 
