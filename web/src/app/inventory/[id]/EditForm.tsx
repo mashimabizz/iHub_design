@@ -9,6 +9,8 @@ import {
   updateInventoryItem,
   updateInventoryStatus,
 } from "../actions";
+import { TagInput, type TagInputValue } from "@/components/common/TagInput";
+import { syncInventoryTags, type AttachedTag } from "@/lib/tags";
 
 type Props = {
   item: {
@@ -23,6 +25,8 @@ type Props = {
     quantity: number;
     photoUrls: string[];
     status: "active" | "keep" | "traded" | "reserved" | "archived";
+    /** iter113: 既存タグ */
+    tags: AttachedTag[];
   };
   groups: { id: string; name: string }[];
   goodsTypes: { id: string; name: string }[];
@@ -88,6 +92,12 @@ export function EditForm({
   const [photoUrls, setPhotoUrls] = useState<string[]>(item.photoUrls);
   const [photoUploading, setPhotoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // iter113: タグ
+  const initialTags: TagInputValue[] = item.tags.map((t) => ({
+    id: t.id,
+    label: t.label,
+  }));
+  const [tags, setTags] = useState<TagInputValue[]>(initialTags);
   const [pending, startTransition] = useTransition();
   const [deleting, startDeleteTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -232,6 +242,11 @@ export function EditForm({
       if (r?.error) {
         setError(r.error);
         return;
+      }
+      // iter113: タグ差分同期
+      const syncResult = await syncInventoryTags(item.id, tags, item.tags);
+      if (syncResult.errors.length > 0) {
+        console.warn("tag sync warnings:", syncResult.errors);
       }
       router.push("/inventory");
     });
@@ -490,6 +505,17 @@ export function EditForm({
             ＋
           </button>
         </div>
+      </Section>
+
+      {/* iter113: タグ */}
+      <Section label="タグ" hint="マッチ優先度に使用">
+        <TagInput
+          value={tags}
+          onChange={setTags}
+          max={5}
+          placeholder="例：LUMENA Debut Album、Type A など"
+          helperText="同じシリーズ・イベントを探している相手とマッチが上位に出やすくなります。"
+        />
       </Section>
 
       {/* 説明 */}

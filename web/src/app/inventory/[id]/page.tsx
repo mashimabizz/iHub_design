@@ -43,13 +43,14 @@ export default async function InventoryEditPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 並列取得：アイテム本体 + マスタ群
+  // 並列取得：アイテム本体 + マスタ群 + iter113 タグ
   const [
     { data: item },
     { data: userOshi },
     { data: goodsTypes },
     { data: characters },
     { data: pendingRequests },
+    { data: tagRows },
   ] = await Promise.all([
     supabase
       .from("goods_inventory")
@@ -78,6 +79,11 @@ export default async function InventoryEditPage({
       .eq("user_id", user.id)
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
+    // iter113: 紐づくタグをロード
+    supabase
+      .from("goods_inventory_tags")
+      .select("tag:tags_master(id, label)")
+      .eq("inventory_id", id),
   ]);
 
   if (!item) notFound();
@@ -119,6 +125,14 @@ export default async function InventoryEditPage({
       group_id: r.group_id!,
     }));
 
+  // iter113: タグ抽出
+  type TagRowShape = {
+    tag: { id: string; label: string } | { id: string; label: string }[] | null;
+  };
+  const tags = ((tagRows as TagRowShape[]) ?? [])
+    .map((r) => (Array.isArray(r.tag) ? r.tag[0] : r.tag))
+    .filter((t): t is { id: string; label: string } => !!t);
+
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="グッズを編集" backHref="/inventory" />
@@ -136,6 +150,7 @@ export default async function InventoryEditPage({
             quantity: it.quantity,
             photoUrls: it.photo_urls ?? [],
             status: it.status,
+            tags,
           }}
           groups={groups}
           goodsTypes={goodsTypes ?? []}
