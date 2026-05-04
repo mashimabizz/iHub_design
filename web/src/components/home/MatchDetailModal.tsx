@@ -275,6 +275,7 @@ export function MatchDetailModal({
                 listing={l}
                 index={idx}
                 viewpoint="mine"
+                partnerHandle={partnerHandle}
                 isSelected={(cid) => isSelected(l.listingId, cid)}
                 onOpenPopup={(target) => setPopupTarget(target)}
               />
@@ -294,6 +295,7 @@ export function MatchDetailModal({
                 listing={l}
                 index={idx}
                 viewpoint="partner"
+                partnerHandle={partnerHandle}
                 isSelected={(cid) => isSelected(l.listingId, cid)}
                 onOpenPopup={(target) => setPopupTarget(target)}
               />
@@ -337,6 +339,7 @@ export function MatchDetailModal({
       {popupTarget && (
         <WishPopup
           target={popupTarget}
+          partnerHandle={partnerHandle}
           isSelected={(cid) => isSelected(popupTarget.listingId, cid)}
           onToggleCandidate={(cid) =>
             toggleCandidate(popupTarget.listingId, cid)
@@ -355,20 +358,25 @@ export function MatchDetailModal({
 
 function WishPopup({
   target,
+  partnerHandle,
   isSelected,
   onToggleCandidate,
   onClose,
 }: {
   target: PopupTarget;
+  partnerHandle: string;
   isSelected: (candidateInvId: string) => boolean;
   onToggleCandidate: (candidateInvId: string) => void;
   onClose: () => void;
 }) {
   const hasWishPhoto = !!target.wishItem.photoUrl;
-  const candidateOriginLabel =
-    target.viewpoint === "mine"
-      ? "相手の譲から候補"
-      : "あなたの譲から候補（あなたが出せるもの）";
+  // iter115: 候補側オーナーのアイコン + 「{owner} が譲るもの」ラベル
+  //   mine listing: 候補は相手の inv ⇒ "@partnerHandle が譲るもの"
+  //   partner listing: 候補は自分の inv ⇒ "あなた が譲るもの"
+  const candidateOwnerName =
+    target.viewpoint === "mine" ? `@${partnerHandle}` : "あなた";
+  const candidateOwnerColor =
+    target.viewpoint === "mine" ? "#f3c5d4" : "#a695d8";
   const selectedCount = target.candidates.filter((c) =>
     isSelected(c.item.id),
   ).length;
@@ -445,10 +453,17 @@ function WishPopup({
             )}
           </div>
 
-          {/* 右：候補グリッド */}
+          {/* 右：候補グリッド（iter115: アイコン + 「{owner} が譲るもの」） */}
           <div className="min-w-0 flex-1">
-            <div className="mb-1.5 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-              {candidateOriginLabel}（タップで選択）
+            <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold tracking-[0.4px]">
+              <MiniAvatar
+                name={candidateOwnerName}
+                color={candidateOwnerColor}
+              />
+              <span style={{ color: candidateOwnerColor }}>
+                {candidateOwnerName} が譲るもの
+              </span>
+              <span className="text-[#3a324a8c]">（タップで選択）</span>
             </div>
             {target.candidates.length === 0 ? (
               <div className="text-[10.5px] italic text-[#3a324a4d]">
@@ -541,12 +556,14 @@ function ListingTree({
   listing,
   index,
   viewpoint,
+  partnerHandle,
   isSelected,
   onOpenPopup,
 }: {
   listing: MatchCardListingInfo;
   index: number;
   viewpoint: "mine" | "partner";
+  partnerHandle: string;
   isSelected: (candidateInvId: string) => boolean;
   onOpenPopup: (target: PopupTarget) => void;
 }) {
@@ -598,9 +615,9 @@ function ListingTree({
 
   const cashOption = listing.options.find((o) => o.isCashOffer);
 
-  // ラベル：viewpoint に応じて
-  const haveLabel = viewpoint === "mine" ? "あなたが出す（譲）" : "あなたが受け取る（相手の譲）";
-  // iter112: candidateOriginLabel は popup 内で表示するためここでは使わない
+  // iter115: 譲ブロックのラベルを「{owner アイコン} が譲るもの」に変更
+  const ownerName = viewpoint === "mine" ? "あなた" : `@${partnerHandle}`;
+  const ownerColor = viewpoint === "mine" ? "#a695d8" : "#f3c5d4";
 
   // iter109: 複数 listing を同時に選択可能にしたので、dim 処理は撤廃
 
@@ -630,10 +647,11 @@ function ListingTree({
         )}
       </div>
 
-      {/* 譲ブロック */}
+      {/* 譲ブロック（iter115: アイコン + 「{owner} が譲るもの」） */}
       <div className="border-b border-[#3a324a08] px-3 py-2.5">
-        <div className="mb-1.5 text-[10px] font-bold tracking-[0.4px] text-[#a8d4e6]">
-          🎁 {haveLabel}
+        <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold tracking-[0.4px]">
+          <MiniAvatar name={ownerName} color={ownerColor} />
+          <span style={{ color: ownerColor }}>{ownerName} が譲るもの</span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {listing.haves.map((h) => (
@@ -728,8 +746,13 @@ function WishRow({
   const hasWishPhoto = !!wishItem.photoUrl;
   const showFallback = !hasWishPhoto && !!fallbackHavePhoto;
 
+  // iter115: 候補なしの wish は dim（薄め）表示
+  const containerCls = hasCandidates
+    ? "rounded-[10px] border border-[#3a324a08] bg-[#fbf9fc]"
+    : "rounded-[10px] border border-[#3a324a08] bg-[#3a324a04] opacity-55";
+
   return (
-    <div className="rounded-[10px] border border-[#3a324a08] bg-[#fbf9fc]">
+    <div className={containerCls}>
       {/* wish 行（タップで popup） */}
       <button
         type="button"
@@ -904,6 +927,24 @@ function ItemPhoto({
         </span>
       )}
     </div>
+  );
+}
+
+/* ─── iter115: ミニアバター（誰の譲かを視覚的に示す丸アイコン） ─── */
+
+function MiniAvatar({ name, color }: { name: string; color: string }) {
+  // name の先頭 1 文字（@ は除外）
+  const ch = name.replace(/^@/, "")[0]?.toUpperCase() ?? "?";
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-white shadow-[0_1px_3px_rgba(58,50,74,0.18)]"
+      style={{
+        background: `linear-gradient(135deg, ${color}, ${color}cc)`,
+      }}
+    >
+      {ch}
+    </span>
   );
 }
 
