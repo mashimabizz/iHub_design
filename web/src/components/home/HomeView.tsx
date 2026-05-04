@@ -383,6 +383,17 @@ export function HomeView({
     lastLng: null,
   };
 
+  /**
+   * iter140: AW が既に保存済の状態での即時再 ON
+   * - sheet を開かない、GPS も取らない
+   * - DB の enabled フラグだけ立てる（iter136 で AW は保持されている）
+   */
+  function handleQuickReenable() {
+    startTransition(async () => {
+      await enableLocalMode({});
+    });
+  }
+
   // 現地モード ON 切替時に GPS 取得
   function handleEnableLocal() {
     setNeedsRevertOnClose(true); // iter129: apply せずに閉じたら revert
@@ -449,23 +460,51 @@ export function HomeView({
             </h1>
           </div>
           <div className="flex items-center gap-2">
-            {/* iter133: 現地交換モード ON 時のみ chip 表示（タップで OFF 確認） */}
-            {isLocal && (
+            {/* iter133 + iter140: 現地交換モードのトグル chip
+                - isLocal=true：ON 表示、タップ → OFF 確認
+                - isLocal=false：AW config が残っている場合 OFF 表示、タップで再 ON
+                - AW がそもそも無い場合は非表示（初回はピル経由でセットアップ） */}
+            {(isLocal || !!currentAW) && (
               <button
                 type="button"
-                onClick={() => setShowOffConfirm(true)}
-                className="flex h-9 items-center gap-1.5 rounded-full border border-[#a695d855] bg-[#a695d80a] px-3 shadow-sm transition-colors active:bg-[#a695d814]"
-                aria-label="現地交換モードを OFF にする"
+                onClick={() => {
+                  if (isLocal) {
+                    setShowOffConfirm(true);
+                  } else {
+                    // AW あり + isLocal=false → 即時再 ON（sheet 不要、iter140）
+                    handleQuickReenable();
+                  }
+                }}
+                className={`flex h-9 items-center gap-1.5 rounded-full border px-3 shadow-sm transition-colors ${
+                  isLocal
+                    ? "border-[#a695d855] bg-[#a695d80a] active:bg-[#a695d814]"
+                    : "border-[#3a324a14] bg-white active:bg-[#3a324a08]"
+                }`}
+                aria-label={
+                  isLocal
+                    ? "現地交換モードを OFF にする"
+                    : "現地交換モードを再開する"
+                }
               >
-                <span className="text-[11px] font-extrabold tracking-[0.3px] text-[#a695d8]">
+                <span
+                  className={`text-[11px] font-extrabold tracking-[0.3px] ${
+                    isLocal ? "text-[#a695d8]" : "text-[#3a324a8c]"
+                  }`}
+                >
                   📍 現地交換モード
                 </span>
-                {/* 小さなトグル ON アイコン */}
+                {/* トグルアイコン */}
                 <span
                   aria-hidden="true"
-                  className="flex h-3.5 w-6 items-center rounded-full bg-[#a695d8] px-0.5"
+                  className={`flex h-3.5 w-6 items-center rounded-full px-0.5 ${
+                    isLocal ? "bg-[#a695d8]" : "bg-[#3a324a14]"
+                  }`}
                 >
-                  <span className="ml-auto block h-2.5 w-2.5 rounded-full bg-white" />
+                  <span
+                    className={`block h-2.5 w-2.5 rounded-full bg-white ${
+                      isLocal ? "ml-auto" : ""
+                    }`}
+                  />
                 </span>
               </button>
             )}

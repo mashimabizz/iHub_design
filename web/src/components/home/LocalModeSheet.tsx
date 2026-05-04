@@ -333,9 +333,19 @@ export function LocalModeSheet({
     );
   }
 
+  // iter139: duration は「現在時刻 + 分数」で end を再計算
+  //   開始時刻は最終的に handleApply で now に上書きされる前提
+  //   詳細パネルで開始時刻を変更している場合は、その開始時刻 + 分数
   function applyDuration(minutes: number) {
-    const newEnd = new Date(new Date(startAt).getTime() + minutes * 60_000);
+    const baseStartMs = showAdvanced
+      ? new Date(startAt).getTime()
+      : Date.now();
+    const newEnd = new Date(baseStartMs + minutes * 60_000);
     setEndAt(newEnd.toISOString());
+    // 詳細パネルが閉じている時は startAt も now に揃える（表示の整合性）
+    if (!showAdvanced) {
+      setStartAt(new Date(baseStartMs).toISOString());
+    }
   }
 
   function handleApply() {
@@ -344,24 +354,35 @@ export function LocalModeSheet({
       setError("場所を入力してください");
       return;
     }
-    // iter135: 開始時刻は適用した瞬間に強制
-    //   ユーザーがシート上で過去の時刻を入力していても、
-    //   「今すぐ現地交換モード」の趣旨に合わせて常に now に上書きする
-    const nowIso = new Date().toISOString();
-    // 終了時刻が now より前なら、now + 既存の duration（最低 30 分）に補正
-    const existingDurMs =
-      new Date(endAt).getTime() - new Date(startAt).getTime();
+    // iter135 + iter139: 詳細パネルを開いていれば自由な開始時刻、閉じていれば
+    //   「適用した瞬間」を開始にする（duration はそのまま生かす）
     const minDurMs = 30 * 60_000;
-    const durMs = Math.max(minDurMs, existingDurMs);
-    const newEndIso = new Date(Date.now() + durMs).toISOString();
+    let finalStartIso: string;
+    let finalEndIso: string;
+    if (showAdvanced) {
+      // 詳細パネル：ユーザーが選んだ start/end をそのまま尊重
+      const dur = new Date(endAt).getTime() - new Date(startAt).getTime();
+      const safeDur = Math.max(minDurMs, dur);
+      finalStartIso = startAt;
+      finalEndIso = new Date(
+        new Date(startAt).getTime() + safeDur,
+      ).toISOString();
+    } else {
+      // 通常：開始 = now、終了 = now + duration（既存）
+      const existingDurMs =
+        new Date(endAt).getTime() - new Date(startAt).getTime();
+      const durMs = Math.max(minDurMs, existingDurMs);
+      finalStartIso = new Date().toISOString();
+      finalEndIso = new Date(Date.now() + durMs).toISOString();
+    }
     startTransition(async () => {
       const r = await applyLocalModeAW({
         venue,
         centerLat: center[0],
         centerLng: center[1],
         radiusM,
-        startAt: isoToDatetimeLocal(nowIso),
-        endAt: isoToDatetimeLocal(newEndIso),
+        startAt: isoToDatetimeLocal(finalStartIso),
+        endAt: isoToDatetimeLocal(finalEndIso),
       });
       if (r?.error) {
         setError(r.error);
@@ -560,9 +581,13 @@ export function LocalModeSheet({
             </div>
           </Section>
 
-          {/* 時間（iter135: 開始時刻は常に「今」、ユーザーは duration のみ調整） */}
+          {/* 時間（iter135 + iter139: 通常は「今すぐ開始」、詳細を開けば自由指定） */}
           <Section
-            title={`有効時間 / 今すぐ開始 (${durationMin} 分)`}
+            title={
+              showAdvanced
+                ? `有効時間 / ${fmtTime(startAt)} 〜 ${fmtTime(endAt)} (${durationMin}分)`
+                : `有効時間 / 今すぐ開始 (${durationMin} 分)`
+            }
           >
             <div className="mb-2 flex flex-wrap gap-1.5">
               {DURATION_OPTIONS.map((d) => {
@@ -588,12 +613,25 @@ export function LocalModeSheet({
               onClick={() => setShowAdvanced((v) => !v)}
               className="text-[10.5px] font-bold text-[#a695d8]"
             >
-              {showAdvanced ? "詳細を閉じる" : "終了時刻を細かく指定"}
+              {showAdvanced ? "詳細を閉じる" : "開始・終了を細かく指定"}
             </button>
             {showAdvanced && (
-              <div className="mt-2 space-y-1.5">
-                <div className="text-[10.5px] text-[#3a324a8c]">
-                  開始：適用した瞬間（自動）
+              <div className="mt-2 space-y-2">
+                <div>
+                  <div className="mb-0.5 text-[10px] font-bold text-[#3a324a8c]">
+                    開始
+                  </div>
+                  <input
+                    type="datetime-local"
+                    value={isoToDatetimeLocal(startAt)}
+                    onChange={(e) =>
+                      setStartAt(new Date(e.target.value).toISOString())
+                    }
+                    className="block w-full rounded-lg border border-[#3a324a14] bg-white px-2.5 py-1.5 text-[12px] text-gray-900 focus:border-[#a695d8] focus:outline-none"
+                  />
+                  <div className="mt-0.5 text-[9.5px] text-[#3a324a8c]">
+                    詳細を閉じれば「適用した瞬間」になります
+                  </div>
                 </div>
                 <div>
                   <div className="mb-0.5 text-[10px] font-bold text-[#3a324a8c]">
