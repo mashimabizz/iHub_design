@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { logout } from "@/app/auth/actions";
+// iter134: ホーム画面のログアウト撤去に伴い logout import 不要
 import {
   MatchCard,
   type MatchCardData,
@@ -653,24 +653,8 @@ export function HomeView({
             </div>
           )}
 
-          {profile && (
-            <div className="rounded-2xl border border-[#a695d822] bg-white p-4 text-[11px] leading-relaxed text-gray-600">
-              <div className="font-bold text-gray-900">
-                ようこそ {profile.display_name}（@{profile.handle}）
-              </div>
-              <div className="mt-1.5">
-                マッチング演算は iter66 で実装予定。今は mock data 表示中。
-              </div>
-              <form action={logout} className="mt-3">
-                <button
-                  type="submit"
-                  className="text-[11px] font-semibold text-gray-500 underline"
-                >
-                  ログアウト
-                </button>
-              </form>
-            </div>
-          )}
+          {/* iter134: ようこそ表示・ログアウトはホーム画面から撤廃
+              （ログアウトは /profile に集約済） */}
         </div>
       </div>
 
