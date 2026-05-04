@@ -30,15 +30,17 @@ export default async function ProfilePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 並列：プロフ + 推し + AW件数 + 取引件数 + 公開募集数
+  // 並列：プロフ + 推し + AW件数 + 取引件数 + 公開募集数 + 評価
   // iter86: AW は現地モード切替時のみ設定する単一値（複数登録は廃止）。
   // awCount は ProfileView に互換用フィールドとして渡し続けるが UI 上は非表示。
+  // iter148: 評価サマリ（hero 右側に表示するため）
   const [
     { data: profile },
     { data: oshi },
     { count: awCount },
     { count: tradeCount },
     { count: listingsCount },
+    { data: evals },
   ] = await Promise.all([
     supabase
       .from("users")
@@ -69,7 +71,16 @@ export default async function ProfilePage() {
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
       .eq("status", "active"),
+    supabase
+      .from("user_evaluations")
+      .select("stars")
+      .eq("ratee_id", user.id),
   ]);
+
+  const stars = (evals ?? []).map((e) => e.stars as number);
+  const ratingAvg =
+    stars.length > 0 ? stars.reduce((a, b) => a + b, 0) / stars.length : null;
+  const ratingCount = stars.length;
 
   // 推しグループでまとめる
   const groupMap = new Map<
@@ -103,6 +114,7 @@ export default async function ProfilePage() {
   return (
     <>
       <ProfileView
+        userId={user.id}
         profile={{
           handle: profile?.handle ?? "",
           displayName: profile?.display_name ?? "",
@@ -115,6 +127,8 @@ export default async function ProfilePage() {
         awCount={awCount ?? 0}
         tradeCount={tradeCount ?? 0}
         listingsCount={listingsCount ?? 0}
+        ratingAvg={ratingAvg}
+        ratingCount={ratingCount}
       />
       <BottomNav />
     </>

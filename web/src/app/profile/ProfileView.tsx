@@ -6,6 +6,8 @@ import { logout } from "@/app/auth/actions";
 import { Avatar } from "@/components/common/Avatar";
 
 type Props = {
+  /** iter148: 自分の user.id（評価一覧へのリンク用） */
+  userId: string;
   profile: {
     handle: string;
     displayName: string;
@@ -23,33 +25,28 @@ type Props = {
   awCount: number; // iter86: 現地モード切替時のみ設定する単一 AW（残置のため互換用）
   listingsCount: number;
   tradeCount: number;
-};
-
-const GENDER_LABEL: Record<string, string> = {
-  female: "女性",
-  male: "男性",
-  other: "その他",
-  no_answer: "回答しない",
+  /** iter148: 評価サマリ */
+  ratingAvg: number | null;
+  ratingCount: number;
 };
 
 /**
- * プロフ画面（モックアップ hub-screens.jsx::ProfileHub 準拠）
+ * プロフ画面（自分用）
  *
- * - アイデンティティ hero（紫グラデ + 統計：評価 / 取引 / 公開募集）
- * - あなたの活動（打診一覧 / スケジュール / 取引履歴）
- * - アイデンティティ（プロフィール編集 / 推し設定）
- * - 設定・サポート（Coming soon）
- * - 規約・法的情報（利用規約・プライバシー・特商法）
- * - ログアウト + アカウント削除
- *
- * iter86: wish 進捗・本人確認・AW 予定メトリクスは削除（実装方針確定）。
+ * iter148:
+ * - hero パネルを他人プロフと同仕様に統一（上半分のみ + 右側に評価）
+ * - 右上のプロフ編集 gear アイコンを撤去（アイデンティティ section から行える）
+ * - 各セクションが上から順にフェードインするスタガーアニメーション
  */
 export function ProfileView({
+  userId,
   profile,
   oshiGroups,
   awCount: _awCount,
-  listingsCount,
+  listingsCount: _listingsCount,
   tradeCount,
+  ratingAvg,
+  ratingCount,
 }: Props) {
   const oshiSummaryText = oshiGroups
     .slice(0, 2)
@@ -60,47 +57,28 @@ export function ProfileView({
         }`,
     )
     .join(" ／ ");
-  // iter86: 本人確認 UI 削除に伴い isVerified は未使用
-  const subText = [
-    profile.gender ? GENDER_LABEL[profile.gender] ?? "" : "",
-    profile.primaryArea ?? "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[88px] text-[#3a324a]">
-      {/* ヘッダー（safe-area + タイトル + 設定アイコン） */}
+      {/* ヘッダー（safe-area + タイトルのみ — iter148: gear アイコン撤去） */}
       <div className="border-b border-[#3a324a14] bg-white px-[18px] pb-3 pt-12">
         <div className="mx-auto flex max-w-md items-center justify-between">
           <h1 className="text-[19px] font-extrabold tracking-wide text-gray-900">
             プロフ
           </h1>
-          <Link
-            href="/profile/edit"
-            aria-label="設定"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 14 14"
-              fill="none"
-              stroke="#3a324a"
-              strokeWidth="1.5"
-            >
-              <circle cx="7" cy="7" r="2" />
-              <path d="M7 1.5v1.5M7 11v1.5M1.5 7H3M11 7h1.5M3 3l1 1M10 10l1 1M3 11l1-1M10 4l1-1" />
-            </svg>
-          </Link>
         </div>
       </div>
 
       <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-[18px] pt-[14px]">
-        {/* Identity hero */}
-        <div className="relative mb-[18px] overflow-hidden rounded-[18px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] p-[18px] text-white shadow-[0_10px_24px_rgba(166,149,216,0.22)]">
-          <div className="pointer-events-none absolute -right-5 -top-5 h-[120px] w-[120px] rounded-full bg-white/10" />
-          <div className="mb-3 flex items-center gap-3">
+        {/* iter148: hero — 他人プロフと同じ「上半分のみ + 右側評価」レイアウト */}
+        <div
+          className="animate-section-fade-down mb-[18px] overflow-hidden rounded-2xl p-5 text-white shadow-[0_10px_24px_rgba(166,149,216,0.30)]"
+          style={{
+            background: "linear-gradient(135deg, #a695d8, #a8d4e6)",
+            animationDelay: "0ms",
+          }}
+        >
+          <div className="flex items-center gap-3">
             <Avatar
               url={profile.avatarUrl}
               fallbackName={profile.displayName || profile.handle}
@@ -108,110 +86,132 @@ export function ProfileView({
               variant="rounded"
               className="border-2 border-white/30"
             />
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-[16px] font-extrabold">
                 @{profile.handle || "未設定"}
               </div>
-              <div className="mt-0.5 text-[11px] leading-[1.5] opacity-90">
+              <div className="mt-0.5 text-[12px] font-bold opacity-90">
                 {profile.displayName || "（表示名未設定）"}
-                {oshiSummaryText && (
-                  <>
-                    <br />
-                    {oshiSummaryText}
-                  </>
-                )}
-                {subText && (
-                  <>
-                    <br />
-                    {subText}
-                  </>
-                )}
+              </div>
+              <div className="mt-0.5 text-[10.5px] opacity-85">
+                {profile.primaryArea ?? "エリア未設定"} ・ 取引 {tradeCount} 回
               </div>
             </div>
-          </div>
-          <div className="flex border-t border-white/20 pt-3">
-            <Stat value="—" label="評価" />
-            <DividerV />
-            <Stat value={String(tradeCount)} label="取引" />
-            <DividerV />
-            <Stat value={String(listingsCount)} label="公開募集" />
+            {/* iter148: 評価サマリパネル — タップで評価一覧へ */}
+            <Link
+              href={`/users/${userId}/evaluations`}
+              aria-label="評価一覧を見る"
+              className="flex flex-shrink-0 flex-col items-center justify-center rounded-[12px] bg-white/15 px-2.5 py-1.5 backdrop-blur-sm transition-all active:scale-[0.96] active:bg-white/25"
+            >
+              <span
+                className="text-[15px] font-extrabold leading-none"
+                style={{ fontFamily: '"Inter Tight", sans-serif' }}
+              >
+                {ratingAvg !== null ? `★${ratingAvg.toFixed(1)}` : "★—"}
+              </span>
+              <span className="mt-0.5 text-[9.5px] tabular-nums opacity-90">
+                {ratingCount} 件
+              </span>
+              <span className="mt-0.5 text-[8.5px] tracking-wide opacity-80">
+                詳細 ›
+              </span>
+            </Link>
           </div>
         </div>
 
-        {/* iter86: wish 進捗（コレクションサマリ）は削除 */}
-
-        {/* iter90: 「打診」「取引履歴」はフッタの「取引」タブと重複するため削除。
-            スケジュール（自分の予定）だけ別 Section に。 */}
-        <Section label="予定">
-          <Link href="/schedules" className="block">
-            <Row>
-              <RowItem
-                icon="📅"
-                title="スケジュール"
-                sub="自分の予定（取引と無関係の用事も登録可）"
-                chevron
-              />
-            </Row>
-          </Link>
-        </Section>
+        {/* 予定 */}
+        <div
+          className="animate-section-fade-down"
+          style={{ animationDelay: "80ms" }}
+        >
+          <Section label="予定">
+            <Link href="/schedules" className="block">
+              <Row>
+                <RowItem
+                  icon="📅"
+                  title="スケジュール"
+                  sub="自分の予定（取引と無関係の用事も登録可）"
+                  chevron
+                />
+              </Row>
+            </Link>
+          </Section>
+        </div>
 
         {/* アイデンティティ */}
-        <Section label="アイデンティティ">
-          <Link href="/profile/edit" className="block">
-            <RowItem
-              icon="👤"
-              title="プロフィール編集"
-              sub="ハンドル・表示名・性別・エリア"
-              chevron
-            />
-          </Link>
-          <Link href="/profile/oshi" className="block">
-            <RowItem
-              icon="💜"
-              title="推し設定"
-              sub={
-                oshiGroups.length === 0
-                  ? "未設定 · タップで追加"
-                  : `${oshiGroups.length}グループ · ${oshiSummaryText}`
-              }
-              chevron
-            />
-          </Link>
-          {/* iter86: 本人確認の行は削除（新規登録時にメール認証が完了している前提） */}
-        </Section>
+        <div
+          className="animate-section-fade-down"
+          style={{ animationDelay: "160ms" }}
+        >
+          <Section label="アイデンティティ">
+            <Link href="/profile/edit" className="block">
+              <RowItem
+                icon="👤"
+                title="プロフィール編集"
+                sub="ハンドル・表示名・性別・エリア"
+                chevron
+              />
+            </Link>
+            <Link href="/profile/oshi" className="block">
+              <RowItem
+                icon="💜"
+                title="推し設定"
+                sub={
+                  oshiGroups.length === 0
+                    ? "未設定 · タップで追加"
+                    : `${oshiGroups.length}グループ · ${oshiSummaryText}`
+                }
+                chevron
+              />
+            </Link>
+          </Section>
+        </div>
 
         {/* 設定・サポート */}
-        <Section label="設定・サポート">
-          <RowLink href="/settings" icon="⚙" title="設定" sub="アプリ全体の設定" />
-          <RowLink
-            href="/settings/notifications"
-            icon="🔔"
-            title="通知設定"
-            sub="メール通知の ON/OFF"
-          />
-          <RowLink
-            href="/help"
-            icon="?"
-            title="ヘルプ・FAQ"
-            sub="使い方・取引の流れ・運営連絡"
-          />
-        </Section>
-
-        {/* iter93: 規約・法的情報リンクは /settings に集約済 */}
+        <div
+          className="animate-section-fade-down"
+          style={{ animationDelay: "240ms" }}
+        >
+          <Section label="設定・サポート">
+            <RowLink
+              href="/settings"
+              icon="⚙"
+              title="設定"
+              sub="アプリ全体の設定"
+            />
+            <RowLink
+              href="/settings/notifications"
+              icon="🔔"
+              title="通知設定"
+              sub="メール通知の ON/OFF"
+            />
+            <RowLink
+              href="/help"
+              icon="?"
+              title="ヘルプ・FAQ"
+              sub="使い方・取引の流れ・運営連絡"
+            />
+          </Section>
+        </div>
 
         {/* Logout / Delete */}
-        <Section>
-          <LogoutRow />
-          <Row>
-            <button
-              type="button"
-              disabled
-              className="block w-full px-3.5 py-3 text-center text-[11.5px] font-semibold text-[#d4866b] opacity-60"
-            >
-              アカウント削除（準備中）
-            </button>
-          </Row>
-        </Section>
+        <div
+          className="animate-section-fade-down"
+          style={{ animationDelay: "320ms" }}
+        >
+          <Section>
+            <LogoutRow />
+            <Row>
+              <button
+                type="button"
+                disabled
+                className="block w-full px-3.5 py-3 text-center text-[11.5px] font-semibold text-[#d4866b] opacity-60"
+              >
+                アカウント削除（準備中）
+              </button>
+            </Row>
+          </Section>
+        </div>
 
         <div className="pb-3 pt-1 text-center text-[10px] text-[#3a324a4d]">
           iHub MVP · build dev
@@ -222,24 +222,6 @@ export function ProfileView({
 }
 
 /* ─── Sub-components ─────────────────────────────────────── */
-
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="flex-1 text-center">
-      <div
-        className="text-[14px] font-extrabold"
-        style={{ fontFamily: '"Inter Tight", sans-serif' }}
-      >
-        {value}
-      </div>
-      <div className="mt-0.5 text-[9.5px] opacity-85">{label}</div>
-    </div>
-  );
-}
-
-function DividerV() {
-  return <div className="w-px bg-white/20" />;
-}
 
 function Section({
   label,
