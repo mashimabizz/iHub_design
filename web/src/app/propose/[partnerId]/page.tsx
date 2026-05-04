@@ -53,6 +53,11 @@ type Props = {
     option?: string;
     /** iter67.8: 複数選択肢の position をカンマ区切りで指定（"1,2,3" など） */
     options?: string;
+    /**
+     * iter108: 関係図ツリー型から候補レベル選択で渡される
+     * inventory_id をカンマ区切りで指定（"uuid1,uuid2,uuid3" など）
+     */
+    candidates?: string;
     /** iter70-C: 再打診時の元 proposal id */
     proposalId?: string;
     revise?: string;
@@ -70,6 +75,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
     listing: listingIdRaw,
     option: optionRaw,
     options: optionsRaw,
+    candidates: candidatesRaw,
     proposalId: reviseProposalIdRaw,
     revise: reviseFlagRaw,
     meetupStart: meetupStartOverride,
@@ -290,7 +296,68 @@ export default async function ProposePage({ params, searchParams }: Props) {
     if (Number.isFinite(p) && p >= 1 && p <= 5) positions.push(p);
   }
 
-  if (listingIdRaw && positions.length > 0) {
+  /* ─ iter108: 候補（candidates）レベルプリフィル ─
+     関係図ツリー型から「特定の inv 候補を選んで打診」する場合、
+     listing + candidates=invid1,invid2 で渡される。option ベースより優先。 */
+  if (listingIdRaw && candidatesRaw) {
+    const candidateIds = candidatesRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => /^[0-9a-f-]+$/i.test(s));
+
+    if (candidateIds.length > 0) {
+      const { data: listingRow } = await supabase
+        .from("listings")
+        .select("id, user_id, have_ids, have_qtys, status")
+        .eq("id", listingIdRaw)
+        .maybeSingle();
+
+      if (listingRow) {
+        const isMyListing = listingRow.user_id === user.id;
+        const isPartnerListing = listingRow.user_id === partnerId;
+
+        if (isMyListing || isPartnerListing) {
+          const haveIds = (listingRow.have_ids as string[]) ?? [];
+          const haveQtys = (listingRow.have_qtys as number[]) ?? [];
+
+          // 候補は「相手側の inv」を期待
+          //   isMyListing → 候補は partner の inv（receiver_have に入る）
+          //   partner listing → 候補は my の inv（sender_have に入る）
+          const candidatePool: ProposeInv[] = isMyListing
+            ? theirInvWithFlag
+            : myInvWithFlag;
+          const validCandidates = candidateIds.filter((cid) =>
+            candidatePool.some((p) => p.id === cid),
+          );
+
+          if (validCandidates.length > 0) {
+            // qty は candidate あたり 1（数量調整は ProposeFlow 側で）
+            const candQtys = validCandidates.map(() => 1);
+
+            if (isMyListing) {
+              initial = {
+                senderHaveIds: haveIds,
+                senderHaveQtys: haveQtys,
+                receiverHaveIds: validCandidates,
+                receiverHaveQtys: candQtys,
+                listingId: listingRow.id as string,
+              };
+            } else {
+              initial = {
+                senderHaveIds: validCandidates,
+                senderHaveQtys: candQtys,
+                receiverHaveIds: haveIds,
+                receiverHaveQtys: haveQtys,
+                listingId: listingRow.id as string,
+              };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (!initial && listingIdRaw && positions.length > 0) {
     const [{ data: listingRow }, { data: optionRows }] = await Promise.all([
       supabase
         .from("listings")
