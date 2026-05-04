@@ -2,6 +2,12 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { HeaderBack } from "@/components/auth/HeaderBack";
 import { UserProfileView, type UserProfileData } from "./UserProfileView";
+import type {
+  ListingItem,
+  ListingHaveItem,
+  ListingOption,
+  ListingWishItem,
+} from "@/app/listings/ListingsView";
 
 export const metadata = {
   title: "ユーザーのプロフィール — iHub",
@@ -39,44 +45,15 @@ export default async function UserPublicPage({
     notFound();
   }
 
-  // 評価サマリ + 最新コメント
+  // 評価サマリ（コメントは別画面へ移行: /users/[id]/evaluations）
   const { data: evals } = await supabase
     .from("user_evaluations")
-    .select("stars, comment, created_at, rater_id")
-    .eq("ratee_id", id)
-    .order("created_at", { ascending: false })
-    .limit(20);
+    .select("stars")
+    .eq("ratee_id", id);
   const stars = (evals ?? []).map((e) => e.stars as number);
   const ratingAvg =
     stars.length > 0 ? stars.reduce((a, b) => a + b, 0) / stars.length : null;
   const ratingCount = stars.length;
-
-  // 評価コメントの rater handle を fetch
-  const raterIds = Array.from(
-    new Set((evals ?? []).map((e) => e.rater_id as string)),
-  );
-  const handlesById = new Map<string, string>();
-  if (raterIds.length > 0) {
-    const { data: rs } = await supabase
-      .from("users")
-      .select("id, handle")
-      .in("id", raterIds);
-    if (rs) {
-      for (const r of rs) handlesById.set(r.id as string, r.handle as string);
-    }
-  }
-  const recentComments = (evals ?? [])
-    .filter(
-      (e): e is typeof e & { comment: string } =>
-        typeof e.comment === "string" && (e.comment as string).trim().length > 0,
-    )
-    .slice(0, 5)
-    .map((e) => ({
-      stars: e.stars as number,
-      comment: e.comment as string,
-      createdAt: e.created_at as string,
-      raterHandle: handlesById.get(e.rater_id as string) ?? "?",
-    }));
 
   // 取引完了数
   const { count: completedCount } = await supabase
@@ -85,8 +62,7 @@ export default async function UserPublicPage({
     .or(`sender_id.eq.${id},receiver_id.eq.${id}`)
     .eq("status", "completed");
 
-  // iter97: 譲るグッズ一覧（kind='for_trade', status='active'）
-  // マイ在庫と同じカード形式で表示するため、必要なフィールドを fetch
+  // iter97: 譲るグッズ一覧
   const { data: invRows } = await supabase
     .from("goods_inventory")
     .select(
@@ -132,69 +108,185 @@ export default async function UserPublicPage({
     };
   });
 
-  // 公開中の listings 数 + サマリ（最大 5 件）
-  const { data: listings } = await supabase
+  // iter146: 公開中の listings を ListingsView と同じスタイルで表示するため
+  //         自分の listings ページと同等のフル情報を取得する
+  type ListingRow = {
+    id: string;
+    have_ids: string[] | null;
+    have_qtys: number[] | null;
+    have_logic: "and" | "or";
+    have_group_id: string | null;
+    have_goods_type_id: string | null;
+    status: "active" | "paused" | "matched" | "closed";
+    note: string | null;
+    created_at: string;
+  };
+  type OptionRow = {
+    id: string;
+    listing_id: string;
+    position: number;
+    wish_ids: string[] | null;
+    wish_qtys: number[] | null;
+    logic: "and" | "or";
+    exchange_type: "same_kind" | "cross_kind" | "any";
+    is_cash_offer: boolean;
+    cash_amount: number | null;
+    wish_group_id: string | null;
+    wish_goods_type_id: string | null;
+  };
+  type FullInvRow = {
+    id: string;
+    title: string;
+    photo_urls: string[] | null;
+    group: { name: string } | { name: string }[] | null;
+    character: { name: string } | { name: string }[] | null;
+    goods_type: { name: string } | { name: string }[] | null;
+  };
+
+  const { data: listingRowsRaw } = await supabase
     .from("listings")
-    .select("id, have_group_id, have_goods_type_id, created_at")
+    .select(
+      "id, have_ids, have_qtys, have_logic, have_group_id, have_goods_type_id, status, note, created_at",
+    )
     .eq("user_id", id)
     .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(5);
-  const listingIds = (listings ?? []).map((l) => l.id as string);
+    .order("created_at", { ascending: false });
 
-  // listings の wish_options も拾って簡易ラベル化
-  const wishOptionsByListing = new Map<
-    string,
-    { groupName: string | null; goodsTypeName: string | null }[]
-  >();
+  const listingRows = (listingRowsRaw as ListingRow[]) ?? [];
+  const listingIds = listingRows.map((r) => r.id);
+
+  const optsByListing = new Map<string, OptionRow[]>();
   if (listingIds.length > 0) {
-    const { data: opts } = await supabase
+    const { data: optRows } = await supabase
       .from("listing_wish_options")
       .select(
-        "listing_id, position, wish_group_id, wish_goods_type_id, is_cash_offer, group:groups_master!listing_wish_options_wish_group_id_fkey(name), goods_type:goods_types_master!listing_wish_options_wish_goods_type_id_fkey(name)",
+        "id, listing_id, position, wish_ids, wish_qtys, logic, exchange_type, is_cash_offer, cash_amount, wish_group_id, wish_goods_type_id",
       )
       .in("listing_id", listingIds)
       .order("position", { ascending: true });
-    if (opts) {
-      for (const o of opts) {
-        const arr = wishOptionsByListing.get(o.listing_id as string) ?? [];
-        const grp = Array.isArray(o.group) ? o.group[0] : o.group;
-        const gt = Array.isArray(o.goods_type) ? o.goods_type[0] : o.goods_type;
-        arr.push({
-          groupName: (grp?.name as string | undefined) ?? null,
-          goodsTypeName: (gt?.name as string | undefined) ?? null,
-        });
-        wishOptionsByListing.set(o.listing_id as string, arr);
+    if (optRows) {
+      for (const o of optRows as OptionRow[]) {
+        const arr = optsByListing.get(o.listing_id) ?? [];
+        arr.push(o);
+        optsByListing.set(o.listing_id, arr);
       }
     }
   }
 
-  // groups / goods_types を listings の have_group_id 等のため別途取得
-  const groupIds = new Set<string>();
-  const typeIds = new Set<string>();
-  for (const l of listings ?? []) {
-    if (l.have_group_id) groupIds.add(l.have_group_id as string);
-    if (l.have_goods_type_id) typeIds.add(l.have_goods_type_id as string);
+  const allInvIds = new Set<string>();
+  for (const r of listingRows) for (const id of r.have_ids ?? []) allInvIds.add(id);
+  for (const opts of optsByListing.values())
+    for (const o of opts) for (const id of o.wish_ids ?? []) allInvIds.add(id);
+
+  let invById = new Map<string, FullInvRow>();
+  if (allInvIds.size > 0) {
+    const { data: invR } = await supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      )
+      .in("id", Array.from(allInvIds));
+    if (invR) {
+      invById = new Map((invR as FullInvRow[]).map((r) => [r.id, r]));
+    }
+  }
+
+  const allGroupIds = new Set<string>();
+  const allGoodsTypeIds = new Set<string>();
+  for (const r of listingRows) {
+    if (r.have_group_id) allGroupIds.add(r.have_group_id);
+    if (r.have_goods_type_id) allGoodsTypeIds.add(r.have_goods_type_id);
+  }
+  for (const opts of optsByListing.values()) {
+    for (const o of opts) {
+      if (o.wish_group_id) allGroupIds.add(o.wish_group_id);
+      if (o.wish_goods_type_id) allGoodsTypeIds.add(o.wish_goods_type_id);
+    }
   }
   const groupNameById = new Map<string, string>();
-  const typeNameById = new Map<string, string>();
-  if (groupIds.size > 0) {
+  const goodsTypeNameById = new Map<string, string>();
+  if (allGroupIds.size > 0) {
     const { data } = await supabase
       .from("groups_master")
       .select("id, name")
-      .in("id", Array.from(groupIds));
+      .in("id", Array.from(allGroupIds));
     if (data) for (const g of data) groupNameById.set(g.id as string, g.name as string);
   }
-  if (typeIds.size > 0) {
+  if (allGoodsTypeIds.size > 0) {
     const { data } = await supabase
       .from("goods_types_master")
       .select("id, name")
-      .in("id", Array.from(typeIds));
-    if (data) for (const g of data) typeNameById.set(g.id as string, g.name as string);
+      .in("id", Array.from(allGoodsTypeIds));
+    if (data)
+      for (const g of data) goodsTypeNameById.set(g.id as string, g.name as string);
   }
 
-  // 自分側の wish が partner inv に hit するかは、シンプルに当画面ではスキップ
-  // （マッチカード経由で来る場合は既にマッチが評価済）
+  function toHave(id: string, qty: number): ListingHaveItem | null {
+    const r = invById.get(id);
+    if (!r) return null;
+    return {
+      id: r.id,
+      title: r.title,
+      qty,
+      photoUrl: (r.photo_urls && r.photo_urls[0]) ?? null,
+      groupName: pickOne(r.group)?.name ?? null,
+      characterName: pickOne(r.character)?.name ?? null,
+      goodsTypeName: pickOne(r.goods_type)?.name ?? null,
+    };
+  }
+  function toWishLi(id: string, qty: number): ListingWishItem | null {
+    const r = invById.get(id);
+    if (!r) return null;
+    return {
+      id: r.id,
+      title: r.title,
+      qty,
+      photoUrl: (r.photo_urls && r.photo_urls[0]) ?? null,
+      groupName: pickOne(r.group)?.name ?? null,
+      characterName: pickOne(r.character)?.name ?? null,
+      goodsTypeName: pickOne(r.goods_type)?.name ?? null,
+    };
+  }
+
+  const listingItems: ListingItem[] = listingRows.map((r) => {
+    const haves = (r.have_ids ?? [])
+      .map((id, i) => toHave(id, (r.have_qtys ?? [])[i] ?? 1))
+      .filter((x): x is ListingHaveItem => !!x);
+    const opts = optsByListing.get(r.id) ?? [];
+    const options: ListingOption[] = opts.map((o) => ({
+      id: o.id,
+      position: o.position,
+      logic: o.logic,
+      exchangeType: o.exchange_type,
+      isCashOffer: o.is_cash_offer,
+      cashAmount: o.cash_amount,
+      groupName: o.wish_group_id
+        ? (groupNameById.get(o.wish_group_id) ?? null)
+        : null,
+      goodsTypeName: o.wish_goods_type_id
+        ? (goodsTypeNameById.get(o.wish_goods_type_id) ?? null)
+        : null,
+      wishes: o.is_cash_offer
+        ? []
+        : (o.wish_ids ?? [])
+            .map((id, i) => toWishLi(id, (o.wish_qtys ?? [])[i] ?? 1))
+            .filter((x): x is ListingWishItem => !!x),
+    }));
+    return {
+      id: r.id,
+      haves,
+      haveLogic: r.have_logic,
+      haveGroupName: r.have_group_id
+        ? (groupNameById.get(r.have_group_id) ?? null)
+        : null,
+      haveGoodsTypeName: r.have_goods_type_id
+        ? (goodsTypeNameById.get(r.have_goods_type_id) ?? null)
+        : null,
+      options,
+      status: r.status,
+      note: r.note,
+    };
+  });
 
   const profile: UserProfileData = {
     id: user.id as string,
@@ -206,24 +298,13 @@ export default async function UserPublicPage({
     ratingCount,
     completedTradeCount: completedCount ?? 0,
     inventoryItems,
-    activeListingsCount: (listings ?? []).length,
-    activeListingsPreview: (listings ?? []).map((l) => ({
-      id: l.id as string,
-      haveGroupName: l.have_group_id
-        ? groupNameById.get(l.have_group_id as string) ?? null
-        : null,
-      haveGoodsTypeName: l.have_goods_type_id
-        ? typeNameById.get(l.have_goods_type_id as string) ?? null
-        : null,
-      wishOptions: wishOptionsByListing.get(l.id as string) ?? [],
-    })),
-    recentComments,
+    listingItems,
   };
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title={`@${user.handle}`} sub="プロフィール" backHref="/" />
-      <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-5 pb-12 pt-3">
+      <div className="mx-auto w-full max-w-md flex-1 flex-col px-5 pb-12 pt-3">
         <UserProfileView profile={profile} />
       </div>
     </main>

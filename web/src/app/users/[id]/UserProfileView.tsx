@@ -1,30 +1,24 @@
 "use client";
 
 /**
- * iter81: パートナーの公開プロフィール画面
- * iter97: 「譲るグッズ」一覧をマイ在庫と同じ ItemCard 形式で追加。
- *         チャットヘッダー → このプロフ画面で、相手のグッズが一目で分かる導線。
- * iter98: 譲るグッズに「推し」「種別」フィルタを実装（マイ在庫と同じ FilterRow）
- *         + 評価メトリクスをタップで評価コメント一覧へジャンプ。
+ * iter146：他人プロフィール画面の再設計。
  *
- * iHub/hub-screens.jsx の ProfileHub の hero 構造を参考に、
- * 受信側打診画面 (ProposalDetailView) や マッチカード、
- * チャットヘッダーから遷移。
- *
- * 表示：
- * - hero card：avatar 大 / handle / display_name / primary_area
- *   ★ ・ 取引数 ・ 譲るグッズ数 のメトリクス（★はタップで評価一覧へ）
- * - 「打診を始める」CTA（自分の場合は表示しない、page.tsx で /profile に redirect 済み）
- * - iter97: 譲るグッズ一覧（マイ在庫と同じ ItemCard・3 列グリッド・閲覧専用）
- *   + iter98: 推し / 種別フィルタ
- * - 公開中の個別募集 一覧（最大 5 件、譲：group×goodsType / 求：選択肢ごと）
- * - 最近の評価コメント（最大 5 件）
+ * - hero パネル：上半分のみ（avatar + handle + name + area）。
+ *   右側に「★平均 (件数)」を配置。タップで /users/[id]/evaluations へ
+ * - 下半分の数字メトリクス行は撤去
+ * - 譲るグッズ / 公開中の個別募集 を 2 タブ scroll-snap でスワイプ
+ * - 個別募集タブは ListingsView を readOnly モードで再利用
+ * - 評価コメント一覧は別画面 /users/[id]/evaluations に移行
  */
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ItemCard, type ItemCardData } from "@/app/inventory/ItemCard";
 import { FilterRow } from "@/app/inventory/InventoryView";
+import {
+  ListingsView,
+  type ListingItem,
+} from "@/app/listings/ListingsView";
 
 export type PartnerInventoryItem = {
   id: string;
@@ -44,59 +38,53 @@ export type UserProfileData = {
   ratingAvg: number | null;
   ratingCount: number;
   completedTradeCount: number;
-  /** iter97: 譲るグッズ一覧（kind='for_trade', status='active'） */
   inventoryItems: PartnerInventoryItem[];
-  activeListingsCount: number;
-  activeListingsPreview: {
-    id: string;
-    haveGroupName: string | null;
-    haveGoodsTypeName: string | null;
-    wishOptions: { groupName: string | null; goodsTypeName: string | null }[];
-  }[];
-  recentComments: {
-    stars: number;
-    comment: string;
-    createdAt: string;
-    raterHandle: string;
-  }[];
+  /** iter146: 公開中の個別募集（ListingsView 形式） */
+  listingItems: ListingItem[];
 };
 
+type Tab = "inventory" | "listings";
+const TAB_IDS: Tab[] = ["inventory", "listings"];
+
 export function UserProfileView({ profile }: { profile: UserProfileData }) {
-  // iter98: 譲るグッズのフィルタ（マイ在庫と同じ FilterRow を再利用）
-  const [activeMember, setActiveMember] = useState<string | null>(null);
-  const [activeType, setActiveType] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("inventory");
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const memberOptions = useMemo(() => {
-    const s = new Set<string>();
-    for (const it of profile.inventoryItems) s.add(it.memberName);
-    return Array.from(s).sort();
-  }, [profile.inventoryItems]);
+  // スワイプ位置 → タブ同期
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    let frame: number | null = null;
+    function onScroll() {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (!container) return;
+        const idx = Math.round(container.scrollLeft / container.clientWidth);
+        const next = TAB_IDS[idx];
+        if (next && next !== tab) setTab(next);
+      });
+    }
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [tab]);
 
-  const typeOptions = useMemo(() => {
-    const s = new Set<string>();
-    for (const it of profile.inventoryItems) s.add(it.goodsType);
-    return Array.from(s).sort();
-  }, [profile.inventoryItems]);
-
-  const filteredInventory = useMemo(() => {
-    return profile.inventoryItems.filter((it) => {
-      if (activeMember && it.memberName !== activeMember) return false;
-      if (activeType && it.goodsType !== activeType) return false;
-      return true;
+  function selectTab(target: Tab) {
+    setTab(target);
+    const container = scrollRef.current;
+    if (!container) return;
+    const idx = TAB_IDS.indexOf(target);
+    container.scrollTo({
+      left: idx * container.clientWidth,
+      behavior: "smooth",
     });
-  }, [profile.inventoryItems, activeMember, activeType]);
-
-  // iter98: 「評価」メトリクスタップで最近の評価コメントセクションへスクロール
-  function scrollToRatings() {
-    if (typeof document === "undefined") return;
-    document
-      .getElementById("user-ratings")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   return (
-    <div className="space-y-3.5 pb-20">
-      {/* hero */}
+    <div className="flex flex-1 flex-col pb-20">
+      {/* hero — iter146: 上半分のみ。右に評価 (タップで評価一覧へ) */}
       <div
         className="overflow-hidden rounded-2xl p-5 text-white shadow-[0_10px_24px_rgba(166,149,216,0.30)]"
         style={{
@@ -129,238 +117,196 @@ export function UserProfileView({ profile }: { profile: UserProfileData }) {
               {profile.displayName}
             </div>
             <div className="mt-0.5 text-[10.5px] opacity-85">
-              {profile.primaryArea ?? "エリア未設定"} ・ 取引マナー◎
+              {profile.primaryArea ?? "エリア未設定"} ・ 取引{" "}
+              {profile.completedTradeCount} 回
             </div>
           </div>
-        </div>
-        <div className="mt-3 flex border-t border-white/20 pt-3">
-          {[
-            {
-              v:
-                profile.ratingAvg !== null
-                  ? `★${profile.ratingAvg.toFixed(1)}`
-                  : "★—",
-              l: "評価",
-              onTap: scrollToRatings, // iter98: タップで評価コメント一覧へ
-            },
-            { v: String(profile.completedTradeCount), l: "取引" },
-            // iter97: 「譲るグッズ」を主要メトリクスに昇格
-            { v: String(profile.inventoryItems.length), l: "譲" },
-            { v: String(profile.activeListingsCount), l: "個別募集" },
-          ].map((s, i) => {
-            const inner = (
-              <>
-                <div
-                  className="text-[14px] font-extrabold"
-                  style={{ fontFamily: '"Inter Tight", sans-serif' }}
-                >
-                  {s.v}
-                </div>
-                <div className="mt-0.5 text-[9.5px] opacity-85">{s.l}</div>
-              </>
-            );
-            const onTap = (s as { onTap?: () => void }).onTap;
-            return (
-              <div
-                key={s.l}
-                className="flex-1 text-center"
-                style={{
-                  borderLeft:
-                    i > 0 ? "1px solid rgba(255,255,255,0.2)" : "none",
-                }}
-              >
-                {onTap ? (
-                  <button
-                    type="button"
-                    onClick={onTap}
-                    className="block w-full rounded-md transition-colors active:bg-white/10"
-                    aria-label={`${s.l}（タップで評価コメント一覧へ）`}
-                  >
-                    {inner}
-                    {/* iter98: タップ可能であることを示す小さな下線 */}
-                    <div className="mx-auto mt-0.5 h-[1px] w-3 bg-white/40" />
-                  </button>
-                ) : (
-                  inner
-                )}
-              </div>
-            );
-          })}
+          {/* iter146: 右側の評価サマリ — タップで評価一覧へ */}
+          <Link
+            href={`/users/${profile.id}/evaluations`}
+            aria-label="評価一覧を見る"
+            className="flex flex-shrink-0 flex-col items-center justify-center rounded-[12px] bg-white/15 px-2.5 py-1.5 backdrop-blur-sm transition-all active:scale-[0.96] active:bg-white/25"
+          >
+            <span
+              className="text-[15px] font-extrabold leading-none"
+              style={{ fontFamily: '"Inter Tight", sans-serif' }}
+            >
+              {profile.ratingAvg !== null
+                ? `★${profile.ratingAvg.toFixed(1)}`
+                : "★—"}
+            </span>
+            <span className="mt-0.5 text-[9.5px] tabular-nums opacity-90">
+              {profile.ratingCount} 件
+            </span>
+            <span className="mt-0.5 text-[8.5px] tracking-wide opacity-80">
+              詳細 ›
+            </span>
+          </Link>
         </div>
       </div>
 
       {/* CTA */}
       <Link
         href={`/propose/${profile.id}`}
-        className="block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-[14px] font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)]"
+        className="mt-3 block w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-[14px] font-bold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)]"
       >
         💬 このユーザーに打診する →
       </Link>
 
-      {/* iter97: 譲るグッズ一覧（マイ在庫と同じ ItemCard を使った 3 列グリッド・閲覧専用）
-          iter98: 推し / 種別フィルタを追加（マイ在庫と同じ FilterRow） */}
-      <Section
-        label="譲るグッズ"
-        hint={
-          activeMember || activeType
-            ? `${filteredInventory.length} / ${profile.inventoryItems.length} 件`
-            : `${profile.inventoryItems.length} 件`
-        }
-      >
-        {profile.inventoryItems.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
-            譲る候補のグッズはまだありません
-          </div>
-        ) : (
-          <div>
-            <FilterRow
-              label="推し"
-              options={memberOptions}
-              active={activeMember}
-              onChange={setActiveMember}
-            />
-            <FilterRow
-              label="種別"
-              options={typeOptions}
-              active={activeType}
-              onChange={setActiveType}
-            />
-            {filteredInventory.length === 0 ? (
-              <div className="mt-1 rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
-                該当するグッズがありません
-              </div>
-            ) : (
-              <div className="mt-1 grid grid-cols-3 gap-2.5">
-                {filteredInventory.map((it) => {
-                  const card: ItemCardData = {
-                    id: it.id,
-                    memberName: it.memberName,
-                    goodsType: it.goodsType,
-                    series: null,
-                    qty: it.qty,
-                    hue: it.hue,
-                    carrying: false,
-                    photoUrl: it.photoUrl,
-                    isPending: false,
-                  };
-                  return <ItemCard key={it.id} item={card} />;
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </Section>
+      {/* タブバー */}
+      <div className="mt-4 flex gap-1">
+        <TabButton
+          active={tab === "inventory"}
+          label="譲るグッズ"
+          count={profile.inventoryItems.length}
+          color="#a695d8"
+          onClick={() => selectTab("inventory")}
+        />
+        <TabButton
+          active={tab === "listings"}
+          label="公開中の個別募集"
+          count={profile.listingItems.length}
+          color="#a8d4e6"
+          onClick={() => selectTab("listings")}
+        />
+      </div>
 
-      {/* 公開中の個別募集 */}
-      <Section
-        label="公開中の個別募集"
-        hint={`${profile.activeListingsCount} 件`}
+      {/* スワイプコンテナ */}
+      <div
+        ref={scrollRef}
+        className="-mx-5 mt-3 flex flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
+        style={{ scrollbarWidth: "none" }}
       >
-        {profile.activeListingsPreview.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
-            公開中の個別募集はありません
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {profile.activeListingsPreview.map((l) => (
-              <div
-                key={l.id}
-                className="rounded-2xl border border-[#3a324a14] bg-white px-3.5 py-3"
-              >
-                <div className="mb-1 text-[10.5px] font-bold tracking-[0.4px] text-[#a8d4e6]">
-                  譲（{l.haveGroupName ?? "—"} × {l.haveGoodsTypeName ?? "—"}）
-                </div>
-                <div className="my-1.5 flex items-center justify-center text-[12px] text-[#3a324a8c]">
-                  ↔
-                </div>
-                <div className="mb-1 text-[10.5px] font-bold tracking-[0.4px] text-[#f3c5d4]">
-                  求（{l.wishOptions.length} 選択肢）
-                </div>
-                <div className="space-y-0.5">
-                  {l.wishOptions.map((opt, i) => (
-                    <div
-                      key={i}
-                      className="text-[11.5px] text-[#3a324a]"
-                    >
-                      <span className="text-[#3a324a8c]">#{i + 1}</span>{" "}
-                      {opt.groupName ?? "—"} × {opt.goodsTypeName ?? "—"}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* 最近の評価コメント — iter98: hero ★ メトリクスからスクロールで来る anchor */}
-      <Section label="最近の評価コメント" id="user-ratings">
-        {profile.recentComments.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
-            まだ評価コメントはありません
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {profile.recentComments.map((c, i) => (
-              <div
-                key={i}
-                className="rounded-2xl border border-[#3a324a14] bg-white px-3.5 py-3"
-              >
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-[#3a324a]">
-                    @{c.raterHandle}
-                  </span>
-                  <span className="text-[10.5px] tabular-nums text-[#3a324a8c]">
-                    {"★".repeat(c.stars)}
-                    <span className="text-[#3a324a14]">
-                      {"★".repeat(5 - c.stars)}
-                    </span>
-                  </span>
-                  <div className="flex-1" />
-                  <span className="text-[10px] text-[#3a324a8c]">
-                    {formatDate(c.createdAt)}
-                  </span>
-                </div>
-                <pre className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-[#3a324a]">
-                  {c.comment}
-                </pre>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+        <InventoryPanel items={profile.inventoryItems} />
+        <ListingsPanel items={profile.listingItems} />
+      </div>
     </div>
   );
 }
 
-function Section({
+function TabButton({
+  active,
   label,
-  hint,
-  children,
-  id,
+  count,
+  color,
+  onClick,
 }: {
+  active: boolean;
   label: string;
-  hint?: string;
-  children: React.ReactNode;
-  /** iter98: scrollIntoView 用 anchor */
-  id?: string;
+  count: number;
+  color: string;
+  onClick: () => void;
 }) {
   return (
-    <div id={id} style={id ? { scrollMarginTop: 70 } : undefined}>
-      <div className="mb-1.5 flex items-baseline justify-between px-1">
-        <span className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-[#3a324a8c]">
-          {label}
-        </span>
-        {hint && (
-          <span className="text-[9.5px] font-bold text-[#a695d8]">{hint}</span>
-        )}
-      </div>
-      {children}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex flex-1 items-center justify-center gap-1 rounded-xl py-2 transition-all ${
+        active
+          ? "border-[1.5px] border-solid bg-white"
+          : "border-[0.5px] border-solid border-[#3a324a14] bg-[#3a324a08]"
+      }`}
+      style={{ borderColor: active ? color : undefined }}
+    >
+      <span
+        className={`text-[12px] ${
+          active
+            ? "font-extrabold text-gray-900"
+            : "font-semibold text-gray-500"
+        }`}
+      >
+        {label}
+      </span>
+      <span
+        className="text-[10px] font-bold tabular-nums"
+        style={{ color: active ? color : "#6b6478" }}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
+/* ─── Tab 1: 譲るグッズ ────────────────────────────────── */
+
+function InventoryPanel({ items }: { items: PartnerInventoryItem[] }) {
+  const [activeMember, setActiveMember] = useState<string | null>(null);
+  const [activeType, setActiveType] = useState<string | null>(null);
+
+  const memberOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of items) s.add(it.memberName);
+    return Array.from(s).sort();
+  }, [items]);
+
+  const typeOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of items) s.add(it.goodsType);
+    return Array.from(s).sort();
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    return items.filter((it) => {
+      if (activeMember && it.memberName !== activeMember) return false;
+      if (activeType && it.goodsType !== activeType) return false;
+      return true;
+    });
+  }, [items, activeMember, activeType]);
+
+  return (
+    <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-5 pb-4">
+      {items.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
+          譲る候補のグッズはまだありません
+        </div>
+      ) : (
+        <div>
+          <FilterRow
+            label="推し"
+            options={memberOptions}
+            active={activeMember}
+            onChange={setActiveMember}
+          />
+          <FilterRow
+            label="種別"
+            options={typeOptions}
+            active={activeType}
+            onChange={setActiveType}
+          />
+          {filtered.length === 0 ? (
+            <div className="mt-1 rounded-2xl border border-dashed border-[#3a324a14] bg-white py-6 text-center text-[11px] text-[#3a324a8c]">
+              該当するグッズがありません
+            </div>
+          ) : (
+            <div className="mt-1 grid grid-cols-3 gap-2.5">
+              {filtered.map((it) => {
+                const card: ItemCardData = {
+                  id: it.id,
+                  memberName: it.memberName,
+                  goodsType: it.goodsType,
+                  series: null,
+                  qty: it.qty,
+                  hue: it.hue,
+                  carrying: false,
+                  photoUrl: it.photoUrl,
+                  isPending: false,
+                };
+                return <ItemCard key={it.id} item={card} />;
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+/* ─── Tab 2: 公開中の個別募集（ListingsView 流用） ──────── */
+
+function ListingsPanel({ items }: { items: ListingItem[] }) {
+  return (
+    <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-5 pb-4">
+      <ListingsView items={items} readOnly />
+    </div>
+  );
 }

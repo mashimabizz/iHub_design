@@ -377,6 +377,15 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
             label="スケジュール共有"
             value={detail.exposeCalendar ? "ON" : "OFF"}
             tone={detail.exposeCalendar ? "lavender" : "mute"}
+            // iter146：共有 ON のとき相手のスケジュール表示への導線を出す
+            action={
+              detail.exposeCalendar
+                ? {
+                    href: `/proposals/${detail.id}/schedules`,
+                    label: "スケジュールを表示する",
+                  }
+                : undefined
+            }
             isLast={!detail.listingId && !detail.rejectedTemplate}
           />
           {detail.listingId && (
@@ -720,12 +729,15 @@ function AttachRow({
   value,
   tag,
   tone = "ink",
+  action,
   isLast,
 }: {
   label: string;
   value: string;
   tag?: string;
   tone?: "ink" | "lavender" | "warn" | "mute";
+  /** iter146：行内に副次的なリンクを置く（例：スケジュール表示） */
+  action?: { href: string; label: string };
   isLast?: boolean;
 }) {
   const valueColor =
@@ -744,6 +756,14 @@ function AttachRow({
     >
       <span className="w-[110px] flex-shrink-0 text-[#3a324a8c]">{label}</span>
       <span className={`flex-1 font-bold ${valueColor}`}>{value}</span>
+      {action && (
+        <Link
+          href={action.href}
+          className="flex-shrink-0 rounded-full bg-[#a695d8] px-2.5 py-[3px] text-[10px] font-extrabold tracking-[0.2px] text-white shadow-[0_2px_6px_rgba(166,149,216,0.33)] transition-all active:scale-[0.97]"
+        >
+          {action.label}
+        </Link>
+      )}
       {tag && (
         <span className="rounded-full bg-[#a695d814] px-2 py-[2px] text-[9px] font-extrabold text-[#a695d8]">
           {tag}

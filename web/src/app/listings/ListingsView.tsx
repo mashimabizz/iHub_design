@@ -71,10 +71,22 @@ const OPT_GAP = 8;
 const SVG_W = 56;
 const RIGHT_W = 220;
 
-export function ListingsView({ items }: { items: ListingItem[] }) {
+export function ListingsView({
+  items,
+  readOnly = false,
+}: {
+  items: ListingItem[];
+  /**
+   * iter146：閲覧専用モード（他人プロフでの公開個別募集表示用）。
+   * - 編集 / 一時停止 / 削除 ボタン非表示
+   * - 「まだ個別募集がありません」の追加導線も非表示
+   */
+  readOnly?: boolean;
+}) {
   const router = useRouter();
 
   async function handleDelete(id: string) {
+    if (readOnly) return;
     if (!confirm("この個別募集を削除しますか？")) return;
     const r = await deleteListing(id);
     if (r?.error) {
@@ -85,6 +97,7 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
   }
 
   async function togglePause(id: string, currentStatus: ListingItem["status"]) {
+    if (readOnly) return;
     const next = currentStatus === "active" ? "paused" : "active";
     const r = await updateListing({ id, status: next });
     if (r?.error) {
@@ -95,6 +108,13 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
   }
 
   if (items.length === 0) {
+    if (readOnly) {
+      return (
+        <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c]">
+          公開中の個別募集はありません
+        </div>
+      );
+    }
     return (
       <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c]">
         まだ個別募集がありません
@@ -118,6 +138,7 @@ export function ListingsView({ items }: { items: ListingItem[] }) {
           index={idx}
           onTogglePause={() => togglePause(it.id, it.status)}
           onDelete={() => handleDelete(it.id)}
+          readOnly={readOnly}
         />
       ))}
     </div>
@@ -131,11 +152,14 @@ function ListingCard({
   index,
   onTogglePause,
   onDelete,
+  readOnly,
 }: {
   listing: ListingItem;
   index: number;
   onTogglePause: () => void;
   onDelete: () => void;
+  /** iter146：閲覧専用（他人プロフ表示時）— アクションボタン群を非表示 */
+  readOnly?: boolean;
 }) {
   const isActive = listing.status === "active";
   const isPaused = listing.status === "paused";
@@ -198,7 +222,8 @@ function ListingCard({
         </div>
       )}
 
-      {/* アクションボタン群 */}
+      {/* アクションボタン群（iter146: readOnly では非表示） */}
+      {!readOnly && (
       <div className="flex gap-1.5 border-t border-[#3a324a08] px-3 py-2">
         <Link
           href={`/listings/${listing.id}/edit`}
@@ -222,6 +247,7 @@ function ListingCard({
           削除
         </button>
       </div>
+      )}
     </div>
   );
 }
