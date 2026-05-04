@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { flushSync } from "react-dom";
 import { deleteInventoryItem, updateInventoryStatus } from "./actions";
 import { AddCard, ItemCard, type ItemCardData } from "./ItemCard";
 import { BottomNav } from "@/components/home/BottomNav";
@@ -278,6 +279,66 @@ function SubPanel({
   items: InventoryItemFull[];
   router: ReturnType<typeof useRouter>;
 }) {
+  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
+  const [confirmTarget, setConfirmTarget] =
+    useState<InventoryItemFull | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const visibleItems = useMemo(
+    () => items.filter((item) => !removedIds.has(item.id)),
+    [items, removedIds],
+  );
+
+  function requestDelete(item: InventoryItemFull) {
+    setConfirmTarget(item);
+  }
+
+  async function performDelete(item: InventoryItemFull) {
+    setConfirmTarget(null);
+    setDeletingId(item.id);
+
+    // Wish と同じ手触り：まず対象パネルを奥へフェードアウトさせる。
+    await new Promise((r) => setTimeout(r, 380));
+
+    const update = () => {
+      flushSync(() => {
+        setRemovedIds((prev) => {
+          const next = new Set(prev);
+          next.add(item.id);
+          return next;
+        });
+        setDeletingId(null);
+      });
+    };
+    type DocWithVT = Document & {
+      startViewTransition?: (cb: () => void) => unknown;
+    };
+    const doc =
+      typeof document !== "undefined" ? (document as DocWithVT) : null;
+    if (doc && typeof doc.startViewTransition === "function") {
+      document.body.classList.add("panel-deleting");
+      const result = doc.startViewTransition(update) as
+        | { finished?: Promise<unknown> }
+        | undefined;
+      Promise.resolve(result?.finished).finally(() => {
+        document.body.classList.remove("panel-deleting");
+      });
+    } else {
+      update();
+    }
+
+    const result = await deleteInventoryItem(item.id);
+    if (result?.error) {
+      alert(result.error);
+      setRemovedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    } else {
+      router.refresh();
+    }
+  }
+
   return (
     <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pb-4 pt-2">
       {/* 説明バナー（keep / traded のみ） */}
@@ -314,30 +375,41 @@ function SubPanel({
             <AddCard href="/inventory/new" />
           </div>
         )}
-        {items.length === 0 && subId !== "active" && (
+        {visibleItems.length === 0 && subId !== "active" && (
           <div className="col-span-3 rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
             {subId === "keep"
               ? "自分用キープのアイテムはまだありません"
               : "譲ったアイテムはまだありません"}
           </div>
         )}
-        {items.map((item, i) => {
+        {visibleItems.map((item, i) => {
           // iter147: AddCard が active のとき index 0 を取るので +1 ずらす
           const idx = subId === "active" ? i + 1 : i;
           return (
             <div
               key={item.id}
-              className="animate-panel-pop"
+              className={`animate-panel-pop ${
+                deletingId === item.id ? "animate-fade-out-back" : ""
+              }`}
               style={{ animationDelay: `${idx * 45}ms` }}
             >
               <ItemCardWrapper
                 item={item}
                 router={router}
+                onRequestDelete={() => requestDelete(item)}
               />
             </div>
           );
         })}
       </div>
+
+      {confirmTarget && (
+        <InventoryDeleteConfirmModal
+          item={confirmTarget}
+          onCancel={() => setConfirmTarget(null)}
+          onConfirm={() => performDelete(confirmTarget)}
+        />
+      )}
     </div>
   );
 }
@@ -420,11 +492,24 @@ export function FilterRow({
 function ItemCardWrapper({
   item,
   router,
+  onRequestDelete,
 }: {
   item: InventoryItemFull;
   router: ReturnType<typeof useRouter>;
+  onRequestDelete: () => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
+  const [bouncing, setBouncing] = useState(false);
+  const BOUNCE_MS = 580;
+
+  function bounceThen(action?: () => void | Promise<void>) {
+    setShowMenu(false);
+    setBouncing(true);
+    window.setTimeout(() => {
+      setBouncing(false);
+      void action?.();
+    }, BOUNCE_MS);
+  }
 
   async function changeStatus(
     status: "active" | "keep" | "traded" | "archived",
@@ -438,61 +523,129 @@ function ItemCardWrapper({
     }
   }
 
-  async function deleteItem() {
-    const ok = window.confirm(
-      "この在庫を削除します。元に戻せません。よろしいですか？",
-    );
-    if (!ok) return;
-
-    setShowMenu(false);
-    const result = await deleteInventoryItem(item.id);
-    if (result?.error) {
-      alert(result.error);
-    } else {
-      router.refresh();
-    }
-  }
-
   return (
     <div className="relative">
-      <button
-        type="button"
-        onClick={() => setShowMenu(!showMenu)}
-        className="block w-full"
-      >
-        <ItemCard item={item} />
-      </button>
-      {showMenu && (
+      <div className={bouncing ? "animate-panel-bounce" : undefined}>
+        <button
+          type="button"
+          onClick={() => !bouncing && setShowMenu(!showMenu)}
+          className="block w-full"
+        >
+          <ItemCard item={item} />
+        </button>
+      </div>
+      {showMenu && !bouncing && (
         <div className="absolute inset-0 z-10 flex flex-col items-stretch justify-center gap-1.5 rounded-xl bg-black/70 p-2">
-          <Link
-            href={`/inventory/${item.id}`}
+          <button
+            type="button"
+            onClick={() =>
+              bounceThen(() => router.push(`/inventory/${item.id}`))
+            }
             className="rounded-lg bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-1.5 text-center text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
           >
             編集する
-          </Link>
+          </button>
           <button
             type="button"
-            onClick={() => changeStatus("keep")}
+            onClick={() => bounceThen(() => changeStatus("keep"))}
             className="rounded-lg bg-white py-1.5 text-[10px] font-bold text-gray-900"
           >
             自分キープへ
           </button>
           <button
             type="button"
-            onClick={deleteItem}
+            onClick={() => {
+              setShowMenu(false);
+              onRequestDelete();
+            }}
             className="rounded-lg bg-[#fff1f2] py-1.5 text-[10px] font-bold text-[#be123c]"
           >
             削除
           </button>
           <button
             type="button"
-            onClick={() => setShowMenu(false)}
+            onClick={() => bounceThen()}
             className="rounded-lg bg-black/30 py-1.5 text-[10px] font-bold text-white"
           >
             閉じる
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function InventoryDeleteConfirmModal({
+  item,
+  onCancel,
+  onConfirm,
+}: {
+  item: InventoryItemFull;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const itemLabel = `${item.memberName} ${item.goodsType}`;
+  return (
+    <div
+      className="animate-delete-backdrop-in fixed inset-0 z-[120] flex items-center justify-center bg-black/55 px-5 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        className="animate-delete-modal-in w-full max-w-sm overflow-hidden rounded-[18px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 pb-2 pt-5">
+          <div className="text-[15px] font-extrabold text-[#3a324a]">
+            在庫を削除しますか？
+          </div>
+          <div className="mt-1.5 flex items-center gap-2.5 rounded-xl border border-[#3a324a14] bg-[#fbf9fc] px-3 py-2.5">
+            {item.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={item.photoUrl}
+                alt={itemLabel}
+                className="h-12 w-9 flex-shrink-0 rounded-md object-cover"
+              />
+            ) : (
+              <div className="flex h-12 w-9 flex-shrink-0 items-center justify-center rounded-md bg-[#a695d822] text-[14px] font-extrabold text-[#a695d8]">
+                {item.memberName[0] ?? "?"}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12.5px] font-bold text-[#3a324a]">
+                {item.memberName}
+              </div>
+              <div className="mt-0.5 text-[10.5px] text-[#3a324a8c]">
+                {item.goodsType}
+              </div>
+            </div>
+            {item.qty > 1 && (
+              <div className="rounded-md bg-[#a695d8] px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums text-white">
+                ×{item.qty}
+              </div>
+            )}
+          </div>
+          <div className="mt-3 text-[11.5px] leading-relaxed text-[#3a324a8c]">
+            この在庫を削除します。削除後はマッチング候補や打診の対象から外れます。
+          </div>
+        </div>
+        <div className="flex gap-2 border-t border-[#3a324a08] px-4 py-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-[10px] bg-[#3a324a08] py-2.5 text-[12.5px] font-bold text-[#3a324a]"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 rounded-[10px] bg-red-500 py-2.5 text-[12.5px] font-extrabold text-white shadow-[0_4px_10px_rgba(239,68,68,0.33)] active:scale-[0.98]"
+          >
+            削除する
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

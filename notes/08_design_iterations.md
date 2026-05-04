@@ -4,6 +4,57 @@
 
 ---
 
+## イテレーション151.5：マイ在庫の削除・操作アニメーションを Wish と統一
+
+### 背景・問題意識
+
+オーナーから、マイ在庫について「Wishと同じように削除するを押したらフェードアウトして自動整理されたり、削除以外のボタンを押したら、上に飛び跳ねる感じにしてほしい」と指示があった。
+
+Wish 画面では iter149/150 で、削除は確認モーダル後に fade-out し、View Transitions API で残りのパネルが滑らかに詰まる。一方、マイ在庫は削除が `window.confirm` と即時 refresh のみで、編集・自分キープ・閉じるにも操作フィードバックがなかった。
+
+### 変更内容
+
+#### `web/src/app/inventory/InventoryView.tsx`
+- 在庫削除を Wish と同じカスタム確認モーダルに変更。
+- 「削除する」確定後、対象パネルに `animate-fade-out-back` を付けて奥へフェードアウト。
+- fade-out 後に削除済み ID をローカルに保持して表示リストから外し、残りのパネルが自動整理されるようにした。
+- View Transitions API が使える環境では `body.panel-deleting` を付け、並び替えを滑らかにした。
+- サーバー削除は UI 反映後に実行し、失敗時は削除済み ID を戻してロールバック。
+- 「編集する」「自分キープへ」「閉じる」は `animate-panel-bounce` で上に跳ねてから実行するようにした。
+
+#### `web/src/app/globals.css`
+- View Transitions API の適用対象に `body.panel-deleting` を追加。
+- Wish 既存の `body.wish-deleting` も維持。
+
+### 影響範囲
+
+- `/inventory` マイ在庫一覧
+- 在庫パネルタップ時のメニュー操作
+- 在庫削除時の確認モーダル / fade-out / reflow
+
+### 確認方法
+
+- `npx eslint src/app/inventory/InventoryView.tsx src/app/inventory/ItemCard.tsx src/app/inventory/actions.ts`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/inventory/InventoryView.tsx`
+- `web/src/app/globals.css`
+
+### セルフレビュー結果
+
+- ✅ 削除は確認モーダルの「削除する」後に fade-out
+- ✅ fade-out 後に表示リストから外れ、パネルが自動整理される
+- ✅ 編集 / 自分キープ / 閉じるは上方向バウンスを挟む
+- ✅ Wish 既存アニメーション class を再利用し、手触りを統一
+- ✅ `notes/09_state_machines.md` は状態追加なし、既存の削除遷移で表現済みのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象ファイル ESLint / build 成功
+
+---
+
 ## イテレーション151.4：現地マッチ炎を外向きエフェクトに限定
 
 ### 背景・問題意識

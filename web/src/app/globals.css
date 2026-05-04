@@ -316,11 +316,13 @@ body {
  * View Transitions API カスタマイズ：
  * panel 削除時の reflow を 350ms で滑らかに動かす（Chrome/Edge/Safari 18+）。
  * 他のページ遷移の view transition には影響しないよう、
- * `body.wish-deleting` の class が付いている時のみ適用。
+ * `body.wish-deleting` / `body.panel-deleting` の class が付いている時のみ適用。
  */
+body.panel-deleting::view-transition-old(root),
 body.wish-deleting::view-transition-old(root) {
   animation: 320ms cubic-bezier(0.4, 0, 0.2, 1) both wishVtOld;
 }
+body.panel-deleting::view-transition-new(root),
 body.wish-deleting::view-transition-new(root) {
   animation: 320ms cubic-bezier(0, 0, 0.2, 1) both wishVtNew;
 }
