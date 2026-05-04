@@ -197,17 +197,48 @@ export function MatchDetailModal({
    * - 全部 union（dedupe）して、/propose に gives / receives を渡す
    * - propose page.tsx は新形式 ?gives=...&receives=... を解釈する
    */
-  const proposeHref = useMemo(() => {
-    if (totalSelected === 0) return null;
-
+  /**
+   * iter118: 全 listing 横断の集計（サマリー表示と URL 生成の両方で使う）
+   *   gives / receives = 重複排除した MiniItem 配列（表示用）
+   */
+  const aggregated = useMemo(() => {
+    if (totalSelected === 0) {
+      return {
+        givesItems: [] as MiniItem[],
+        receivesItems: [] as MiniItem[],
+        giveIds: [] as string[],
+        receiveIds: [] as string[],
+        referencedListingIds: [] as string[],
+      };
+    }
     const allListings = [...myListings, ...partnerListings];
     const listingById = new Map(
       allListings.map((l) => [l.listingId, l] as const),
     );
+    // inv id → MiniItem の lookup（候補の item は wishes[].candidates にあるので集める）
+    const candidateItemById = new Map<string, MiniItem>();
+    for (const l of allListings) {
+      for (const opt of l.options) {
+        for (const w of opt.wishes) {
+          for (const c of w.candidates) {
+            candidateItemById.set(c.item.id, c.item);
+          }
+        }
+      }
+    }
 
-    const gives = new Set<string>();
-    const receives = new Set<string>();
+    const giveIdSet = new Set<string>();
+    const receiveIdSet = new Set<string>();
+    const givesItems: MiniItem[] = [];
+    const receivesItems: MiniItem[] = [];
     const referencedListings = new Set<string>();
+
+    function addUniq(arr: MiniItem[], set: Set<string>, item: MiniItem) {
+      if (!set.has(item.id)) {
+        set.add(item.id);
+        arr.push(item);
+      }
+    }
 
     for (const [listingId, candidateIds] of selection) {
       const listing = listingById.get(listingId);
@@ -216,23 +247,47 @@ export function MatchDetailModal({
 
       if (listing.isMyListing) {
         // 私の listing：listing.haves（私の inv）を出す + 候補（相手の inv）を受け取る
-        for (const h of listing.haves) gives.add(h.item.id);
-        for (const cid of candidateIds) receives.add(cid);
+        for (const h of listing.haves) addUniq(givesItems, giveIdSet, h.item);
+        for (const cid of candidateIds) {
+          const item = candidateItemById.get(cid);
+          if (item) addUniq(receivesItems, receiveIdSet, item);
+        }
       } else {
         // 相手の listing：候補（私の inv）を出す + listing.haves（相手の inv）を受け取る
-        for (const cid of candidateIds) gives.add(cid);
-        for (const h of listing.haves) receives.add(h.item.id);
+        for (const cid of candidateIds) {
+          const item = candidateItemById.get(cid);
+          if (item) addUniq(givesItems, giveIdSet, item);
+        }
+        for (const h of listing.haves) addUniq(receivesItems, receiveIdSet, h.item);
       }
     }
 
-    const params = new URLSearchParams();
-    if (gives.size > 0) params.set("gives", [...gives].join(","));
-    if (receives.size > 0) params.set("receives", [...receives].join(","));
-    if (referencedListings.size > 0)
-      params.set("listings", [...referencedListings].join(","));
+    return {
+      givesItems,
+      receivesItems,
+      giveIds: [...giveIdSet],
+      receiveIds: [...receiveIdSet],
+      referencedListingIds: [...referencedListings],
+    };
+  }, [selection, totalSelected, myListings, partnerListings]);
 
+  const proposeHref = useMemo(() => {
+    if (totalSelected === 0) return null;
+    const params = new URLSearchParams();
+    if (aggregated.giveIds.length > 0)
+      params.set("gives", aggregated.giveIds.join(","));
+    if (aggregated.receiveIds.length > 0)
+      params.set("receives", aggregated.receiveIds.join(","));
+    if (aggregated.referencedListingIds.length > 0)
+      params.set("listings", aggregated.referencedListingIds.join(","));
     return `/propose/${partnerId}?${params.toString()}`;
-  }, [selection, totalSelected, myListings, partnerListings, partnerId]);
+  }, [
+    aggregated.giveIds,
+    aggregated.receiveIds,
+    aggregated.referencedListingIds,
+    totalSelected,
+    partnerId,
+  ]);
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
@@ -308,6 +363,14 @@ export function MatchDetailModal({
           <div className="rounded-[10px] border border-dashed border-[#3a324a14] bg-white p-4 text-center text-[12px] text-[#3a324a8c]">
             個別募集経由のマッチはありません
           </div>
+        )}
+
+        {/* iter118: 全 listing 横断の結論サマリー（一番下） */}
+        {totalSelected > 0 && (
+          <GlobalSummary
+            givesItems={aggregated.givesItems}
+            receivesItems={aggregated.receivesItems}
+          />
         )}
       </div>
 
@@ -693,13 +756,7 @@ function ListingTree({
         </div>
       </div>
 
-      {/* iter117: 一番下の結論サマリー */}
-      <ListingSummary
-        listing={listing}
-        viewpoint={viewpoint}
-        partnerHandle={partnerHandle}
-        isSelected={isSelected}
-      />
+      {/* iter118: per-listing サマリーは撤廃（全体サマリーは modal 下部に一括） */}
     </section>
   );
 }
@@ -861,61 +918,38 @@ function OptionGroup({
   return <>{option.wishes.map(renderRow)}</>;
 }
 
-/* ─── iter117: listing カード一番下の結論サマリー ───
-   横並びコンパクトで「あなたが譲：[t][t] / もらう：[t][t][t]」
-   選択状態に応じて変化（mine の haves は常時、partner の haves も常時、
-   候補は選択中のもののみ表示） */
+/* ─── iter118: 全 listing 横断の結論サマリー ───
+   modal の一番下（footer の上）に配置。両 listing 跨ぎの選択を集約。
+   横並びで縦に広がらない。 */
 
-function ListingSummary({
-  listing,
-  viewpoint,
-  partnerHandle: _partnerHandle,
-  isSelected,
+function GlobalSummary({
+  givesItems,
+  receivesItems,
 }: {
-  listing: MatchCardListingInfo;
-  viewpoint: "mine" | "partner";
-  partnerHandle: string;
-  isSelected: (candidateInvId: string) => boolean;
+  givesItems: MiniItem[];
+  receivesItems: MiniItem[];
 }) {
-  // 選択中の候補（unique）を集める
-  const selectedCandidates: MiniItem[] = [];
-  const seen = new Set<string>();
-  for (const opt of listing.options) {
-    for (const w of opt.wishes) {
-      for (const c of w.candidates) {
-        if (isSelected(c.item.id) && !seen.has(c.item.id)) {
-          selectedCandidates.push(c.item);
-          seen.add(c.item.id);
-        }
-      }
-    }
-  }
-
-  const haveItems: MiniItem[] = listing.haves.map((h) => h.item);
-
-  let givesItems: MiniItem[];
-  let receivesItems: MiniItem[];
-  if (viewpoint === "mine") {
-    // mine: 譲 = 自分の haves（常時）、受 = 選択中の候補
-    givesItems = haveItems;
-    receivesItems = selectedCandidates;
-  } else {
-    // partner: 譲 = 選択中の候補、受 = 相手の haves（常時）
-    givesItems = selectedCandidates;
-    receivesItems = haveItems;
-  }
-
   return (
-    <div className="flex items-center gap-2 border-t border-[#3a324a08] bg-[#fbf9fc] px-2.5 py-1.5">
-      <span className="rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
-        譲
-      </span>
-      <SummaryThumbStrip items={givesItems} />
-      <span className="text-[11px] font-bold text-[#3a324a8c]">⇄</span>
-      <span className="rounded-full bg-[#f3c5d4] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
-        受
-      </span>
-      <SummaryThumbStrip items={receivesItems} />
+    <div className="mt-3 rounded-[12px] border border-[#a695d855] bg-[linear-gradient(135deg,#a695d80a,#f3c5d40a)] px-3 py-2 shadow-[0_2px_8px_rgba(166,149,216,0.10)]">
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] font-extrabold tracking-[0.4px] text-[#a695d8]">
+        <span>📋</span>
+        <span>結論：この交換</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1">
+          <span className="rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
+            あなたが譲
+          </span>
+          <SummaryThumbStrip items={givesItems} max={6} />
+        </span>
+        <span className="text-[12px] font-bold text-[#3a324a8c]">⇄</span>
+        <span className="flex items-center gap-1">
+          <span className="rounded-full bg-[#f3c5d4] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white">
+            あなたが受
+          </span>
+          <SummaryThumbStrip items={receivesItems} max={6} />
+        </span>
+      </div>
     </div>
   );
 }
