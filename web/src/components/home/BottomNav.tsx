@@ -16,11 +16,12 @@ export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
 
   // iter65.8: AW タブを削除（現地交換モードはホーム画面で完結）
   // iter67-E: 「取引」タブを追加（中央配置）
+  // iter126: WISH と 取引 の位置を入れ替え（wish が 在庫 の隣に来る方が動線として自然）
   const items = [
     { href: "/", label: "ホーム", icon: "home" as const },
     { href: "/inventory", label: "在庫", icon: "inventory" as const },
-    { href: "/transactions", label: "取引", icon: "transactions" as const },
     { href: "/wishes", label: "wish", icon: "wish" as const },
+    { href: "/transactions", label: "取引", icon: "transactions" as const },
     { href: "/profile", label: "プロフ", icon: "profile" as const },
   ];
 

@@ -9,7 +9,7 @@
  */
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/common/Avatar";
 
 export type TransactionRow = {
@@ -51,6 +51,9 @@ export type TransactionRow = {
 
 type TabId = "pending" | "ongoing" | "past";
 type PastFilter = "all" | "completed" | "cancelled" | "rejected_expired";
+
+/** iter127: スワイプ用 tab 順 */
+const TAB_IDS: TabId[] = ["pending", "ongoing", "past"];
 
 const STATUS_LABEL: Record<TransactionRow["status"], string> = {
   sent: "未応答",
@@ -102,56 +105,109 @@ export function TransactionsView({
     past: grouped.past.length,
   };
 
+  // iter127: スワイプ + sticky tab
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // スクロール位置でタブを更新（debounce 付き）
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    let frame: number | null = null;
+    function onScroll() {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (!container) return;
+        const idx = Math.round(
+          container.scrollLeft / container.clientWidth,
+        );
+        const next = TAB_IDS[idx];
+        if (next && next !== tab) setTab(next);
+      });
+    }
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [tab]);
+
+  // タブ click でスムーズスクロール
+  function selectTab(target: TabId) {
+    setTab(target);
+    const container = scrollRef.current;
+    if (!container) return;
+    const idx = TAB_IDS.indexOf(target);
+    container.scrollTo({
+      left: idx * container.clientWidth,
+      behavior: "smooth",
+    });
+  }
+
   return (
-    <div>
-      {/* タブ */}
-      <div className="mb-3 flex border-b border-[#3a324a14]">
-        {(
-          [
-            { id: "pending", label: "打診中", count: counts.pending },
-            { id: "ongoing", label: "進行中", count: counts.ongoing },
-            { id: "past", label: "過去取引", count: counts.past },
-          ] as const
-        ).map((t) => {
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`flex-1 border-b-[2.5px] px-1 py-2.5 text-center text-[13px] transition-colors ${
-                active
-                  ? "border-[#a695d8] font-extrabold text-[#a695d8]"
-                  : "border-transparent font-semibold text-[#3a324a8c]"
-              }`}
-            >
-              {t.label}
-              <span className="ml-1 text-[11px] tabular-nums">{t.count}</span>
-            </button>
-          );
-        })}
+    <div className="flex flex-1 flex-col">
+      {/* iter127: sticky 白背景タブヘッダー */}
+      <div className="sticky top-0 z-20 border-b border-[#3a324a14] bg-white">
+        <div className="mx-auto flex max-w-md">
+          {(
+            [
+              { id: "pending", label: "打診中", count: counts.pending },
+              { id: "ongoing", label: "進行中", count: counts.ongoing },
+              { id: "past", label: "過去取引", count: counts.past },
+            ] as const
+          ).map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => selectTab(t.id)}
+                className={`flex-1 border-b-[2.5px] px-1 py-2.5 text-center text-[13px] transition-colors ${
+                  active
+                    ? "border-[#a695d8] font-extrabold text-[#a695d8]"
+                    : "border-transparent font-semibold text-[#3a324a8c]"
+                }`}
+              >
+                {t.label}
+                <span className="ml-1 text-[11px] tabular-nums">
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* リスト */}
-      {tab === "pending" &&
-        (grouped.pending.length === 0 ? (
-          <EmptyState tab="pending" />
-        ) : (
-          <PendingList list={grouped.pending} />
-        ))}
-      {tab === "ongoing" &&
-        (grouped.ongoing.length === 0 ? (
-          <EmptyState tab="ongoing" />
-        ) : (
-          <OngoingList list={grouped.ongoing} />
-        ))}
-      {tab === "past" && (
-        <PastView
-          list={grouped.past}
-          filter={pastFilter}
-          onFilterChange={setPastFilter}
-        />
-      )}
+      {/* iter127: スワイプコンテナ（横スクロール + scroll snap） */}
+      <div
+        ref={scrollRef}
+        className="flex flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {/* 打診中 */}
+        <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pt-3 pb-4">
+          {grouped.pending.length === 0 ? (
+            <EmptyState tab="pending" />
+          ) : (
+            <PendingList list={grouped.pending} />
+          )}
+        </div>
+        {/* 進行中 */}
+        <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pt-3 pb-4">
+          {grouped.ongoing.length === 0 ? (
+            <EmptyState tab="ongoing" />
+          ) : (
+            <OngoingList list={grouped.ongoing} />
+          )}
+        </div>
+        {/* 過去取引 */}
+        <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pt-3 pb-4">
+          <PastView
+            list={grouped.past}
+            filter={pastFilter}
+            onFilterChange={setPastFilter}
+          />
+        </div>
+      </div>
     </div>
   );
 }

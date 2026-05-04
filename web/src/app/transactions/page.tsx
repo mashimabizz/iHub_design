@@ -263,7 +263,9 @@ export default async function TransactionsPage() {
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-4 pt-3">
+        {/* iter127: TransactionsView 側で sticky + swipe を制御するため、
+            ここでは padding/scroll を持たせない */}
+        <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
           <TransactionsView transactions={transactions} />
         </div>
       </main>
