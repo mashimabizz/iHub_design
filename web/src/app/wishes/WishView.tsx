@@ -2,6 +2,7 @@
 
 /**
  * iter143：WISH 画面を 2 タブ swipe + パネル形式に再設計。
+ * iter150：削除フローをカスタムモーダル + フェードアウト + 滑らかな reflow に。
  *
  * - Tab 1「WISH」：マイ在庫と同じ 3 カラム panel グリッド
  *   - 個別募集に紐付けされていない wish には「未紐付け」バッジ + 個別募集作成導線
@@ -13,6 +14,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { flushSync } from "react-dom";
 import { deleteWishItem } from "./actions";
 import { ListingsView, type ListingItem } from "../listings/ListingsView";
 
@@ -194,20 +196,72 @@ function TabButton({
 
 function WishPanel({ items }: { items: WishItem[] }) {
   const router = useRouter();
+  /**
+   * iter150: 削除を「ローカル先行 + サーバー後追い」にして、
+   * パネルの fade-out → 他パネルの reflow までスムーズに動かす。
+   * - localItems: 表示中のリスト（props と同期）
+   * - confirmTarget: 確認モーダル表示中のアイテム
+   * - deletingId: フェードアウト中のアイテム ID
+   */
+  const [localItems, setLocalItems] = useState(items);
+  useEffect(() => {
+    setLocalItems(items);
+  }, [items]);
+  const [confirmTarget, setConfirmTarget] = useState<WishItem | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  async function handleDelete(id: string) {
-    if (!confirm("このウィッシュを削除しますか？")) return;
-    const result = await deleteWishItem(id);
-    if (result?.error) {
-      alert(result.error);
+  function requestDelete(item: WishItem) {
+    setConfirmTarget(item);
+  }
+
+  async function performDelete(item: WishItem) {
+    setConfirmTarget(null);
+    setDeletingId(item.id);
+
+    // Stage 1: 「奥に消える」フェードアウト（CSS, 380ms）
+    await new Promise((r) => setTimeout(r, 380));
+
+    // Stage 2: View Transitions API で他パネルの reflow を滑らかに
+    const update = () => {
+      flushSync(() => {
+        setLocalItems((prev) => prev.filter((w) => w.id !== item.id));
+        setDeletingId(null);
+      });
+    };
+    type DocWithVT = Document & {
+      startViewTransition?: (cb: () => void) => unknown;
+    };
+    const doc =
+      typeof document !== "undefined" ? (document as DocWithVT) : null;
+    if (doc && typeof doc.startViewTransition === "function") {
+      // body に class を付けてカスタム VT スタイルを有効化
+      document.body.classList.add("wish-deleting");
+      const result = doc.startViewTransition(update) as
+        | { finished?: Promise<unknown> }
+        | undefined;
+      // VT 完了で class を外す
+      Promise.resolve(result?.finished).finally(() => {
+        document.body.classList.remove("wish-deleting");
+      });
     } else {
+      update();
+    }
+
+    // Stage 3: サーバー削除（バックグラウンド、UI ブロック無し）
+    const r = await deleteWishItem(item.id);
+    if (r?.error) {
+      alert(r.error);
+      // ロールバック：props から復元
+      setLocalItems(items);
+    } else {
+      // 念のため最新データを取り直す（画像有無など他画面と整合）
       router.refresh();
     }
   }
 
   return (
     <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pb-4 pt-3">
-      {items.length === 0 ? (
+      {localItems.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
           まだ wish がありません
           <br />
@@ -224,20 +278,104 @@ function WishPanel({ items }: { items: WishItem[] }) {
           <div className="animate-panel-pop" style={{ animationDelay: "0ms" }}>
             <AddCard href="/wishes/new" />
           </div>
-          {items.map((w, i) => (
+          {localItems.map((w, i) => (
             <div
               key={w.id}
-              className="animate-panel-pop"
+              className={`animate-panel-pop ${
+                deletingId === w.id ? "animate-fade-out-back" : ""
+              }`}
               style={{ animationDelay: `${(i + 1) * 45}ms` }}
             >
               <WishCardWrapper
                 item={w}
-                onDelete={() => handleDelete(w.id)}
+                onRequestDelete={() => requestDelete(w)}
               />
             </div>
           ))}
         </div>
       )}
+
+      {/* iter150: 削除確認モーダル */}
+      {confirmTarget && (
+        <DeleteConfirmModal
+          item={confirmTarget}
+          onCancel={() => setConfirmTarget(null)}
+          onConfirm={() => performDelete(confirmTarget)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── 削除確認モーダル ──────────────────────────────────── */
+
+function DeleteConfirmModal({
+  item,
+  onCancel,
+  onConfirm,
+}: {
+  item: WishItem;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const itemLabel = item.characterName ?? item.groupName ?? item.title;
+  return (
+    <div
+      className="animate-delete-backdrop-in fixed inset-0 z-[120] flex items-center justify-center bg-black/55 px-5 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        className="animate-delete-modal-in w-full max-w-sm overflow-hidden rounded-[18px] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 pt-5 pb-2">
+          <div className="text-[15px] font-extrabold text-[#3a324a]">
+            wish を削除しますか？
+          </div>
+          <div className="mt-1.5 flex items-center gap-2.5 rounded-xl border border-[#3a324a14] bg-[#fbf9fc] px-3 py-2.5">
+            {item.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={item.photoUrl}
+                alt={itemLabel}
+                className="h-12 w-9 flex-shrink-0 rounded-md object-cover"
+              />
+            ) : (
+              <div className="flex h-12 w-9 flex-shrink-0 items-center justify-center rounded-md bg-[#a695d822] text-[14px] font-extrabold text-[#a695d8]">
+                {itemLabel[0] ?? "?"}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12.5px] font-bold text-[#3a324a]">
+                {itemLabel}
+              </div>
+              <div className="mt-0.5 text-[10.5px] text-[#3a324a8c]">
+                {item.goodsTypeName}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 text-[11.5px] leading-relaxed text-[#3a324a8c]">
+            この wish を削除します。紐付け中の個別募集がある場合は、その募集の
+            「求める」設定も影響を受けます。
+          </div>
+        </div>
+        <div className="flex gap-2 border-t border-[#3a324a08] px-4 py-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-[10px] bg-[#3a324a08] py-2.5 text-[12.5px] font-bold text-[#3a324a]"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 rounded-[10px] bg-red-500 py-2.5 text-[12.5px] font-extrabold text-white shadow-[0_4px_10px_rgba(239,68,68,0.33)] active:scale-[0.98]"
+          >
+            削除する
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -256,23 +394,18 @@ function ListingsPanel({ items }: { items: ListingItem[] }) {
 
 function WishCardWrapper({
   item,
-  onDelete,
+  onRequestDelete,
 }: {
   item: WishItem;
-  onDelete: () => void;
+  /** iter150: 削除リクエスト（親で確認モーダル → fade-out → 実削除） */
+  onRequestDelete: () => void;
 }) {
   const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
-  // iter149: メニュー内ボタン押下時にパネルを跳ねさせる
+  // iter149: メニュー内ボタン押下時にパネルを跳ねさせる（編集 / 個別募集追加のみ）
   const [bouncing, setBouncing] = useState(false);
   const BOUNCE_MS = 580;
 
-  /**
-   * メニュー内ボタン押下：
-   *   1. メニューを閉じる
-   *   2. パネルを跳ねさせる（580ms）
-   *   3. 着地後に実際のアクションを発火
-   */
   function bounceThen(action: () => void) {
     setShowMenu(false);
     setBouncing(true);
@@ -295,7 +428,6 @@ function WishCardWrapper({
       </div>
       {showMenu && !bouncing && (
         <div className="absolute inset-0 z-10 flex flex-col items-stretch justify-center gap-1.5 rounded-xl bg-black/70 p-2">
-          {/* iter149: Link → button に変更してアニメーション後に遷移 */}
           <button
             type="button"
             onClick={(e) => {
@@ -306,8 +438,7 @@ function WishCardWrapper({
           >
             編集する
           </button>
-          {/* iter143: いつでも個別募集の追加を可能にする
-              （既に紐付け済でも、別条件の追加募集を作れるように） */}
+          {/* iter143: いつでも個別募集の追加を可能にする */}
           <button
             type="button"
             onClick={(e) => {
@@ -322,11 +453,13 @@ function WishCardWrapper({
               ? "個別募集を作る"
               : "+ 個別募集を追加"}
           </button>
+          {/* iter150: 削除はバウンスせず、確認モーダル → fade-out フローへ */}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              bounceThen(() => onDelete());
+              setShowMenu(false);
+              onRequestDelete();
             }}
             className="rounded-lg bg-red-500/90 py-1.5 text-[10px] font-bold text-white"
           >

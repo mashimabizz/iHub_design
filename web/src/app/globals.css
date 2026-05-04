@@ -211,3 +211,84 @@ body {
     animation: none;
   }
 }
+
+/*
+ * iter150: 削除確定時に「奥にフェードアウト」する
+ * パネルが小さく縮みつつ透明になり、ぼやけて消える。
+ * 直後に View Transitions API で他パネルの並びがスムーズに整理される。
+ */
+@keyframes fadeOutBack {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.45);
+    filter: blur(3px);
+  }
+}
+
+.animate-fade-out-back {
+  animation: fadeOutBack 380ms cubic-bezier(0.55, 0, 0.65, 0.4) forwards;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-out-back {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/*
+ * View Transitions API カスタマイズ：
+ * panel 削除時の reflow を 350ms で滑らかに動かす（Chrome/Edge/Safari 18+）。
+ * 他のページ遷移の view transition には影響しないよう、
+ * `body.wish-deleting` の class が付いている時のみ適用。
+ */
+body.wish-deleting::view-transition-old(root) {
+  animation: 320ms cubic-bezier(0.4, 0, 0.2, 1) both wishVtOld;
+}
+body.wish-deleting::view-transition-new(root) {
+  animation: 320ms cubic-bezier(0, 0, 0.2, 1) both wishVtNew;
+}
+@keyframes wishVtOld {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes wishVtNew {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
+ * iter150: 削除確認モーダルの登場 — 中央でふわっと現れる
+ */
+@keyframes deleteModalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.animate-delete-modal-in {
+  animation: deleteModalIn 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes deleteBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-delete-backdrop-in {
+  animation: deleteBackdropIn 180ms ease-out both;
+}
