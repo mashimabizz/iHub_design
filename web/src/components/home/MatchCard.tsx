@@ -225,10 +225,17 @@ function CardShell({
     <div
       className={
         local
-          ? "match-card-local-flame rounded-2xl"
+          ? "match-card-local-aura -m-3 rounded-[26px] p-3"
           : "rounded-2xl"
       }
     >
+      {local && (
+        <>
+          <span className="match-card-local-spark match-card-local-spark-1" />
+          <span className="match-card-local-spark match-card-local-spark-2" />
+          <span className="match-card-local-spark match-card-local-spark-3" />
+        </>
+      )}
       <div
         className={`match-card-inner relative overflow-hidden rounded-2xl border bg-white ${
           local ? "border-[#3a324a14]" : pattern.borderClass
@@ -284,84 +291,82 @@ function ListingMatchCard({
   return (
     <>
       <CardShell card={card} featured={featured}>
-          {/* Header */}
-          <div className="flex items-start gap-2.5">
-            <Link
-              href={`/users/${card.partnerId}`}
-              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl transition-all active:scale-[0.99]"
-            >
+        {/* Header */}
+        <div className="flex items-start gap-2">
+          <Link
+            href={`/users/${card.partnerId}`}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-xl transition-all active:scale-[0.99]"
+          >
             <Avatar
               url={card.userAvatarUrl}
               fallbackName={card.userName}
-                size={featured ? 44 : 40}
+              size={featured ? 32 : 30}
               variant="circle"
             />
             <div className="min-w-0 flex-1">
-                <div className="truncate text-[13.5px] font-bold text-gray-900">
+              <div className="truncate text-[12px] font-bold text-gray-900">
                 @{card.userHandle}
               </div>
-              <div className="mt-0.5 text-[10.5px] tabular-nums text-gray-500">
-                  {card.distance}
+              <div className="mt-0.5 text-[9.5px] tabular-nums text-gray-500">
+                {card.distance}
               </div>
             </div>
-            </Link>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${pattern.chipClass}`}>
-              {pattern.label}
+          </Link>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${pattern.chipClass}`}
+          >
+            {pattern.label}
+          </span>
+        </div>
+
+        {/* Trade preview */}
+        <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2.5 rounded-2xl bg-[#a8d4e614] p-2.5">
+          <SidePanel
+            label={`相手の譲（${card.theirGives.length}）`}
+            items={card.theirGives}
+            align="left"
+            featured={featured}
+          />
+          <div className="flex flex-col items-center gap-1">
+            <ArrowDot color="#a695d8" dir="right" />
+            <ArrowDot color="#a8d4e6" dir="left" />
+          </div>
+          <SidePanel
+            label={`あなたの譲（${card.myGives.length}）`}
+            items={card.myGives}
+            align="right"
+            accent="#f3c5d4cc"
+            featured={featured}
+          />
+        </div>
+
+        {/* バッジ群 */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <LocalPossibilityPill card={card} />
+          {card.hasCashOffer && (
+            <span className="rounded-full border border-[#7a9a8a55] bg-[#7a9a8a14] px-2 py-0.5 text-[10px] font-bold text-[#7a9a8a]">
+              💴 定価交換も受付
             </span>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="ml-auto inline-flex items-center gap-0.5 rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-2.5 py-[3px] text-[10px] font-extrabold text-white shadow-[0_2px_6px_rgba(166,149,216,0.35)] active:scale-[0.97]"
+          >
+            詳細 →
+          </button>
+        </div>
 
-          <div className="mt-2 text-[10.5px] font-medium leading-relaxed text-[#3a324a8c]">
-            {pattern.sub}
-          </div>
-
-          {/* Trade preview */}
-          <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2.5 rounded-2xl bg-[#a8d4e614] p-2.5">
-            <SidePanel
-              label={`相手の譲（${card.theirGives.length}）`}
-              items={card.theirGives}
-              align="left"
-              featured={featured}
-            />
-            <div className="flex flex-col items-center gap-1">
-              <ArrowDot color="#a695d8" dir="right" />
-              <ArrowDot color="#a8d4e6" dir="left" />
-            </div>
-            <SidePanel
-              label={`あなたの譲（${card.myGives.length}）`}
-              items={card.myGives}
-              align="right"
-              accent="#f3c5d4cc"
-              featured={featured}
-            />
-          </div>
-
-          {/* バッジ群 */}
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <LocalPossibilityPill card={card} />
-            {card.hasCashOffer && (
-              <span className="rounded-full border border-[#7a9a8a55] bg-[#7a9a8a14] px-2 py-0.5 text-[10px] font-bold text-[#7a9a8a]">
-                💴 定価交換も受付
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => setModalOpen(true)}
-              className="ml-auto inline-flex items-center gap-0.5 rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-2.5 py-[3px] text-[10px] font-extrabold text-white shadow-[0_2px_6px_rgba(166,149,216,0.35)] active:scale-[0.97]"
-            >
-              詳細 →
-            </button>
-          </div>
-
-          {/* CTA — iter72-C: partner_only は相手の listing 条件をプリフィルした打診へ */}
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={() => setModalOpen(true)}
-              className="w-full rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-2.5 text-center text-[13px] font-bold tracking-[0.4px] text-white shadow-[0_4px_12px_rgba(166,149,216,0.4)] transition-all duration-150 active:scale-[0.97]"
-            >
-              {pattern.cta}
-            </button>
-          </div>
+        {/* CTA — iter72-C: partner_only は相手の listing 条件をプリフィルした打診へ */}
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="w-full rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-2.5 text-center text-[13px] font-bold tracking-[0.4px] text-white shadow-[0_4px_12px_rgba(166,149,216,0.4)] transition-all duration-150 active:scale-[0.97]"
+          >
+            {pattern.cta}
+          </button>
+        </div>
       </CardShell>
 
       {modalOpen && (
@@ -393,33 +398,31 @@ function SimpleMatchCard({
 
   return (
     <CardShell card={card} featured={featured}>
-      <div className="relative flex items-start gap-2.5">
+      <div className="relative flex items-start gap-2">
         <Link
           href={`/users/${card.partnerId}`}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl transition-all active:scale-[0.99]"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-xl transition-all active:scale-[0.99]"
         >
-        <Avatar
-          url={card.userAvatarUrl}
-          fallbackName={card.userName}
-            size={featured ? 44 : 40}
-          variant="circle"
-        />
-        <div className="min-w-0 flex-1">
-            <div className="truncate text-[13.5px] font-bold text-gray-900">
-            @{card.userHandle}
-          </div>
-          <div className="mt-0.5 text-[10.5px] tabular-nums text-gray-500">
+          <Avatar
+            url={card.userAvatarUrl}
+            fallbackName={card.userName}
+            size={featured ? 32 : 30}
+            variant="circle"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12px] font-bold text-gray-900">
+              @{card.userHandle}
+            </div>
+            <div className="mt-0.5 text-[9.5px] tabular-nums text-gray-500">
               {card.distance}
+            </div>
           </div>
-        </div>
         </Link>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${pattern.chipClass}`}>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${pattern.chipClass}`}
+        >
           {pattern.label}
         </span>
-      </div>
-
-      <div className="mt-2 text-[10.5px] font-medium leading-relaxed text-[#3a324a8c]">
-        {pattern.sub}
       </div>
 
       <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2.5 rounded-2xl bg-[#a8d4e614] p-2.5">

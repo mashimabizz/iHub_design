@@ -4,6 +4,63 @@
 
 ---
 
+## イテレーション151.6：現地マッチを外周オーラ表現へ変更
+
+### 背景・問題意識
+
+オーナーから、現地交換可能マッチの炎エフェクトについて「親の枠内にしか炎が波及してないから、途中でブツっとキレてる感じ」「思ったより炎じゃない」と指摘があった。また、マッチングパネル右上のユーザーアイコンやユーザーネームはもっと小さくしてよく、その下の説明文は不要との指示があった。
+
+原因は、横スクロール / 縦スクロールの親要素が overflow を持つため、カード外側へ大きく出した blur がスクロール領域で切られて見えること。純粋な外側 blur だけで「炎の枠」を作るより、カード自身に発光用の余白を持たせ、そこに揺れるオーラと火花を置く方が安定して見える。
+
+### 変更内容
+
+#### `web/src/app/globals.css`
+- `match-card-local-flame` を `match-card-local-aura` に置き換え。
+- 外にはみ出す巨大 blur ではなく、カード外周の専用余白内で光が揺れる構造に変更。
+- 上部 / 側面に小さな紫の火花 `match-card-local-spark-*` を追加し、単なる線ではなく LIVE 感のあるオーラ表現へ寄せた。
+- `prefers-reduced-motion` ではオーラ / 火花アニメーションを停止。
+
+#### `web/src/components/home/MatchCard.tsx`
+- local match の wrapper を `-m-3 p-3` にし、カードサイズを保ったまま外周エフェクト用の余白を確保。
+- local match 時に spark 用 span を追加。
+- パートナー avatar を `featured: 32px / normal: 30px` に縮小。
+- ユーザーネームを `12px`、距離を `9.5px` に縮小。
+- match pattern の説明文（`pattern.sub`）をカード上から削除。
+
+#### `web/src/components/home/HomeView.tsx`
+- 注目マッチ横スクロールと通常リストの上下余白を増やし、外周オーラがスクロール領域で切れにくいように調整。
+
+### 影響範囲
+
+- ホーム / マッチング画面 `/`
+- `localAvailable=true` のマッチカード外周表現
+- マッチカード上部のプロフィール表示密度
+
+### 確認方法
+
+- `npx eslint src/components/home/MatchCard.tsx src/components/home/HomeView.tsx src/app/globals.css`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/globals.css`
+- `web/src/components/home/MatchCard.tsx`
+- `web/src/components/home/HomeView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 親 overflow で切れやすい巨大外側 blur から、カード外周余白内のオーラ表現へ変更
+- ✅ 紫の火花を追加し、単なる枠線より LIVE / 炎寄りに調整
+- ✅ カード本体には色を乗せず、白背景を維持
+- ✅ avatar / user handle / distance を小型化
+- ✅ `pattern.sub` の説明文をカードから削除
+- ✅ `notes/09_state_machines.md` は状態変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 TSX ESLint / build 成功
+
+---
+
 ## イテレーション151.5：マイ在庫の削除・操作アニメーションを Wish と統一
 
 ### 背景・問題意識

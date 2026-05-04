@@ -678,7 +678,7 @@ export function HomeView({
                 {featuredCards.length}件
               </div>
             </div>
-            <div className="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-2 pt-1 [&::-webkit-scrollbar]:hidden">
+            <div className="-mx-5 flex snap-x gap-4 overflow-x-auto px-5 py-4 [&::-webkit-scrollbar]:hidden">
               {featuredCards.map((c) => (
                 <div
                   key={`featured-${c.id}`}
@@ -724,7 +724,7 @@ export function HomeView({
         </div>
 
         {/* Cards */}
-        <div className="flex-1 space-y-3 overflow-y-auto px-5 pt-2">
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {cards.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
               {tab === 3
