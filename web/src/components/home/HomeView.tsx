@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 // iter134: ホーム画面のログアウト撤去に伴い logout import 不要
 import {
@@ -280,6 +281,7 @@ export function HomeView({
   myInventoryQty,
   tagsByInvId,
   unreadNotificationCount = 0,
+  isNationalView = false,
 }: {
   profile: {
     handle: string;
@@ -302,6 +304,8 @@ export function HomeView({
   tagsByInvId: Record<string, string[]>;
   /** iter92: 通知の未読数（ホームヘッダーのベルバッジ用） */
   unreadNotificationCount?: number;
+  /** iter142: ?view=national の URL flag。現地モード ON でも全国一覧を表示 */
+  isNationalView?: boolean;
 }) {
   const [tab, setTab] = useState(0);
 
@@ -362,6 +366,8 @@ export function HomeView({
    */
   const [needsRevertOnClose, setNeedsRevertOnClose] = useState(false);
   const [pending, startTransition] = useTransition();
+  // iter142: pill toggle で view 切替（DB は触らない）
+  const router = useRouter();
 
   // ?openLocalMode=1 で戻ってきたとき：URL パラメータを掃除しつつシート開く
   useEffect(() => {
@@ -426,11 +432,8 @@ export function HomeView({
     );
   }
 
-  function handleDisableLocal() {
-    startTransition(async () => {
-      await disableLocalMode();
-    });
-  }
+  // iter142: handleDisableLocal は撤廃（pill から DB を切り替えなくなったため）
+  //   真の OFF は ConfirmOffDialog onConfirm 内でインラインで disableLocalMode を呼ぶ
 
   // chosen AW info
   const chosenAW = currentAW;
@@ -554,14 +557,23 @@ export function HomeView({
           </div>
         </div>
 
-        {/* モード切替 pill */}
+        {/* モード切替 pill
+            iter142: pill は「view 切替」のみで DB を変えない。
+            - 全国：?view=national にして AW フィルタを外す（現地モードは裏で ON のまま）
+            - 現地：?view=national を外して AW フィルタを戻す
+            真の OFF（DB 切替）は、上の chip タップ（確認ダイアログ）or 時間切れの 2 通りだけ。
+            初回セットアップ時のみ handleEnableLocal で sheet を開く。 */}
         <div className="mx-5 mt-2 flex gap-1 rounded-full bg-[#3a324a0a] p-1">
           <button
             type="button"
-            onClick={() => isLocal && handleDisableLocal()}
+            onClick={() => {
+              if (!isNationalView) {
+                router.push("/?view=national");
+              }
+            }}
             disabled={pending}
             className={`flex-1 rounded-full py-2 text-[12px] font-bold transition-all ${
-              !isLocal
+              !isLocal || isNationalView
                 ? "bg-white text-[#3a324a] shadow-[0_2px_6px_rgba(58,50,74,0.12)]"
                 : "bg-transparent text-[#3a324a8c]"
             } disabled:opacity-50`}
@@ -570,10 +582,23 @@ export function HomeView({
           </button>
           <button
             type="button"
-            onClick={() => (isLocal ? setSheetOpen(true) : handleEnableLocal())}
+            onClick={() => {
+              if (isLocal) {
+                if (isNationalView) {
+                  // 全国 view を見ていた状態 → 現地 view に戻す
+                  router.push("/");
+                } else {
+                  // 既に現地 view → sheet を開いて設定変更
+                  setSheetOpen(true);
+                }
+              } else {
+                // 初回セットアップ
+                handleEnableLocal();
+              }
+            }}
             disabled={pending}
             className={`flex-1 rounded-full py-2 text-[12px] font-bold transition-all ${
-              isLocal
+              isLocal && !isNationalView
                 ? "bg-white text-[#3a324a] shadow-[0_2px_6px_rgba(58,50,74,0.12)]"
                 : "bg-transparent text-[#3a324a8c]"
             } disabled:opacity-50`}
@@ -725,7 +750,13 @@ export function HomeView({
           onCancel={() => setShowOffConfirm(false)}
           onConfirm={() => {
             setShowOffConfirm(false);
-            handleDisableLocal();
+            // iter142: 真の OFF（DB enabled=false）+ ?view=national を外す
+            startTransition(async () => {
+              await disableLocalMode();
+              if (isNationalView) {
+                router.push("/");
+              }
+            });
           }}
         />
       )}

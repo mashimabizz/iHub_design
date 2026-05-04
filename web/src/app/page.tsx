@@ -21,6 +21,13 @@ type Props = {
     error_code?: string;
     error_description?: string;
     openLocalMode?: string;
+    /**
+     * iter142: 「全国 view」を一時的に見たい時の URL フラグ
+     * - "national" → 現地モード ON でも AW フィルタを適用しない
+     * - 未指定 / その他 → 通常通り（現地モード ON なら AW フィルタ）
+     * 現地モード自体（DB 上の enabled）は維持される
+     */
+    view?: string;
   }>;
 };
 
@@ -430,7 +437,26 @@ export default async function Home({ searchParams }: Props) {
   const currentAW =
     (aws ?? []).find((a) => a.id === localMode?.aw_id) ?? null;
 
-  if (isLocal && currentAW) {
+  // iter142: 「全国 view」フラグ（現地モード ON でも一時的に全国一覧を見るため）
+  const isNationalView = params.view === "national";
+
+  // iter142: AW の終了時刻が過ぎていたら自動で現地モード OFF
+  // Server Component なので Date.now() は request 単位で 1 回だけ評価される（pure 扱い OK）
+  // eslint-disable-next-line react-hooks/purity
+  const _serverNow = Date.now();
+  if (
+    isLocal &&
+    currentAW &&
+    new Date(currentAW.end_at).getTime() < _serverNow
+  ) {
+    await supabase
+      .from("user_local_mode_settings")
+      .update({ enabled: false })
+      .eq("user_id", user.id);
+    redirect("/");
+  }
+
+  if (isLocal && currentAW && !isNationalView) {
     // 他者 AW を user_id で集約
     const partnerAWs = new Map<string, AWRow[]>();
     // iter136: 現地モード OFF のユーザーの AW は無視
@@ -541,6 +567,7 @@ export default async function Home({ searchParams }: Props) {
         myInventoryQty={myInventoryQty}
         tagsByInvId={tagsByInvId}
         unreadNotificationCount={unreadNotificationCount ?? 0}
+        isNationalView={isNationalView}
       />
       <BottomNav />
     </>
