@@ -197,10 +197,14 @@ export async function updateInventoryStatus(
 
   const { data: current } = await supabase
     .from("goods_inventory")
-    .select("id, kind")
+    .select("id, kind, status")
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
+
+  if (current?.status === "traded") {
+    return { error: "過去に譲ったグッズは変更できません" };
+  }
 
   const { error } = await supabase
     .from("goods_inventory")
@@ -323,6 +327,17 @@ export async function updateInventoryItem(input: {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const { data: current } = await supabase
+    .from("goods_inventory")
+    .select("id, status")
+    .eq("id", input.id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (current?.status === "traded") {
+    return { error: "過去に譲ったグッズは変更できません" };
+  }
+
   const updateFields: Record<string, unknown> = {
     group_id: input.groupId,
     character_id: input.characterRequestId ? null : (input.characterId ?? null),
@@ -362,10 +377,14 @@ export async function deleteInventoryItem(id: string): Promise<ActionResult> {
 
   const { data: current } = await supabase
     .from("goods_inventory")
-    .select("id, kind")
+    .select("id, kind, status")
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
+
+  if (current?.status === "traded") {
+    return { error: "過去に譲ったグッズは削除できません" };
+  }
 
   if (current?.kind === "for_trade") {
     await removeUnavailableHavesFromListings(supabase, user.id, [id]);

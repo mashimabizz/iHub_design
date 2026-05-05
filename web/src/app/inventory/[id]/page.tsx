@@ -88,6 +88,7 @@ export default async function InventoryEditPage({
 
   if (!item) notFound();
   const it = item as ItemRow;
+  const isReadOnly = it.status === "traded";
 
   // ユーザーの推しグループを抽出
   const groupMap = new Map<string, { id: string; name: string }>();
@@ -135,7 +136,10 @@ export default async function InventoryEditPage({
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
-      <HeaderBack title="グッズを編集" backHref="/inventory" />
+      <HeaderBack
+        title={isReadOnly ? "グッズ詳細" : "グッズを編集"}
+        backHref="/inventory"
+      />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-12 pt-5">
         <EditForm
           item={{

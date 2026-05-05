@@ -4,6 +4,75 @@
 
 ---
 
+## イテレーション154.18：在庫キープ導線と譲り済み履歴を整理
+
+### 背景・問題意識
+
+オーナーから、マイ在庫の「自分用キープ」タブでカードをタップした時に「自分キープへ」が出てしまう不整合と、「過去に譲った」タブで削除できると取引履歴の不正につながりそうという指摘があった。
+
+自分用キープ中のアイテムに必要なのは、同じ状態への移動ではなくマッチング対象へ戻す操作。一方、譲り済みアイテムは取引履歴として残すべきもので、ユーザーが後から更新・削除できると履歴の整合性が崩れる。そこで、状態ごとの操作を明確に分ける。
+
+### 変更内容
+
+#### `web/src/app/inventory/InventoryView.tsx`
+- `keep` のカードアクションを「自分キープへ」から「譲る候補へ」に変更し、`status='active'` へ戻す操作に修正。
+- `traded` のカードはアクションシートを出さず、タップで `/inventory/[id]` の詳細画面へ直接遷移するように変更。
+
+#### `web/src/app/inventory/[id]/page.tsx`
+- `status='traded'` の在庫はヘッダーを「グッズ詳細」に切り替えるよう変更。
+
+#### `web/src/app/inventory/[id]/EditForm.tsx`
+- `status='traded'` の在庫は詳細確認専用に変更。
+- 写真差し替え、メタ情報、数量、タグ、説明、ステータスの編集を無効化。
+- 保存ボタン・削除ボタンを非表示にし、更新・削除できない理由を画面上に表示。
+
+#### `web/src/app/inventory/actions.ts`
+- `status='traded'` の在庫に対する `updateInventoryStatus` / `updateInventoryItem` / `deleteInventoryItem` をサーバーアクション側で拒否。
+- UI を迂回した更新・削除でも、譲り済み履歴が消えないように防御。
+
+#### `iHub/b-inventory.jsx`
+- 「過去に譲った」タブの説明文を、詳細表示のみ・更新削除不可の方針に合わせて更新。
+
+#### `notes/09_state_machines.md`
+- Item Lifecycle のビジネスルールに `traded` の不変性を追記。
+
+#### `notes/05_data_model.md`
+- `status='traded'` の在庫は履歴証跡として update/delete 不可にする方針を追記。
+
+### 影響範囲
+
+- `/inventory` マイ在庫一覧
+- `/inventory/[id]` 在庫詳細・編集画面
+- 在庫更新・削除サーバーアクション
+- B-1 在庫一覧モック
+
+### 確認方法
+
+- `npx eslint src/app/inventory/InventoryView.tsx src/app/inventory/actions.ts src/app/inventory/[id]/page.tsx src/app/inventory/[id]/EditForm.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/inventory/InventoryView.tsx`
+- `web/src/app/inventory/[id]/page.tsx`
+- `web/src/app/inventory/[id]/EditForm.tsx`
+- `web/src/app/inventory/actions.ts`
+- `iHub/b-inventory.jsx`
+- `notes/09_state_machines.md`
+- `notes/05_data_model.md`
+
+### セルフレビュー結果
+
+- ✅ 自分用キープタブでは「譲る候補へ」と表示し、`active` へ戻す操作に変更
+- ✅ 過去に譲ったタブではアクションシートを出さず、詳細画面へ直接遷移
+- ✅ 譲り済み詳細画面は更新・削除ボタンを出さない読み取り専用表示に変更
+- ✅ サーバーアクション側でも `traded` の更新・削除を拒否
+- ✅ `notes/09_state_machines.md` は `traded` 不変性の状態ルール追加のため更新
+- ✅ `notes/10_glossary.md` は新用語・廃止用語なしのため更新不要
+- ✅ `notes/05_data_model.md` は履歴証跡としての update/delete 不可ルールを追記
+
+---
+
 ## イテレーション154.17：プロフのスケジュール導線をアイデンティティへ統合
 
 ### 背景・問題意識

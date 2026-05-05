@@ -520,6 +520,16 @@ function ItemCardWrapper({
   const [bouncing, setBouncing] = useState(false);
   const BOUNCE_MS = 580;
   const itemLabel = `${item.memberName} ${item.goodsType}`;
+  const statusAction =
+    item.status === "keep"
+      ? {
+          label: "譲る候補へ",
+          onClick: () => bounceThen(() => changeStatus("active")),
+        }
+      : {
+          label: "自分キープへ",
+          onClick: () => bounceThen(() => changeStatus("keep")),
+        };
 
   function bounceThen(action?: () => void | Promise<void>) {
     setSheetOpen(false);
@@ -547,13 +557,20 @@ function ItemCardWrapper({
       <div className={bouncing ? "animate-panel-bounce" : undefined}>
         <button
           type="button"
-          onClick={() => !bouncing && setSheetOpen(true)}
+          onClick={() => {
+            if (bouncing) return;
+            if (item.status === "traded") {
+              router.push(`/inventory/${item.id}`);
+              return;
+            }
+            setSheetOpen(true);
+          }}
           className="block w-full"
         >
           <ItemCard item={item} />
         </button>
       </div>
-      {sheetOpen && !bouncing && (
+      {sheetOpen && !bouncing && item.status !== "traded" && (
         <BottomActionSheet
           title={item.memberName}
           subtitle={item.goodsType}
@@ -574,10 +591,7 @@ function ItemCardWrapper({
               onClick: () =>
                 bounceThen(() => router.push(`/inventory/${item.id}`)),
             },
-            {
-              label: "自分キープへ",
-              onClick: () => bounceThen(() => changeStatus("keep")),
-            },
+            statusAction,
             {
               label: "削除",
               tone: "danger",

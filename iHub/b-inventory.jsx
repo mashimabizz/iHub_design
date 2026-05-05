@@ -307,7 +307,7 @@ function YuzuriListView({ colors: c, sub, setSub, counts, list }) {
           display: 'flex', gap: 8, alignItems: 'flex-start',
         }}>
           <span style={{ flexShrink: 0 }}>📦</span>
-          <div>過去に譲ったアイテムの履歴。コレクションには「取得経験あり」として残ります</div>
+          <div>過去に譲ったアイテムの履歴。タップ時は詳細のみ表示し、更新・削除はできません</div>
         </div>
       )}
 
