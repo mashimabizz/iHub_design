@@ -4,6 +4,53 @@
 
 ---
 
+## イテレーション154.12：関係図を右スライド遷移に変更
+
+### 背景・問題意識
+
+オーナーから、マッチング画面で個別募集にマッチしたパネルを押した時、遷移先の関係図画面が右側からにゅっと出てくる感じにしたいという要望があった。
+
+これまでは関係図モーダルが即時に全画面表示され、マッチカードから詳細へ「入った」感が弱かった。モバイルアプリらしく、右から画面が乗ってくる遷移にして、詳細画面へ進んだことを自然に感じられるようにする。
+
+### 変更内容
+
+#### `web/src/components/home/MatchDetailModal.tsx`
+- 関係図モーダルのルートに `animate-match-detail-slide-in` を追加。
+- 個別募集マッチのパネル押下後、関係図が右側の画面外から入ってくるようにした。
+
+#### `web/src/app/globals.css`
+- `matchDetailSlideIn` keyframes を追加。
+- 右から入り、わずかに行き過ぎてから収まる 380ms の transition に設定。
+- `prefers-reduced-motion` ではアニメーションを無効化。
+
+### 影響範囲
+
+- `/` ホーム / マッチング画面
+- 個別募集マッチのパネル押下後に出る関係図画面
+- 通常マッチで同じ `MatchDetailModal` を使う場合の表示
+
+### 確認方法
+
+- `npx eslint src/components/home/MatchDetailModal.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/home/MatchDetailModal.tsx`
+- `web/src/app/globals.css`
+
+### セルフレビュー結果
+
+- ✅ 関係図画面が右からスライドインする
+- ✅ 全画面の関係図として、カードから画面遷移した感が出る
+- ✅ `prefers-reduced-motion` に配慮
+- ✅ `notes/09_state_machines.md` は状態追加・変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 ESLint / build 成功
+
+---
+
 ## イテレーション154.11：提示物選択を横スワイプ対応
 
 ### 背景・問題意識

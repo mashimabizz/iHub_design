@@ -394,6 +394,33 @@ body {
 }
 
 /*
+ * iter154.12: マッチング画面の関係図が右側からにゅっと入る
+ * 個別募集マッチのパネルを押した時、画面遷移として認識できるようにする。
+ */
+@keyframes matchDetailSlideIn {
+  0% {
+    opacity: 0.94;
+    transform: translate3d(100%, 0, 0);
+    filter: blur(1.8px);
+  }
+  72% {
+    opacity: 1;
+    transform: translate3d(-1.6%, 0, 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+}
+
+.animate-match-detail-slide-in {
+  animation: matchDetailSlideIn 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity, filter;
+}
+
+/*
  * iter151.9: 取引一覧パネル専用のゆっくりした登場
  * 最初はかなり薄く、少しだけ奥/上から浮き出る。
  */
@@ -418,6 +445,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-section-fade-down,
   .animate-home-shelf-panel-in,
+  .animate-match-detail-slide-in,
   .animate-transaction-panel-in {
     animation: none;
   }

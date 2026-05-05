@@ -477,7 +477,7 @@ export function MatchDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
+    <div className="animate-match-detail-slide-in fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
         <button
           type="button"
