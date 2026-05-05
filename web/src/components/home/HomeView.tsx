@@ -569,6 +569,18 @@ export function HomeView({
     handleEnableLocal();
   }
 
+  function handleLocalToggleClick() {
+    if (isLocal) {
+      setShowOffConfirm(true);
+      return;
+    }
+    if (currentAW) {
+      handleQuickReenable();
+      return;
+    }
+    handleEnableLocal();
+  }
+
   return (
     <main className="relative flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
       {/* iter130: 現地交換モード時の ambient glow（画面縁をふわっと光らせる） */}
@@ -587,55 +599,7 @@ export function HomeView({
       )}
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
         <div className="flex items-center justify-between gap-3 px-5 pb-1.5 pt-4">
-          <button
-            type="button"
-            onClick={handlePlaceButtonClick}
-            className="flex h-9 min-w-[82px] max-w-[132px] items-center justify-center truncate rounded-full border border-[#a695d83d] bg-white px-3 text-[12.5px] font-extrabold text-[#3a324a] shadow-sm active:scale-[0.98]"
-            aria-label="交換場所と現地交換設定を開く"
-          >
-            <span className="truncate">{placeButtonLabel}</span>
-          </button>
           <div className="flex items-center gap-2">
-            {/* iter153: タイトル撤去に伴い、現地モード操作は compact icon に集約
-                - isLocal=true：ON 表示、タップ → OFF 確認
-                - isLocal=false：AW config が残っている場合 OFF 表示、タップで再 ON
-                - AW がそもそも無い場合は非表示（初回はピル経由でセットアップ） */}
-            {(isLocal || !!currentAW) && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (isLocal) {
-                    setShowOffConfirm(true);
-                  } else {
-                    // AW あり + isLocal=false → 即時再 ON（sheet 不要、iter140）
-                    handleQuickReenable();
-                  }
-                }}
-                className={`flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-colors ${
-                  isLocal
-                    ? "border-[#a695d855] bg-[#a695d80a] active:bg-[#a695d814]"
-                    : "border-[#3a324a14] bg-white active:bg-[#3a324a08]"
-                }`}
-                aria-label={
-                  isLocal
-                    ? "現地交換モードを OFF にする"
-                    : "現地交換モードを再開する"
-                }
-              >
-                <span
-                  aria-hidden="true"
-                  className={`flex h-3.5 w-6 items-center rounded-full px-0.5 ${
-                    isLocal ? "bg-[#a695d8]" : "bg-[#3a324a14]"
-                  }`}
-                >
-                  <span
-                    className={`block h-2.5 w-2.5 rounded-full bg-white ${
-                      isLocal ? "ml-auto" : ""
-                    }`}
-                  />
-                </span>
-              </button>
-            )}
             <Link
               href="/search"
               className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white shadow-sm"
@@ -679,6 +643,44 @@ export function HomeView({
                 </span>
               )}
             </Link>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePlaceButtonClick}
+              className="flex h-9 min-w-[76px] max-w-[122px] items-center justify-center truncate rounded-full border border-[#a695d83d] bg-white px-3 text-[12.5px] font-extrabold text-[#3a324a] shadow-sm active:scale-[0.98]"
+              aria-label="交換場所と現地交換設定を開く"
+            >
+              <span className="truncate">{placeButtonLabel}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleLocalToggleClick}
+              className={`flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-colors ${
+                isLocal
+                  ? "border-[#a695d855] bg-[#a695d80a] active:bg-[#a695d814]"
+                  : "border-[#3a324a14] bg-white active:bg-[#3a324a08]"
+              }`}
+              aria-label={
+                isLocal
+                  ? "現地交換モードを OFF にする"
+                  : "現地交換モードを開始する"
+              }
+            >
+              <span
+                aria-hidden="true"
+                className={`flex h-3.5 w-6 items-center rounded-full px-0.5 ${
+                  isLocal ? "bg-[#a695d8]" : "bg-[#3a324a14]"
+                }`}
+              >
+                <span
+                  className={`block h-2.5 w-2.5 rounded-full bg-white ${
+                    isLocal ? "ml-auto" : ""
+                  }`}
+                />
+              </span>
+            </button>
           </div>
         </div>
 
@@ -737,7 +739,7 @@ export function HomeView({
         </div>
 
         <section className="mt-3 flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-2">
+          <div className="flex-1 space-y-1.5 overflow-y-auto px-5 py-2">
             {wishShelves.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white px-5 py-10 text-center">
                 <div className="text-[13px] font-bold text-[#3a324a]">
@@ -843,7 +845,7 @@ function WishShelfRowView({
 }) {
   return (
     <section
-      className="animate-section-fade-down py-1.5"
+      className="animate-section-fade-down py-0.5"
       style={{ animationDelay: `${delayMs}ms` }}
     >
       <div className="flex min-w-0 items-center gap-1.5 px-0.5">
@@ -855,7 +857,7 @@ function WishShelfRowView({
         </span>
       </div>
 
-      <div className="-mx-5 mt-2 flex gap-3 overflow-x-auto px-5 pb-3 pt-2 [&::-webkit-scrollbar]:hidden">
+      <div className="-mx-5 mt-1 flex gap-3 overflow-x-auto px-5 pb-2 pt-1.5 [&::-webkit-scrollbar]:hidden">
         {row.candidates.map((candidate) => (
           <WishShelfTile
             key={candidate.key}
