@@ -4,6 +4,71 @@
 
 ---
 
+## イテレーション154.25：推し設定の連続追加と戻り先を改善
+
+### 背景・問題意識
+
+オーナーから、推し設定でメンバーを登録するたびにローディング状態になり、その間ほかのメンバーを推せないためユーザー体験が損なわれるという指摘があった。
+
+また、推し設定から追加グループをリクエストするとオンボーディング側の画面に入り、進めると新規登録後の welcome 画面へ到達してしまうため、追加リクエスト後は元の推し設定へ戻る設計にする必要がある。
+
+### 変更内容
+
+#### `web/src/app/profile/oshi/OshiEditView.tsx`
+- メンバー追加・削除・グループ削除を optimistic UI 化し、タップ直後に画面上のチップ/候補を更新するようにした。
+- DB 保存は内部キューで順番に実行し、複数メンバーを続けて押しても UI を止めないようにした。
+- 保存失敗時は optimistic 更新を巻き戻し、画面内エラーで知らせるようにした。
+- `useTransition` の単一 `pending` によるグループ内一括 disabled を撤去した。
+
+#### `web/src/app/onboarding/oshi/page.tsx`
+- `?return=profile` で開いた場合はオンボーディング進捗ドットを出さず、プロフィール編集からの追加画面として見えるようにした。
+
+#### `web/src/app/onboarding/oshi/OshiForm.tsx`
+- profile 戻りの時は追加リクエストリンクにも `return=profile` を引き継ぐようにした。
+- profile 戻りの時の保存ボタン文言を「この内容で保存」に変更し、通常 onboarding の「次へ」と分けた。
+
+#### `web/src/app/onboarding/oshi/request/page.tsx`
+#### `web/src/app/onboarding/oshi/request/RequestForm.tsx`
+- グループ追加リクエスト画面で `return=profile` を受け取り、送信後は `/profile/oshi` へ戻るようにした。
+- 戻るボタンは `/onboarding/oshi?return=profile` に戻し、途中で戻った場合も onboarding 完了フローへ流れないようにした。
+
+#### `web/src/app/onboarding/actions.ts`
+- 推し保存・推し追加リクエスト・メンバー追加リクエスト後に `/profile/oshi` を revalidate するようにした。
+
+### 影響範囲
+
+- `/profile/oshi` 推し設定編集
+- `/onboarding/oshi?return=profile` プロフィールからの推し追加
+- `/onboarding/oshi/request?return=profile` プロフィールからの推しグループ追加リクエスト
+- `/onboarding/members/request?return=profile` プロフィールからのメンバー追加リクエスト
+
+### 確認方法
+
+- `npx eslint src/app/profile/oshi/OshiEditView.tsx src/app/profile/oshi/page.tsx src/app/onboarding/oshi/page.tsx src/app/onboarding/oshi/OshiForm.tsx src/app/onboarding/oshi/request/page.tsx src/app/onboarding/oshi/request/RequestForm.tsx src/app/onboarding/members/request/page.tsx src/app/onboarding/members/request/RequestForm.tsx src/app/onboarding/actions.ts`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/profile/oshi/OshiEditView.tsx`
+- `web/src/app/onboarding/oshi/page.tsx`
+- `web/src/app/onboarding/oshi/OshiForm.tsx`
+- `web/src/app/onboarding/oshi/request/page.tsx`
+- `web/src/app/onboarding/oshi/request/RequestForm.tsx`
+- `web/src/app/onboarding/actions.ts`
+
+### セルフレビュー結果
+
+- ✅ メンバー追加時に同じグループ内の他候補が disabled にならない
+- ✅ 連続タップ時も保存処理は内部キューで順番に実行し、priority 競合を避ける
+- ✅ 追加リクエストの `return=profile` が途切れず、welcome 画面へ流れない
+- ✅ profile 戻りの推し追加では onboarding 進捗 UI を表示しない
+- ✅ `notes/09_state_machines.md` は状態追加・変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語・廃止用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+
+---
+
 ## イテレーション154.24：プロフ・取引詳細の右スライド遷移を追加
 
 ### 背景・問題意識

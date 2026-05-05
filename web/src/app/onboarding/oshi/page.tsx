@@ -22,7 +22,8 @@ type Props = {
 export default async function OshiPage({ searchParams }: Props) {
   const params = await searchParams;
   const returnTo = params.return;
-  const backHref = returnTo === "profile" ? "/profile/oshi" : "/onboarding/gender";
+  const isProfileReturn = returnTo === "profile";
+  const backHref = isProfileReturn ? "/profile/oshi" : "/onboarding/gender";
   const supabase = await createClient();
   const {
     data: { user },
@@ -113,15 +114,17 @@ export default async function OshiPage({ searchParams }: Props) {
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack
-        title={returnTo === "profile" ? "推しを追加" : "プロフィール設定"}
+        title={isProfileReturn ? "推しを追加" : "プロフィール設定"}
         sub="あなたの推し（複数選択可）"
-        progress={returnTo === "profile" ? undefined : "2/4"}
+        progress={isProfileReturn ? undefined : "2/4"}
         backHref={backHref}
       />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-8 pt-6">
-        <ProgressDots current={1} total={4} />
-        <h2 className="mt-4 text-[22px] font-extrabold leading-tight text-gray-900">
-          推しは？
+        {!isProfileReturn && <ProgressDots current={1} total={4} />}
+        <h2
+          className={`${isProfileReturn ? "mt-0" : "mt-4"} text-[22px] font-extrabold leading-tight text-gray-900`}
+        >
+          {isProfileReturn ? "追加する推しは？" : "推しは？"}
         </h2>
         <p className="mt-2 text-xs leading-relaxed text-gray-500">
           グループ・作品・配信者など、ジャンル横断で選べます

@@ -67,9 +67,14 @@ export function OshiForm({
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams?.get("return");
+  const isProfileReturn = returnTo === "profile";
   // ?return=profile で来た場合、保存後はプロフ推し設定画面に戻る
-  const destAfterSave =
-    returnTo === "profile" ? "/profile/oshi" : "/onboarding/members";
+  const destAfterSave = isProfileReturn
+    ? "/profile/oshi"
+    : "/onboarding/members";
+  const requestHref = isProfileReturn
+    ? "/onboarding/oshi/request?return=profile"
+    : "/onboarding/oshi/request";
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(
     initialSelectedGroupIds,
   );
@@ -86,9 +91,9 @@ export function OshiForm({
 
   // 次画面を事前ロード
   useEffect(() => {
-    router.prefetch("/onboarding/members");
-    router.prefetch("/onboarding/oshi/request");
-  }, [router]);
+    router.prefetch(destAfterSave);
+    router.prefetch(requestHref);
+  }, [router, destAfterSave, requestHref]);
 
   // 「人気」判定: 各ジャンル内の上位N件
   const popularSet = useMemo(() => {
@@ -401,7 +406,7 @@ export function OshiForm({
 
         {/* 追加リクエスト枠 → /onboarding/oshi/request へ遷移 */}
         <Link
-          href="/onboarding/oshi/request"
+          href={requestHref}
           className="mt-3 block rounded-xl border border-dashed border-[#a695d855] bg-white py-3 text-center text-xs font-medium text-[#a695d8] transition-colors hover:border-[#a695d8] hover:bg-[#a695d808]"
         >
           + 見つからない場合は運営に追加リクエスト
@@ -418,7 +423,9 @@ export function OshiForm({
           pending={pending}
           pendingLabel="保存中..."
         >
-          次へ（{totalSelected}件選択中）
+          {isProfileReturn
+            ? `この内容で保存（${totalSelected}件選択中）`
+            : `次へ（${totalSelected}件選択中）`}
         </PrimaryButton>
       </div>
     </div>

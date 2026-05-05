@@ -90,6 +90,8 @@ export async function saveOshi(input: {
   }
 
   revalidatePath("/onboarding/members");
+  revalidatePath("/profile/oshi");
+  revalidatePath("/profile");
   return undefined;
 }
 
@@ -127,6 +129,7 @@ export async function saveOshiRequest(input: {
 
   // 推し選択画面のキャッシュを無効化（戻った時に新しい審査中アイテムが見える）
   revalidatePath("/onboarding/oshi");
+  revalidatePath("/profile/oshi");
   return undefined;
 }
 
@@ -167,6 +170,7 @@ export async function saveCharacterRequest(input: {
   }
 
   revalidatePath("/onboarding/members");
+  revalidatePath("/profile/oshi");
   return undefined;
 }
 

@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   addCharacterToOshi,
@@ -16,6 +22,9 @@ type Group = {
   availableCharacters: { id: string; name: string }[];
 };
 
+type ActionResult = { error?: string } | undefined;
+type OshiMutation = () => Promise<ActionResult>;
+
 /**
  * 推し設定編集（モックアップ account-extras.jsx::OshiEdit ベース・案 Z）
  *
@@ -27,6 +36,52 @@ type Group = {
  */
 export function OshiEditView({ oshiGroups }: { oshiGroups: Group[] }) {
   const router = useRouter();
+  const [groups, setGroups] = useState<Group[]>(oshiGroups);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingMutationsRef = useRef(0);
+
+  useEffect(() => {
+    if (pendingMutationsRef.current === 0) {
+      setGroups(oshiGroups);
+    }
+  }, [oshiGroups]);
+
+  function enqueueMutation(
+    task: OshiMutation,
+    onRollback?: (error: Error) => void,
+  ) {
+    setMutationError(null);
+    pendingMutationsRef.current += 1;
+
+    const run = mutationQueueRef.current.then(async () => {
+      const result = await task();
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+    });
+
+    const tracked = run
+      .catch((error) => {
+        const normalized =
+          error instanceof Error
+            ? error
+            : new Error("推し設定の保存に失敗しました");
+        onRollback?.(normalized);
+        setMutationError(normalized.message);
+      })
+      .finally(() => {
+        pendingMutationsRef.current = Math.max(
+          0,
+          pendingMutationsRef.current - 1,
+        );
+        if (pendingMutationsRef.current === 0) {
+          router.refresh();
+        }
+      });
+
+    mutationQueueRef.current = tracked.then(() => undefined);
+  }
 
   return (
     <div className="space-y-3.5">
@@ -34,9 +89,14 @@ export function OshiEditView({ oshiGroups }: { oshiGroups: Group[] }) {
       <div className="rounded-xl border border-[#a695d833] bg-[#a695d810] px-3.5 py-3 text-[12px] leading-[1.6] text-[#3a324a]">
         推しを追加すると、マッチング・コレクション・ホームの基準が更新されます。
       </div>
+      {mutationError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-red-700">
+          {mutationError}
+        </div>
+      )}
 
       {/* グループ一覧 */}
-      {oshiGroups.length === 0 ? (
+      {groups.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-8 text-center text-[12px] text-[#3a324a8c]">
           推しがまだ設定されていません
           <br />
@@ -48,8 +108,13 @@ export function OshiEditView({ oshiGroups }: { oshiGroups: Group[] }) {
           </Link>
         </div>
       ) : (
-        oshiGroups.map((g) => (
-          <GroupCard key={g.groupId} group={g} router={router} />
+        groups.map((g) => (
+          <GroupCard
+            key={g.groupId}
+            group={g}
+            setGroups={setGroups}
+            enqueueMutation={enqueueMutation}
+          />
         ))
       )}
 
@@ -68,12 +133,16 @@ export function OshiEditView({ oshiGroups }: { oshiGroups: Group[] }) {
 
 function GroupCard({
   group,
-  router,
+  setGroups,
+  enqueueMutation,
 }: {
   group: Group;
-  router: ReturnType<typeof useRouter>;
+  setGroups: Dispatch<SetStateAction<Group[]>>;
+  enqueueMutation: (
+    task: OshiMutation,
+    onRollback?: (error: Error) => void,
+  ) => void;
 }) {
-  const [pending, startTransition] = useTransition();
   const [showAddChars, setShowAddChars] = useState(false);
 
   function handleRemoveGroup() {
@@ -83,44 +152,120 @@ function GroupCard({
       )
     )
       return;
-    startTransition(async () => {
-      const r = await removeOshiGroup(group.groupId);
-      if (r?.error) {
-        alert(r.error);
-        return;
-      }
-      router.refresh();
+
+    let previousIndex = 0;
+    const snapshot = group;
+    setGroups((prev) => {
+      previousIndex = Math.max(
+        0,
+        prev.findIndex((g) => g.groupId === group.groupId),
+      );
+      return prev.filter((g) => g.groupId !== group.groupId);
     });
+
+    enqueueMutation(
+      () => removeOshiGroup(group.groupId),
+      () => {
+        setGroups((prev) => {
+          if (prev.some((g) => g.groupId === snapshot.groupId)) return prev;
+          const next = [...prev];
+          next.splice(previousIndex, 0, snapshot);
+          return next;
+        });
+      },
+    );
   }
 
   function handleRemoveMember(characterId: string) {
-    startTransition(async () => {
-      const r = await removeCharacterFromOshi({
-        groupId: group.groupId,
-        characterId,
-      });
-      if (r?.error) {
-        alert(r.error);
-        return;
-      }
-      router.refresh();
-    });
+    const member = group.members.find((m) => m.id === characterId);
+    if (!member) return;
+
+    setGroups((prev) =>
+      prev.map((g) => {
+        if (g.groupId !== group.groupId) return g;
+        const availableCharacters = g.availableCharacters.some(
+          (c) => c.id === member.id,
+        )
+          ? g.availableCharacters
+          : sortCharacters([...g.availableCharacters, member]);
+        return {
+          ...g,
+          members: g.members.filter((m) => m.id !== member.id),
+          availableCharacters,
+        };
+      }),
+    );
+
+    enqueueMutation(
+      () =>
+        removeCharacterFromOshi({
+          groupId: group.groupId,
+          characterId,
+        }),
+      () => {
+        setGroups((prev) =>
+          prev.map((g) => {
+            if (g.groupId !== group.groupId) return g;
+            return {
+              ...g,
+              members: g.members.some((m) => m.id === member.id)
+                ? g.members
+                : [...g.members, member],
+              availableCharacters: g.availableCharacters.filter(
+                (c) => c.id !== member.id,
+              ),
+            };
+          }),
+        );
+      },
+    );
   }
 
   function handleAddMember(characterId: string) {
-    startTransition(async () => {
-      const r = await addCharacterToOshi({
-        groupId: group.groupId,
-        characterId,
-      });
-      if (r?.error) {
-        alert(r.error);
-        return;
-      }
-      // パネルは開いたまま。router.refresh で候補から該当キャラが消えるので
-      // 続けて他のキャラも選べる。すべて追加し終わると候補空 → 案内表示。
-      router.refresh();
-    });
+    const character = group.availableCharacters.find(
+      (c) => c.id === characterId,
+    );
+    if (!character) return;
+
+    setGroups((prev) =>
+      prev.map((g) => {
+        if (g.groupId !== group.groupId) return g;
+        return {
+          ...g,
+          members: g.members.some((m) => m.id === character.id)
+            ? g.members
+            : [...g.members, character],
+          availableCharacters: g.availableCharacters.filter(
+            (c) => c.id !== character.id,
+          ),
+        };
+      }),
+    );
+
+    enqueueMutation(
+      () =>
+        addCharacterToOshi({
+          groupId: group.groupId,
+          characterId,
+        }),
+      () => {
+        setGroups((prev) =>
+          prev.map((g) => {
+            if (g.groupId !== group.groupId) return g;
+            const availableCharacters = g.availableCharacters.some(
+              (c) => c.id === character.id,
+            )
+              ? g.availableCharacters
+              : sortCharacters([...g.availableCharacters, character]);
+            return {
+              ...g,
+              members: g.members.filter((m) => m.id !== character.id),
+              availableCharacters,
+            };
+          }),
+        );
+      },
+    );
   }
 
   return (
@@ -146,8 +291,7 @@ function GroupCard({
         <button
           type="button"
           onClick={handleRemoveGroup}
-          disabled={pending}
-          className="rounded-[10px] border border-[#3a324a14] bg-transparent px-3 py-1.5 text-[11px] font-semibold text-[#3a324a8c] disabled:opacity-50"
+          className="rounded-[10px] border border-[#3a324a14] bg-transparent px-3 py-1.5 text-[11px] font-semibold text-[#3a324a8c] transition-all active:scale-[0.97]"
         >
           削除
         </button>
@@ -164,8 +308,7 @@ function GroupCard({
               key={m.id}
               type="button"
               onClick={() => handleRemoveMember(m.id)}
-              disabled={pending}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#a695d814] px-3 py-1 text-[12px] font-bold text-[#a695d8] disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#a695d814] px-3 py-1 text-[12px] font-bold text-[#a695d8] transition-all active:scale-[0.97]"
               title="タップで削除"
             >
               {m.name}
@@ -201,8 +344,7 @@ function GroupCard({
                       key={c.id}
                       type="button"
                       onClick={() => handleAddMember(c.id)}
-                      disabled={pending}
-                      className="rounded-full bg-white px-3 py-1 text-[12px] font-bold text-gray-700 transition-all active:scale-[0.97] disabled:opacity-50 border border-[#3a324a14] hover:border-[#a695d8] hover:text-[#a695d8]"
+                      className="rounded-full border border-[#3a324a14] bg-white px-3 py-1 text-[12px] font-bold text-gray-700 transition-all active:scale-[0.97] hover:border-[#a695d8] hover:text-[#a695d8]"
                     >
                       + {c.name}
                     </button>
@@ -223,4 +365,8 @@ function GroupCard({
       </div>
     </div>
   );
+}
+
+function sortCharacters<T extends { name: string }>(characters: T[]): T[] {
+  return [...characters].sort((a, b) => a.name.localeCompare(b.name, "ja"));
 }

@@ -13,10 +13,14 @@ const KINDS: { value: "group" | "work" | "solo"; label: string }[] = [
 
 export function RequestForm({
   genres,
+  returnTo,
 }: {
   genres: { id: string; name: string }[];
+  returnTo?: string;
 }) {
   const router = useRouter();
+  const destAfterSave =
+    returnTo === "profile" ? "/profile/oshi" : "/onboarding/oshi";
   const [name, setName] = useState("");
   const [genreId, setGenreId] = useState<string>("");
   const [kind, setKind] = useState<"group" | "work" | "solo" | "">("");
@@ -26,8 +30,8 @@ export function RequestForm({
 
   // 戻り先を事前ロード
   useEffect(() => {
-    router.prefetch("/onboarding/oshi");
-  }, [router]);
+    router.prefetch(destAfterSave);
+  }, [router, destAfterSave]);
 
   async function handleSubmit() {
     const trimmed = name.trim();
@@ -49,7 +53,7 @@ export function RequestForm({
       return;
     }
     // Server Action 内で revalidatePath 済みなので push のみで OK
-    router.push("/onboarding/oshi");
+    router.push(destAfterSave);
   }
 
   return (
