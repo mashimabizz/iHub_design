@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 // iter134: ホーム画面のログアウト撤去に伴い logout import 不要
+import { MatchDetailModal } from "./MatchDetailModal";
 import {
-  MatchCard,
   type MatchCardData,
   type MatchCardListingInfo,
   type MiniItem,
@@ -22,16 +22,6 @@ import {
   type SimpleItem,
 } from "./LocalModeSheet";
 import { type Match } from "@/lib/matching";
-
-// iter102: 「完全マッチ」表記を「両方向 候補」に変更
-//   システム側は goods_type + group/character の一致でしか判定できないため
-//   「完全」と断言せず「候補」を強調する
-const TABS = [
-  { id: 0, label: "成立しそう" },
-  { id: 1, label: "相手が欲しい" },
-  { id: 2, label: "私が欲しい" },
-  { id: 3, label: "探す" },
-];
 
 // メンバー名 / グループ名 → hue (色相) ハッシュ
 function nameToHue(name: string): number {
@@ -268,6 +258,114 @@ function matchToCard(
   };
 }
 
+type CandidatePriority = 0 | 1 | 2;
+
+type WishShelfCandidate = {
+  key: string;
+  card: MatchCardData;
+  item: MiniItem;
+  priority: CandidatePriority;
+  local: boolean;
+};
+
+type WishShelfRow = {
+  key: string;
+  characterLabel: string;
+  goodsTypeName: string;
+  candidates: WishShelfCandidate[];
+  bestPriority: CandidatePriority;
+  localCount: number;
+};
+
+function getCandidatePriority(card: MatchCardData): CandidatePriority {
+  const hasMyListing = !!card.myMatchedListings?.length;
+  const hasPartnerListing = !!card.partnerMatchedListings?.length;
+  if (hasMyListing && hasPartnerListing) return 0;
+  if (hasMyListing || hasPartnerListing) return 1;
+  return 2;
+}
+
+function getPriorityLabel(priority: CandidatePriority): string {
+  if (priority === 0) return "双方条件";
+  if (priority === 1) return "条件一致";
+  return "通常候補";
+}
+
+function getPriorityClass(priority: CandidatePriority): string {
+  if (priority === 0) return "bg-[#a695d8] text-white";
+  if (priority === 1) return "bg-[#a8d4e633] text-[#5c8da8]";
+  return "bg-[#f3c5d433] text-[#b66f87]";
+}
+
+function buildWishShelves(cards: MatchCardData[]): WishShelfRow[] {
+  const sortedCards = [...cards].sort((a, b) => {
+    const byPriority = getCandidatePriority(a) - getCandidatePriority(b);
+    if (byPriority !== 0) return byPriority;
+    const byLocal = Number(b.localAvailable === true) - Number(a.localAvailable === true);
+    if (byLocal !== 0) return byLocal;
+    return a.userHandle.localeCompare(b.userHandle, "ja");
+  });
+
+  const rows = new Map<string, WishShelfRow>();
+  const seen = new Set<string>();
+
+  for (const card of sortedCards) {
+    const priority = getCandidatePriority(card);
+    for (const item of card.theirGives) {
+      const candidateKey = `${card.partnerId}:${item.id}`;
+      if (seen.has(candidateKey)) continue;
+      seen.add(candidateKey);
+
+      const goodsTypeName = item.goodsTypeName ?? "グッズ";
+      const rowKey = `${item.label}::${goodsTypeName}`;
+      let row = rows.get(rowKey);
+      if (!row) {
+        row = {
+          key: rowKey,
+          characterLabel: item.label,
+          goodsTypeName,
+          candidates: [],
+          bestPriority: priority,
+          localCount: 0,
+        };
+        rows.set(rowKey, row);
+      }
+
+      const local = card.localAvailable === true;
+      row.candidates.push({
+        key: candidateKey,
+        card,
+        item,
+        priority,
+        local,
+      });
+      row.bestPriority = Math.min(row.bestPriority, priority) as CandidatePriority;
+      if (local) row.localCount += 1;
+    }
+  }
+
+  const result = [...rows.values()];
+  for (const row of result) {
+    row.candidates.sort((a, b) => {
+      const byPriority = a.priority - b.priority;
+      if (byPriority !== 0) return byPriority;
+      const byLocal = Number(b.local) - Number(a.local);
+      if (byLocal !== 0) return byLocal;
+      return a.card.userHandle.localeCompare(b.card.userHandle, "ja");
+    });
+  }
+
+  return result.sort((a, b) => {
+    const byPriority = a.bestPriority - b.bestPriority;
+    if (byPriority !== 0) return byPriority;
+    const byLocalCount = b.localCount - a.localCount;
+    if (byLocalCount !== 0) return byLocalCount;
+    const byCount = b.candidates.length - a.candidates.length;
+    if (byCount !== 0) return byCount;
+    return a.characterLabel.localeCompare(b.characterLabel, "ja");
+  });
+}
+
 export function HomeView({
   profile,
   localMode,
@@ -308,15 +406,15 @@ export function HomeView({
   /** iter142: ?view=national の URL flag。現地モード ON でも全国一覧を表示 */
   isNationalView?: boolean;
 }) {
-  const [tab, setTab] = useState(0);
+  const [selectedCandidate, setSelectedCandidate] =
+    useState<WishShelfCandidate | null>(null);
 
-  // 4 タブにマッチを振り分け
-  const cardsByTab = useMemo(() => {
+  const allCards = useMemo(() => {
     const myInvById = new Map(myInventory.map((i) => [i.id, i]));
     const myWishById = new Map(myWishes.map((w) => [w.id, w]));
     const partnersInvById = new Map(partnersInventory.map((i) => [i.id, i]));
     const partnersWishById = new Map(partnersWishes.map((w) => [w.id, w]));
-    const all = matches.map((m) =>
+    return matches.map((m) =>
       matchToCard(
         m,
         myInvById,
@@ -327,12 +425,6 @@ export function HomeView({
         tagsByInvId,
       ),
     );
-    return {
-      0: all.filter((c) => c.matchType === "complete"),
-      1: all.filter((c) => c.matchType === "they_want_you"),
-      2: all.filter((c) => c.matchType === "you_want_them"),
-      3: all, // 探索: 全部
-    } as Record<number, MatchCardData[]>;
   }, [
     matches,
     myInventory,
@@ -342,20 +434,14 @@ export function HomeView({
     myInventoryQty,
     tagsByInvId,
   ]);
-  const cards = cardsByTab[tab] ?? [];
-
-  const tabCounts = useMemo(
-    () => ({
-      0: cardsByTab[0]?.length ?? 0,
-      1: cardsByTab[1]?.length ?? 0,
-      2: cardsByTab[2]?.length ?? 0,
-      3: cardsByTab[3]?.length ?? 0,
-    }),
-    [cardsByTab],
+  const wishShelves = useMemo(() => buildWishShelves(allCards), [allCards]);
+  const totalCandidateCount = useMemo(
+    () => wishShelves.reduce((sum, row) => sum + row.candidates.length, 0),
+    [wishShelves],
   );
-  const featuredCards = useMemo(
-    () => (cardsByTab[3] ?? []).slice(0, 3),
-    [cardsByTab],
+  const localCandidateCount = useMemo(
+    () => wishShelves.reduce((sum, row) => sum + row.localCount, 0),
+    [wishShelves],
   );
 
   // 現地モード state（DB から取得した初期値）
@@ -663,105 +749,70 @@ export function HomeView({
           </div>
         )}
 
-        {featuredCards.length > 0 && (
-          <section className="mt-4">
-            <div className="mb-2 flex items-center justify-between px-5">
-              <div>
-                <div className="text-[14px] font-extrabold tracking-[0.2px] text-gray-900">
-                  注目マッチ
-                </div>
-                <div className="mt-0.5 text-[10.5px] font-medium text-gray-500">
-                  条件が強い候補を先に表示
-                </div>
+        <section className="mt-4 flex min-h-0 flex-1 flex-col">
+          <div className="mb-2 flex items-end justify-between px-5">
+            <div>
+              <div className="text-[14px] font-extrabold tracking-[0.2px] text-gray-900">
+                Wishに届いた譲
               </div>
-              <div className="rounded-full bg-[#a695d814] px-2.5 py-1 text-[10px] font-extrabold tabular-nums text-[#a695d8]">
-                {featuredCards.length}件
+              <div className="mt-0.5 text-[10.5px] font-medium text-gray-500">
+                キャラ×種別ごとに候補を整理
               </div>
             </div>
-            <div className="-mx-5 flex snap-x gap-4 overflow-x-auto px-5 py-4 [&::-webkit-scrollbar]:hidden">
-              {featuredCards.map((c) => (
-                <div
-                  key={`featured-${c.id}`}
-                  className="w-[88%] max-w-[360px] flex-shrink-0 snap-center"
-                >
-                  <MatchCard
-                    card={c}
-                    myAvatarUrl={profile?.avatar_url ?? null}
-                    featured
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Tab chips */}
-        <div className="-mx-5 mt-3.5 flex gap-1.5 overflow-x-auto px-5 pb-2 pt-1 [&::-webkit-scrollbar]:hidden">
-          {TABS.map((t) => {
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                className={`flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-[12.5px] font-semibold transition-all duration-150 active:scale-[0.97] ${
-                  active
-                    ? "bg-[#a695d8] text-white shadow-[0_4px_10px_rgba(166,149,216,0.3)]"
-                    : "border border-[#3a324a14] bg-white text-gray-900"
-                }`}
-              >
-                {t.label}
-                <span
-                  className={`tabular-nums ${
-                    active ? "text-white/85" : "text-gray-500"
-                  }`}
-                >
-                  {tabCounts[t.id as 0 | 1 | 2 | 3] ?? 0}
+            <div className="flex items-center gap-1.5">
+              {localCandidateCount > 0 && (
+                <span className="rounded-full bg-[#a695d8] px-2.5 py-1 text-[10px] font-extrabold tabular-nums text-white shadow-[0_3px_10px_rgba(166,149,216,0.28)]">
+                  現地 {localCandidateCount}
                 </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Cards */}
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          {cards.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
-              {tab === 3
-                ? "探索フィードは今後実装します"
-                : "現在マッチがありません"}
-            </div>
-          ) : (
-            cards.map((c) => (
-              <MatchCard
-                key={c.id}
-                card={c}
-                myAvatarUrl={profile?.avatar_url ?? null}
-              />
-            ))
-          )}
-
-          {tab === 0 && cards.length > 0 && (
-            <div className="flex items-center justify-between rounded-2xl border border-[#3a324a14] bg-white px-4 py-3">
-              <div>
-                <div className="text-xs font-medium text-gray-900">
-                  条件を緩めるとあと
-                  <b className="text-[#a695d8]"> 14件</b>
-                </div>
-                <div className="mt-0.5 text-[10.5px] text-gray-500">
-                  断った人 2 名は自動除外中
-                </div>
-              </div>
-              <span className="flex items-center gap-1 text-xs font-semibold text-[#a695d8]">
-                見直す →
+              )}
+              <span className="rounded-full bg-[#3a324a0a] px-2.5 py-1 text-[10px] font-extrabold tabular-nums text-[#3a324a8c]">
+                {totalCandidateCount}件
               </span>
             </div>
-          )}
+          </div>
 
-          {/* iter134: ようこそ表示・ログアウトはホーム画面から撤廃
-              （ログアウトは /profile に集約済） */}
-        </div>
+          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-2">
+            {wishShelves.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white px-5 py-10 text-center">
+                <div className="text-[13px] font-bold text-[#3a324a]">
+                  現在マッチがありません
+                </div>
+                <div className="mt-1 text-[11px] leading-relaxed text-[#3a324a8c]">
+                  Wish と譲の条件が重なると、ここに候補が並びます。
+                </div>
+              </div>
+            ) : (
+              wishShelves.map((row, idx) => (
+                <WishShelfRowView
+                  key={row.key}
+                  row={row}
+                  delayMs={idx * 55}
+                  onSelect={setSelectedCandidate}
+                />
+              ))
+            )}
+
+            {/* iter134: ようこそ表示・ログアウトはホーム画面から撤廃
+                （ログアウトは /profile に集約済） */}
+          </div>
+        </section>
       </div>
+
+      {selectedCandidate && (
+        <MatchDetailModal
+          partnerHandle={selectedCandidate.card.userHandle}
+          partnerId={selectedCandidate.card.partnerId}
+          partnerAvatarUrl={selectedCandidate.card.userAvatarUrl}
+          myAvatarUrl={profile?.avatar_url ?? null}
+          myListings={selectedCandidate.card.myMatchedListings ?? []}
+          partnerListings={selectedCandidate.card.partnerMatchedListings ?? []}
+          myInventoryQty={selectedCandidate.card.myInventoryQty ?? {}}
+          simpleReceives={[selectedCandidate.item]}
+          simpleGives={selectedCandidate.card.myGives}
+          simpleProposeHref={buildSimpleProposeHref(selectedCandidate)}
+          onClose={() => setSelectedCandidate(null)}
+        />
+      )}
 
       {/* 現地モード設定シート（iter129: apply 無しで close したら全国へ revert） */}
       <LocalModeSheet
@@ -802,6 +853,140 @@ export function HomeView({
         />
       )}
     </main>
+  );
+}
+
+function buildSimpleProposeHref(candidate: WishShelfCandidate): string {
+  const params = new URLSearchParams();
+  params.set("matchType", candidate.card.matchType);
+  params.set("receives", candidate.item.id);
+  if (candidate.card.myGives.length > 0) {
+    params.set("gives", candidate.card.myGives.map((i) => i.id).join(","));
+  }
+  return `/propose/${candidate.card.partnerId}?${params.toString()}`;
+}
+
+function WishShelfRowView({
+  row,
+  delayMs,
+  onSelect,
+}: {
+  row: WishShelfRow;
+  delayMs: number;
+  onSelect: (candidate: WishShelfCandidate) => void;
+}) {
+  return (
+    <section
+      className="animate-section-fade-down rounded-[18px] border border-[#3a324a10] bg-white py-3 shadow-[0_6px_18px_rgba(58,50,74,0.06)]"
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
+      <div className="flex items-start justify-between gap-3 px-3.5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <h2 className="truncate text-[14px] font-extrabold leading-tight text-[#3a324a]">
+              {row.characterLabel}
+            </h2>
+            <span className="flex-shrink-0 text-[11px] font-bold text-[#3a324a66]">
+              × {row.goodsTypeName}
+            </span>
+          </div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] font-bold text-[#3a324a73]">
+            <span>{getPriorityLabel(row.bestPriority)}</span>
+            <span className="text-[#3a324a33]">/</span>
+            <span className="tabular-nums">候補 {row.candidates.length}件</span>
+            {row.localCount > 0 && (
+              <>
+                <span className="text-[#3a324a33]">/</span>
+                <span className="tabular-nums text-[#a695d8]">
+                  現地 {row.localCount}件
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <span
+          className={`flex-shrink-0 rounded-full px-2 py-1 text-[9.5px] font-extrabold ${getPriorityClass(
+            row.bestPriority,
+          )}`}
+        >
+          {getPriorityLabel(row.bestPriority)}
+        </span>
+      </div>
+
+      <div className="-mx-5 mt-3 flex gap-2.5 overflow-x-auto px-8 pb-1.5 pt-1 [&::-webkit-scrollbar]:hidden">
+        {row.candidates.map((candidate) => (
+          <WishShelfTile
+            key={candidate.key}
+            candidate={candidate}
+            onSelect={() => onSelect(candidate)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WishShelfTile({
+  candidate,
+  onSelect,
+}: {
+  candidate: WishShelfCandidate;
+  onSelect: () => void;
+}) {
+  const item = candidate.item;
+  const hasPhoto = !!item.photoUrl;
+  const fallbackBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 78%) 6px 12px)`;
+  const handle =
+    candidate.card.userHandle.length > 11
+      ? `${candidate.card.userHandle.slice(0, 10)}…`
+      : candidate.card.userHandle;
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="group w-[88px] flex-shrink-0 text-left active:scale-[0.97]"
+      aria-label={`${item.label}の候補を開く`}
+    >
+      <div
+        className="relative h-[112px] w-[88px] overflow-hidden rounded-[13px] border border-[#3a324a12] bg-[#f4f1f7] shadow-[0_5px_14px_rgba(58,50,74,0.12)] transition-transform duration-150 group-hover:-translate-y-0.5"
+        style={{ background: hasPhoto ? "#3a324a" : fallbackBg }}
+      >
+        {hasPhoto ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.photoUrl!}
+            alt={item.label}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center text-[26px] font-extrabold text-white/95 drop-shadow">
+            {item.label[0] ?? "?"}
+          </span>
+        )}
+        {candidate.local && (
+          <span className="absolute left-1 top-1 rounded-full bg-[#a695d8] px-1.5 py-[2px] text-[8.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_8px_rgba(166,149,216,0.35)]">
+            LIVE
+          </span>
+        )}
+      </div>
+      <div className="mt-1.5 min-w-0">
+        <span
+          className={`inline-flex max-w-full rounded-full px-1.5 py-[2px] text-[8.5px] font-extrabold ${getPriorityClass(
+            candidate.priority,
+          )}`}
+        >
+          {getPriorityLabel(candidate.priority)}
+        </span>
+        <div className="mt-1 truncate text-[10px] font-bold text-[#3a324a]">
+          @{handle}
+        </div>
+        <div className="mt-0.5 truncate text-[9.5px] text-[#3a324a80]">
+          {candidate.card.distanceText ?? candidate.card.distance}
+        </div>
+      </div>
+    </button>
   );
 }
 

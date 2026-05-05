@@ -21,7 +21,7 @@
  *   （propose page.tsx 側で candidates の prefill を実装する）
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   MatchCardListingInfo,
@@ -62,6 +62,9 @@ export function MatchDetailModal({
   myListings,
   partnerListings,
   myInventoryQty,
+  simpleReceives,
+  simpleGives,
+  simpleProposeHref,
   onClose,
 }: {
   partnerHandle: string;
@@ -73,6 +76,12 @@ export function MatchDetailModal({
   partnerListings: MatchCardListingInfo[];
   /** iter111: 自分の inventory id → 在庫数（quantity）の Map。capacity 超過判定用 */
   myInventoryQty: Record<string, number>;
+  /** iter152: 個別募集なしの通常マッチで、あなたが受け取れそうな相手の譲 */
+  simpleReceives?: MiniItem[];
+  /** iter152: 個別募集なしの通常マッチで、あなたが譲れそうな自分の譲 */
+  simpleGives?: MiniItem[];
+  /** iter152: 通常マッチの打診先 */
+  simpleProposeHref?: string | null;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -95,6 +104,12 @@ export function MatchDetailModal({
     { listingLabel: string; reasons: string[] }[] | null
   >(null);
   const router = useRouter();
+  const simpleReceiveItems = simpleReceives ?? [];
+  const simpleGiveItems = simpleGives ?? [];
+  const hasListingRelation = myListings.length > 0 || partnerListings.length > 0;
+  const hasSimpleRelation =
+    !hasListingRelation &&
+    (simpleReceiveItems.length > 0 || simpleGiveItems.length > 0);
 
   /**
    * iter121: OR 条件の haves でどれを選ぶか（listingId → 選択中 inv id Set）
@@ -134,14 +149,14 @@ export function MatchDetailModal({
    * - AND or 単一：全 haves
    * - OR with >=2：選択中の haves のみ
    */
-  function getEffectiveHaves(listing: MatchCardListingInfo) {
+  const getEffectiveHaves = useCallback((listing: MatchCardListingInfo) => {
     if (listing.haveLogic === "or" && listing.haves.length >= 2) {
       const sel = selectedHavesByListing.get(listing.listingId);
       if (!sel || sel.size === 0) return [];
       return listing.haves.filter((h) => sel.has(h.item.id));
     }
     return listing.haves;
-  }
+  }, [selectedHavesByListing]);
 
   /**
    * iter111: 在庫超過判定
@@ -333,7 +348,7 @@ export function MatchDetailModal({
     totalSelected,
     myListings,
     partnerListings,
-    selectedHavesByListing,
+    getEffectiveHaves,
   ]);
 
   const proposeHref = useMemo(() => {
@@ -455,6 +470,12 @@ export function MatchDetailModal({
     router.push(proposeHref);
   }
 
+  function handleSimpleProposeClick() {
+    if (!simpleProposeHref) return;
+    onClose();
+    router.push(simpleProposeHref);
+  }
+
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
@@ -468,7 +489,7 @@ export function MatchDetailModal({
         </button>
         <div className="flex-1">
           <div className="text-[15px] font-bold text-[#3a324a]">
-            関係図（個別募集）
+            関係図
           </div>
           <div className="mt-0.5 text-[11px] text-[#3a324a8c]">
             @{partnerHandle} とのマッチ詳細
@@ -481,8 +502,16 @@ export function MatchDetailModal({
           <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
             🔗 関係図
           </span>
-          各 wish の候補を<b>写真で確認</b>して、受け取りたい / 出せるものを
-          タップで選択。下の「打診に進む」で確認画面に進みます。
+          {hasSimpleRelation ? (
+            <>
+              譲 × wish で成立しそうな候補です。内容を確認して打診へ進めます。
+            </>
+          ) : (
+            <>
+              各 wish の候補を<b>写真で確認</b>して、受け取りたい / 出せるものを
+              タップで選択。下の「打診に進む」で確認画面に進みます。
+            </>
+          )}
         </div>
 
         {myListings.length > 0 && (
@@ -533,10 +562,18 @@ export function MatchDetailModal({
           </SectionGroup>
         )}
 
-        {myListings.length === 0 && partnerListings.length === 0 && (
-          <div className="rounded-[10px] border border-dashed border-[#3a324a14] bg-white p-4 text-center text-[12px] text-[#3a324a8c]">
-            個別募集経由のマッチはありません
-          </div>
+        {!hasListingRelation && (
+          hasSimpleRelation ? (
+            <SimpleRelationPanel
+              partnerHandle={partnerHandle}
+              receivesItems={simpleReceiveItems}
+              givesItems={simpleGiveItems}
+            />
+          ) : (
+            <div className="rounded-[10px] border border-dashed border-[#3a324a14] bg-white p-4 text-center text-[12px] text-[#3a324a8c]">
+              個別募集経由のマッチはありません
+            </div>
+          )
         )}
 
         {/* iter118: 全 listing 横断の結論サマリー（一番下） */}
@@ -565,6 +602,27 @@ export function MatchDetailModal({
               className="flex-1 rounded-[12px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-3 text-center text-[13.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] active:scale-[0.98]"
             >
               打診に進む（{totalSelected} 件）→
+            </button>
+          </div>
+        </div>
+      )}
+
+      {hasSimpleRelation && simpleProposeHref && (
+        <div className="border-t border-[#3a324a14] bg-white/96 backdrop-blur-xl">
+          <div className="mx-auto flex w-full max-w-md items-center gap-2.5 px-[18px] pt-3 pb-[max(env(safe-area-inset-bottom),12px)]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-[10px] border border-[#3a324a14] bg-white px-3 py-2.5 text-[11px] font-bold text-[#3a324a8c]"
+            >
+              閉じる
+            </button>
+            <button
+              type="button"
+              onClick={handleSimpleProposeClick}
+              className="flex-1 rounded-[12px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-3 text-center text-[13.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] active:scale-[0.98]"
+            >
+              この内容で打診へ →
             </button>
           </div>
         </div>
@@ -801,6 +859,61 @@ function SectionGroup({
         <div className="mt-0.5 text-[10px] text-[#3a324a8c]">{subtitle}</div>
       </div>
       {children}
+    </section>
+  );
+}
+
+/* ─── iter152: 通常マッチ用の簡易関係図 ─── */
+
+function SimpleRelationPanel({
+  partnerHandle,
+  receivesItems,
+  givesItems,
+}: {
+  partnerHandle: string;
+  receivesItems: MiniItem[];
+  givesItems: MiniItem[];
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)]">
+      <div className="border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
+        <div className="text-[11px] font-extrabold tracking-[0.3px] text-[#3a324a]">
+          譲 × wish の関係
+        </div>
+        <div className="mt-0.5 text-[10px] text-[#3a324a8c]">
+          個別募集なしで、お互いの登録内容が重なっています
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3">
+        <div className="min-w-0 rounded-[12px] bg-[#f3c5d414] px-2.5 py-2">
+          <div className="mb-1.5 text-[10px] font-extrabold tracking-[0.4px] text-[#b66f87]">
+            あなたが受け取る
+          </div>
+          <div className="text-[9.5px] font-bold text-[#3a324a8c]">
+            @{partnerHandle} の譲
+          </div>
+          <div className="mt-1.5">
+            <SummaryThumbStrip items={receivesItems} max={5} />
+          </div>
+        </div>
+
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#3a324a08] text-[13px] font-extrabold text-[#3a324a8c]">
+          ⇄
+        </div>
+
+        <div className="min-w-0 rounded-[12px] bg-[#a695d814] px-2.5 py-2">
+          <div className="mb-1.5 text-[10px] font-extrabold tracking-[0.4px] text-[#a695d8]">
+            あなたが譲る
+          </div>
+          <div className="text-[9.5px] font-bold text-[#3a324a8c]">
+            相手の wish に一致
+          </div>
+          <div className="mt-1.5">
+            <SummaryThumbStrip items={givesItems} max={5} />
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
