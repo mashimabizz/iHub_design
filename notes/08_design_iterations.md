@@ -4,6 +4,46 @@
 
 ---
 
+## イテレーション154.19：グッズ操作シートを画面全体レイヤーへ移動
+
+### 背景・問題意識
+
+オーナーから、マイ在庫やウィッシュのグッズ画像を押した時のポップアップが、画面全体ではなくグッズ画像の中に選択肢が出ているように見え、前のカード内メニューと変わらないという指摘があった。
+
+`BottomActionSheet` は `position: fixed` で実装していたが、呼び出し元のカードは pop-in / bounce アニメーションで `transform` を使っている。CSS では transform 配下の fixed 要素がその祖先に閉じ込められるため、カード内にメニューが出ているように見えていた。
+
+### 変更内容
+
+#### `web/src/components/common/BottomActionSheet.tsx`
+- `BottomActionSheet` を `document.body` へ `createPortal` する構成に変更。
+- 在庫・Wish のカードアニメーションやグリッドの overflow の影響を受けず、画面全体に対する下部シートとして表示されるようにした。
+
+### 影響範囲
+
+- `/inventory` マイ在庫のカード操作シート
+- `/wishes` Wish のカード操作シート
+- `BottomActionSheet` を利用する今後の画面
+
+### 確認方法
+
+- `npx eslint src/components/common/BottomActionSheet.tsx src/app/inventory/InventoryView.tsx src/app/wishes/WishView.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/common/BottomActionSheet.tsx`
+
+### セルフレビュー結果
+
+- ✅ グッズカード内ではなく `document.body` に操作シートを描画
+- ✅ マイ在庫と Wish の両方で共通修正として反映
+- ✅ シート自体は画面いっぱいではなく、従来通り下部から出る `max-w-md` のパネルを維持
+- ✅ `notes/09_state_machines.md` は状態追加・変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語・廃止用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+
+---
+
 ## イテレーション154.18：在庫キープ導線と譲り済み履歴を整理
 
 ### 背景・問題意識

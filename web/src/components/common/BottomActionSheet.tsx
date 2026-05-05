@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export type BottomActionSheetAction = {
   label: string;
@@ -26,7 +27,7 @@ export function BottomActionSheet({
   actions: BottomActionSheetAction[];
   onClose: () => void;
 }) {
-  return (
+  const sheet = (
     <div
       className="animate-action-sheet-backdrop-in fixed inset-0 z-[110] flex items-end justify-center bg-black/45 px-0 backdrop-blur-[2px]"
       role="dialog"
@@ -80,6 +81,11 @@ export function BottomActionSheet({
       </div>
     </div>
   );
+
+  // Card pop/bounce animations use transform, which can trap fixed children.
+  // Portaling to body keeps the sheet anchored to the viewport, not the card.
+  if (typeof document === "undefined") return null;
+  return createPortal(sheet, document.body);
 }
 
 function actionButtonClass(tone: BottomActionSheetAction["tone"]) {
