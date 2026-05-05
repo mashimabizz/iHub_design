@@ -73,7 +73,7 @@ export function OshiForm({
     ? "/profile/oshi"
     : "/onboarding/members";
   const requestHref = isProfileReturn
-    ? "/onboarding/oshi/request?return=profile"
+    ? "/profile/oshi?request=oshi"
     : "/onboarding/oshi/request";
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(
     initialSelectedGroupIds,
@@ -404,7 +404,7 @@ export function OshiForm({
           </>
         )}
 
-        {/* 追加リクエスト枠 → /onboarding/oshi/request へ遷移 */}
+        {/* 追加リクエスト枠 */}
         <Link
           href={requestHref}
           className="mt-3 block rounded-xl border border-dashed border-[#a695d855] bg-white py-3 text-center text-xs font-medium text-[#a695d8] transition-colors hover:border-[#a695d8] hover:bg-[#a695d808]"

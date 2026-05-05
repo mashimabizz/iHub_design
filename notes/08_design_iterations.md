@@ -4,6 +4,61 @@
 
 ---
 
+## イテレーション154.28：推し追加リクエストを画面内モーダル化
+
+### 背景・問題意識
+
+オーナーから、推し設定の追加リクエスト導線がオンボーディングの推しグループ設定へ流れてしまい、プロフィール編集文脈から外れるという指摘があった。
+
+推し設定からの追加リクエストは、登録済みマスタを選ぶ導線とは分け、推し設定画面のまま必要情報を入力できるポップアップとして完結させる。メンバー追加リクエストも同様に、オンボーディングのメンバーリクエスト画面へ遷移させない。
+
+### 変更内容
+
+#### `web/src/app/profile/oshi/OshiEditView.tsx`
+- 推し追加リクエスト / メンバー追加リクエスト用の画面内モーダルを追加。
+- 推し追加リクエストは名前・ジャンル・種類・メモを入力し、既存の `saveOshiRequest` server action で送信するようにした。
+- メンバー追加リクエストは追加先グループを表示し、名前・メモを入力して `saveCharacterRequest` で送信するようにした。
+- 既存マスタから推しを追加する導線は残しつつ、「マスタに無い推しを追加リクエスト」を別ボタンとして明示した。
+- グループカード内の「マスタに無いメンバーを追加リクエスト」はページ遷移ではなくモーダル起動に変更した。
+- 送信成功後は推し設定画面上に完了メッセージを表示し、プロフィール側のキャッシュを更新する。
+
+#### `web/src/app/profile/oshi/page.tsx`
+- 推し追加リクエストモーダルで使う `genres_master` を推し設定ページ側で取得して渡すようにした。
+
+#### `web/src/app/onboarding/oshi/OshiForm.tsx`
+- プロフ編集から `return=profile` で入った場合、追加リクエスト枠はオンボーディング内のリクエストページではなく `/profile/oshi?request=oshi` へ戻し、推し設定画面内モーダルを開くようにした。
+
+### 影響範囲
+
+- `/profile/oshi` 推し設定画面
+- `/onboarding/oshi?return=profile` からの追加リクエスト導線
+- `oshi_requests` / `character_requests` への登録処理
+
+### 確認方法
+
+- `npx eslint src/app/profile/oshi/OshiEditView.tsx src/app/profile/oshi/page.tsx src/app/onboarding/oshi/OshiForm.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/profile/oshi/OshiEditView.tsx`
+- `web/src/app/profile/oshi/page.tsx`
+- `web/src/app/onboarding/oshi/OshiForm.tsx`
+- `web/src/app/onboarding/actions.ts`
+
+### セルフレビュー結果
+
+- ✅ 推し設定からの推し追加リクエストは画面内モーダルで完結
+- ✅ 推し設定からのメンバー追加リクエストも画面内モーダルで完結
+- ✅ 登録処理は既存の `saveOshiRequest` / `saveCharacterRequest` を流用し、DB スキーマ変更なし
+- ✅ `notes/09_state_machines.md` は状態追加・変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語・廃止用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+
+---
+
 ## イテレーション154.27：画像読み込み後にカード入場を開始
 
 ### 背景・問題意識

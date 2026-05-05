@@ -22,32 +22,47 @@ type OshiRow = {
     | null;
 };
 
+type GenreRow = {
+  id: string;
+  name: string;
+};
+
 function pickOne<T>(v: T | T[] | null): T | null {
   if (!v) return null;
   return Array.isArray(v) ? (v[0] ?? null) : v;
 }
 
-export default async function ProfileOshiPage() {
+type Props = {
+  searchParams: Promise<{ request?: string }>;
+};
+
+export default async function ProfileOshiPage({ searchParams }: Props) {
+  const params = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 自分の推し + 関連キャラ master を並列取得
-  const [{ data: oshi }, { data: characters }] = await Promise.all([
-    supabase
-      .from("user_oshi")
-      .select(
-        "id, group_id, character_id, oshi_request_id, character_request_id, kind, priority, group:groups_master(id, name), character:characters_master(id, name)",
-      )
-      .eq("user_id", user.id)
-      .order("priority", { ascending: true }),
-    supabase
-      .from("characters_master")
-      .select("id, name, group_id")
-      .order("display_order", { ascending: true }),
-  ]);
+  // 自分の推し + 関連キャラ master + 追加リクエスト用 genre を並列取得
+  const [{ data: oshi }, { data: characters }, { data: genres }] =
+    await Promise.all([
+      supabase
+        .from("user_oshi")
+        .select(
+          "id, group_id, character_id, oshi_request_id, character_request_id, kind, priority, group:groups_master(id, name), character:characters_master(id, name)",
+        )
+        .eq("user_id", user.id)
+        .order("priority", { ascending: true }),
+      supabase
+        .from("characters_master")
+        .select("id, name, group_id")
+        .order("display_order", { ascending: true }),
+      supabase
+        .from("genres_master")
+        .select("id, name")
+        .order("display_order", { ascending: true }),
+    ]);
 
   // グループごとにまとめる
   type Group = {
@@ -97,7 +112,14 @@ export default async function ProfileOshiPage() {
     <main className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="推し設定" backHref="/profile" />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-12 pt-5">
-        <OshiEditView oshiGroups={oshiGroups} />
+        <OshiEditView
+          oshiGroups={oshiGroups}
+          initialRequestModal={params.request === "oshi"}
+          genreOptions={((genres as GenreRow[] | null) ?? []).map((g) => ({
+            id: g.id,
+            name: g.name,
+          }))}
+        />
       </div>
     </main>
   );
