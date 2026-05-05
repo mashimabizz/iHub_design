@@ -1,7 +1,15 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  type MouseEvent,
+  type TouchEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
@@ -58,6 +66,8 @@ type Selectable = ProposeInv & {
 type Step = "select" | "confirm";
 type Tab = "mine" | "theirs" | "meetup";
 type Tone = "standard" | "casual" | "polite";
+
+const PROPOSE_TAB_ORDER: Tab[] = ["mine", "theirs", "meetup"];
 
 type Props = {
   partner: Partner;
@@ -241,6 +251,15 @@ function labelFromAddress(p: Place): string {
   );
 }
 
+function shouldIgnoreProposeSwipe(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return Boolean(
+    target.closest(
+      "input, textarea, select, [contenteditable='true'], [data-propose-swipe-ignore], .leaflet-container",
+    ),
+  );
+}
+
 /* ─── main component ────────────────────────────────────── */
 
 export function ProposeFlow({
@@ -370,6 +389,14 @@ export function ProposeFlow({
   /* ── ステップ・タブ ── */
   const [step, setStep] = useState<Step>("select");
   const [tab, setTab] = useState<Tab>("mine");
+  const swipeStateRef = useRef<{
+    startX: number;
+    startY: number;
+    tracking: boolean;
+    swiping: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+  const suppressClickTimerRef = useRef<number | null>(null);
 
   /* ── メッセージ（iter138: tone / 自動テンプレ廃止、空文字スタート） ── */
   const [exposeCalendar, setExposeCalendar] = useState(true); // iter138: デフォルト ON
@@ -436,13 +463,17 @@ export function ProposeFlow({
 
   /* 場所検索 debounce */
   const searchAbortRef = useRef<AbortController | null>(null);
+  function handleSearchQChange(value: string) {
+    setSearchQ(value);
+    if (value.trim().length >= 2) return;
+    searchAbortRef.current?.abort();
+    setSearchResults([]);
+    setShowResults(false);
+  }
+
   useEffect(() => {
     const q = searchQ.trim();
-    if (q.length < 2) {
-      setSearchResults([]);
-      setShowResults(false);
-      return;
-    }
+    if (q.length < 2) return;
     const handle = setTimeout(async () => {
       searchAbortRef.current?.abort();
       const ctrl = new AbortController();
@@ -506,6 +537,100 @@ export function ProposeFlow({
   }
 
   /* ── handlers ── */
+
+  function clearSuppressClickTimer() {
+    if (suppressClickTimerRef.current && typeof window !== "undefined") {
+      window.clearTimeout(suppressClickTimerRef.current);
+      suppressClickTimerRef.current = null;
+    }
+  }
+
+  function suppressNextClick() {
+    suppressClickRef.current = true;
+    clearSuppressClickTimer();
+    if (typeof window === "undefined") return;
+    suppressClickTimerRef.current = window.setTimeout(() => {
+      suppressClickRef.current = false;
+      suppressClickTimerRef.current = null;
+    }, 360);
+  }
+
+  useEffect(() => {
+    return () => clearSuppressClickTimer();
+  }, []);
+
+  function moveTabBySwipe(direction: 1 | -1): boolean {
+    const currentIndex = PROPOSE_TAB_ORDER.indexOf(tab);
+    const next = PROPOSE_TAB_ORDER[currentIndex + direction];
+    if (!next) return false;
+    setTab(next);
+    return true;
+  }
+
+  function handleTabSwipeStart(e: TouchEvent<HTMLDivElement>) {
+    if (step !== "select" || e.touches.length !== 1) return;
+    if (shouldIgnoreProposeSwipe(e.target)) return;
+    const touch = e.touches[0];
+    swipeStateRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      tracking: true,
+      swiping: false,
+    };
+  }
+
+  function handleTabSwipeMove(e: TouchEvent<HTMLDivElement>) {
+    const state = swipeStateRef.current;
+    if (!state?.tracking || e.touches.length !== 1) return;
+
+    const touch = e.touches[0];
+    const dx = touch.clientX - state.startX;
+    const dy = touch.clientY - state.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+
+    if (!state.swiping) {
+      if (absX > 14 && absX > absY * 1.25) {
+        state.swiping = true;
+      } else if (absY > 14 && absY > absX * 1.1) {
+        state.tracking = false;
+        return;
+      }
+    }
+
+    if (state.swiping) e.preventDefault();
+  }
+
+  function handleTabSwipeEnd(e: TouchEvent<HTMLDivElement>) {
+    const state = swipeStateRef.current;
+    swipeStateRef.current = null;
+    if (!state?.tracking || !state.swiping) return;
+
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    const dx = touch.clientX - state.startX;
+    const dy = touch.clientY - state.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (absX < 56 || absX < absY * 1.35) return;
+
+    const moved = moveTabBySwipe(dx < 0 ? 1 : -1);
+    if (moved) {
+      e.preventDefault();
+      suppressNextClick();
+    }
+  }
+
+  function handleTabSwipeCancel() {
+    swipeStateRef.current = null;
+  }
+
+  function handleSwipeClickCapture(e: MouseEvent<HTMLDivElement>) {
+    if (!suppressClickRef.current) return;
+    suppressClickRef.current = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }
 
   function toggleItem(side: "mine" | "theirs", id: string) {
     const update = (items: Selectable[]) =>
@@ -715,7 +840,14 @@ export function ProposeFlow({
         )}
       </header>
 
-      <div className="mx-auto w-full max-w-md flex-1 px-[18px] pt-3.5">
+      <div
+        className="mx-auto w-full max-w-md flex-1 px-[18px] pt-3.5 [touch-action:pan-y]"
+        onTouchStart={handleTabSwipeStart}
+        onTouchMove={handleTabSwipeMove}
+        onTouchEnd={handleTabSwipeEnd}
+        onTouchCancel={handleTabSwipeCancel}
+        onClickCapture={handleSwipeClickCapture}
+      >
         {step === "select" && tab === "meetup" && (
           <MeetupTab
             partner={partner}
@@ -729,7 +861,7 @@ export function ProposeFlow({
             onMapCenterChange={handleMapCenterChange}
             reverseFetching={reverseFetching}
             searchQ={searchQ}
-            setSearchQ={setSearchQ}
+            setSearchQ={handleSearchQChange}
             searchResults={searchResults}
             searching={searching}
             showResults={showResults}
@@ -1180,7 +1312,10 @@ function MeetupTab({
       </button>
 
       {/* 地図 */}
-      <div className="overflow-hidden rounded-[12px] border-[0.5px] border-[#3a324a14] bg-[#e8eef0]">
+      <div
+        data-propose-swipe-ignore
+        className="overflow-hidden rounded-[12px] border-[0.5px] border-[#3a324a14] bg-[#e8eef0]"
+      >
         <div className="h-[240px] w-full">
           <MapPicker
             center={meetupCenter}
