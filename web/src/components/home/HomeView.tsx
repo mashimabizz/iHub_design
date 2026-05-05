@@ -10,7 +10,7 @@ import {
   type MatchCardListingInfo,
   type MiniItem,
 } from "./MatchCard";
-import type { MatchInv } from "@/lib/matching";
+import { isMatching, type Match, type MatchInv } from "@/lib/matching";
 import {
   disableLocalMode,
   enableLocalMode,
@@ -21,7 +21,6 @@ import {
   type SimpleAW,
   type SimpleItem,
 } from "./LocalModeSheet";
-import { type Match } from "@/lib/matching";
 
 // メンバー名 / グループ名 → hue (色相) ハッシュ
 function nameToHue(name: string): number {
@@ -265,6 +264,7 @@ type WishShelfCandidate = {
   card: MatchCardData;
   item: MiniItem;
   priority: CandidatePriority;
+  tagScore: number;
   local: boolean;
 };
 
@@ -274,6 +274,7 @@ type WishShelfRow = {
   goodsTypeName: string;
   candidates: WishShelfCandidate[];
   bestPriority: CandidatePriority;
+  bestTagScore: number;
   localCount: number;
 };
 
@@ -297,7 +298,42 @@ function getPriorityClass(priority: CandidatePriority): string {
   return "bg-[#f3c5d433] text-[#b66f87]";
 }
 
-function buildWishShelves(cards: MatchCardData[]): WishShelfRow[] {
+function getTagMatchLabel(score: number): string | null {
+  if (score >= 0.999) return "タグ完全一致";
+  if (score > 0) return "タグ一致";
+  return null;
+}
+
+function buildTagScoreByInvId(
+  partnerInventory: MatchInv[],
+  myWishes: MatchInv[],
+  tagsByInvId: Record<string, string[]>,
+): Map<string, number> {
+  const scores = new Map<string, number>();
+
+  for (const inv of partnerInventory) {
+    const invTags = tagsByInvId[inv.id] ?? [];
+    if (invTags.length === 0) {
+      scores.set(inv.id, 0);
+      continue;
+    }
+
+    let best = 0;
+    for (const wish of myWishes) {
+      if (!isMatching(inv, wish)) continue;
+      const score = jaccardScore(tagsByInvId[wish.id] ?? [], invTags);
+      if (score > best) best = score;
+    }
+    scores.set(inv.id, best);
+  }
+
+  return scores;
+}
+
+function buildWishShelves(
+  cards: MatchCardData[],
+  tagScoreByInvId: Map<string, number>,
+): WishShelfRow[] {
   const sortedCards = [...cards].sort((a, b) => {
     const byPriority = getCandidatePriority(a) - getCandidatePriority(b);
     if (byPriority !== 0) return byPriority;
@@ -318,6 +354,7 @@ function buildWishShelves(cards: MatchCardData[]): WishShelfRow[] {
 
       const goodsTypeName = item.goodsTypeName ?? "グッズ";
       const rowKey = `${item.label}::${goodsTypeName}`;
+      const tagScore = tagScoreByInvId.get(item.id) ?? 0;
       let row = rows.get(rowKey);
       if (!row) {
         row = {
@@ -326,6 +363,7 @@ function buildWishShelves(cards: MatchCardData[]): WishShelfRow[] {
           goodsTypeName,
           candidates: [],
           bestPriority: priority,
+          bestTagScore: tagScore,
           localCount: 0,
         };
         rows.set(rowKey, row);
@@ -337,9 +375,11 @@ function buildWishShelves(cards: MatchCardData[]): WishShelfRow[] {
         card,
         item,
         priority,
+        tagScore,
         local,
       });
       row.bestPriority = Math.min(row.bestPriority, priority) as CandidatePriority;
+      row.bestTagScore = Math.max(row.bestTagScore, tagScore);
       if (local) row.localCount += 1;
     }
   }
@@ -349,6 +389,8 @@ function buildWishShelves(cards: MatchCardData[]): WishShelfRow[] {
     row.candidates.sort((a, b) => {
       const byPriority = a.priority - b.priority;
       if (byPriority !== 0) return byPriority;
+      const byTagScore = b.tagScore - a.tagScore;
+      if (byTagScore !== 0) return byTagScore;
       const byLocal = Number(b.local) - Number(a.local);
       if (byLocal !== 0) return byLocal;
       return a.card.userHandle.localeCompare(b.card.userHandle, "ja");
@@ -358,6 +400,8 @@ function buildWishShelves(cards: MatchCardData[]): WishShelfRow[] {
   return result.sort((a, b) => {
     const byPriority = a.bestPriority - b.bestPriority;
     if (byPriority !== 0) return byPriority;
+    const byTagScore = b.bestTagScore - a.bestTagScore;
+    if (byTagScore !== 0) return byTagScore;
     const byLocalCount = b.localCount - a.localCount;
     if (byLocalCount !== 0) return byLocalCount;
     const byCount = b.candidates.length - a.candidates.length;
@@ -434,7 +478,14 @@ export function HomeView({
     myInventoryQty,
     tagsByInvId,
   ]);
-  const wishShelves = useMemo(() => buildWishShelves(allCards), [allCards]);
+  const tagScoreByInvId = useMemo(
+    () => buildTagScoreByInvId(partnersInventory, myWishes, tagsByInvId),
+    [partnersInventory, myWishes, tagsByInvId],
+  );
+  const wishShelves = useMemo(
+    () => buildWishShelves(allCards, tagScoreByInvId),
+    [allCards, tagScoreByInvId],
+  );
   const totalCandidateCount = useMemo(
     () => wishShelves.reduce((sum, row) => sum + row.candidates.length, 0),
     [wishShelves],
@@ -902,6 +953,12 @@ function WishShelfRowView({
                 </span>
               </>
             )}
+            {row.bestTagScore > 0 && (
+              <>
+                <span className="text-[#3a324a33]">/</span>
+                <span className="text-[#5f8b73]">タグ一致</span>
+              </>
+            )}
           </div>
         </div>
         <span
@@ -935,6 +992,7 @@ function WishShelfTile({
 }) {
   const item = candidate.item;
   const hasPhoto = !!item.photoUrl;
+  const tagLabel = getTagMatchLabel(candidate.tagScore);
   const fallbackBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 78%) 6px 12px)`;
   const handle =
     candidate.card.userHandle.length > 11
@@ -968,6 +1026,11 @@ function WishShelfTile({
         {candidate.local && (
           <span className="absolute left-1 top-1 rounded-full bg-[#a695d8] px-1.5 py-[2px] text-[8.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_8px_rgba(166,149,216,0.35)]">
             LIVE
+          </span>
+        )}
+        {tagLabel && (
+          <span className="absolute bottom-1 left-1 rounded-full bg-white/92 px-1.5 py-[2px] text-[8px] font-extrabold text-[#5f8b73] shadow-[0_1px_5px_rgba(58,50,74,0.18)] backdrop-blur">
+            {tagLabel}
           </span>
         )}
       </div>
