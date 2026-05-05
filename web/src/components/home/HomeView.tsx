@@ -259,9 +259,11 @@ function matchToCard(
 
 type CandidatePriority = 0 | 1 | 2;
 type HomeModeView = "national" | "local";
+type MatchDetailSlideDirection = "from-right" | "from-left";
 
 const MODE_SWITCH_STATUS_MS = 480;
 const MODE_SWITCH_SHEET_STATUS_MS = 260;
+const MATCH_DETAIL_QUERY_KEY = "matchDetail";
 
 type WishShelfCandidate = {
   key: string;
@@ -566,6 +568,8 @@ export function HomeView({
 }) {
   const [selectedCandidate, setSelectedCandidate] =
     useState<WishShelfCandidate | null>(null);
+  const [detailSlideDirection, setDetailSlideDirection] =
+    useState<MatchDetailSlideDirection>("from-right");
 
   const allCards = useMemo(() => {
     const myInvById = new Map(myInventory.map((i) => [i.id, i]));
@@ -604,9 +608,52 @@ export function HomeView({
     () => splitWishShelves(wishShelves),
     [wishShelves],
   );
+  const detailCandidates = useMemo(
+    () =>
+      wishShelfSections.listingRows.flatMap((row) => row.candidates),
+    [wishShelfSections],
+  );
+  const detailCandidateByKey = useMemo(
+    () => new Map(detailCandidates.map((candidate) => [candidate.key, candidate])),
+    [detailCandidates],
+  );
+  const detailCandidateByKeyRef = useRef(detailCandidateByKey);
   const hasWishShelfCandidates =
     wishShelfSections.listingRows.length > 0 ||
     wishShelfSections.possibleRows.length > 0;
+  const selectedDetailIndex = selectedCandidate
+    ? detailCandidates.findIndex(
+        (candidate) => candidate.key === selectedCandidate.key,
+      )
+    : -1;
+
+  useEffect(() => {
+    detailCandidateByKeyRef.current = detailCandidateByKey;
+  }, [detailCandidateByKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    function syncDetailFromUrl() {
+      const url = new URL(window.location.href);
+      const key = url.searchParams.get(MATCH_DETAIL_QUERY_KEY);
+      if (!key) {
+        setSelectedCandidate(null);
+        return;
+      }
+      const candidate = detailCandidateByKeyRef.current.get(key);
+      if (!candidate) {
+        setSelectedCandidate(null);
+        return;
+      }
+      setDetailSlideDirection("from-right");
+      setSelectedCandidate(candidate);
+    }
+
+    window.addEventListener("popstate", syncDetailFromUrl);
+    syncDetailFromUrl();
+    return () => window.removeEventListener("popstate", syncDetailFromUrl);
+  }, []);
 
   // 現地モード state（DB から取得した初期値）
   const [sheetOpen, setSheetOpen] = useState(autoOpenLocalSheet);
@@ -822,10 +869,82 @@ export function HomeView({
       candidate.myListingMatches.length > 0 ||
       candidate.partnerListingMatches.length > 0
     ) {
+      setDetailSlideDirection("from-right");
       setSelectedCandidate(candidate);
+      writeMatchDetailHistory(candidate, "push");
       return;
     }
     router.push(buildSimpleProposeHref(candidate));
+  }
+
+  function getHistoryState(): Record<string, unknown> {
+    const state = window.history.state;
+    return state && typeof state === "object"
+      ? { ...(state as Record<string, unknown>) }
+      : {};
+  }
+
+  function writeMatchDetailHistory(
+    candidate: WishShelfCandidate,
+    mode: "push" | "replace",
+  ) {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set(MATCH_DETAIL_QUERY_KEY, candidate.key);
+    const state = {
+      ...getHistoryState(),
+      ihubMatchDetail: true,
+      matchDetailKey: candidate.key,
+    };
+    if (mode === "replace") {
+      window.history.replaceState(state, "", url.toString());
+    } else {
+      window.history.pushState(state, "", url.toString());
+    }
+  }
+
+  function clearMatchDetailHistoryEntry() {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(MATCH_DETAIL_QUERY_KEY)) return;
+    url.searchParams.delete(MATCH_DETAIL_QUERY_KEY);
+    const state = {
+      ...getHistoryState(),
+      ihubMatchDetail: false,
+      matchDetailKey: null,
+    };
+    window.history.replaceState(state, "", url.toString());
+  }
+
+  function handleDismissMatchDetail() {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      const state = window.history.state as
+        | { ihubMatchDetail?: boolean }
+        | null;
+      if (url.searchParams.has(MATCH_DETAIL_QUERY_KEY)) {
+        if (state?.ihubMatchDetail) {
+          window.history.back();
+          return;
+        }
+        clearMatchDetailHistoryEntry();
+      }
+    }
+    setSelectedCandidate(null);
+  }
+
+  function handleLeaveMatchDetailForRoute() {
+    clearMatchDetailHistoryEntry();
+    setSelectedCandidate(null);
+  }
+
+  function navigateMatchDetail(delta: -1 | 1) {
+    if (selectedDetailIndex < 0) return;
+    const next = detailCandidates[selectedDetailIndex + delta];
+    if (!next) return;
+    setDetailSlideDirection(delta > 0 ? "from-right" : "from-left");
+    setSelectedCandidate(next);
+    writeMatchDetailHistory(next, "replace");
   }
 
   return (
@@ -1030,6 +1149,7 @@ export function HomeView({
 
       {selectedCandidate && (
         <MatchDetailModal
+          key={selectedCandidate.key}
           partnerHandle={selectedCandidate.card.userHandle}
           partnerId={selectedCandidate.card.partnerId}
           partnerAvatarUrl={selectedCandidate.card.userAvatarUrl}
@@ -1040,7 +1160,16 @@ export function HomeView({
           simpleReceives={[selectedCandidate.item]}
           simpleGives={selectedCandidate.card.myGives}
           simpleProposeHref={buildSimpleProposeHref(selectedCandidate)}
-          onClose={() => setSelectedCandidate(null)}
+          slideDirection={detailSlideDirection}
+          canNavigatePrev={selectedDetailIndex > 0}
+          canNavigateNext={
+            selectedDetailIndex >= 0 &&
+            selectedDetailIndex < detailCandidates.length - 1
+          }
+          onNavigatePrev={() => navigateMatchDetail(-1)}
+          onNavigateNext={() => navigateMatchDetail(1)}
+          onClose={handleDismissMatchDetail}
+          onNavigateAway={handleLeaveMatchDetailForRoute}
         />
       )}
 

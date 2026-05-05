@@ -415,8 +415,31 @@ body {
   }
 }
 
+@keyframes matchDetailSlideInFromLeft {
+  0% {
+    opacity: 0.94;
+    transform: translate3d(-100%, 0, 0);
+    filter: blur(1.8px);
+  }
+  72% {
+    opacity: 1;
+    transform: translate3d(1.6%, 0, 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+}
+
 .animate-match-detail-slide-in {
   animation: matchDetailSlideIn 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity, filter;
+}
+
+.animate-match-detail-slide-in-from-left {
+  animation: matchDetailSlideInFromLeft 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity, filter;
 }
 
@@ -446,6 +469,7 @@ body {
   .animate-section-fade-down,
   .animate-home-shelf-panel-in,
   .animate-match-detail-slide-in,
+  .animate-match-detail-slide-in-from-left,
   .animate-transaction-panel-in {
     animation: none;
   }

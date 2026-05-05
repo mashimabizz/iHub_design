@@ -21,7 +21,7 @@
  *   （propose page.tsx 側で candidates の prefill を実装する）
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   MatchCardListingInfo,
@@ -65,7 +65,13 @@ export function MatchDetailModal({
   simpleReceives,
   simpleGives,
   simpleProposeHref,
+  slideDirection = "from-right",
+  canNavigatePrev = false,
+  canNavigateNext = false,
   onClose,
+  onNavigatePrev,
+  onNavigateNext,
+  onNavigateAway,
 }: {
   partnerHandle: string;
   partnerId: string;
@@ -82,7 +88,16 @@ export function MatchDetailModal({
   simpleGives?: MiniItem[];
   /** iter152: 通常マッチの打診先 */
   simpleProposeHref?: string | null;
+  /** iter154.20: 詳細間スワイプ時の進入方向 */
+  slideDirection?: "from-right" | "from-left";
+  /** iter154.20: 隣のマッチ詳細へ横スワイプできるか */
+  canNavigatePrev?: boolean;
+  canNavigateNext?: boolean;
   onClose: () => void;
+  onNavigatePrev?: () => void;
+  onNavigateNext?: () => void;
+  /** 打診画面など別 route へ進む前の close。履歴 back はしない。 */
+  onNavigateAway?: () => void;
 }) {
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -104,6 +119,8 @@ export function MatchDetailModal({
     { listingLabel: string; reasons: string[] }[] | null
   >(null);
   const router = useRouter();
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
   const simpleReceiveItems = simpleReceives ?? [];
   const simpleGiveItems = simpleGives ?? [];
   const hasListingRelation = myListings.length > 0 || partnerListings.length > 0;
@@ -466,18 +483,77 @@ export function MatchDetailModal({
         return;
       }
     }
-    onClose();
+    if (onNavigateAway) onNavigateAway();
+    else onClose();
     router.push(proposeHref);
   }
 
   function handleSimpleProposeClick() {
     if (!simpleProposeHref) return;
-    onClose();
+    if (onNavigateAway) onNavigateAway();
+    else onClose();
     router.push(simpleProposeHref);
   }
 
+  function shouldIgnoreSwipe(target: EventTarget | null): boolean {
+    return (
+      target instanceof Element &&
+      !!target.closest(
+        'button,a,input,textarea,select,[contenteditable="true"],[data-swipe-ignore="true"]',
+      )
+    );
+  }
+
+  function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
+    if (popupTarget || e.touches.length !== 1 || shouldIgnoreSwipe(e.target)) {
+      touchStartRef.current = null;
+      return;
+    }
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  }
+
+  function handleTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || e.changedTouches.length === 0) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (absX < 64 || absX < absY * 1.25) return;
+
+    if (dx < 0 && canNavigateNext && onNavigateNext) {
+      suppressClickRef.current = true;
+      onNavigateNext();
+    } else if (dx > 0 && canNavigatePrev && onNavigatePrev) {
+      suppressClickRef.current = true;
+      onNavigatePrev();
+    }
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 220);
+  }
+
+  function handleClickCapture(e: React.MouseEvent<HTMLDivElement>) {
+    if (!suppressClickRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    suppressClickRef.current = false;
+  }
+
   return (
-    <div className="animate-match-detail-slide-in fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc]">
+    <div
+      className={`fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc] ${
+        slideDirection === "from-left"
+          ? "animate-match-detail-slide-in-from-left"
+          : "animate-match-detail-slide-in"
+      }`}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onClickCapture={handleClickCapture}
+    >
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
         <button
           type="button"
