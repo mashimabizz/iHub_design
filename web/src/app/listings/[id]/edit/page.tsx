@@ -1,7 +1,15 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+  createServiceRoleClient,
+} from "@/lib/supabase/server";
 import { HeaderBack } from "@/components/auth/HeaderBack";
+import {
+  buildMarketAvailableQtyByInvId,
+  getAgreedReservedQtyByInvId,
+  withMarketAvailableQuantity,
+} from "@/lib/marketAvailability";
 import {
   ListingNewForm,
   type ListingFormInitialValues,
@@ -54,6 +62,7 @@ export default async function ListingEditPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  const serviceSupabase = createServiceRoleClient();
 
   // 対象 listing を fetch + 所有者チェック
   const { data: row } = await supabase
@@ -163,6 +172,18 @@ export default async function ListingEditPage({
   }
   const allInventoryRows = [...(inventoryRows ?? []), ...extraInventoryRows];
   const allWishRows = [...(wishRows ?? []), ...extraWishRows];
+  const reservedQtyByInvId = await getAgreedReservedQtyByInvId(
+    serviceSupabase,
+    allInventoryRows.map((r) => r.id as string),
+  );
+  const marketAvailableQtyByInvId = buildMarketAvailableQtyByInvId(
+    allInventoryRows,
+    reservedQtyByInvId,
+  );
+  const marketInventoryRows = withMarketAvailableQuantity(
+    allInventoryRows,
+    marketAvailableQtyByInvId,
+  );
 
   const nameToHue = (name: string): number => {
     let hash = 0;
@@ -173,7 +194,7 @@ export default async function ListingEditPage({
     return Math.abs(hash) % 360;
   };
 
-  const inventoryItems = allInventoryRows.map((r) => {
+  const inventoryItems = marketInventoryRows.map((r) => {
     const charName = pickName(r.character);
     const grpName = pickName(r.group);
     const memberName = charName ?? grpName ?? r.title;
@@ -230,13 +251,13 @@ export default async function ListingEditPage({
   }
 
   const inventoryGroups = uniqueOptions<{ id: string; name: string }>(
-    allInventoryRows.map((r) => ({
+    marketInventoryRows.map((r) => ({
       id: (r as { group_id?: string }).group_id ?? null,
       name: pickName(r.group),
     })),
   );
   const inventoryGoodsTypes = uniqueOptions<{ id: string; name: string }>(
-    allInventoryRows.map((r) => ({
+    marketInventoryRows.map((r) => ({
       id: (r as { goods_type_id?: string }).goods_type_id ?? null,
       name: pickName(r.goods_type),
     })),

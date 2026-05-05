@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createNotification } from "@/lib/notify";
+import { removeUnavailableHavesFromListings } from "@/lib/marketAvailability";
 
 type ActionResult = { error?: string; redirectTo?: string } | undefined;
 
@@ -389,6 +390,7 @@ export async function approveCompletion(input: {
     //    - 譲った qty 分の **履歴レコード** を status='traded' で INSERT
     //      → /inventory の「過去に譲った」タブに表示される
     if (myGiveIds.length > 0) {
+      const depletedGiveIds: string[] = [];
       const partnerId = isMeSender ? prop.receiver_id : prop.sender_id;
       const { data: partner } = await supabase
         .from("users")
@@ -426,6 +428,7 @@ export async function approveCompletion(input: {
           .update(updateFields)
           .eq("id", giveId)
           .eq("user_id", user.id);
+        if (remain === 0) depletedGiveIds.push(giveId);
 
         // 履歴レコード（status='traded'）を INSERT — 「過去に譲った」タブに出る
         await supabase.from("goods_inventory").insert({
@@ -445,6 +448,14 @@ export async function approveCompletion(input: {
           traded_via_proposal_id: input.proposalId,
           traded_at: new Date().toISOString(),
         });
+      }
+
+      if (depletedGiveIds.length > 0) {
+        await removeUnavailableHavesFromListings(
+          supabase,
+          user.id,
+          depletedGiveIds,
+        );
       }
     }
 
@@ -569,6 +580,7 @@ export async function approveCompletion(input: {
   revalidatePath(`/transactions/${input.proposalId}`);
   revalidatePath("/inventory");
   revalidatePath("/listings");
+  revalidatePath("/");
   return both
     ? { redirectTo: `/transactions/${input.proposalId}/rate` }
     : undefined;

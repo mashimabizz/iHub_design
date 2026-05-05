@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertProposalItemsMarketAvailable } from "@/lib/marketAvailability";
 
 type ActionResult = { error?: string } | undefined;
 
@@ -48,6 +49,16 @@ export async function createListing(input: {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  const capacity = await assertProposalItemsMarketAvailable(supabase, {
+    senderId: user.id,
+    receiverId: user.id,
+    senderHaveIds: input.haveIds,
+    senderHaveQtys: input.haveQtys,
+    receiverHaveIds: [],
+    receiverHaveQtys: [],
+  });
+  if (capacity.error) return capacity;
 
   // 1. listings 本体を INSERT
   const { data: listing, error: listingErr } = await supabase
@@ -127,6 +138,16 @@ export async function updateListingFull(input: {
       error: "成立／完了した個別募集は編集できません",
     };
   }
+
+  const capacity = await assertProposalItemsMarketAvailable(supabase, {
+    senderId: user.id,
+    receiverId: user.id,
+    senderHaveIds: input.haveIds,
+    senderHaveQtys: input.haveQtys,
+    receiverHaveIds: [],
+    receiverHaveQtys: [],
+  });
+  if (capacity.error) return capacity;
 
   // listing 本体を update（trigger が have_group_id/have_goods_type_id を再計算）
   const { error: listingErr } = await supabase

@@ -1,5 +1,14 @@
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+  createServiceRoleClient,
+} from "@/lib/supabase/server";
+import {
+  applyListingMarketAvailability,
+  buildMarketAvailableQtyByInvId,
+  getAgreedReservedQtyByInvId,
+  withMarketAvailableQuantity,
+} from "@/lib/marketAvailability";
 import { ProposeFlow, type ProposeInv } from "./ProposeFlow";
 
 export const metadata = {
@@ -97,6 +106,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
     reviseFlagRaw === "1" && reviseProposalIdRaw ? reviseProposalIdRaw : null;
 
   const supabase = await createClient();
+  const serviceSupabase = createServiceRoleClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -178,10 +188,29 @@ export default async function ProposePage({ params, searchParams }: Props) {
     }
   }
 
-  const myInv = ((myInvRaw as GoodsRow[]) ?? [])
+  const myInvRows = ((myInvRaw as GoodsRow[]) ?? []);
+  const theirInvRows = ((theirInvRaw as GoodsRow[]) ?? []);
+  const marketRows = [...myInvRows, ...theirInvRows];
+  const reservedQtyByInvId = await getAgreedReservedQtyByInvId(
+    serviceSupabase,
+    marketRows.map((r) => r.id),
+    reviseFromProposalId ?? undefined,
+  );
+  const marketAvailableQtyByInvId = buildMarketAvailableQtyByInvId(
+    marketRows,
+    reservedQtyByInvId,
+  );
+
+  const myInv = withMarketAvailableQuantity(
+    myInvRows,
+    marketAvailableQtyByInvId,
+  )
     .map(toInv)
     .filter((x): x is ProposeInv => !!x);
-  const theirInv = ((theirInvRaw as GoodsRow[]) ?? [])
+  const theirInv = withMarketAvailableQuantity(
+    theirInvRows,
+    marketAvailableQtyByInvId,
+  )
     .map(toInv)
     .filter((x): x is ProposeInv => !!x);
   const myWishes = ((myWishesRaw as GoodsRow[]) ?? [])
@@ -359,7 +388,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
     if (candidateIds.length > 0) {
       const { data: listingRow } = await supabase
         .from("listings")
-        .select("id, user_id, have_ids, have_qtys, status")
+        .select("id, user_id, have_ids, have_qtys, have_logic, status")
         .eq("id", listingIdRaw)
         .maybeSingle();
 
@@ -368,39 +397,48 @@ export default async function ProposePage({ params, searchParams }: Props) {
         const isPartnerListing = listingRow.user_id === partnerId;
 
         if (isMyListing || isPartnerListing) {
-          const haveIds = (listingRow.have_ids as string[]) ?? [];
-          const haveQtys = (listingRow.have_qtys as number[]) ?? [];
-
-          // 候補は「相手側の inv」を期待
-          //   isMyListing → 候補は partner の inv（receiver_have に入る）
-          //   partner listing → 候補は my の inv（sender_have に入る）
-          const candidatePool: ProposeInv[] = isMyListing
-            ? theirInvWithFlag
-            : myInvWithFlag;
-          const validCandidates = candidateIds.filter((cid) =>
-            candidatePool.some((p) => p.id === cid),
+          const marketListing = applyListingMarketAvailability(
+            {
+              haveIds: (listingRow.have_ids as string[]) ?? [],
+              haveQtys: (listingRow.have_qtys as number[]) ?? [],
+              haveLogic: (listingRow.have_logic as "and" | "or") ?? "and",
+            },
+            marketAvailableQtyByInvId,
           );
+          if (marketListing) {
+            const { haveIds, haveQtys } = marketListing;
 
-          if (validCandidates.length > 0) {
-            // qty は candidate あたり 1（数量調整は ProposeFlow 側で）
-            const candQtys = validCandidates.map(() => 1);
+            // 候補は「相手側の inv」を期待
+            //   isMyListing → 候補は partner の inv（receiver_have に入る）
+            //   partner listing → 候補は my の inv（sender_have に入る）
+            const candidatePool: ProposeInv[] = isMyListing
+              ? theirInvWithFlag
+              : myInvWithFlag;
+            const validCandidates = candidateIds.filter((cid) =>
+              candidatePool.some((p) => p.id === cid),
+            );
 
-            if (isMyListing) {
-              initial = {
-                senderHaveIds: haveIds,
-                senderHaveQtys: haveQtys,
-                receiverHaveIds: validCandidates,
-                receiverHaveQtys: candQtys,
-                listingId: listingRow.id as string,
-              };
-            } else {
-              initial = {
-                senderHaveIds: validCandidates,
-                senderHaveQtys: candQtys,
-                receiverHaveIds: haveIds,
-                receiverHaveQtys: haveQtys,
-                listingId: listingRow.id as string,
-              };
+            if (validCandidates.length > 0) {
+              // qty は candidate あたり 1（数量調整は ProposeFlow 側で）
+              const candQtys = validCandidates.map(() => 1);
+
+              if (isMyListing) {
+                initial = {
+                  senderHaveIds: haveIds,
+                  senderHaveQtys: haveQtys,
+                  receiverHaveIds: validCandidates,
+                  receiverHaveQtys: candQtys,
+                  listingId: listingRow.id as string,
+                };
+              } else {
+                initial = {
+                  senderHaveIds: validCandidates,
+                  senderHaveQtys: candQtys,
+                  receiverHaveIds: haveIds,
+                  receiverHaveQtys: haveQtys,
+                  listingId: listingRow.id as string,
+                };
+              }
             }
           }
         }
@@ -412,7 +450,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
     const [{ data: listingRow }, { data: optionRows }] = await Promise.all([
       supabase
         .from("listings")
-        .select("id, user_id, have_ids, have_qtys, status")
+        .select("id, user_id, have_ids, have_qtys, have_logic, status")
         .eq("id", listingIdRaw)
         .maybeSingle(),
       supabase
@@ -430,123 +468,132 @@ export default async function ProposePage({ params, searchParams }: Props) {
       const isPartnerListing = listingRow.user_id === partnerId;
 
       if (isMyListing || isPartnerListing) {
-        const haveIds = (listingRow.have_ids as string[]) ?? [];
-        const haveQtys = (listingRow.have_qtys as number[]) ?? [];
-        const N = optionRows.length;
-        const cashOpt = optionRows.find(
-          (o) => o.is_cash_offer,
-        ) as { cash_amount: number } | undefined;
-
-        // 集計用 Map（itemId → qty）
-        const senderAgg = new Map<string, number>();
-        const receiverAgg = new Map<string, number>();
-
-        if (isMyListing) {
-          // 私の listing：私が出す = haveIds × N、私が受け取る = 各 option の wishes に対応する相手 inv
-          for (const id of haveIds) {
-            const i = haveIds.indexOf(id);
-            const baseQty = haveQtys[i] ?? 1;
-            senderAgg.set(id, (senderAgg.get(id) ?? 0) + baseQty * N);
-          }
-          for (const opt of optionRows) {
-            if (opt.is_cash_offer) continue;
-            const wishIds = (opt.wish_ids as string[]) ?? [];
-            const wishQtys = (opt.wish_qtys as number[]) ?? [];
-            for (let i = 0; i < wishIds.length; i++) {
-              const myWish = myWishes.find((w) => w.id === wishIds[i]);
-              if (!myWish) continue;
-              const partnerHits = theirInvWithFlag.filter((t) => {
-                if (t.goodsTypeId !== myWish.goodsTypeId) return false;
-                if (myWish.characterId && t.characterId)
-                  return myWish.characterId === t.characterId;
-                return (
-                  !!myWish.groupId &&
-                  !!t.groupId &&
-                  myWish.groupId === t.groupId
-                );
-              });
-              for (const h of partnerHits) {
-                receiverAgg.set(
-                  h.id,
-                  (receiverAgg.get(h.id) ?? 0) + (wishQtys[i] ?? 1),
-                );
-              }
-            }
-          }
-        } else {
-          // 相手の listing：私が受け取る = haveIds × N、私が出す = 各 option の wishes に対応する私の inv
-          for (const id of haveIds) {
-            const i = haveIds.indexOf(id);
-            const baseQty = haveQtys[i] ?? 1;
-            receiverAgg.set(id, (receiverAgg.get(id) ?? 0) + baseQty * N);
-          }
-          for (const opt of optionRows) {
-            if (opt.is_cash_offer) continue;
-            const wishIds = (opt.wish_ids as string[]) ?? [];
-            const wishQtys = (opt.wish_qtys as number[]) ?? [];
-            for (let i = 0; i < wishIds.length; i++) {
-              const theirWish = theirWishes.find((w) => w.id === wishIds[i]);
-              if (!theirWish) continue;
-              const myHits = myInvWithFlag.filter((m) => {
-                if (m.goodsTypeId !== theirWish.goodsTypeId) return false;
-                if (theirWish.characterId && m.characterId)
-                  return theirWish.characterId === m.characterId;
-                return (
-                  !!theirWish.groupId &&
-                  !!m.groupId &&
-                  theirWish.groupId === m.groupId
-                );
-              });
-              for (const h of myHits) {
-                senderAgg.set(
-                  h.id,
-                  (senderAgg.get(h.id) ?? 0) + (wishQtys[i] ?? 1),
-                );
-              }
-            }
-          }
-        }
-
-        const senderHaveIds = Array.from(senderAgg.keys());
-        const senderHaveQtys = senderHaveIds.map((id) => senderAgg.get(id)!);
-        const receiverHaveIds = Array.from(receiverAgg.keys());
-        const receiverHaveQtys = receiverHaveIds.map(
-          (id) => receiverAgg.get(id)!,
+        const marketListing = applyListingMarketAvailability(
+          {
+            haveIds: (listingRow.have_ids as string[]) ?? [],
+            haveQtys: (listingRow.have_qtys as number[]) ?? [],
+            haveLogic: (listingRow.have_logic as "and" | "or") ?? "and",
+          },
+          marketAvailableQtyByInvId,
         );
+        if (marketListing) {
+          const { haveIds, haveQtys } = marketListing;
+          const N = optionRows.length;
+          const cashOpt = optionRows.find(
+            (o) => o.is_cash_offer,
+          ) as { cash_amount: number } | undefined;
 
-        if (cashOpt && optionRows.length === 1) {
-          // 唯一の選択肢が定価交換 → 通常の cash 打診
+          // 集計用 Map（itemId → qty）
+          const senderAgg = new Map<string, number>();
+          const receiverAgg = new Map<string, number>();
+
           if (isMyListing) {
-            initial = {
-              senderHaveIds: haveIds,
-              senderHaveQtys: haveQtys,
-              receiverHaveIds: [],
-              receiverHaveQtys: [],
-              cashOffer: { amount: cashOpt.cash_amount },
-              listingId: listingRow.id,
-            };
+            // 私の listing：私が出す = haveIds × N、私が受け取る = 各 option の wishes に対応する相手 inv
+            for (const id of haveIds) {
+              const i = haveIds.indexOf(id);
+              const baseQty = haveQtys[i] ?? 1;
+              senderAgg.set(id, (senderAgg.get(id) ?? 0) + baseQty * N);
+            }
+            for (const opt of optionRows) {
+              if (opt.is_cash_offer) continue;
+              const wishIds = (opt.wish_ids as string[]) ?? [];
+              const wishQtys = (opt.wish_qtys as number[]) ?? [];
+              for (let i = 0; i < wishIds.length; i++) {
+                const myWish = myWishes.find((w) => w.id === wishIds[i]);
+                if (!myWish) continue;
+                const partnerHits = theirInvWithFlag.filter((t) => {
+                  if (t.goodsTypeId !== myWish.goodsTypeId) return false;
+                  if (myWish.characterId && t.characterId)
+                    return myWish.characterId === t.characterId;
+                  return (
+                    !!myWish.groupId &&
+                    !!t.groupId &&
+                    myWish.groupId === t.groupId
+                  );
+                });
+                for (const h of partnerHits) {
+                  receiverAgg.set(
+                    h.id,
+                    (receiverAgg.get(h.id) ?? 0) + (wishQtys[i] ?? 1),
+                  );
+                }
+              }
+            }
           } else {
+            // 相手の listing：私が受け取る = haveIds × N、私が出す = 各 option の wishes に対応する私の inv
+            for (const id of haveIds) {
+              const i = haveIds.indexOf(id);
+              const baseQty = haveQtys[i] ?? 1;
+              receiverAgg.set(id, (receiverAgg.get(id) ?? 0) + baseQty * N);
+            }
+            for (const opt of optionRows) {
+              if (opt.is_cash_offer) continue;
+              const wishIds = (opt.wish_ids as string[]) ?? [];
+              const wishQtys = (opt.wish_qtys as number[]) ?? [];
+              for (let i = 0; i < wishIds.length; i++) {
+                const theirWish = theirWishes.find((w) => w.id === wishIds[i]);
+                if (!theirWish) continue;
+                const myHits = myInvWithFlag.filter((m) => {
+                  if (m.goodsTypeId !== theirWish.goodsTypeId) return false;
+                  if (theirWish.characterId && m.characterId)
+                    return theirWish.characterId === m.characterId;
+                  return (
+                    !!theirWish.groupId &&
+                    !!m.groupId &&
+                    theirWish.groupId === m.groupId
+                  );
+                });
+                for (const h of myHits) {
+                  senderAgg.set(
+                    h.id,
+                    (senderAgg.get(h.id) ?? 0) + (wishQtys[i] ?? 1),
+                  );
+                }
+              }
+            }
+          }
+
+          const senderHaveIds = Array.from(senderAgg.keys());
+          const senderHaveQtys = senderHaveIds.map((id) => senderAgg.get(id)!);
+          const receiverHaveIds = Array.from(receiverAgg.keys());
+          const receiverHaveQtys = receiverHaveIds.map(
+            (id) => receiverAgg.get(id)!,
+          );
+
+          if (cashOpt && optionRows.length === 1) {
+            // 唯一の選択肢が定価交換 → 通常の cash 打診
+            if (isMyListing) {
+              initial = {
+                senderHaveIds: haveIds,
+                senderHaveQtys: haveQtys,
+                receiverHaveIds: [],
+                receiverHaveQtys: [],
+                cashOffer: { amount: cashOpt.cash_amount },
+                listingId: listingRow.id,
+              };
+            } else {
+              initial = {
+                senderHaveIds: [],
+                senderHaveQtys: [],
+                receiverHaveIds: haveIds,
+                receiverHaveQtys: haveQtys,
+                cashOffer: { amount: cashOpt.cash_amount },
+                listingId: listingRow.id,
+              };
+            }
+          } else {
+            // 通常 or cash 含む組合せ
             initial = {
-              senderHaveIds: [],
-              senderHaveQtys: [],
-              receiverHaveIds: haveIds,
-              receiverHaveQtys: haveQtys,
-              cashOffer: { amount: cashOpt.cash_amount },
+              senderHaveIds,
+              senderHaveQtys,
+              receiverHaveIds,
+              receiverHaveQtys,
+              cashOffer: cashOpt
+                ? { amount: cashOpt.cash_amount }
+                : undefined,
               listingId: listingRow.id,
             };
           }
-        } else {
-          // 通常 or cash 含む組合せ
-          initial = {
-            senderHaveIds,
-            senderHaveQtys,
-            receiverHaveIds,
-            receiverHaveQtys,
-            cashOffer: cashOpt
-              ? { amount: cashOpt.cash_amount }
-              : undefined,
-            listingId: listingRow.id,
-          };
         }
       }
     }

@@ -16,6 +16,12 @@ import {
   type MatchInv,
   type UserSummary,
 } from "@/lib/matching";
+import {
+  applyListingMarketAvailability,
+  buildMarketAvailableQtyByInvId,
+  getAgreedReservedQtyByInvId,
+  withMarketAvailableQuantity,
+} from "@/lib/marketAvailability";
 
 type Props = {
   searchParams: Promise<{
@@ -43,6 +49,7 @@ type GoodsRow = {
   goods_type_id: string | null;
   title: string;
   photo_urls: string[] | null;
+  quantity: number;
   exchange_type: "same_kind" | "cross_kind" | "any" | null;
   group: { name: string } | { name: string }[] | null;
   character: { name: string } | { name: string }[] | null;
@@ -244,12 +251,32 @@ export default async function Home({ searchParams }: Props) {
   ]);
 
   // ─── マッチング演算 ──────────────────────────────────────
-  const myInventory = ((myInventoryRaw as GoodsRow[]) ?? [])
+  const myInventoryRows = ((myInventoryRaw as GoodsRow[]) ?? []);
+  const othersInventoryRows = ((othersInventoryRaw as GoodsRow[]) ?? []);
+  const marketInventoryRows = [...myInventoryRows, ...othersInventoryRows];
+  const reservedQtyByInvId = await getAgreedReservedQtyByInvId(
+    serviceSupabase,
+    marketInventoryRows.map((r) => r.id),
+  );
+  const marketAvailableQtyByInvId = buildMarketAvailableQtyByInvId(
+    marketInventoryRows,
+    reservedQtyByInvId,
+  );
+  const availableMyInventoryRows = withMarketAvailableQuantity(
+    myInventoryRows,
+    marketAvailableQtyByInvId,
+  );
+  const availableOthersInventoryRows = withMarketAvailableQuantity(
+    othersInventoryRows,
+    marketAvailableQtyByInvId,
+  );
+
+  const myInventory = availableMyInventoryRows
     .map(toMatchInv)
     .filter((x): x is MatchInv => !!x);
-  // iter67.8: 在庫オーバーチェック用（モーダルで使用）
+  // iter67.8 + iter153: 在庫オーバーチェック用（市場残数を使用）
   const myInventoryQty: Record<string, number> = {};
-  for (const r of (myInventoryRaw as (GoodsRow & { quantity?: number })[]) ?? []) {
+  for (const r of availableMyInventoryRows) {
     myInventoryQty[r.id] = (r.quantity as number | undefined) ?? 1;
   }
 
@@ -293,27 +320,30 @@ export default async function Home({ searchParams }: Props) {
     }
   }
 
-  const myListingsForMatch = (myListings ?? []).map((l) => {
-    const opts = myOptionsByListing.get(l.id as string) ?? [];
-    return {
-      id: l.id as string,
-      haveIds: (l.have_ids as string[]) ?? [],
-      haveQtys: (l.have_qtys as number[]) ?? [],
-      haveLogic: (l.have_logic as "and" | "or") ?? "and",
-      haveGroupId: (l.have_group_id as string | null) ?? null,
-      haveGoodsTypeId: (l.have_goods_type_id as string | null) ?? null,
-      options: opts.map((o) => ({
-        id: o.id,
-        position: o.position,
-        wishIds: o.wish_ids ?? [],
-        wishQtys: o.wish_qtys ?? [],
-        logic: o.logic,
-        exchangeType: o.exchange_type,
-        isCashOffer: o.is_cash_offer,
-        cashAmount: o.cash_amount,
-      })),
-    };
-  });
+  const myListingsForMatch = (myListings ?? [])
+    .map((l) => {
+      const opts = myOptionsByListing.get(l.id as string) ?? [];
+      return {
+        id: l.id as string,
+        haveIds: (l.have_ids as string[]) ?? [],
+        haveQtys: (l.have_qtys as number[]) ?? [],
+        haveLogic: (l.have_logic as "and" | "or") ?? "and",
+        haveGroupId: (l.have_group_id as string | null) ?? null,
+        haveGoodsTypeId: (l.have_goods_type_id as string | null) ?? null,
+        options: opts.map((o) => ({
+          id: o.id,
+          position: o.position,
+          wishIds: o.wish_ids ?? [],
+          wishQtys: o.wish_qtys ?? [],
+          logic: o.logic,
+          exchangeType: o.exchange_type,
+          isCashOffer: o.is_cash_offer,
+          cashAmount: o.cash_amount,
+        })),
+      };
+    })
+    .map((l) => applyListingMarketAvailability(l, marketAvailableQtyByInvId))
+    .filter((l): l is NonNullable<typeof l> => !!l);
 
   // 他者 listings の options 取得 + 構造化（iter67.6）
   type OthersListingRow = {
@@ -368,8 +398,13 @@ export default async function Home({ searchParams }: Props) {
         cashAmount: o.cash_amount,
       })),
     };
+    const marketEntry = applyListingMarketAvailability(
+      entry,
+      marketAvailableQtyByInvId,
+    );
+    if (!marketEntry) continue;
     const arr = othersListingsByUser.get(l.user_id) ?? [];
-    arr.push(entry);
+    arr.push(marketEntry);
     othersListingsByUser.set(l.user_id, arr);
   }
 
@@ -397,7 +432,7 @@ export default async function Home({ searchParams }: Props) {
       listings: othersListingsByUser.get(u.id) ?? [],
     });
   }
-  for (const r of (othersInventoryRaw as GoodsRow[]) ?? []) {
+  for (const r of availableOthersInventoryRows) {
     const inv = toMatchInv(r);
     if (!inv) continue;
     const p = partnersMap.get(r.user_id);

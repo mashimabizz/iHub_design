@@ -4,6 +4,101 @@
 
 ---
 
+## イテレーション153：市場残数と個別募集の在庫整合を追加
+
+### 背景・問題意識
+
+オーナーから、個別募集に譲として登録したグッズを削除したり別の人に譲ってしまった場合、その交換条件から自動で抜くよう指示があった。
+
+また、打診が成立した段階でマイ在庫の見た目は減らさず、マッチング市場上の交換可能数だけを減らして、在庫キャパ以上にマッチ・打診成立しないようにしたいという要望があった。
+
+### 変更内容
+
+#### `web/src/lib/marketAvailability.ts`
+- `agreed` の打診から、未完了承認の `sender_have_*` / `receiver_have_*` を集計する市場残数 helper を追加。
+- `market_available_qty = quantity - agreed 未完了承認 qty` を計算し、0 以下の譲在庫を市場から除外する helper を追加。
+- 個別募集の `have_ids` / `have_qtys` を市場残数で評価し、AND は不足時に非表示、OR は残数のある譲だけへ縮退する helper を追加。
+- 打診成立前の最終ガードとして、双方の譲在庫が市場残数を超えていないか検証する helper を追加。
+- 譲在庫が削除・非 active 化された時に、開いている個別募集の譲条件から該当 item を外し、譲が 0 件なら `closed` にする helper を追加。
+
+#### `web/src/app/page.tsx`
+- ホームのマッチング演算で、実在庫ではなく市場残数のある譲在庫だけを使用。
+- ホームの関係図 / 打診導線で使う自分の在庫上限も、市場残数を渡すように変更。
+- 個別募集マッチも市場残数を考慮し、残数不足の条件を候補に出さないようにした。
+
+#### `web/src/app/propose/actions.ts`
+- 打診作成・再打診・合意成立直前に市場残数を検証し、キャパ超過なら成立させないようにした。
+- `agreed` に遷移した場合はホームも再検証されるよう revalidate。
+
+#### `web/src/app/propose/[partnerId]/page.tsx`
+- 打診作成画面の自分 / 相手の譲候補と数量上限を市場残数ベースに変更。
+- 個別募集経由のプリフィルでも、市場残数不足の譲条件を初期選択に入れないようにした。
+
+#### `web/src/app/inventory/actions.ts`
+- 譲在庫を削除、または `active` 以外へ変更した時、関連する開いている個別募集から該当 item を除外。
+- 個別募集 / ホームも revalidate。
+
+#### `web/src/app/listings/actions.ts`
+- 個別募集の作成・編集時に、譲数量が市場残数を超えないかサーバー側で検証。
+
+#### `web/src/app/listings/new/page.tsx`, `web/src/app/listings/[id]/edit/page.tsx`
+- 個別募集作成 / 編集フォームに渡す譲候補と数量上限を市場残数ベースに変更。
+
+#### `web/src/app/transactions/actions.ts`
+- 取引完了承認で実在庫が 0 になった譲 item は、関連する開いている個別募集から除外。
+
+#### `notes/09_state_machines.md`
+- `agreed` 到達時の市場残数確保ルール、キャパ超過防止、Item / Listing 側の整合ルールを追記。
+
+#### `notes/05_data_model.md`
+- スキーマ追加ではなく派生値として、市場残数の定義と proposal/listing での利用ルールを追記。
+
+#### `notes/10_glossary.md`
+- 新用語「市場残数」を追加。
+
+### 影響範囲
+
+- `/` ホーム / マッチング画面
+- `/propose/[partnerId]` 打診作成・再打診
+- `/listings/new`, `/listings/[id]/edit` 個別募集作成・編集
+- `/inventory` マイ在庫の削除・ステータス変更
+- `/transactions/[id]/approve` 取引完了承認
+- `proposals.status='agreed'` 以降の市場在庫計算
+
+### 確認方法
+
+- `npx eslint src/lib/marketAvailability.ts src/app/page.tsx src/app/propose/actions.ts 'src/app/propose/[partnerId]/page.tsx' src/app/inventory/actions.ts src/app/listings/actions.ts src/app/listings/new/page.tsx 'src/app/listings/[id]/edit/page.tsx' src/app/transactions/actions.ts`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/lib/marketAvailability.ts`
+- `web/src/app/page.tsx`
+- `web/src/app/propose/actions.ts`
+- `web/src/app/propose/[partnerId]/page.tsx`
+- `web/src/app/inventory/actions.ts`
+- `web/src/app/listings/actions.ts`
+- `web/src/app/listings/new/page.tsx`
+- `web/src/app/listings/[id]/edit/page.tsx`
+- `web/src/app/transactions/actions.ts`
+- `notes/09_state_machines.md`
+- `notes/05_data_model.md`
+- `notes/10_glossary.md`
+
+### セルフレビュー結果
+
+- ✅ 打診が `agreed` になった時点で市場残数から数量を差し引く派生計算を追加
+- ✅ マイ在庫の表示数量は合意時点では減らさず、取引完了承認時の実在庫減算と分離
+- ✅ 打診作成・再打診・合意成立直前にキャパ超過をサーバー側で防止
+- ✅ ホーム / 打診作成 / 個別募集作成・編集で市場残数ベースの候補・数量上限を使用
+- ✅ 譲在庫の削除・非 active 化・取引完了承認時に個別募集の譲条件から該当 item を除外
+- ✅ `notes/09_state_machines.md` に `agreed` 時点の市場残数確保と Listing 整合を追記
+- ✅ `notes/10_glossary.md` に「市場残数」を追加
+- ✅ `notes/05_data_model.md` に派生値ルールを追記（スキーマ変更なし）
+- ✅ 対象 ESLint / build 成功
+
+---
+
 ## イテレーション152.7：ホーム候補行の横固定とタグ表示を調整
 
 ### 背景・問題意識

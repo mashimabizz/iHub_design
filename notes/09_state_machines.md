@@ -101,6 +101,8 @@ stateDiagram-v2
 - **提案修正**: `negotiating` 中の提案修正でも 7日カウントは**継続**（リセットしない）　※要確認
 - **再開**: `expired` から再度打診したい場合は新規 `draft` 作成
 - **24時間無応答での自動拒否は廃止**（旧仕様、iter30）
+- **市場残数の確保（iter153）**: `agreed` に到達した時点で、`sender_have_ids` / `receiver_have_ids` の数量をマッチング市場の残数から差し引く。マイ在庫の表示数量はこの時点では減らさず、取引完了承認時に実在庫を減算する。
+- **キャパ超過防止（iter153）**: `agreed` へ遷移する直前に、双方の譲在庫について `quantity - 合意済み未完了予約数 >= proposal qty` を満たすことを検証する。不足している場合は合意成立させない。
 
 ### 関連画面
 
@@ -353,6 +355,8 @@ stateDiagram-v2
 - **合意で確定**: `in_deal` になると他のネゴで自動的に「使用不可」表示
 - **traded 表示**: B-1 の「過去に譲った」サブビューで参照（iter19.5）
 - **数量管理**: アイテムは `qty` を持ち、提案ごとに `selectedQty` を割り当てる（iter29）
+- **市場残数（iter153）**: `for_trade` のマッチング対象数は、実在庫 `quantity` から `status='agreed'` の打診で未完了承認の譲数量を差し引いた値。`sent` / `negotiating` / `agreement_one_side` はまだ差し引かない。
+- **表示数量との分離（iter153）**: マイ在庫では実在庫 `quantity` を表示し続ける。ホーム、打診作成、個別募集作成・編集では市場残数を数量上限として使う。
 
 ### 関連画面
 
@@ -495,6 +499,7 @@ stateDiagram-v2
 ### 主要トリガー
 
 - 関連 `goods_inventory` が `archived` / `traded` になったら自動 `closed`
+- 関連 `goods_inventory` の譲アイテムが削除または非 active 化されたら、開いている個別募集の `have_ids` / `have_qtys` からそのアイテムを除外する。残る譲が 0 件なら `closed`。
 - 関連 `user_wants` が `achieved` になったら自動 `closed`
 - 取引完了（`deals.status = completed`）→ `closed`
 - 取引キャンセル（cancelled）→ `active` に戻す
@@ -504,6 +509,7 @@ stateDiagram-v2
 - 1 個別募集 = 1 譲 × 1 wish（複数の wish を OR 対象にしたい場合は複数 listing を作る）
 - 比率は `ratio_give` / `ratio_receive` ともに 1〜10
 - 同じ (inventory_id, wish_id) ペアの個別募集は複数作成可能（異なる比率を試すため）
+- **iter67.4 以降の実装差分**: 実装上は `have_ids[]` / `have_qtys[]` + `listing_wish_options` の「譲バンドル × 求複数選択肢」モデル。iter153 では、個別募集の譲数量も市場残数を上限にし、残数不足の条件はマッチング市場へ出さない。
 
 ---
 

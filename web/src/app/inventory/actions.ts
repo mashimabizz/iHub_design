@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { removeUnavailableHavesFromListings } from "@/lib/marketAvailability";
 
 type ActionResult = { error?: string } | undefined;
 /**
@@ -194,6 +195,13 @@ export async function updateInventoryStatus(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const { data: current } = await supabase
+    .from("goods_inventory")
+    .select("id, kind")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("goods_inventory")
     .update({ status })
@@ -201,7 +209,12 @@ export async function updateInventoryStatus(
     .eq("user_id", user.id);
 
   if (error) return { error: error.message };
+  if (current?.kind === "for_trade" && status !== "active") {
+    await removeUnavailableHavesFromListings(supabase, user.id, [id]);
+    revalidatePath("/listings");
+  }
   revalidatePath("/inventory");
+  revalidatePath("/");
   return undefined;
 }
 
@@ -347,6 +360,17 @@ export async function deleteInventoryItem(id: string): Promise<ActionResult> {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const { data: current } = await supabase
+    .from("goods_inventory")
+    .select("id, kind")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (current?.kind === "for_trade") {
+    await removeUnavailableHavesFromListings(supabase, user.id, [id]);
+  }
+
   const { error } = await supabase
     .from("goods_inventory")
     .delete()
@@ -358,5 +382,7 @@ export async function deleteInventoryItem(id: string): Promise<ActionResult> {
   }
 
   revalidatePath("/inventory");
+  revalidatePath("/listings");
+  revalidatePath("/");
   return undefined;
 }

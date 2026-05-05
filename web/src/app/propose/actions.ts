@@ -2,8 +2,12 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+  createServiceRoleClient,
+} from "@/lib/supabase/server";
 import { createNotification } from "@/lib/notify";
+import { assertProposalItemsMarketAvailable } from "@/lib/marketAvailability";
 
 type ActionResult = { error?: string; proposalId?: string } | undefined;
 
@@ -82,6 +86,19 @@ export async function createProposal(input: {
 
   if (user.id === input.receiverId)
     return { error: "自分自身には打診できません" };
+
+  const capacity = await assertProposalItemsMarketAvailable(
+    createServiceRoleClient(),
+    {
+      senderId: user.id,
+      receiverId: input.receiverId,
+      senderHaveIds: input.senderHaveIds,
+      senderHaveQtys: input.senderHaveQtys,
+      receiverHaveIds: input.cashOffer ? [] : input.receiverHaveIds,
+      receiverHaveQtys: input.cashOffer ? [] : input.receiverHaveQtys,
+    },
+  );
+  if (capacity.error) return capacity;
 
   // last_action_at = now, expires_at = +7 days
   const now = new Date();
@@ -316,6 +333,21 @@ export async function reviseProposal(input: {
   if (input.message?.trim()) {
     updateFields.message = input.message.trim();
   }
+
+  const capacity = await assertProposalItemsMarketAvailable(
+    createServiceRoleClient(),
+    {
+      senderId: prop.sender_id,
+      receiverId: prop.receiver_id,
+      senderHaveIds: newSenderIds,
+      senderHaveQtys: newSenderQtys,
+      receiverHaveIds: input.cashOffer ? [] : newReceiverIds,
+      receiverHaveQtys: input.cashOffer ? [] : newReceiverQtys,
+      excludeProposalId: input.id,
+    },
+  );
+  if (capacity.error) return capacity;
+
   const { error } = await supabase
     .from("proposals")
     .update(updateFields)
@@ -373,7 +405,8 @@ export async function respondToProposal(input: {
   const { data: proposal } = await supabase
     .from("proposals")
     .select(
-      "status, receiver_id, sender_id, agreed_by_sender, agreed_by_receiver",
+      `status, receiver_id, sender_id, agreed_by_sender, agreed_by_receiver,
+       sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys`,
     )
     .eq("id", input.id)
     .maybeSingle();
@@ -410,6 +443,22 @@ export async function respondToProposal(input: {
       updateFields.rejected_template = input.rejectedTemplate;
   } else {
     updateFields.status = "negotiating";
+  }
+
+  if (input.action === "accept" && updateFields.status === "agreed") {
+    const capacity = await assertProposalItemsMarketAvailable(
+      createServiceRoleClient(),
+      {
+        senderId: proposal.sender_id,
+        receiverId: proposal.receiver_id,
+        senderHaveIds: (proposal.sender_have_ids as string[]) ?? [],
+        senderHaveQtys: (proposal.sender_have_qtys as number[]) ?? [],
+        receiverHaveIds: (proposal.receiver_have_ids as string[]) ?? [],
+        receiverHaveQtys: (proposal.receiver_have_qtys as number[]) ?? [],
+        excludeProposalId: input.id,
+      },
+    );
+    if (capacity.error) return capacity;
   }
 
   const { error } = await supabase
@@ -474,5 +523,6 @@ export async function respondToProposal(input: {
   revalidatePath("/proposals");
   revalidatePath(`/proposals/${input.id}`);
   revalidatePath(`/transactions/${input.id}`);
+  revalidatePath("/");
   return undefined;
 }

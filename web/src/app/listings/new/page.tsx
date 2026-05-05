@@ -1,7 +1,15 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+  createServiceRoleClient,
+} from "@/lib/supabase/server";
 import { HeaderBack } from "@/components/auth/HeaderBack";
+import {
+  buildMarketAvailableQtyByInvId,
+  getAgreedReservedQtyByInvId,
+  withMarketAvailableQuantity,
+} from "@/lib/marketAvailability";
 import { ListingNewForm } from "./ListingNewForm";
 
 export const metadata = {
@@ -24,6 +32,7 @@ export default async function ListingNewPage({ searchParams }: Props) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  const serviceSupabase = createServiceRoleClient();
 
   // 自分の active な譲 + active な wish を並列 fetch
   // groups/goods_types の選択肢は **在庫から実際に登録されているもの** に限定する（iter67.4 改修）
@@ -51,6 +60,20 @@ export default async function ListingNewPage({ searchParams }: Props) {
       .order("created_at", { ascending: false }),
   ]);
 
+  const rawInventoryRows = inventoryRows ?? [];
+  const reservedQtyByInvId = await getAgreedReservedQtyByInvId(
+    serviceSupabase,
+    rawInventoryRows.map((r) => r.id as string),
+  );
+  const marketAvailableQtyByInvId = buildMarketAvailableQtyByInvId(
+    rawInventoryRows,
+    reservedQtyByInvId,
+  );
+  const marketInventoryRows = withMarketAvailableQuantity(
+    rawInventoryRows,
+    marketAvailableQtyByInvId,
+  );
+
   // メンバー名 → hue ハッシュ
   const nameToHue = (name: string): number => {
     let hash = 0;
@@ -68,7 +91,7 @@ export default async function ListingNewPage({ searchParams }: Props) {
     return Array.isArray(v) ? v[0]?.name ?? null : v.name;
   };
 
-  const inventoryItems = (inventoryRows ?? []).map((r) => {
+  const inventoryItems = marketInventoryRows.map((r) => {
     const charName = pickName(r.character);
     const grpName = pickName(r.group);
     const memberName = charName ?? grpName ?? r.title;
@@ -127,13 +150,13 @@ export default async function ListingNewPage({ searchParams }: Props) {
   }
 
   const inventoryGroups = uniqueOptions<{ id: string; name: string }>(
-    (inventoryRows ?? []).map((r) => ({
+    marketInventoryRows.map((r) => ({
       id: (r as { group_id?: string }).group_id ?? null,
       name: pickName(r.group),
     })),
   );
   const inventoryGoodsTypes = uniqueOptions<{ id: string; name: string }>(
-    (inventoryRows ?? []).map((r) => ({
+    marketInventoryRows.map((r) => ({
       id: (r as { goods_type_id?: string }).goods_type_id ?? null,
       name: pickName(r.goods_type),
     })),
