@@ -22,6 +22,7 @@ import {
 } from "@/components/common/ColumnCountButton";
 import { FloatingAddButton } from "@/components/common/FloatingAddButton";
 import { BottomActionSheet } from "@/components/common/BottomActionSheet";
+import { useImageReady } from "@/components/common/useImageReady";
 
 export type WishLink = {
   listingId: string;
@@ -284,18 +285,13 @@ function WishPanel({
         // iter147: 各パネルがスタガーで pop-in
         <div className={`grid ${GRID_CLASS_BY_COLUMNS[columnCount]}`}>
           {visibleItems.map((w, i) => (
-            <div
+            <WishCardPanel
               key={w.id}
-              className={`animate-panel-pop ${
-                deletingId === w.id ? "animate-fade-out-back" : ""
-              }`}
-              style={{ animationDelay: `${i * 45}ms` }}
-            >
-              <WishCardWrapper
-                item={w}
-                onRequestDelete={() => requestDelete(w)}
-              />
-            </div>
+              item={w}
+              delayMs={i * 45}
+              deleting={deletingId === w.id}
+              onRequestDelete={() => requestDelete(w)}
+            />
           ))}
         </div>
       )}
@@ -308,6 +304,33 @@ function WishPanel({
           onConfirm={() => performDelete(confirmTarget)}
         />
       )}
+    </div>
+  );
+}
+
+function WishCardPanel({
+  item,
+  delayMs,
+  deleting,
+  onRequestDelete,
+}: {
+  item: WishItem;
+  delayMs: number;
+  deleting: boolean;
+  onRequestDelete: () => void;
+}) {
+  const imageReady = useImageReady(item.photoUrl);
+  return (
+    <div
+      className={`${
+        imageReady ? "animate-panel-pop" : "pointer-events-none opacity-0"
+      } ${deleting ? "animate-fade-out-back" : ""}`}
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
+      <WishCardWrapper
+        item={item}
+        onRequestDelete={onRequestDelete}
+      />
     </div>
   );
 }
@@ -508,6 +531,7 @@ function WishCard({ item }: { item: WishItem }) {
           alt={memberLabel}
           className="absolute inset-0 h-full w-full object-cover"
           loading="lazy"
+          decoding="async"
         />
       )}
 

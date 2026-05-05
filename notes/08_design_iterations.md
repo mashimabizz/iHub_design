@@ -4,6 +4,69 @@
 
 ---
 
+## イテレーション154.27：画像読み込み後にカード入場を開始
+
+### 背景・問題意識
+
+オーナーから、ホーム画面・マイ在庫・Wish で画面自体は早く表示される一方、肝心の画像ロードが終わる前に各パネルが出てしまい不恰好に見えるという指摘があった。
+
+ただし、現在のパネル表示速度は気に入っているため、アニメーション自体を遅くするのではなく、画像の読み込み・decode が終わったカードから今の速い入場アニメーションを始める設計にする。
+
+### 変更内容
+
+#### `web/src/components/common/useImageReady.ts`
+- 画像 URL を `Image()` で事前読み込みし、可能なら `decode()` まで待つ hook を追加。
+- 読み込み済み URL は session 内キャッシュし、同じ画像を再表示する時は即表示できるようにした。
+- 画像なし / 読み込み失敗時はカードを隠し続けないよう ready 扱いにした。
+
+#### `web/src/components/home/HomeView.tsx`
+- ホームのマッチ候補パネルは、候補画像の ready 後に `animate-home-shelf-panel-in` を付与するようにした。
+- ready 前は透明かつ非タップにし、画像がないカードは従来通り即表示。
+
+#### `web/src/app/inventory/InventoryView.tsx`
+- マイ在庫の各カードを `InventoryCardPanel` に分離。
+- 画像 ready 後に従来の `animate-panel-pop` を走らせ、削除フェードアウトとの組み合わせは維持。
+
+#### `web/src/app/wishes/WishView.tsx`
+- Wish の各カードを `WishCardPanel` に分離。
+- 画像 ready 後に従来の `animate-panel-pop` を走らせ、削除フェードアウトとの組み合わせは維持。
+
+#### `web/src/app/inventory/ItemCard.tsx`
+#### `web/src/app/wishes/WishView.tsx`
+- 実画像に `decoding="async"` を付け、プリロード後の描画を安定させた。
+
+### 影響範囲
+
+- `/` ホーム画面のマッチ候補パネル
+- `/inventory` マイ在庫グリッド
+- `/wishes` Wish グリッド
+
+### 確認方法
+
+- `npx eslint src/components/common/useImageReady.ts src/components/home/HomeView.tsx src/app/inventory/InventoryView.tsx src/app/inventory/ItemCard.tsx src/app/wishes/WishView.tsx`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/common/useImageReady.ts`
+- `web/src/components/home/HomeView.tsx`
+- `web/src/app/inventory/InventoryView.tsx`
+- `web/src/app/inventory/ItemCard.tsx`
+- `web/src/app/wishes/WishView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 既存のパネル入場アニメーション速度・stagger 間隔は維持
+- ✅ 画像ありカードは画像 ready 後に表示開始
+- ✅ 画像なしカード・画像エラーは表示が詰まらない
+- ✅ 削除フェードアウト / reflow 挙動は維持
+- ✅ `notes/09_state_machines.md` は状態追加・変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語・廃止用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+
+---
+
 ## イテレーション154.26：プロフ画面から設定導線を削除
 
 ### 背景・問題意識

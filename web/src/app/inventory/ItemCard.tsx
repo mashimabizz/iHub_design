@@ -47,6 +47,7 @@ export function ItemCard({
           alt={`${item.memberName} ${item.goodsType}`}
           className="absolute inset-0 h-full w-full object-cover"
           loading="lazy"
+          decoding="async"
         />
       )}
 

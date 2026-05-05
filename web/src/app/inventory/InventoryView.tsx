@@ -12,6 +12,7 @@ import {
   type ColumnCount,
 } from "@/components/common/ColumnCountButton";
 import { BottomActionSheet } from "@/components/common/BottomActionSheet";
+import { useImageReady } from "@/components/common/useImageReady";
 
 export type InventoryItemFull = ItemCardData & {
   status: "active" | "keep" | "traded" | "reserved" | "archived";
@@ -404,19 +405,14 @@ function SubPanel({
           // iter147: AddCard が active のとき index 0 を取るので +1 ずらす
           const idx = subId === "active" ? i + 1 : i;
           return (
-            <div
+            <InventoryCardPanel
               key={item.id}
-              className={`animate-panel-pop ${
-                deletingId === item.id ? "animate-fade-out-back" : ""
-              }`}
-              style={{ animationDelay: `${idx * 45}ms` }}
-            >
-              <ItemCardWrapper
-                item={item}
-                router={router}
-                onRequestDelete={() => requestDelete(item)}
-              />
-            </div>
+              item={item}
+              router={router}
+              delayMs={idx * 45}
+              deleting={deletingId === item.id}
+              onRequestDelete={() => requestDelete(item)}
+            />
           );
         })}
       </div>
@@ -428,6 +424,36 @@ function SubPanel({
           onConfirm={() => performDelete(confirmTarget)}
         />
       )}
+    </div>
+  );
+}
+
+function InventoryCardPanel({
+  item,
+  router,
+  delayMs,
+  deleting,
+  onRequestDelete,
+}: {
+  item: InventoryItemFull;
+  router: ReturnType<typeof useRouter>;
+  delayMs: number;
+  deleting: boolean;
+  onRequestDelete: () => void;
+}) {
+  const imageReady = useImageReady(item.photoUrl);
+  return (
+    <div
+      className={`${
+        imageReady ? "animate-panel-pop" : "pointer-events-none opacity-0"
+      } ${deleting ? "animate-fade-out-back" : ""}`}
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
+      <ItemCardWrapper
+        item={item}
+        router={router}
+        onRequestDelete={onRequestDelete}
+      />
     </div>
   );
 }

@@ -24,6 +24,7 @@ import {
   type SimpleAW,
   type SimpleItem,
 } from "./LocalModeSheet";
+import { useImageReady } from "@/components/common/useImageReady";
 
 // メンバー名 / グループ名 → hue (色相) ハッシュ
 function nameToHue(name: string): number {
@@ -1363,12 +1364,17 @@ function WishShelfTile({
     ? truncateTagLabel(candidate.tagLabels[0], 8)
     : null;
   const fallbackBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 78%) 6px 12px)`;
+  const imageReady = useImageReady(item.photoUrl);
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="home-shelf-tile group animate-home-shelf-panel-in text-left active:scale-[0.97]"
+      className={`home-shelf-tile group text-left active:scale-[0.97] ${
+        imageReady
+          ? "animate-home-shelf-panel-in"
+          : "pointer-events-none opacity-0"
+      }`}
       style={{ animationDelay: `${delayMs}ms` }}
       aria-label={`${item.label}の候補を開く`}
     >
@@ -1390,6 +1396,7 @@ function WishShelfTile({
               alt={item.label}
               className="absolute inset-0 h-full w-full object-cover"
               loading="lazy"
+              decoding="async"
             />
           ) : (
             <span className="absolute inset-0 flex items-center justify-center text-[30px] font-extrabold text-white/95 drop-shadow">
