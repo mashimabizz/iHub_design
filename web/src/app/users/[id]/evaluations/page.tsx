@@ -70,7 +70,7 @@ export default async function UserEvaluationsPage({
   }
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+    <main className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack
         title={`@${user.handle} の評価`}
         sub={ratingCount > 0 ? `${ratingCount} 件` : undefined}

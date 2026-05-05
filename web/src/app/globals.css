@@ -444,6 +444,30 @@ body {
 }
 
 /*
+ * iter154.24: 通常 route でも右からひゅんっと入るページ遷移
+ * Profile / Transactions の詳細導線で、ホームのマッチ詳細に近い体感へ揃える。
+ */
+@keyframes routeSlideInFromRight {
+  0% {
+    opacity: 0.98;
+    transform: translate3d(104%, 0, 0);
+  }
+  74% {
+    opacity: 1;
+    transform: translate3d(-0.8%, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-route-slide-in-right {
+  animation: routeSlideInFromRight 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+/*
  * iter151.9: 取引一覧パネル専用のゆっくりした登場
  * 最初はかなり薄く、少しだけ奥/上から浮き出る。
  */
@@ -470,6 +494,7 @@ body {
   .animate-home-shelf-panel-in,
   .animate-match-detail-slide-in,
   .animate-match-detail-slide-in-from-left,
+  .animate-route-slide-in-right,
   .animate-transaction-panel-in {
     animation: none;
   }

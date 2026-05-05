@@ -21,7 +21,7 @@ export default async function ProfileEditPage() {
     .maybeSingle();
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+    <main className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="プロフィール編集" backHref="/profile" />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-12 pt-5">
         <ProfileEditForm

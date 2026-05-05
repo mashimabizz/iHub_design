@@ -155,7 +155,7 @@ export default async function ProposalDetailPage({
     ...p.receiver_have_ids,
   ].filter((x, i, a) => a.indexOf(x) === i);
 
-  let invById = new Map<
+  const invById = new Map<
     string,
     { title: string; photoUrl: string | null; label: string; groupName: string | null; characterName: string | null; goodsTypeName: string | null }
   >();
@@ -240,7 +240,7 @@ export default async function ProposalDetailPage({
   };
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+    <main className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack
         title="打診詳細"
         sub={isReceiver ? "受信" : "送信"}

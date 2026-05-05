@@ -24,7 +24,7 @@ export default async function NotificationSettingsPage() {
     (settings?.email_enabled as boolean | undefined) ?? true;
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+    <main className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack
         title="通知設定"
         sub="チャネルごとの ON/OFF を切替"

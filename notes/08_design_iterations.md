@@ -4,6 +4,68 @@
 
 ---
 
+## イテレーション154.24：プロフ・取引詳細の右スライド遷移を追加
+
+### 背景・問題意識
+
+オーナーから、プロフ画面で「プロフィール編集」「推し設定」などのボタンを押した時、ホーム画面で個別募集マッチの関係図が右から出てくるのと同じように、遷移先画面が画面右からひゅんっとスライドして登場してほしいという要望があった。
+
+また、取引一覧画面で各パネルを押した時の遷移先にも同じ挙動を適用し、遷移先の戻るボタンで前画面に戻れるようにする必要がある。
+
+### 変更内容
+
+#### `web/src/app/globals.css`
+- 通常 route 用の `routeSlideInFromRight` / `.animate-route-slide-in-right` を追加。
+- ホームのマッチ詳細に近い、右画面外から少しだけ行き過ぎて止まる 420ms の遷移にした。
+- `prefers-reduced-motion` ではアニメーションを無効化。
+
+#### プロフ導線の遷移先
+- `/profile/edit`、`/profile/oshi`、`/schedules`、`/settings`、`/settings/notifications`、`/help`、`/users/[id]/evaluations` の main に `.animate-route-slide-in-right` を付与。
+- `/schedules` は独自ヘッダーから `HeaderBack` に変更し、プロフィールから来た時に戻るボタンで前画面へ戻れるようにした。
+
+#### 取引一覧パネルの遷移先
+- `/transactions/[id]`、`/proposals/[id]`、`/disputes/[id]` の main に `.animate-route-slide-in-right` を付与。
+- 既存の `HeaderBack` は `router.back()` を使うため、取引一覧から入った場合は戻るボタンで一覧へ戻る挙動を維持。
+
+### 影響範囲
+
+- `/profile` から開くプロフィール編集・推し設定・スケジュール・設定・通知設定・ヘルプ・評価一覧
+- `/transactions` から開く取引チャット・打診詳細・申告ステータス
+- 通常 route 遷移の初期表示アニメーション
+
+### 確認方法
+
+- `npx eslint ...`（対象ページ一式）
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/globals.css`
+- `web/src/app/profile/edit/page.tsx`
+- `web/src/app/profile/oshi/page.tsx`
+- `web/src/app/schedules/page.tsx`
+- `web/src/app/schedules/new/page.tsx`
+- `web/src/app/schedules/[id]/page.tsx`
+- `web/src/app/settings/page.tsx`
+- `web/src/app/settings/notifications/page.tsx`
+- `web/src/app/help/page.tsx`
+- `web/src/app/users/[id]/evaluations/page.tsx`
+- `web/src/app/transactions/[id]/page.tsx`
+- `web/src/app/proposals/[id]/page.tsx`
+- `web/src/app/disputes/[id]/page.tsx`
+
+### セルフレビュー結果
+
+- ✅ プロフ画面からの主要遷移先に右スライド登場を追加
+- ✅ 取引一覧パネルからの主要遷移先に右スライド登場を追加
+- ✅ スケジュール画面にも戻るボタンを追加し、`router.back()` の前画面復帰に統一
+- ✅ `prefers-reduced-motion` ではアニメーションを無効化
+- ✅ `notes/09_state_machines.md` は状態追加・変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語・廃止用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+
+---
+
 ## イテレーション154.23：マッチ詳細スワイプの画像暗転と候補上操作を改善
 
 ### 背景・問題意識

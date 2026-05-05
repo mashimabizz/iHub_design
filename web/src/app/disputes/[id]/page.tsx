@@ -113,7 +113,7 @@ export default async function DisputeDetailPage({
   };
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+    <main className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack
         title={
           d.status === "closed" ? "運営からの回答" : "申告ステータス"

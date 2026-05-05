@@ -29,7 +29,7 @@ export default async function ScheduleEditPage({
   if (!data) notFound();
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+    <main className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack title="予定を編集" backHref="/schedules" />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 pb-12 pt-5">
         <ScheduleForm

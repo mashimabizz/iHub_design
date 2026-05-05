@@ -12,7 +12,7 @@ export const metadata = {
  */
 export default function HelpPage() {
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+    <main className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack
         title="ヘルプ・FAQ"
         sub="使い方・取引の流れ・よくある質問"

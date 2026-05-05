@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { HeaderBack } from "@/components/auth/HeaderBack";
 import { BottomNav } from "@/components/home/BottomNav";
 import { SchedulesView, type ScheduleItem } from "./SchedulesView";
 
@@ -42,23 +43,20 @@ export default async function SchedulesPage() {
   return (
     <>
       <main
-        className="flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]"
+        className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]"
         style={{
           fontFamily: '"Noto Sans JP", -apple-system, system-ui',
           color: "#3a324a",
         }}
       >
-        <div className="h-[60px]" />
-        <div className="border-b border-[#3a324a0f] bg-white px-[18px] pb-[10px] pt-3">
-          <div className="mx-auto flex max-w-md items-center justify-between">
-            <div>
-              <div className="text-[19px] font-extrabold tracking-[0.3px] text-[#3a324a]">
-                スケジュール
-              </div>
-              <div className="mt-[1px] text-[11px] text-[#3a324a8c]">
-                自分の予定（AW とは別 · 打診時にカレンダー公開すると相手と重ね見可）
-              </div>
-            </div>
+        <HeaderBack
+          title="スケジュール"
+          sub="自分の予定（AW とは別 · 打診時にカレンダー公開すると相手と重ね見可）"
+          backHref="/profile"
+        />
+
+        <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-4 pt-4">
+          <div className="mb-3 flex justify-end">
             <Link
               href="/schedules/new"
               className="inline-flex items-center gap-[5px] rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-[14px] py-2 text-[12px] font-bold text-white shadow-[0_4px_10px_rgba(166,149,216,0.31)] transition-all duration-150 active:scale-[0.97]"
@@ -77,9 +75,6 @@ export default async function SchedulesPage() {
               予定を追加
             </Link>
           </div>
-        </div>
-
-        <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-4 pt-4">
           <SchedulesView items={items} />
         </div>
       </main>

@@ -433,7 +433,7 @@ export default async function TransactionChatPage({
   }
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc]">
+    <main className="animate-route-slide-in-right flex flex-1 flex-col bg-[#fbf9fc]">
       <HeaderBack
         title={`@${proposal.partner.handle}`}
         sub={
