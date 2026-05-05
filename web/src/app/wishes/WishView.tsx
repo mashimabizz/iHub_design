@@ -21,6 +21,7 @@ import {
   type ColumnCount,
 } from "@/components/common/ColumnCountButton";
 import { FloatingAddButton } from "@/components/common/FloatingAddButton";
+import { BottomActionSheet } from "@/components/common/BottomActionSheet";
 
 export type WishLink = {
   listingId: string;
@@ -405,13 +406,14 @@ function WishCardWrapper({
   onRequestDelete: () => void;
 }) {
   const router = useRouter();
-  const [showMenu, setShowMenu] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   // iter149: メニュー内ボタン押下時にパネルを跳ねさせる（編集 / 個別募集追加のみ）
   const [bouncing, setBouncing] = useState(false);
   const BOUNCE_MS = 580;
+  const itemLabel = item.characterName ?? item.groupName ?? item.title;
 
   function bounceThen(action: () => void) {
-    setShowMenu(false);
+    setSheetOpen(false);
     setBouncing(true);
     window.setTimeout(() => {
       setBouncing(false);
@@ -424,62 +426,58 @@ function WishCardWrapper({
       <div className={bouncing ? "animate-panel-bounce" : undefined}>
         <button
           type="button"
-          onClick={() => !bouncing && setShowMenu(!showMenu)}
+          onClick={() => !bouncing && setSheetOpen(true)}
           className="block w-full"
         >
           <WishCard item={item} />
         </button>
       </div>
-      {showMenu && !bouncing && (
-        <div className="absolute inset-0 z-10 flex flex-col items-stretch justify-center gap-1.5 rounded-xl bg-black/70 p-2">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              bounceThen(() => router.push(`/wishes/${item.id}/edit`));
-            }}
-            className="rounded-lg bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-1.5 text-center text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
-          >
-            編集する
-          </button>
-          {/* iter143: いつでも個別募集の追加を可能にする */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              bounceThen(() =>
-                router.push(`/listings/new?wishId=${item.id}`),
-              );
-            }}
-            className="rounded-lg bg-white py-1.5 text-[10px] font-bold text-gray-900"
-          >
-            {item.linkedListings.length === 0
-              ? "個別募集を作る"
-              : "+ 個別募集を追加"}
-          </button>
-          {/* iter150: 削除はバウンスせず、確認モーダル → fade-out フローへ */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenu(false);
-              onRequestDelete();
-            }}
-            className="rounded-lg bg-red-500/90 py-1.5 text-[10px] font-bold text-white"
-          >
-            削除
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenu(false);
-            }}
-            className="rounded-lg bg-black/30 py-1.5 text-[10px] font-bold text-white"
-          >
-            閉じる
-          </button>
-        </div>
+      {sheetOpen && !bouncing && (
+        <BottomActionSheet
+          title={itemLabel}
+          subtitle={item.goodsTypeName}
+          imageUrl={item.photoUrl}
+          fallbackLabel={itemLabel}
+          meta={
+            item.quantity > 1 ? (
+              <div className="rounded-md bg-ihub-lavender px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums text-white">
+                ×{item.quantity}
+              </div>
+            ) : null
+          }
+          onClose={() => setSheetOpen(false)}
+          actions={[
+            {
+              label: "編集する",
+              tone: "primary",
+              onClick: () =>
+                bounceThen(() => router.push(`/wishes/${item.id}/edit`)),
+            },
+            {
+              label:
+                item.linkedListings.length === 0
+                  ? "個別募集を作る"
+                  : "+ 個別募集を追加",
+              onClick: () =>
+                bounceThen(() =>
+                  router.push(`/listings/new?wishId=${item.id}`),
+                ),
+            },
+            {
+              label: "削除",
+              tone: "danger",
+              onClick: () => {
+                setSheetOpen(false);
+                onRequestDelete();
+              },
+            },
+            {
+              label: "閉じる",
+              tone: "muted",
+              onClick: () => setSheetOpen(false),
+            },
+          ]}
+        />
       )}
     </div>
   );

@@ -11,6 +11,7 @@ import {
   ColumnCountButton,
   type ColumnCount,
 } from "@/components/common/ColumnCountButton";
+import { BottomActionSheet } from "@/components/common/BottomActionSheet";
 
 export type InventoryItemFull = ItemCardData & {
   status: "active" | "keep" | "traded" | "reserved" | "archived";
@@ -515,12 +516,13 @@ function ItemCardWrapper({
   router: ReturnType<typeof useRouter>;
   onRequestDelete: () => void;
 }) {
-  const [showMenu, setShowMenu] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [bouncing, setBouncing] = useState(false);
   const BOUNCE_MS = 580;
+  const itemLabel = `${item.memberName} ${item.goodsType}`;
 
   function bounceThen(action?: () => void | Promise<void>) {
-    setShowMenu(false);
+    setSheetOpen(false);
     setBouncing(true);
     window.setTimeout(() => {
       setBouncing(false);
@@ -531,7 +533,7 @@ function ItemCardWrapper({
   async function changeStatus(
     status: "active" | "keep" | "traded" | "archived",
   ) {
-    setShowMenu(false);
+    setSheetOpen(false);
     const result = await updateInventoryStatus(item.id, status);
     if (result?.error) {
       alert(result.error);
@@ -545,48 +547,52 @@ function ItemCardWrapper({
       <div className={bouncing ? "animate-panel-bounce" : undefined}>
         <button
           type="button"
-          onClick={() => !bouncing && setShowMenu(!showMenu)}
+          onClick={() => !bouncing && setSheetOpen(true)}
           className="block w-full"
         >
           <ItemCard item={item} />
         </button>
       </div>
-      {showMenu && !bouncing && (
-        <div className="absolute inset-0 z-10 flex flex-col items-stretch justify-center gap-1.5 rounded-xl bg-black/70 p-2">
-          <button
-            type="button"
-            onClick={() =>
-              bounceThen(() => router.push(`/inventory/${item.id}`))
-            }
-            className="rounded-lg bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-1.5 text-center text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(166,149,216,0.4)]"
-          >
-            編集する
-          </button>
-          <button
-            type="button"
-            onClick={() => bounceThen(() => changeStatus("keep"))}
-            className="rounded-lg bg-white py-1.5 text-[10px] font-bold text-gray-900"
-          >
-            自分キープへ
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowMenu(false);
-              onRequestDelete();
-            }}
-            className="rounded-lg bg-[#fff1f2] py-1.5 text-[10px] font-bold text-[#be123c]"
-          >
-            削除
-          </button>
-          <button
-            type="button"
-            onClick={() => bounceThen()}
-            className="rounded-lg bg-black/30 py-1.5 text-[10px] font-bold text-white"
-          >
-            閉じる
-          </button>
-        </div>
+      {sheetOpen && !bouncing && (
+        <BottomActionSheet
+          title={item.memberName}
+          subtitle={item.goodsType}
+          imageUrl={item.photoUrl}
+          fallbackLabel={itemLabel}
+          meta={
+            item.qty > 1 ? (
+              <div className="rounded-md bg-ihub-lavender px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums text-white">
+                ×{item.qty}
+              </div>
+            ) : null
+          }
+          onClose={() => setSheetOpen(false)}
+          actions={[
+            {
+              label: "編集する",
+              tone: "primary",
+              onClick: () =>
+                bounceThen(() => router.push(`/inventory/${item.id}`)),
+            },
+            {
+              label: "自分キープへ",
+              onClick: () => bounceThen(() => changeStatus("keep")),
+            },
+            {
+              label: "削除",
+              tone: "danger",
+              onClick: () => {
+                setSheetOpen(false);
+                onRequestDelete();
+              },
+            },
+            {
+              label: "閉じる",
+              tone: "muted",
+              onClick: () => setSheetOpen(false),
+            },
+          ]}
+        />
       )}
     </div>
   );

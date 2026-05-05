@@ -4,6 +4,71 @@
 
 ---
 
+## イテレーション154.15：在庫とWishの操作を下部シート化
+
+### 背景・問題意識
+
+オーナーから、マイ在庫・ウィッシュで列数を 4 列以上にした時、グッズをタップして出る選択肢が画像内にはみ出して不格好になるという指摘があった。
+
+これまではカード内に「編集する」「自分キープへ」「削除」「閉じる」などのメニューを重ねていたが、カード幅が狭い表示ではボタンの視認性と余白が足りない。カード内に押し込めず、下からにゅっと出るアクションシートで選ばせるモバイル UI に寄せる。
+
+### 変更内容
+
+#### `web/src/components/common/BottomActionSheet.tsx`
+- グッズ画像・タイトル・サブ情報・アクション一覧を受け取る共通の下部アクションシートを追加。
+- 背景 blur + 下からの slide-in で、カードサイズに依存しない操作面を提供。
+- `primary` / `normal` / `danger` / `muted` の action tone を用意。
+
+#### `web/src/app/inventory/InventoryView.tsx`
+- マイ在庫カード内の黒い重ねメニューを廃止し、カードタップで `BottomActionSheet` を表示。
+- 「編集する」「自分キープへ」は従来通りカードのバウンス後に実行。
+- 「削除」は従来通り確認モーダル → フェードアウト削除フローへ接続。
+- 「閉じる」はシートを閉じるだけにし、カードが跳ねないように変更。
+
+#### `web/src/app/wishes/WishView.tsx`
+- Wish カード内の重ねメニューを廃止し、カードタップで `BottomActionSheet` を表示。
+- 「編集する」「個別募集を作る / + 個別募集を追加」は従来通りカードのバウンス後に実行。
+- 「削除」は確認モーダル → フェードアウト削除フローへ接続。
+- 「閉じる」はシートを閉じるだけにした。
+
+#### `web/src/app/globals.css`
+- 下部アクションシート用の slide-in / backdrop fade-in animation を追加。
+- `prefers-reduced-motion` ではアニメーションを無効化。
+
+#### `web/src/app/inventory/ItemCard.tsx`
+- 親の操作説明コメントを、カード内メニューからアクションシートに更新。
+
+### 影響範囲
+
+- `/inventory` マイ在庫一覧
+- `/wishes` ウィッシュ一覧
+- 3 列 / 4 列 / 5 列表示時のカード操作
+
+### 確認方法
+
+- `npx eslint src/components/common/BottomActionSheet.tsx src/app/inventory/InventoryView.tsx src/app/inventory/ItemCard.tsx src/app/wishes/WishView.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/common/BottomActionSheet.tsx`
+- `web/src/app/inventory/InventoryView.tsx`
+- `web/src/app/inventory/ItemCard.tsx`
+- `web/src/app/wishes/WishView.tsx`
+- `web/src/app/globals.css`
+
+### セルフレビュー結果
+
+- ✅ 4 列 / 5 列でもカード内に選択肢がはみ出さない構造に変更
+- ✅ マイ在庫の「閉じる」はカードを跳ねさせず、シートを閉じるだけに変更
+- ✅ 削除のフェードアウト・自動整理フローは維持
+- ✅ 編集 / 個別募集追加 / 自分キープのバウンス挙動は維持
+- ✅ `notes/09_state_machines.md` は状態追加・変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+
+---
+
 ## イテレーション154.14：個別募集編集の隠れ譲参照を除外
 
 ### 背景・問題意識
