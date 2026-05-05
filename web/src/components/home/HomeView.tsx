@@ -281,6 +281,11 @@ type WishShelfRow = {
   localCount: number;
 };
 
+type WishShelfSections = {
+  listingRows: WishShelfRow[];
+  possibleRows: WishShelfRow[];
+};
+
 function getCandidatePriority(
   myListings: MatchCardListingInfo[],
   partnerListings: MatchCardListingInfo[],
@@ -467,6 +472,51 @@ function buildWishShelves(
   });
 }
 
+function subsetWishShelfRow(
+  row: WishShelfRow,
+  candidates: WishShelfCandidate[],
+  keySuffix: string,
+): WishShelfRow | null {
+  if (candidates.length === 0) return null;
+  return {
+    ...row,
+    key: `${row.key}::${keySuffix}`,
+    candidates,
+    bestPriority: candidates.reduce<CandidatePriority>(
+      (best, candidate) => Math.min(best, candidate.priority) as CandidatePriority,
+      2,
+    ),
+    bestTagScore: candidates.reduce(
+      (best, candidate) => Math.max(best, candidate.tagScore),
+      0,
+    ),
+    localCount: candidates.filter((candidate) => candidate.local).length,
+  };
+}
+
+function splitWishShelves(rows: WishShelfRow[]): WishShelfSections {
+  const listingRows: WishShelfRow[] = [];
+  const possibleRows: WishShelfRow[] = [];
+
+  for (const row of rows) {
+    const listingRow = subsetWishShelfRow(
+      row,
+      row.candidates.filter((candidate) => candidate.priority < 2),
+      "listing",
+    );
+    if (listingRow) listingRows.push(listingRow);
+
+    const possibleRow = subsetWishShelfRow(
+      row,
+      row.candidates.filter((candidate) => candidate.priority === 2),
+      "possible",
+    );
+    if (possibleRow) possibleRows.push(possibleRow);
+  }
+
+  return { listingRows, possibleRows };
+}
+
 export function HomeView({
   profile,
   localMode,
@@ -546,6 +596,13 @@ export function HomeView({
     () => buildWishShelves(allCards, tagScoreByInvId, tagLabelsByInvId),
     [allCards, tagScoreByInvId, tagLabelsByInvId],
   );
+  const wishShelfSections = useMemo(
+    () => splitWishShelves(wishShelves),
+    [wishShelves],
+  );
+  const hasWishShelfCandidates =
+    wishShelfSections.listingRows.length > 0 ||
+    wishShelfSections.possibleRows.length > 0;
 
   // 現地モード state（DB から取得した初期値）
   const [sheetOpen, setSheetOpen] = useState(autoOpenLocalSheet);
@@ -825,7 +882,7 @@ export function HomeView({
 
         <section className="mt-3 flex min-h-0 flex-1 flex-col">
           <div className="flex-1 space-y-1.5 overflow-y-auto px-5 py-2">
-            {wishShelves.length === 0 ? (
+            {!hasWishShelfCandidates ? (
               <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white px-5 py-10 text-center">
                 <div className="text-[13px] font-bold text-[#3a324a]">
                   現在マッチがありません
@@ -835,14 +892,20 @@ export function HomeView({
                 </div>
               </div>
             ) : (
-              wishShelves.map((row, idx) => (
-                <WishShelfRowView
-                  key={row.key}
-                  row={row}
-                  delayMs={idx * 95}
+              <>
+                <WishShelfSectionView
+                  title="マッチ！"
+                  rows={wishShelfSections.listingRows}
+                  baseDelayMs={0}
                   onSelect={handleSelectCandidate}
                 />
-              ))
+                <WishShelfSectionView
+                  title="交換できるかも"
+                  rows={wishShelfSections.possibleRows}
+                  baseDelayMs={wishShelfSections.listingRows.length * 95 + 80}
+                  onSelect={handleSelectCandidate}
+                />
+              </>
             )}
 
             {/* iter134: ようこそ表示・ログアウトはホーム画面から撤廃
@@ -917,6 +980,36 @@ function buildSimpleProposeHref(candidate: WishShelfCandidate): string {
     params.set("gives", candidate.card.myGives.map((i) => i.id).join(","));
   }
   return `/propose/${candidate.card.partnerId}?${params.toString()}`;
+}
+
+function WishShelfSectionView({
+  title,
+  rows,
+  baseDelayMs,
+  onSelect,
+}: {
+  title: string;
+  rows: WishShelfRow[];
+  baseDelayMs: number;
+  onSelect: (candidate: WishShelfCandidate) => void;
+}) {
+  if (rows.length === 0) return null;
+
+  return (
+    <section className="space-y-1.5 pt-2 first:pt-0">
+      <h1 className="px-0.5 text-[18px] font-extrabold leading-tight text-[#111111]">
+        {title}
+      </h1>
+      {rows.map((row, idx) => (
+        <WishShelfRowView
+          key={row.key}
+          row={row}
+          delayMs={baseDelayMs + idx * 95}
+          onSelect={onSelect}
+        />
+      ))}
+    </section>
+  );
 }
 
 function WishShelfRowView({
