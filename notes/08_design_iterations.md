@@ -4,6 +4,54 @@
 
 ---
 
+## イテレーション152.4：ホーム候補パネルの右入りアニメーションと影を追加
+
+### 背景・問題意識
+
+オーナーから、ホーム画面の各パネルについて「一番左のものから順に、右側の画面外からひゅんっとくる感じ」「最初の初速は早く、到着につれて遅くなるタイプ」の動きにしたい、また各パネルに薄く右下へ落ちる影を付けたいという指示があった。
+
+### 変更内容
+
+#### `web/src/app/globals.css`
+- `homeShelfPanelIn` keyframes を追加。
+- `translate3d(115vw, 0, 0)` から入ることで、右側の画面外から滑り込む動きを作成。
+- easing は `cubic-bezier(0.16, 1, 0.3, 1)` にし、初速が速く到着に向けて減速する挙動にした。
+- `prefers-reduced-motion` ではアニメーションを停止。
+
+#### `web/src/components/home/HomeView.tsx`
+- `WishShelfTile` に `delayMs` を渡し、行内の左のパネルから順に `70ms` ずつ遅延して表示。
+- 候補パネルに `animate-home-shelf-panel-in` を適用。
+- 画像パネルの影を `7px 9px 18px` 方向へ変更し、右下に薄く落ちる見え方に調整。
+
+### 影響範囲
+
+- `/` ホーム / マッチング画面
+- 「Wishに届いた譲」候補画像パネルの登場アニメーション
+- 候補画像パネルの影表現
+
+### 確認方法
+
+- `npx eslint src/components/home/HomeView.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/globals.css`
+- `web/src/components/home/HomeView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 右側の画面外から候補パネルが入る keyframes を追加
+- ✅ 左の候補から順に表示される stagger delay を追加
+- ✅ 初速が速く、到着につれて減速する easing を使用
+- ✅ 影を右下方向へ薄く落とすように変更
+- ✅ `notes/09_state_machines.md` は状態変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 TSX ESLint / build 成功
+
+---
+
 ## イテレーション152.3：ホーム上部の左右配置と候補行間を調整
 
 ### 背景・問題意識

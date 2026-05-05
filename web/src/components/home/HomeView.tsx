@@ -858,10 +858,11 @@ function WishShelfRowView({
       </div>
 
       <div className="-mx-5 mt-1 flex gap-3 overflow-x-auto px-5 pb-2 pt-1.5 [&::-webkit-scrollbar]:hidden">
-        {row.candidates.map((candidate) => (
+        {row.candidates.map((candidate, idx) => (
           <WishShelfTile
             key={candidate.key}
             candidate={candidate}
+            delayMs={delayMs + idx * 70}
             onSelect={() => onSelect(candidate)}
           />
         ))}
@@ -872,9 +873,11 @@ function WishShelfRowView({
 
 function WishShelfTile({
   candidate,
+  delayMs,
   onSelect,
 }: {
   candidate: WishShelfCandidate;
+  delayMs: number;
   onSelect: () => void;
 }) {
   const item = candidate.item;
@@ -885,7 +888,8 @@ function WishShelfTile({
     <button
       type="button"
       onClick={onSelect}
-      className="group w-[112px] flex-shrink-0 text-left active:scale-[0.97]"
+      className="group animate-home-shelf-panel-in w-[112px] flex-shrink-0 text-left active:scale-[0.97]"
+      style={{ animationDelay: `${delayMs}ms` }}
       aria-label={`${item.label}の候補を開く`}
     >
       <div
@@ -903,7 +907,7 @@ function WishShelfTile({
           </>
         )}
         <div
-          className="match-card-inner relative h-[142px] w-[112px] overflow-hidden rounded-[16px] border border-[#3a324a12] bg-[#f4f1f7] shadow-[0_7px_18px_rgba(58,50,74,0.14)] transition-transform duration-150 group-hover:-translate-y-0.5"
+          className="match-card-inner relative h-[142px] w-[112px] overflow-hidden rounded-[16px] border border-[#3a324a12] bg-[#f4f1f7] shadow-[7px_9px_18px_rgba(58,50,74,0.16)] transition-transform duration-150 group-hover:-translate-y-0.5"
           style={{ background: hasPhoto ? "#3a324a" : fallbackBg }}
         >
           {hasPhoto ? (
