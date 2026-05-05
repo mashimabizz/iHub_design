@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 // iter134: ホーム画面のログアウト撤去に伴い logout import 不要
 import { MatchDetailModal } from "./MatchDetailModal";
 import {
@@ -258,6 +258,7 @@ function matchToCard(
 }
 
 type CandidatePriority = 0 | 1 | 2;
+type HomeModeView = "national" | "local";
 
 type WishShelfCandidate = {
   key: string;
@@ -617,6 +618,11 @@ export function HomeView({
    */
   const [needsRevertOnClose, setNeedsRevertOnClose] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [optimisticMode, setOptimisticMode] = useState<HomeModeView | null>(
+    null,
+  );
+  const [modeSwitching, setModeSwitching] = useState(false);
+  const modeSwitchTimerRef = useRef<number | null>(null);
   // iter142: pill toggle で view 切替（DB は触らない）
   const router = useRouter();
 
@@ -630,6 +636,16 @@ export function HomeView({
   }, [autoOpenLocalSheet]);
 
   const isLocal = localMode?.enabled ?? false;
+  const actualViewMode: HomeModeView =
+    isLocal && !isNationalView ? "local" : "national";
+  const visualViewMode = optimisticMode ?? actualViewMode;
+  const nationalModeActive = visualViewMode === "national";
+  const localModeActive = visualViewMode === "local";
+  const showModeSwitchOverlay = modeSwitching || pending;
+  const modeSwitchMessage =
+    visualViewMode === "local"
+      ? "今すぐ現地交換モードに切り替え中…"
+      : "全国交換モードに切り替え中…";
   const settings: LocalModeSettings = localMode ?? {
     enabled: false,
     awId: null,
@@ -640,43 +656,129 @@ export function HomeView({
     lastLng: null,
   };
 
+  function clearModeSwitchTimer() {
+    if (modeSwitchTimerRef.current && typeof window !== "undefined") {
+      window.clearTimeout(modeSwitchTimerRef.current);
+      modeSwitchTimerRef.current = null;
+    }
+  }
+
+  function beginModeSwitch(target: HomeModeView) {
+    clearModeSwitchTimer();
+    setOptimisticMode(target);
+    setModeSwitching(true);
+  }
+
+  function hideModeSwitchOverlay(delayMs = 280) {
+    clearModeSwitchTimer();
+    if (typeof window === "undefined") {
+      setModeSwitching(false);
+      return;
+    }
+    modeSwitchTimerRef.current = window.setTimeout(() => {
+      setModeSwitching(false);
+      modeSwitchTimerRef.current = null;
+    }, delayMs);
+  }
+
+  function cancelModeSwitch() {
+    clearModeSwitchTimer();
+    setOptimisticMode(null);
+    setModeSwitching(false);
+  }
+
+  useEffect(() => {
+    return () => clearModeSwitchTimer();
+  }, []);
+
+  useEffect(() => {
+    if (!optimisticMode || optimisticMode !== actualViewMode || pending) return;
+    const timer = window.setTimeout(() => {
+      setOptimisticMode(null);
+      setModeSwitching(false);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [actualViewMode, optimisticMode, pending]);
+
   /**
    * iter140: AW が既に保存済の状態での即時再 ON
    * - sheet を開かない、GPS も取らない
    * - DB の enabled フラグだけ立てる（iter136 で AW は保持されている）
    */
   function handleQuickReenable() {
+    beginModeSwitch("local");
     startTransition(async () => {
-      await enableLocalMode({});
+      try {
+        const r = await enableLocalMode({});
+        if (r?.error) {
+          cancelModeSwitch();
+          return;
+        }
+        hideModeSwitchOverlay();
+      } catch (error) {
+        cancelModeSwitch();
+        throw error;
+      }
     });
   }
 
   // 現地モード ON 切替時に GPS 取得
   function handleEnableLocal() {
+    beginModeSwitch("local");
     setNeedsRevertOnClose(true); // iter129: apply せずに閉じたら revert
     if (typeof window === "undefined" || !navigator.geolocation) {
       // Geolocation なくても ON にする（fallback として last_lat/lng を維持）
       startTransition(async () => {
-        await enableLocalMode({});
-        setSheetOpen(true);
+        try {
+          const r = await enableLocalMode({});
+          if (r?.error) {
+            cancelModeSwitch();
+            return;
+          }
+          setSheetOpen(true);
+          hideModeSwitchOverlay(120);
+        } catch (error) {
+          cancelModeSwitch();
+          throw error;
+        }
       });
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         startTransition(async () => {
-          await enableLocalMode({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          });
-          setSheetOpen(true);
+          try {
+            const r = await enableLocalMode({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            });
+            if (r?.error) {
+              cancelModeSwitch();
+              return;
+            }
+            setSheetOpen(true);
+            hideModeSwitchOverlay(120);
+          } catch (error) {
+            cancelModeSwitch();
+            throw error;
+          }
         });
       },
       () => {
         // 取得失敗 → 位置情報なしで ON
         startTransition(async () => {
-          await enableLocalMode({});
-          setSheetOpen(true);
+          try {
+            const r = await enableLocalMode({});
+            if (r?.error) {
+              cancelModeSwitch();
+              return;
+            }
+            setSheetOpen(true);
+            hideModeSwitchOverlay(120);
+          } catch (error) {
+            cancelModeSwitch();
+            throw error;
+          }
         });
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60_000 },
@@ -723,21 +825,21 @@ export function HomeView({
     router.push(buildSimpleProposeHref(candidate));
   }
 
-  const nationalModeActive = !isLocal || isNationalView;
-  const localModeActive = isLocal && !isNationalView;
-
   return (
     <main className="relative flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
       {/* iter130: 現地交換モード時の ambient glow（画面縁をふわっと光らせる） */}
       {isLocal && <div aria-hidden="true" className="local-mode-glow" />}
 
       {/* モード切替・適用中のローディングオーバーレイ */}
-      {pending && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-[0_10px_30px_rgba(58,50,74,0.25)]">
-            <span className="block h-5 w-5 animate-spin rounded-full border-[3px] border-[#a695d8] border-t-transparent" />
-            <span className="text-[13px] font-bold text-[#3a324a]">
-              マッチング条件を更新中…
+      {showModeSwitchOverlay && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#fbf9fc]/45 px-5 backdrop-blur-md">
+          <div className="flex min-w-[210px] items-center gap-3 rounded-[22px] border border-white/75 bg-white/82 px-4 py-3 shadow-[0_18px_45px_rgba(58,50,74,0.22)] backdrop-blur-xl">
+            <span className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#a695d81c]">
+              <span className="absolute h-8 w-8 animate-ping rounded-full bg-[#a695d833]" />
+              <span className="relative block h-3.5 w-3.5 rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] shadow-[0_0_14px_rgba(166,149,216,0.55)]" />
+            </span>
+            <span className="min-w-0 text-[13px] font-extrabold leading-snug text-[#3a324a]">
+              {modeSwitchMessage}
             </span>
           </div>
         </div>
@@ -845,11 +947,13 @@ export function HomeView({
           <button
             type="button"
             onClick={() => {
-              if (!isNationalView) {
+              if (actualViewMode !== "national") {
+                beginModeSwitch("national");
                 router.push("/?view=national");
+                hideModeSwitchOverlay();
               }
             }}
-            disabled={pending}
+            disabled={showModeSwitchOverlay}
             className={`relative z-10 rounded-full py-2 text-[12px] font-bold transition-[color,transform] duration-300 active:scale-[0.98] ${
               nationalModeActive ? "text-[#3a324a]" : "text-[#3a324a8c]"
             } disabled:opacity-50`}
@@ -862,7 +966,9 @@ export function HomeView({
               if (isLocal) {
                 if (isNationalView) {
                   // 全国 view を見ていた状態 → 現地 view に戻す
+                  beginModeSwitch("local");
                   router.push("/");
+                  hideModeSwitchOverlay();
                 } else {
                   // 既に現地 view → sheet を開いて設定変更
                   setSheetOpen(true);
@@ -876,7 +982,7 @@ export function HomeView({
                 handleEnableLocal();
               }
             }}
-            disabled={pending}
+            disabled={showModeSwitchOverlay}
             className={`relative z-10 rounded-full py-2 text-[12px] font-bold transition-[color,transform] duration-300 active:scale-[0.98] ${
               localModeActive ? "text-[#3a324a]" : "text-[#3a324a8c]"
             } disabled:opacity-50`}
@@ -942,8 +1048,19 @@ export function HomeView({
           setSheetOpen(false);
           if (needsRevertOnClose) {
             // 適用せずに閉じた → 全国モードに戻す
+            beginModeSwitch("national");
             startTransition(async () => {
-              await disableLocalMode();
+              try {
+                const r = await disableLocalMode();
+                if (r?.error) {
+                  cancelModeSwitch();
+                  return;
+                }
+                hideModeSwitchOverlay();
+              } catch (error) {
+                cancelModeSwitch();
+                throw error;
+              }
             });
           }
           setNeedsRevertOnClose(false);
@@ -964,8 +1081,19 @@ export function HomeView({
           onConfirm={() => {
             setShowOffConfirm(false);
             // iter142: 真の OFF（DB enabled=false）+ ?view=national を外す
+            beginModeSwitch("national");
             startTransition(async () => {
-              await disableLocalMode();
+              try {
+                const r = await disableLocalMode();
+                if (r?.error) {
+                  cancelModeSwitch();
+                  return;
+                }
+                hideModeSwitchOverlay();
+              } catch (error) {
+                cancelModeSwitch();
+                throw error;
+              }
               if (isNationalView) {
                 router.push("/");
               }
