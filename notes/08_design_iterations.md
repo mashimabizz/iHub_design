@@ -4,6 +4,79 @@
 
 ---
 
+## イテレーション154：列数切替と追加導線を丸型FABへ整理
+
+### 背景・問題意識
+
+オーナーから、ホーム候補カードの枠が「双方の個別募集が合致 → 一方の個別募集が合致 → 通常の譲×Wish合致」の優先度順に派手になる設計になっているか確認があった。
+
+また、マイ在庫と Wish はヘッダー右上から 3列 / 4列 / 5列に切り替えられるようにし、Wish と個別募集の追加導線は右上テキストボタンではなく、画面右下の固定丸型 `+` アイコンへ移したいという指示があった。
+
+### 変更内容
+
+#### `web/src/components/home/HomeView.tsx`
+- ホーム候補カードの優先度枠を再調整。
+- `priority=0`（双方の個別募集が合致）を最も強い lavender/pink ring + glow にした。
+- `priority=1`（一方の個別募集が合致）は中程度の sky/lavender 枠にした。
+- `priority=2`（通常の譲 × Wish 合致）は薄い標準枠に抑えた。
+
+#### `web/src/components/common/ColumnCountButton.tsx`
+- 3 / 4 / 5 列を循環切替する小型グリッドアイコンを追加。
+- 現在の列数を右上の小さな数値バッジで表示。
+
+#### `web/src/components/common/FloatingAddButton.tsx`
+- 画面右下に固定表示する丸型 `+` の追加ボタンを共通化。
+
+#### `web/src/app/inventory/InventoryView.tsx`
+- ヘッダー右上に列数切替アイコンを追加。
+- マイ在庫の各サブタブのカードグリッドを 3 / 4 / 5 列で切替可能にした。
+
+#### `web/src/app/wishes/WishView.tsx`
+- Wish タブのヘッダー右上に列数切替アイコンを追加。
+- Wish のカードグリッドを 3 / 4 / 5 列で切替可能にした。
+- 右上の「wish を追加」ボタンとグリッド内の追加カードを撤去し、右下固定の丸型 `+` へ集約。
+- 個別募集タブ表示中は同じ丸型 `+` が `/listings/new` へ遷移するようにした。
+
+#### `web/src/app/listings/page.tsx`
+- 個別募集一覧の右上「募集を追加」テキストボタンを撤去。
+- 右下固定の丸型 `+` から個別募集追加へ進むようにした。
+
+### 影響範囲
+
+- `/` ホーム / マッチング画面の候補カード枠
+- `/inventory` マイ在庫のカード列数
+- `/wishes` Wish タブのカード列数と追加導線
+- `/wishes` 内の個別募集タブの追加導線
+- `/listings` 個別募集一覧の追加導線
+
+### 確認方法
+
+- `npx eslint src/components/common/ColumnCountButton.tsx src/components/common/FloatingAddButton.tsx src/components/home/HomeView.tsx src/app/inventory/InventoryView.tsx src/app/wishes/WishView.tsx src/app/listings/page.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/home/HomeView.tsx`
+- `web/src/components/common/ColumnCountButton.tsx`
+- `web/src/components/common/FloatingAddButton.tsx`
+- `web/src/app/inventory/InventoryView.tsx`
+- `web/src/app/wishes/WishView.tsx`
+- `web/src/app/listings/page.tsx`
+
+### セルフレビュー結果
+
+- ✅ ホーム候補カードは双方個別募集 > 一方個別募集 > 通常合致の順で枠が派手になる
+- ✅ マイ在庫に 3 / 4 / 5 列切替アイコンを追加
+- ✅ Wish に 3 / 4 / 5 列切替アイコンを追加
+- ✅ Wish の追加導線を右下固定の丸型 `+` に集約
+- ✅ 個別募集一覧 / Wish 内の個別募集タブも右下固定の丸型 `+` に統一
+- ✅ `notes/09_state_machines.md` は状態変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 ESLint / build 成功
+
+---
+
 ## イテレーション153：市場残数と個別募集の在庫整合を追加
 
 ### 背景・問題意識

@@ -7,6 +7,10 @@ import { flushSync } from "react-dom";
 import { deleteInventoryItem, updateInventoryStatus } from "./actions";
 import { AddCard, ItemCard, type ItemCardData } from "./ItemCard";
 import { BottomNav } from "@/components/home/BottomNav";
+import {
+  ColumnCountButton,
+  type ColumnCount,
+} from "@/components/common/ColumnCountButton";
 
 export type InventoryItemFull = ItemCardData & {
   status: "active" | "keep" | "traded" | "reserved" | "archived";
@@ -22,6 +26,11 @@ const SUB_TABS: { id: SubTab; label: string; color: string }[] = [
 ];
 
 const SUB_IDS: SubTab[] = ["active", "keep", "traded"];
+const GRID_CLASS_BY_COLUMNS: Record<ColumnCount, string> = {
+  3: "grid-cols-3 gap-2.5",
+  4: "grid-cols-4 gap-2",
+  5: "grid-cols-5 gap-1.5",
+};
 
 export function InventoryView({
   items,
@@ -30,6 +39,7 @@ export function InventoryView({
 }) {
   const router = useRouter();
   const [sub, setSub] = useState<SubTab>("active");
+  const [columnCount, setColumnCount] = useState<ColumnCount>(3);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // iter98: フィルタを実データ駆動に。
@@ -122,6 +132,10 @@ export function InventoryView({
             マイ在庫
           </h1>
           <div className="relative flex gap-1.5">
+            <ColumnCountButton
+              value={columnCount}
+              onChange={setColumnCount}
+            />
             <IconButton ariaLabel="フィルタ">
               <svg
                 width="14"
@@ -223,6 +237,7 @@ export function InventoryView({
             subId={subId}
             items={itemsBySub[subId]}
             router={router}
+            columnCount={columnCount}
           />
         ))}
       </div>
@@ -274,10 +289,12 @@ function SubPanel({
   subId,
   items,
   router,
+  columnCount,
 }: {
   subId: SubTab;
   items: InventoryItemFull[];
   router: ReturnType<typeof useRouter>;
+  columnCount: ColumnCount;
 }) {
   const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
   const [confirmTarget, setConfirmTarget] =
@@ -366,7 +383,7 @@ function SubPanel({
       )}
 
       {/* グリッド（iter147: 各パネルがスタガーで pop-in） */}
-      <div className="grid grid-cols-3 gap-2.5">
+      <div className={`grid ${GRID_CLASS_BY_COLUMNS[columnCount]}`}>
         {subId === "active" && (
           <div
             className="animate-panel-pop"

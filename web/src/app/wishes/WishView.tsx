@@ -11,12 +11,16 @@
  * - 「マッチ X件 検出中」バナーは廃止（ノイズになっていた）
  */
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { flushSync } from "react-dom";
 import { deleteWishItem } from "./actions";
 import { ListingsView, type ListingItem } from "../listings/ListingsView";
+import {
+  ColumnCountButton,
+  type ColumnCount,
+} from "@/components/common/ColumnCountButton";
+import { FloatingAddButton } from "@/components/common/FloatingAddButton";
 
 export type WishLink = {
   listingId: string;
@@ -45,6 +49,11 @@ export type WishItem = {
 
 type Tab = "wish" | "listings";
 const TAB_IDS: Tab[] = ["wish", "listings"];
+const GRID_CLASS_BY_COLUMNS: Record<ColumnCount, string> = {
+  3: "grid-cols-3 gap-2.5",
+  4: "grid-cols-4 gap-2",
+  5: "grid-cols-5 gap-1.5",
+};
 
 export function WishView({
   wishItems,
@@ -54,6 +63,7 @@ export function WishView({
   listingItems: ListingItem[];
 }) {
   const [tab, setTab] = useState<Tab>("wish");
+  const [columnCount, setColumnCount] = useState<ColumnCount>(3);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // スワイプ位置 → タブ同期（debounce 付き）
@@ -96,22 +106,11 @@ export function WishView({
           <h1 className="text-[19px] font-extrabold tracking-wide text-gray-900">
             ウィッシュ
           </h1>
-          {tab === "wish" ? (
-            <Link
-              href="/wishes/new"
-              className="flex h-9 items-center gap-1.5 rounded-full bg-[#a695d8] px-3.5 text-[11px] font-bold text-white transition-all duration-150 active:scale-[0.97]"
-            >
-              <PlusIcon />
-              wish を追加
-            </Link>
-          ) : (
-            <Link
-              href="/listings/new"
-              className="flex h-9 items-center gap-1.5 rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3.5 text-[11px] font-bold text-white shadow-[0_4px_10px_rgba(166,149,216,0.31)] transition-all duration-150 active:scale-[0.97]"
-            >
-              <PlusIcon />
-              募集を追加
-            </Link>
+          {tab === "wish" && (
+            <ColumnCountButton
+              value={columnCount}
+              onChange={setColumnCount}
+            />
           )}
         </div>
       </div>
@@ -142,9 +141,13 @@ export function WishView({
         className="mx-auto flex w-full max-w-md flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: "none" }}
       >
-        <WishPanel items={wishItems} />
+        <WishPanel items={wishItems} columnCount={columnCount} />
         <ListingsPanel items={listingItems} />
       </div>
+      <FloatingAddButton
+        href={tab === "wish" ? "/wishes/new" : "/listings/new"}
+        label={tab === "wish" ? "wish を追加" : "個別募集を追加"}
+      />
     </main>
   );
 }
@@ -194,19 +197,23 @@ function TabButton({
 
 /* ─── Tab 1: WISH パネル一覧 ───────────────────────────── */
 
-function WishPanel({ items }: { items: WishItem[] }) {
+function WishPanel({
+  items,
+  columnCount,
+}: {
+  items: WishItem[];
+  columnCount: ColumnCount;
+}) {
   const router = useRouter();
   /**
    * iter150: 削除を「ローカル先行 + サーバー後追い」にして、
    * パネルの fade-out → 他パネルの reflow までスムーズに動かす。
-   * - localItems: 表示中のリスト（props と同期）
+   * - removedIds: 画面上だけ先に消した ID
    * - confirmTarget: 確認モーダル表示中のアイテム
    * - deletingId: フェードアウト中のアイテム ID
    */
-  const [localItems, setLocalItems] = useState(items);
-  useEffect(() => {
-    setLocalItems(items);
-  }, [items]);
+  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
+  const visibleItems = items.filter((item) => !removedIds.has(item.id));
   const [confirmTarget, setConfirmTarget] = useState<WishItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -224,7 +231,11 @@ function WishPanel({ items }: { items: WishItem[] }) {
     // Stage 2: View Transitions API で他パネルの reflow を滑らかに
     const update = () => {
       flushSync(() => {
-        setLocalItems((prev) => prev.filter((w) => w.id !== item.id));
+        setRemovedIds((prev) => {
+          const next = new Set(prev);
+          next.add(item.id);
+          return next;
+        });
         setDeletingId(null);
       });
     };
@@ -251,8 +262,11 @@ function WishPanel({ items }: { items: WishItem[] }) {
     const r = await deleteWishItem(item.id);
     if (r?.error) {
       alert(r.error);
-      // ロールバック：props から復元
-      setLocalItems(items);
+      setRemovedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
     } else {
       // 念のため最新データを取り直す（画像有無など他画面と整合）
       router.refresh();
@@ -261,30 +275,20 @@ function WishPanel({ items }: { items: WishItem[] }) {
 
   return (
     <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pb-4 pt-3">
-      {localItems.length === 0 ? (
+      {visibleItems.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-gray-500">
           まだ wish がありません
-          <br />
-          <Link
-            href="/wishes/new"
-            className="mt-2 inline-block font-bold text-[#a695d8]"
-          >
-            + 探したいグッズを登録
-          </Link>
         </div>
       ) : (
         // iter147: 各パネルがスタガーで pop-in
-        <div className="grid grid-cols-3 gap-2.5">
-          <div className="animate-panel-pop" style={{ animationDelay: "0ms" }}>
-            <AddCard href="/wishes/new" />
-          </div>
-          {localItems.map((w, i) => (
+        <div className={`grid ${GRID_CLASS_BY_COLUMNS[columnCount]}`}>
+          {visibleItems.map((w, i) => (
             <div
               key={w.id}
               className={`animate-panel-pop ${
                 deletingId === w.id ? "animate-fade-out-back" : ""
               }`}
-              style={{ animationDelay: `${(i + 1) * 45}ms` }}
+              style={{ animationDelay: `${i * 45}ms` }}
             >
               <WishCardWrapper
                 item={w}
@@ -565,44 +569,5 @@ function WishCard({ item }: { item: WishItem }) {
         )}
       </div>
     </div>
-  );
-}
-
-function AddCard({ href }: { href: string }) {
-  return (
-    <a
-      href={href}
-      className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-[#a695d888] bg-white text-[#a695d8] transition-all duration-150 active:scale-[0.97]"
-      style={{ aspectRatio: "3 / 4" }}
-    >
-      <svg
-        width="28"
-        height="28"
-        viewBox="0 0 28 28"
-        fill="none"
-        stroke="#a695d8"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      >
-        <path d="M14 4v20M4 14h20" />
-      </svg>
-      <span className="text-[10px] font-bold tracking-wide">追加</span>
-    </a>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 11 11"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-    >
-      <path d="M5.5 1v9M1 5.5h9" />
-    </svg>
   );
 }

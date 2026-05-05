@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BottomNav } from "@/components/home/BottomNav";
+import { FloatingAddButton } from "@/components/common/FloatingAddButton";
 import {
   ListingsView,
   type ListingItem,
@@ -75,7 +75,7 @@ export default async function ListingsPage() {
   const listingIds = listingRows.map((r) => r.id);
 
   // options を bulk fetch
-  let optsByListing = new Map<string, OptionRow[]>();
+  const optsByListing = new Map<string, OptionRow[]>();
   if (listingIds.length > 0) {
     const { data: optRows } = await supabase
       .from("listing_wish_options")
@@ -231,29 +231,13 @@ export default async function ListingsPage() {
                 譲 1 バンドル × 求 複数選択肢でピンポイント募集
               </div>
             </div>
-            <Link
-              href="/listings/new"
-              className="inline-flex items-center gap-[5px] rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-[14px] py-2 text-[12px] font-bold text-white shadow-[0_4px_10px_rgba(166,149,216,0.31)] transition-all duration-150 active:scale-[0.97]"
-            >
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 11 11"
-                fill="none"
-                stroke="#fff"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              >
-                <path d="M5.5 1v9M1 5.5h9" />
-              </svg>
-              募集を追加
-            </Link>
           </div>
         </div>
 
         <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-4 pt-4">
           <ListingsView items={items} />
         </div>
+        <FloatingAddButton href="/listings/new" label="個別募集を追加" />
       </main>
       <BottomNav />
     </>

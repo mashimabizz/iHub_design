@@ -301,12 +301,12 @@ function truncateTagLabel(value: string, max: number): string {
 
 function getPriorityFrameClass(priority: CandidatePriority): string {
   if (priority === 0) {
-    return "border border-[#a695d8]/85 ring-2 ring-[#f3c5d4]/45 shadow-[7px_9px_22px_rgba(166,149,216,0.24)]";
+    return "border-2 border-[#a695d8] ring-2 ring-[#f3c5d4]/70 shadow-[0_0_0_1px_rgba(255,255,255,0.84),7px_9px_24px_rgba(166,149,216,0.30),0_0_20px_rgba(243,197,212,0.32)]";
   }
   if (priority === 1) {
-    return "border border-[#a8d4e6]/85 ring-1 ring-[#a8d4e6]/55 shadow-[7px_9px_20px_rgba(92,141,168,0.18)]";
+    return "border-[1.5px] border-[#a8d4e6] ring-1 ring-[#a695d8]/35 shadow-[7px_9px_20px_rgba(92,141,168,0.20)]";
   }
-  return "border border-[#f3c5d4]/55 shadow-[7px_9px_18px_rgba(58,50,74,0.14)]";
+  return "border border-[#3a324a14] shadow-[7px_9px_18px_rgba(58,50,74,0.13)]";
 }
 
 function buildTagScoreByInvId(
