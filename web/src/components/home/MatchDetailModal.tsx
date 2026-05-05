@@ -21,7 +21,14 @@
  *   （propose page.tsx 側で candidates の prefill を実装する）
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import type {
   MatchCardListingInfo,
@@ -31,6 +38,14 @@ import type {
 
 const HAVE_THUMB = 56;
 const CAND_THUMB = 56;
+const SWIPE_AXIS_LOCK_PX = 8;
+const SWIPE_DISTANCE_MIN_PX = 72;
+const SWIPE_DISTANCE_RATIO = 0.24;
+const SWIPE_DISTANCE_MAX_PX = 118;
+const SWIPE_FAST_DISTANCE_PX = 42;
+const SWIPE_VELOCITY_PX_PER_MS = 0.48;
+const SWIPE_RESISTANCE = 0.22;
+const SWIPE_SETTLE_MS = 220;
 
 /**
  * 選択状態（iter109: 複数 listing 跨ぎに対応）
@@ -52,6 +67,16 @@ type PopupTarget = {
   fallbackHavePhoto: string | null;
   /** fallback 用：listing.haves の最初の item label（ラベル表示用） */
   fallbackHaveLabel: string;
+};
+
+type SwipeGesture = {
+  startX: number;
+  startY: number;
+  previousX: number;
+  previousTime: number;
+  lastX: number;
+  lastTime: number;
+  axis: "undecided" | "horizontal" | "vertical";
 };
 
 export function MatchDetailModal({
@@ -119,14 +144,27 @@ export function MatchDetailModal({
     { listingLabel: string; reasons: string[] }[] | null
   >(null);
   const router = useRouter();
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-  const suppressClickRef = useRef(false);
   const simpleReceiveItems = simpleReceives ?? [];
   const simpleGiveItems = simpleGives ?? [];
   const hasListingRelation = myListings.length > 0 || partnerListings.length > 0;
   const hasSimpleRelation =
     !hasListingRelation &&
     (simpleReceiveItems.length > 0 || simpleGiveItems.length > 0);
+  const detailShellRef = useRef<HTMLDivElement | null>(null);
+  const touchStartRef = useRef<SwipeGesture | null>(null);
+  const suppressClickRef = useRef(false);
+  const swipeSettleTimerRef = useRef<number | null>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isSwipeDragging, setIsSwipeDragging] = useState(false);
+  const [isSwipeSettling, setIsSwipeSettling] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (swipeSettleTimerRef.current) {
+        window.clearTimeout(swipeSettleTimerRef.current);
+      }
+    };
+  }, []);
 
   /**
    * iter121: OR 条件の haves でどれを選ぶか（listingId → 選択中 inv id Set）
@@ -504,36 +542,145 @@ export function MatchDetailModal({
     );
   }
 
+  function clearSwipeSettleTimer() {
+    if (!swipeSettleTimerRef.current) return;
+    window.clearTimeout(swipeSettleTimerRef.current);
+    swipeSettleTimerRef.current = null;
+  }
+
+  function settleSwipeBack() {
+    setIsSwipeDragging(false);
+    setIsSwipeSettling(true);
+    setDragOffset(0);
+    clearSwipeSettleTimer();
+    swipeSettleTimerRef.current = window.setTimeout(() => {
+      setIsSwipeSettling(false);
+      swipeSettleTimerRef.current = null;
+    }, SWIPE_SETTLE_MS);
+  }
+
+  function getSwipeWidth() {
+    return (
+      detailShellRef.current?.clientWidth ||
+      (typeof window !== "undefined" ? window.innerWidth : 390)
+    );
+  }
+
   function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
-    if (popupTarget || e.touches.length !== 1 || shouldIgnoreSwipe(e.target)) {
+    if (
+      popupTarget ||
+      validationAlert ||
+      e.touches.length !== 1 ||
+      shouldIgnoreSwipe(e.target)
+    ) {
       touchStartRef.current = null;
       return;
     }
     const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    const now = performance.now();
+    clearSwipeSettleTimer();
+    touchStartRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      previousX: touch.clientX,
+      previousTime: now,
+      lastX: touch.clientX,
+      lastTime: now,
+      axis: "undecided",
+    };
+    setIsSwipeSettling(false);
+  }
+
+  function handleTouchMove(e: React.TouchEvent<HTMLDivElement>) {
+    const gesture = touchStartRef.current;
+    if (!gesture || e.touches.length !== 1) return;
+
+    const touch = e.touches[0];
+    const dx = touch.clientX - gesture.startX;
+    const dy = touch.clientY - gesture.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+
+    if (gesture.axis === "undecided") {
+      if (absX < SWIPE_AXIS_LOCK_PX && absY < SWIPE_AXIS_LOCK_PX) return;
+      if (absX > absY * 1.08 && (canNavigatePrev || canNavigateNext)) {
+        gesture.axis = "horizontal";
+        setIsSwipeDragging(true);
+      } else if (absY >= absX) {
+        gesture.axis = "vertical";
+        setIsSwipeDragging(false);
+        return;
+      }
+    }
+
+    if (gesture.axis !== "horizontal") return;
+
+    e.preventDefault();
+    const canMove = dx < 0 ? canNavigateNext : canNavigatePrev;
+    const width = getSwipeWidth();
+    const rawOffset = canMove ? dx : dx * SWIPE_RESISTANCE;
+    const nextOffset = Math.max(-width, Math.min(width, rawOffset));
+    const now = performance.now();
+    gesture.previousX = gesture.lastX;
+    gesture.previousTime = gesture.lastTime;
+    gesture.lastX = touch.clientX;
+    gesture.lastTime = now;
+    setDragOffset(nextOffset);
   }
 
   function handleTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
-    const start = touchStartRef.current;
+    const gesture = touchStartRef.current;
     touchStartRef.current = null;
-    if (!start || e.changedTouches.length === 0) return;
+    if (!gesture || e.changedTouches.length === 0) return;
+    if (gesture.axis !== "horizontal") {
+      setIsSwipeDragging(false);
+      if (dragOffset !== 0) settleSwipeBack();
+      return;
+    }
+
     const touch = e.changedTouches[0];
-    const dx = touch.clientX - start.x;
-    const dy = touch.clientY - start.y;
+    const dx = touch.clientX - gesture.startX;
+    const dy = touch.clientY - gesture.startY;
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
-    if (absX < 64 || absX < absY * 1.25) return;
+    const width = getSwipeWidth();
+    const threshold = Math.min(
+      SWIPE_DISTANCE_MAX_PX,
+      Math.max(SWIPE_DISTANCE_MIN_PX, width * SWIPE_DISTANCE_RATIO),
+    );
+    const recentTime = Math.max(1, performance.now() - gesture.previousTime);
+    const velocity = (touch.clientX - gesture.previousX) / recentTime;
+    const wantsNext = dx < 0;
+    const canCommit = wantsNext ? canNavigateNext : canNavigatePrev;
+    const navigate = wantsNext ? onNavigateNext : onNavigatePrev;
+    const fastEnough =
+      absX >= SWIPE_FAST_DISTANCE_PX &&
+      Math.abs(velocity) >= SWIPE_VELOCITY_PX_PER_MS;
+    const farEnough = absX >= threshold && absX >= absY * 1.12;
 
-    if (dx < 0 && canNavigateNext && onNavigateNext) {
+    if (canCommit && navigate && (farEnough || fastEnough)) {
       suppressClickRef.current = true;
-      onNavigateNext();
-    } else if (dx > 0 && canNavigatePrev && onNavigatePrev) {
-      suppressClickRef.current = true;
-      onNavigatePrev();
+      setIsSwipeDragging(false);
+      setIsSwipeSettling(true);
+      setDragOffset(wantsNext ? -width : width);
+      clearSwipeSettleTimer();
+      swipeSettleTimerRef.current = window.setTimeout(() => {
+        swipeSettleTimerRef.current = null;
+        navigate();
+      }, SWIPE_SETTLE_MS);
+    } else {
+      settleSwipeBack();
     }
     window.setTimeout(() => {
       suppressClickRef.current = false;
-    }, 220);
+    }, SWIPE_SETTLE_MS + 80);
+  }
+
+  function handleTouchCancel() {
+    touchStartRef.current = null;
+    if (isSwipeDragging || Math.abs(dragOffset) > 0.5) {
+      settleSwipeBack();
+    }
   }
 
   function handleClickCapture(e: React.MouseEvent<HTMLDivElement>) {
@@ -543,17 +690,36 @@ export function MatchDetailModal({
     suppressClickRef.current = false;
   }
 
+  const isSwipeMotionActive =
+    isSwipeDragging || isSwipeSettling || Math.abs(dragOffset) > 0.5;
+  const swipeStyle: CSSProperties = {
+    touchAction: "pan-y",
+    ...(isSwipeMotionActive
+      ? {
+          transform: `translate3d(${dragOffset}px, 0, 0)`,
+          transition: isSwipeDragging
+            ? "none"
+            : `transform ${SWIPE_SETTLE_MS}ms cubic-bezier(0.2, 0.82, 0.2, 1)`,
+        }
+      : {}),
+  };
+
   return (
-    <div
-      className={`fixed inset-0 z-[100] flex flex-col bg-[#fbf9fc] ${
-        slideDirection === "from-left"
-          ? "animate-match-detail-slide-in-from-left"
-          : "animate-match-detail-slide-in"
-      }`}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      onClickCapture={handleClickCapture}
-    >
+    <div className="fixed inset-0 z-[100] overflow-hidden bg-[#fbf9fc]">
+      <div
+        ref={detailShellRef}
+        className={`flex h-full flex-col bg-[#fbf9fc] ${
+          slideDirection === "from-left"
+            ? "animate-match-detail-slide-in-from-left"
+            : "animate-match-detail-slide-in"
+        }`}
+        style={swipeStyle}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+        onClickCapture={handleClickCapture}
+      >
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
         <button
           type="button"
@@ -733,6 +899,7 @@ export function MatchDetailModal({
           onClose={() => setPopupTarget(null)}
         />
       )}
+      </div>
     </div>
   );
 }
