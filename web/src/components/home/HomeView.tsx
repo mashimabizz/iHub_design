@@ -723,6 +723,9 @@ export function HomeView({
     router.push(buildSimpleProposeHref(candidate));
   }
 
+  const nationalModeActive = !isLocal || isNationalView;
+  const localModeActive = isLocal && !isNationalView;
+
   return (
     <main className="relative flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
       {/* iter130: 現地交換モード時の ambient glow（画面縁をふわっと光らせる） */}
@@ -832,7 +835,13 @@ export function HomeView({
             - 現地：?view=national を外して AW フィルタを戻す
             真の OFF（DB 切替）は、上の chip タップ（確認ダイアログ）or 時間切れの 2 通りだけ。
             初回セットアップ時のみ handleEnableLocal で sheet を開く。 */}
-        <div className="mx-5 mt-2 flex gap-1 rounded-full bg-[#3a324a0a] p-1">
+        <div className="relative mx-5 mt-2 grid grid-cols-2 overflow-hidden rounded-full border border-white/80 bg-[#3a324a0a] p-1 shadow-[inset_0_1px_2px_rgba(58,50,74,0.08)]">
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-full bg-white shadow-[0_5px_16px_rgba(58,50,74,0.16),inset_0_0_0_1px_rgba(255,255,255,0.88)] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+              localModeActive ? "translate-x-full" : "translate-x-0"
+            }`}
+          />
           <button
             type="button"
             onClick={() => {
@@ -841,10 +850,8 @@ export function HomeView({
               }
             }}
             disabled={pending}
-            className={`flex-1 rounded-full py-2 text-[12px] font-bold transition-all ${
-              !isLocal || isNationalView
-                ? "bg-white text-[#3a324a] shadow-[0_2px_6px_rgba(58,50,74,0.12)]"
-                : "bg-transparent text-[#3a324a8c]"
+            className={`relative z-10 rounded-full py-2 text-[12px] font-bold transition-[color,transform] duration-300 active:scale-[0.98] ${
+              nationalModeActive ? "text-[#3a324a]" : "text-[#3a324a8c]"
             } disabled:opacity-50`}
           >
             🌐 全国交換モード
@@ -870,10 +877,8 @@ export function HomeView({
               }
             }}
             disabled={pending}
-            className={`flex-1 rounded-full py-2 text-[12px] font-bold transition-all ${
-              isLocal && !isNationalView
-                ? "bg-white text-[#3a324a] shadow-[0_2px_6px_rgba(58,50,74,0.12)]"
-                : "bg-transparent text-[#3a324a8c]"
+            className={`relative z-10 rounded-full py-2 text-[12px] font-bold transition-[color,transform] duration-300 active:scale-[0.98] ${
+              localModeActive ? "text-[#3a324a]" : "text-[#3a324a8c]"
             } disabled:opacity-50`}
           >
             📍 今すぐ現地交換モード

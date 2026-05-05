@@ -4,6 +4,48 @@
 
 ---
 
+## イテレーション154.8：ホームのモード切替をiOS風に調整
+
+### 背景・問題意識
+
+オーナーから、ホーム画面の「全国交換モード」と「今すぐ現地交換モード」の切り替え時に、ボタンがふわっと切り替わってほしいという要望があった。
+
+現在は各ボタン自身の背景が切り替わるだけで硬く見えるため、iOS の segmented control のように、選択中の白いピルが滑って移動する見え方に寄せる。
+
+### 変更内容
+
+#### `web/src/components/home/HomeView.tsx`
+- モード切替を `flex` ボタン背景切替から、`grid` + 背面の白い選択ピル方式へ変更。
+- 選択中ピルに `cubic-bezier(0.22,1,0.36,1)` の transition を付け、全国/現地の切替時にふわっと横移動するようにした。
+- ボタン自体はテキスト色と軽い active scale のみにし、背景の切替感をピルの移動へ集約。
+- `prefers-reduced-motion` では transition を止める `motion-reduce:transition-none` を付与。
+
+### 影響範囲
+
+- `/` ホーム / マッチング画面
+- 全国交換モード / 今すぐ現地交換モードの切り替え UI
+
+### 確認方法
+
+- `npx eslint src/components/home/HomeView.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/home/HomeView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 選択中の白いピルが左右に滑る iOS 風 segmented control に変更
+- ✅ テキスト色の切り替えもスムーズに調整
+- ✅ `prefers-reduced-motion` に配慮
+- ✅ `notes/09_state_machines.md` は状態変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 ESLint / build 成功
+
+---
+
 ## イテレーション154.7：ホーム見出しと現地交換時間設定を調整
 
 ### 背景・問題意識
