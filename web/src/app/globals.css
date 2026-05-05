@@ -226,6 +226,77 @@ body {
 }
 
 /*
+ * iter152.7: ホーム候補棚専用の控えめな現地エフェクト。
+ * 行スクロールの内側で自然に消えるように、炎粒ではなく淡い外光に寄せる。
+ */
+@keyframes homeShelfLocalAura {
+  0%, 100% {
+    opacity: 0.26;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.42;
+    transform: scale(1.015);
+  }
+}
+
+.home-shelf-row-scroll {
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.home-shelf-local-aura {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+  background: transparent;
+}
+
+.home-shelf-local-aura::before {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  z-index: -2;
+  border-radius: 30px;
+  background:
+    radial-gradient(60% 48% at 50% 0%, rgba(166, 149, 216, 0.42), transparent 72%),
+    radial-gradient(56% 42% at 100% 48%, rgba(126, 91, 214, 0.22), transparent 75%),
+    radial-gradient(64% 44% at 0% 58%, rgba(243, 197, 212, 0.20), transparent 78%),
+    radial-gradient(70% 48% at 50% 100%, rgba(168, 212, 230, 0.16), transparent 76%);
+  filter: blur(12px);
+  opacity: 0.34;
+  animation: homeShelfLocalAura 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.home-shelf-local-aura::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: 20px;
+  border: 1px solid rgba(166, 149, 216, 0.38);
+  box-shadow:
+    0 0 13px rgba(166, 149, 216, 0.26),
+    0 0 24px rgba(126, 91, 214, 0.16);
+  pointer-events: none;
+}
+
+.home-shelf-local-aura .match-card-inner {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-shelf-local-aura::before {
+    animation: none;
+  }
+}
+
+/*
  * iter147: グッズパネルの登場アニメーション
  *
  * 「奥から手前にぐわっときて、一度ふわっと拡大して、適切なサイズに落ち着く」

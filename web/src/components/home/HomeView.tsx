@@ -265,6 +265,7 @@ type WishShelfCandidate = {
   item: MiniItem;
   priority: CandidatePriority;
   tagScore: number;
+  tagLabels: string[];
   local: boolean;
 };
 
@@ -290,6 +291,22 @@ function truncateByChars(value: string, max: number): string {
   const chars = Array.from(value);
   if (chars.length <= max) return value;
   return `${chars.slice(0, max).join("")}…`;
+}
+
+function truncateTagLabel(value: string, max: number): string {
+  const chars = Array.from(value);
+  if (chars.length <= max) return value;
+  return `${chars.slice(0, max).join("")}...`;
+}
+
+function getPriorityFrameClass(priority: CandidatePriority): string {
+  if (priority === 0) {
+    return "border border-[#a695d8]/85 ring-2 ring-[#f3c5d4]/45 shadow-[7px_9px_22px_rgba(166,149,216,0.24)]";
+  }
+  if (priority === 1) {
+    return "border border-[#a8d4e6]/85 ring-1 ring-[#a8d4e6]/55 shadow-[7px_9px_20px_rgba(92,141,168,0.18)]";
+  }
+  return "border border-[#f3c5d4]/55 shadow-[7px_9px_18px_rgba(58,50,74,0.14)]";
 }
 
 function buildTagScoreByInvId(
@@ -321,6 +338,7 @@ function buildTagScoreByInvId(
 function buildWishShelves(
   cards: MatchCardData[],
   tagScoreByInvId: Map<string, number>,
+  tagLabelsByInvId: Record<string, string[]>,
 ): WishShelfRow[] {
   const sortedCards = [...cards].sort((a, b) => {
     const byPriority = getCandidatePriority(a) - getCandidatePriority(b);
@@ -343,6 +361,7 @@ function buildWishShelves(
       const goodsTypeName = item.goodsTypeName ?? "グッズ";
       const rowKey = `${item.label}::${goodsTypeName}`;
       const tagScore = tagScoreByInvId.get(item.id) ?? 0;
+      const tagLabels = tagLabelsByInvId[item.id] ?? [];
       let row = rows.get(rowKey);
       if (!row) {
         row = {
@@ -364,6 +383,7 @@ function buildWishShelves(
         item,
         priority,
         tagScore,
+        tagLabels,
         local,
       });
       row.bestPriority = Math.min(row.bestPriority, priority) as CandidatePriority;
@@ -411,6 +431,7 @@ export function HomeView({
   partnersWishes,
   myInventoryQty,
   tagsByInvId,
+  tagLabelsByInvId,
   unreadNotificationCount = 0,
   isNationalView = false,
 }: {
@@ -433,6 +454,8 @@ export function HomeView({
   myInventoryQty: Record<string, number>;
   /** iter114: inventory_id → tag_id[]（候補のタグ類似度ソート用） */
   tagsByInvId: Record<string, string[]>;
+  /** iter152.7: inventory_id → tag label[]（ホーム候補カードのタグ表示用） */
+  tagLabelsByInvId: Record<string, string[]>;
   /** iter92: 通知の未読数（ホームヘッダーのベルバッジ用） */
   unreadNotificationCount?: number;
   /** iter142: ?view=national の URL flag。現地モード ON でも全国一覧を表示 */
@@ -471,8 +494,8 @@ export function HomeView({
     [partnersInventory, myWishes, tagsByInvId],
   );
   const wishShelves = useMemo(
-    () => buildWishShelves(allCards, tagScoreByInvId),
-    [allCards, tagScoreByInvId],
+    () => buildWishShelves(allCards, tagScoreByInvId, tagLabelsByInvId),
+    [allCards, tagScoreByInvId, tagLabelsByInvId],
   );
 
   // 現地モード state（DB から取得した初期値）
@@ -859,7 +882,7 @@ function WishShelfRowView({
         </span>
       </div>
 
-      <div className="-mx-5 mt-1 flex gap-3 overflow-x-auto px-5 pb-2 pt-1.5 [&::-webkit-scrollbar]:hidden">
+      <div className="home-shelf-row-scroll -mx-5 mt-1 flex gap-3 overflow-x-auto px-5 pb-4 pt-3 [&::-webkit-scrollbar]:hidden">
         {row.candidates.map((candidate, idx) => (
           <WishShelfTile
             key={candidate.key}
@@ -884,6 +907,9 @@ function WishShelfTile({
 }) {
   const item = candidate.item;
   const hasPhoto = !!item.photoUrl;
+  const tagLabel = candidate.tagLabels[0]
+    ? truncateTagLabel(candidate.tagLabels[0], 8)
+    : null;
   const fallbackBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 78%) 6px 12px)`;
 
   return (
@@ -897,19 +923,12 @@ function WishShelfTile({
       <div
         className={
           candidate.local
-            ? "match-card-local-aura rounded-[16px]"
+            ? "home-shelf-local-aura rounded-[16px]"
             : "rounded-[16px]"
         }
       >
-        {candidate.local && (
-          <>
-            <span className="match-card-local-spark match-card-local-spark-1" />
-            <span className="match-card-local-spark match-card-local-spark-2" />
-            <span className="match-card-local-spark match-card-local-spark-3" />
-          </>
-        )}
         <div
-          className="match-card-inner relative h-[142px] w-[112px] overflow-hidden rounded-[16px] border border-[#3a324a12] bg-[#f4f1f7] shadow-[7px_9px_18px_rgba(58,50,74,0.16)] transition-transform duration-150 group-hover:-translate-y-0.5"
+          className={`match-card-inner relative h-[142px] w-[112px] overflow-hidden rounded-[16px] bg-[#f4f1f7] transition-transform duration-150 group-hover:-translate-y-0.5 ${getPriorityFrameClass(candidate.priority)}`}
           style={{ background: hasPhoto ? "#3a324a" : fallbackBg }}
         >
           {hasPhoto ? (
@@ -923,6 +942,11 @@ function WishShelfTile({
           ) : (
             <span className="absolute inset-0 flex items-center justify-center text-[30px] font-extrabold text-white/95 drop-shadow">
               {item.label[0] ?? "?"}
+            </span>
+          )}
+          {tagLabel && (
+            <span className="absolute inset-x-2 bottom-1.5 z-10 truncate rounded-full bg-white/90 px-2 py-[3px] text-center text-[9px] font-extrabold text-[#3a324a] shadow-[0_2px_7px_rgba(58,50,74,0.18)] backdrop-blur">
+              {tagLabel}
             </span>
           )}
         </div>

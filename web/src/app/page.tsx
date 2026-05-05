@@ -427,15 +427,27 @@ export default async function Home({ searchParams }: Props) {
     for (const w of p.wishes) allInvIds.add(w.id);
   }
   const tagsByInvId: Record<string, string[]> = {};
+  const tagLabelsByInvId: Record<string, string[]> = {};
   if (allInvIds.size > 0) {
     const { data: tagPairs } = await supabase
       .from("goods_inventory_tags")
-      .select("inventory_id, tag_id")
+      .select("inventory_id, tag_id, tag:tags_master(label)")
       .in("inventory_id", Array.from(allInvIds));
-    for (const r of (tagPairs as { inventory_id: string; tag_id: string }[]) ?? []) {
+    type TagPairRow = {
+      inventory_id: string;
+      tag_id: string;
+      tag: { label: string } | { label: string }[] | null;
+    };
+    for (const r of (tagPairs as TagPairRow[]) ?? []) {
       const list = tagsByInvId[r.inventory_id] ?? [];
       list.push(r.tag_id);
       tagsByInvId[r.inventory_id] = list;
+      const tag = Array.isArray(r.tag) ? r.tag[0] : r.tag;
+      if (tag?.label) {
+        const labels = tagLabelsByInvId[r.inventory_id] ?? [];
+        labels.push(tag.label);
+        tagLabelsByInvId[r.inventory_id] = labels;
+      }
     }
   }
 
@@ -582,6 +594,7 @@ export default async function Home({ searchParams }: Props) {
         )}
         myInventoryQty={myInventoryQty}
         tagsByInvId={tagsByInvId}
+        tagLabelsByInvId={tagLabelsByInvId}
         unreadNotificationCount={unreadNotificationCount ?? 0}
         isNationalView={isNationalView}
       />
