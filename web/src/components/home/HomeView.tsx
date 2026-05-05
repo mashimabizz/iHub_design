@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 // iter134: ホーム画面のログアウト撤去に伴い logout import 不要
-import { MatchDetailModal } from "./MatchDetailModal";
+import {
+  MatchDetailModal,
+  type MatchDetailPageData,
+} from "./MatchDetailModal";
 import {
   type MatchCardData,
   type MatchCardListingInfo,
@@ -259,7 +262,7 @@ function matchToCard(
 
 type CandidatePriority = 0 | 1 | 2;
 type HomeModeView = "national" | "local";
-type MatchDetailSlideDirection = "from-right" | "from-left";
+type MatchDetailSlideDirection = "from-right" | "from-left" | "none";
 
 const MODE_SWITCH_STATUS_MS = 480;
 const MODE_SWITCH_SHEET_STATUS_MS = 260;
@@ -626,6 +629,18 @@ export function HomeView({
         (candidate) => candidate.key === selectedCandidate.key,
       )
     : -1;
+  const previousDetailCandidate =
+    selectedDetailIndex > 0 ? detailCandidates[selectedDetailIndex - 1] : null;
+  const nextDetailCandidate =
+    selectedDetailIndex >= 0 && selectedDetailIndex < detailCandidates.length - 1
+      ? detailCandidates[selectedDetailIndex + 1]
+      : null;
+  const previousDetailPage = previousDetailCandidate
+    ? buildMatchDetailPage(previousDetailCandidate)
+    : null;
+  const nextDetailPage = nextDetailCandidate
+    ? buildMatchDetailPage(nextDetailCandidate)
+    : null;
 
   useEffect(() => {
     detailCandidateByKeyRef.current = detailCandidateByKey;
@@ -864,6 +879,23 @@ export function HomeView({
     handleEnableLocal();
   }
 
+  function buildMatchDetailPage(
+    candidate: WishShelfCandidate,
+  ): MatchDetailPageData {
+    return {
+      partnerHandle: candidate.card.userHandle,
+      partnerId: candidate.card.partnerId,
+      partnerAvatarUrl: candidate.card.userAvatarUrl,
+      myAvatarUrl: profile?.avatar_url ?? null,
+      myListings: candidate.myListingMatches,
+      partnerListings: candidate.partnerListingMatches,
+      myInventoryQty: candidate.card.myInventoryQty ?? {},
+      simpleReceives: [candidate.item],
+      simpleGives: candidate.card.myGives,
+      simpleProposeHref: buildSimpleProposeHref(candidate),
+    };
+  }
+
   function handleSelectCandidate(candidate: WishShelfCandidate) {
     if (
       candidate.myListingMatches.length > 0 ||
@@ -942,7 +974,7 @@ export function HomeView({
     if (selectedDetailIndex < 0) return;
     const next = detailCandidates[selectedDetailIndex + delta];
     if (!next) return;
-    setDetailSlideDirection(delta > 0 ? "from-right" : "from-left");
+    setDetailSlideDirection("none");
     setSelectedCandidate(next);
     writeMatchDetailHistory(next, "replace");
   }
@@ -1161,6 +1193,8 @@ export function HomeView({
           simpleGives={selectedCandidate.card.myGives}
           simpleProposeHref={buildSimpleProposeHref(selectedCandidate)}
           slideDirection={detailSlideDirection}
+          previousPage={previousDetailPage}
+          nextPage={nextDetailPage}
           canNavigatePrev={selectedDetailIndex > 0}
           canNavigateNext={
             selectedDetailIndex >= 0 &&

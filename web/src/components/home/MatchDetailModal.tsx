@@ -79,6 +79,19 @@ type SwipeGesture = {
   axis: "undecided" | "horizontal" | "vertical";
 };
 
+export type MatchDetailPageData = {
+  partnerHandle: string;
+  partnerId: string;
+  partnerAvatarUrl: string | null;
+  myAvatarUrl: string | null;
+  myListings: MatchCardListingInfo[];
+  partnerListings: MatchCardListingInfo[];
+  myInventoryQty: Record<string, number>;
+  simpleReceives?: MiniItem[];
+  simpleGives?: MiniItem[];
+  simpleProposeHref?: string | null;
+};
+
 export function MatchDetailModal({
   partnerHandle,
   partnerId,
@@ -91,6 +104,8 @@ export function MatchDetailModal({
   simpleGives,
   simpleProposeHref,
   slideDirection = "from-right",
+  previousPage = null,
+  nextPage = null,
   canNavigatePrev = false,
   canNavigateNext = false,
   onClose,
@@ -114,7 +129,10 @@ export function MatchDetailModal({
   /** iter152: 通常マッチの打診先 */
   simpleProposeHref?: string | null;
   /** iter154.20: 詳細間スワイプ時の進入方向 */
-  slideDirection?: "from-right" | "from-left";
+  slideDirection?: "from-right" | "from-left" | "none";
+  /** iter154.22: iPhone ホーム画面風ページング用の隣接プレビュー */
+  previousPage?: MatchDetailPageData | null;
+  nextPage?: MatchDetailPageData | null;
   /** iter154.20: 隣のマッチ詳細へ横スワイプできるか */
   canNavigatePrev?: boolean;
   canNavigateNext?: boolean;
@@ -603,7 +621,10 @@ export function MatchDetailModal({
 
     if (gesture.axis === "undecided") {
       if (absX < SWIPE_AXIS_LOCK_PX && absY < SWIPE_AXIS_LOCK_PX) return;
-      if (absX > absY * 1.08 && (canNavigatePrev || canNavigateNext)) {
+      if (
+        absX > absY * 1.08 &&
+        ((canNavigatePrev && previousPage) || (canNavigateNext && nextPage))
+      ) {
         gesture.axis = "horizontal";
         setIsSwipeDragging(true);
       } else if (absY >= absX) {
@@ -616,7 +637,10 @@ export function MatchDetailModal({
     if (gesture.axis !== "horizontal") return;
 
     e.preventDefault();
-    const canMove = dx < 0 ? canNavigateNext : canNavigatePrev;
+    const canMove =
+      dx < 0
+        ? canNavigateNext && !!nextPage
+        : canNavigatePrev && !!previousPage;
     const width = getSwipeWidth();
     const rawOffset = canMove ? dx : dx * SWIPE_RESISTANCE;
     const nextOffset = Math.max(-width, Math.min(width, rawOffset));
@@ -651,7 +675,9 @@ export function MatchDetailModal({
     const recentTime = Math.max(1, performance.now() - gesture.previousTime);
     const velocity = (touch.clientX - gesture.previousX) / recentTime;
     const wantsNext = dx < 0;
-    const canCommit = wantsNext ? canNavigateNext : canNavigatePrev;
+    const canCommit = wantsNext
+      ? canNavigateNext && !!nextPage
+      : canNavigatePrev && !!previousPage;
     const navigate = wantsNext ? onNavigateNext : onNavigatePrev;
     const fastEnough =
       absX >= SWIPE_FAST_DISTANCE_PX &&
@@ -692,6 +718,12 @@ export function MatchDetailModal({
 
   const isSwipeMotionActive =
     isSwipeDragging || isSwipeSettling || Math.abs(dragOffset) > 0.5;
+  const slideAnimationClass =
+    slideDirection === "none"
+      ? ""
+      : slideDirection === "from-left"
+        ? "animate-match-detail-slide-in-from-left"
+        : "animate-match-detail-slide-in";
   const swipeStyle: CSSProperties = {
     touchAction: "pan-y",
     ...(isSwipeMotionActive
@@ -708,11 +740,7 @@ export function MatchDetailModal({
     <div className="fixed inset-0 z-[100] overflow-hidden bg-[#fbf9fc]">
       <div
         ref={detailShellRef}
-        className={`flex h-full flex-col bg-[#fbf9fc] ${
-          slideDirection === "from-left"
-            ? "animate-match-detail-slide-in-from-left"
-            : "animate-match-detail-slide-in"
-        }`}
+        className={`relative flex h-full flex-col overflow-visible bg-[#fbf9fc] ${slideAnimationClass}`}
         style={swipeStyle}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -720,6 +748,10 @@ export function MatchDetailModal({
         onTouchCancel={handleTouchCancel}
         onClickCapture={handleClickCapture}
       >
+      {previousPage && (
+        <SwipePreviewPage page={previousPage} side="previous" />
+      )}
+      {nextPage && <SwipePreviewPage page={nextPage} side="next" />}
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
         <button
           type="button"
@@ -899,6 +931,136 @@ export function MatchDetailModal({
           onClose={() => setPopupTarget(null)}
         />
       )}
+      </div>
+    </div>
+  );
+}
+
+function SwipePreviewPage({
+  page,
+  side,
+}: {
+  page: MatchDetailPageData;
+  side: "previous" | "next";
+}) {
+  const simpleReceiveItems = page.simpleReceives ?? [];
+  const simpleGiveItems = page.simpleGives ?? [];
+  const hasListingRelation =
+    page.myListings.length > 0 || page.partnerListings.length > 0;
+  const hasSimpleRelation =
+    !hasListingRelation &&
+    (simpleReceiveItems.length > 0 || simpleGiveItems.length > 0);
+  const allListings = [...page.myListings, ...page.partnerListings];
+
+  function isPreviewHaveSelected(listingId: string, haveInvId: string) {
+    const listing = allListings.find((l) => l.listingId === listingId);
+    if (!listing || listing.haveLogic !== "or" || listing.haves.length < 2) {
+      return false;
+    }
+    const first = listing.haves.find((h) => h.matched) ?? listing.haves[0];
+    return first?.item.id === haveInvId;
+  }
+
+  return (
+    <div
+      aria-hidden="true"
+      className={`pointer-events-none absolute inset-y-0 flex w-full select-none flex-col bg-[#fbf9fc] ${
+        side === "previous" ? "left-[-100%]" : "left-full"
+      }`}
+    >
+      <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="閉じる"
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-[#3a324a14] bg-white text-[18px] font-bold text-[#3a324a8c]"
+        >
+          ✕
+        </button>
+        <div className="flex-1">
+          <div className="text-[15px] font-bold text-[#3a324a]">関係図</div>
+          <div className="mt-0.5 text-[11px] text-[#3a324a8c]">
+            @{page.partnerHandle} とのマッチ詳細
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto w-full max-w-md flex-1 overflow-y-hidden px-[18px] py-4">
+        <div className="mb-3 rounded-[10px] bg-[#a695d810] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#3a324a]">
+          <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
+            🔗 関係図
+          </span>
+          {hasSimpleRelation ? (
+            <>譲 × wish で成立しそうな候補です。内容を確認して打診へ進めます。</>
+          ) : (
+            <>
+              各 wish の候補を<b>写真で確認</b>して、受け取りたい / 出せるものを
+              タップで選択。下の「打診に進む」で確認画面に進みます。
+            </>
+          )}
+        </div>
+
+        {page.myListings.length > 0 && (
+          <SectionGroup
+            title="あなたの個別募集"
+            subtitle="あなたが出している条件で、相手の在庫がヒット"
+            accentColor="#a695d8"
+          >
+            {page.myListings.map((l, idx) => (
+              <ListingTree
+                key={l.listingId}
+                listing={l}
+                index={idx}
+                viewpoint="mine"
+                partnerHandle={page.partnerHandle}
+                partnerAvatarUrl={page.partnerAvatarUrl}
+                myAvatarUrl={page.myAvatarUrl}
+                isSelected={() => false}
+                isHaveSelected={isPreviewHaveSelected}
+                onToggleHave={() => undefined}
+                onOpenPopup={() => undefined}
+              />
+            ))}
+          </SectionGroup>
+        )}
+
+        {page.partnerListings.length > 0 && (
+          <SectionGroup
+            title={`@${page.partnerHandle} の個別募集`}
+            subtitle="相手が出している条件で、あなたの在庫がヒット"
+            accentColor="#f3c5d4"
+          >
+            {page.partnerListings.map((l, idx) => (
+              <ListingTree
+                key={l.listingId}
+                listing={l}
+                index={idx}
+                viewpoint="partner"
+                partnerHandle={page.partnerHandle}
+                partnerAvatarUrl={page.partnerAvatarUrl}
+                myAvatarUrl={page.myAvatarUrl}
+                isSelected={() => false}
+                isHaveSelected={isPreviewHaveSelected}
+                onToggleHave={() => undefined}
+                onOpenPopup={() => undefined}
+              />
+            ))}
+          </SectionGroup>
+        )}
+
+        {!hasListingRelation && (
+          hasSimpleRelation ? (
+            <SimpleRelationPanel
+              partnerHandle={page.partnerHandle}
+              receivesItems={simpleReceiveItems}
+              givesItems={simpleGiveItems}
+            />
+          ) : (
+            <div className="rounded-[10px] border border-dashed border-[#3a324a14] bg-white p-4 text-center text-[12px] text-[#3a324a8c]">
+              個別募集経由のマッチはありません
+            </div>
+          )
+        )}
       </div>
     </div>
   );
