@@ -154,18 +154,12 @@ export function ProfileView({
           </Section>
         </div>
 
-        {/* 設定・サポート */}
+        {/* 通知・サポート */}
         <div
           className="animate-section-fade-down"
           style={{ animationDelay: "160ms" }}
         >
-          <Section label="設定・サポート">
-            <RowLink
-              href="/settings"
-              icon="⚙"
-              title="設定"
-              sub="アプリ全体の設定"
-            />
+          <Section label="通知・サポート">
             <RowLink
               href="/settings/notifications"
               icon="🔔"

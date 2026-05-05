@@ -265,15 +265,8 @@ function ProfileHub({ tweaks }) {
           </HSRow>
         </HSSection>
 
-        {/* Settings & Support */}
-        <HSSection colors={c} label="設定・サポート">
-          <HSRow colors={c}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 18, width: 24, textAlign: 'center' }}>⚙</span>
-              <div style={{ flex: 1, fontSize: 12.5, fontWeight: 700 }}>設定</div>
-              <span style={{ fontSize: 14, color: c.lavender }}>›</span>
-            </div>
-          </HSRow>
+        {/* Notification & Support */}
+        <HSSection colors={c} label="通知・サポート">
           <HSRow colors={c}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 18, width: 24, textAlign: 'center' }}>🔔</span>

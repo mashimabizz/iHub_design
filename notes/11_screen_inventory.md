@@ -187,7 +187,7 @@
 
 | 画面ID | 名称 | 関連JSX関数 | 関連iter | 関連docs |
 |---|---|---|---|---|
-| `PRO-hub` | プロフハブ — 統計＋コレクションサマリ（wish基準）＋活動＋設定 | `hub-screens.jsx::ProfileHubScreen` | iter19.5 | — |
+| `PRO-hub` | プロフハブ — 統計＋コレクションサマリ（wish基準）＋活動＋通知・サポート | `hub-screens.jsx::ProfileHubScreen` | iter19.5, 154.26 | — |
 | `PRO-edit` | プロフィール編集 — アイコン・ハンドル・自己紹介・公開情報 | `account-extras.jsx::ProfileEditScreen` | iter22 | 05 §2 users |
 | `PRO-oshi-edit` | 推し設定編集 — 複数推し管理・メンバー追加削除 | `account-extras.jsx::OshiEditScreen` | iter22, 24 | 05 §2 user_oshi |
 | `PRO-other` | 他人のプロフィール — 統計＋AW＋打診CTA | `account-extras.jsx::UserProfileScreen` | iter22 | — |
