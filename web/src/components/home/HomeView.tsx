@@ -264,6 +264,8 @@ type WishShelfCandidate = {
   card: MatchCardData;
   item: MiniItem;
   priority: CandidatePriority;
+  myListingMatches: MatchCardListingInfo[];
+  partnerListingMatches: MatchCardListingInfo[];
   tagScore: number;
   tagLabels: string[];
   local: boolean;
@@ -279,12 +281,52 @@ type WishShelfRow = {
   localCount: number;
 };
 
-function getCandidatePriority(card: MatchCardData): CandidatePriority {
-  const hasMyListing = !!card.myMatchedListings?.length;
-  const hasPartnerListing = !!card.partnerMatchedListings?.length;
+function getCandidatePriority(
+  myListings: MatchCardListingInfo[],
+  partnerListings: MatchCardListingInfo[],
+): CandidatePriority {
+  const hasMyListing = myListings.length > 0;
+  const hasPartnerListing = partnerListings.length > 0;
   if (hasMyListing && hasPartnerListing) return 0;
   if (hasMyListing || hasPartnerListing) return 1;
   return 2;
+}
+
+function getCandidateListingMatches(
+  card: MatchCardData,
+  receiveItemId: string,
+): {
+  myListingMatches: MatchCardListingInfo[];
+  partnerListingMatches: MatchCardListingInfo[];
+} {
+  const myListingMatches = (card.myMatchedListings ?? []).filter((listing) =>
+    listing.options.some(
+      (option) =>
+        option.matched &&
+        option.wishes.some((wish) =>
+          wish.candidates.some((candidate) => candidate.item.id === receiveItemId),
+        ),
+    ),
+  );
+  const partnerListingMatches = (card.partnerMatchedListings ?? []).filter(
+    (listing) =>
+      listing.haves.some(
+        (have) => have.matched && have.item.id === receiveItemId,
+      ),
+  );
+  return { myListingMatches, partnerListingMatches };
+}
+
+function getBestCandidatePriority(card: MatchCardData): CandidatePriority {
+  return card.theirGives.reduce<CandidatePriority>((best, item) => {
+    const { myListingMatches, partnerListingMatches } =
+      getCandidateListingMatches(card, item.id);
+    const priority = getCandidatePriority(
+      myListingMatches,
+      partnerListingMatches,
+    );
+    return Math.min(best, priority) as CandidatePriority;
+  }, 2);
 }
 
 function truncateByChars(value: string, max: number): string {
@@ -341,7 +383,7 @@ function buildWishShelves(
   tagLabelsByInvId: Record<string, string[]>,
 ): WishShelfRow[] {
   const sortedCards = [...cards].sort((a, b) => {
-    const byPriority = getCandidatePriority(a) - getCandidatePriority(b);
+    const byPriority = getBestCandidatePriority(a) - getBestCandidatePriority(b);
     if (byPriority !== 0) return byPriority;
     const byLocal = Number(b.localAvailable === true) - Number(a.localAvailable === true);
     if (byLocal !== 0) return byLocal;
@@ -352,12 +394,17 @@ function buildWishShelves(
   const seen = new Set<string>();
 
   for (const card of sortedCards) {
-    const priority = getCandidatePriority(card);
     for (const item of card.theirGives) {
       const candidateKey = `${card.partnerId}:${item.id}`;
       if (seen.has(candidateKey)) continue;
       seen.add(candidateKey);
 
+      const { myListingMatches, partnerListingMatches } =
+        getCandidateListingMatches(card, item.id);
+      const priority = getCandidatePriority(
+        myListingMatches,
+        partnerListingMatches,
+      );
       const goodsTypeName = item.goodsTypeName ?? "グッズ";
       const rowKey = `${item.label}::${goodsTypeName}`;
       const tagScore = tagScoreByInvId.get(item.id) ?? 0;
@@ -382,6 +429,8 @@ function buildWishShelves(
         card,
         item,
         priority,
+        myListingMatches,
+        partnerListingMatches,
         tagScore,
         tagLabels,
         local,
@@ -606,6 +655,17 @@ export function HomeView({
     handleEnableLocal();
   }
 
+  function handleSelectCandidate(candidate: WishShelfCandidate) {
+    if (
+      candidate.myListingMatches.length > 0 ||
+      candidate.partnerListingMatches.length > 0
+    ) {
+      setSelectedCandidate(candidate);
+      return;
+    }
+    router.push(buildSimpleProposeHref(candidate));
+  }
+
   return (
     <main className="relative flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
       {/* iter130: 現地交換モード時の ambient glow（画面縁をふわっと光らせる） */}
@@ -780,7 +840,7 @@ export function HomeView({
                   key={row.key}
                   row={row}
                   delayMs={idx * 95}
-                  onSelect={setSelectedCandidate}
+                  onSelect={handleSelectCandidate}
                 />
               ))
             )}
@@ -797,8 +857,8 @@ export function HomeView({
           partnerId={selectedCandidate.card.partnerId}
           partnerAvatarUrl={selectedCandidate.card.userAvatarUrl}
           myAvatarUrl={profile?.avatar_url ?? null}
-          myListings={selectedCandidate.card.myMatchedListings ?? []}
-          partnerListings={selectedCandidate.card.partnerMatchedListings ?? []}
+          myListings={selectedCandidate.myListingMatches}
+          partnerListings={selectedCandidate.partnerListingMatches}
           myInventoryQty={selectedCandidate.card.myInventoryQty ?? {}}
           simpleReceives={[selectedCandidate.item]}
           simpleGives={selectedCandidate.card.myGives}
