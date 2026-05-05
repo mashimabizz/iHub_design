@@ -557,7 +557,7 @@ export function ListingNewForm({
       </Section>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="whitespace-pre-line rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-relaxed text-red-700">
           {error}
         </div>
       )}

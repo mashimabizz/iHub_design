@@ -4,6 +4,53 @@
 
 ---
 
+## イテレーション154.9：個別募集更新エラーを具体化
+
+### 背景・問題意識
+
+オーナーから、個別募集の更新時に「すでに交換対象ではないグッズが含まれています」とだけ表示され、何がだめなのか分からず更新できないという指摘があった。
+
+個別募集の譲条件は、マイ在庫側で削除・キープ化・譲渡済み化・別取引で確保済みになると更新時の市場残数チェックで止まる。ユーザーが直せるように、対象グッズ名と理由を具体的に返す必要がある。
+
+### 変更内容
+
+#### `web/src/lib/marketAvailability.ts`
+- 市場残数チェックのエラーを、最初の抽象メッセージで止めず、対象グッズごとの理由として集約するように変更。
+- グッズ名の fallback として、グループ / キャラ / 種別名も取得して表示できるようにした。
+- 削除済み・参照不可、譲る候補以外、非 active 状態、成立済み取引による市場残数不足をそれぞれ別理由で表示。
+- 数量不足時は `必要数 / 市場残数 / 登録数` を出すようにした。
+
+#### `web/src/app/listings/new/ListingNewForm.tsx`
+- server action から返る複数行エラーを読みやすくするため、エラー表示に `whitespace-pre-line` と行間を追加。
+
+### 影響範囲
+
+- `/listings/[id]/edit` 個別募集編集画面
+- `/listings/new` 個別募集作成画面
+- 同じ市場残数チェックを使う打診確定前ガード
+
+### 確認方法
+
+- `npx eslint src/lib/marketAvailability.ts src/app/listings/new/ListingNewForm.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/lib/marketAvailability.ts`
+- `web/src/app/listings/new/ListingNewForm.tsx`
+
+### セルフレビュー結果
+
+- ✅ 何がだめかをグッズ単位で表示
+- ✅ 削除済み / 譲る候補外 / 非 active / 市場残数不足を区別
+- ✅ 個別募集フォームで複数行エラーが読める
+- ✅ `notes/09_state_machines.md` は状態追加・変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 ESLint / build 成功
+
+---
+
 ## イテレーション154.8：ホームのモード切替をiOS風に調整
 
 ### 背景・問題意識

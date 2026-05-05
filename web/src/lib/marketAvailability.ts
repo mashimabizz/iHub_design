@@ -29,6 +29,15 @@ type InventoryCheckRow = {
   status: string;
   quantity: number | null;
   title: string | null;
+  group?: { name: string | null } | { name: string | null }[] | null;
+  character?: { name: string | null } | { name: string | null }[] | null;
+  goods_type?: { name: string | null } | { name: string | null }[] | null;
+};
+
+type AvailabilityIssue = {
+  id: string;
+  label: string;
+  reason: string;
 };
 
 function addReserved(
@@ -158,6 +167,74 @@ function aggregateNeeded(ids: string[], qtys: number[]): Map<string, number> {
   return result;
 }
 
+function pickRelationName(
+  value: { name: string | null } | { name: string | null }[] | null | undefined,
+): string | null {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0]?.name ?? null : value.name;
+}
+
+function buildInventoryLabel(row: InventoryCheckRow | undefined, id: string) {
+  if (!row) return `ID: ${id.slice(0, 8)}`;
+  const title = row.title?.trim();
+  const groupName = pickRelationName(row.group);
+  const characterName = pickRelationName(row.character);
+  const goodsTypeName = pickRelationName(row.goods_type);
+  const fallback = [groupName, characterName, goodsTypeName]
+    .filter(Boolean)
+    .join(" / ");
+  return title || fallback || `ID: ${id.slice(0, 8)}`;
+}
+
+function labelInventoryKind(kind: string) {
+  switch (kind) {
+    case "for_trade":
+      return "譲る候補";
+    case "wanted":
+      return "Wish";
+    case "keep":
+      return "自分キープ";
+    default:
+      return kind;
+  }
+}
+
+function labelInventoryStatus(status: string) {
+  switch (status) {
+    case "active":
+      return "交換対象";
+    case "keep":
+      return "自分キープ";
+    case "traded":
+      return "譲渡済み";
+    case "reserved":
+      return "予約中";
+    case "archived":
+      return "削除済み";
+    default:
+      return status;
+  }
+}
+
+function buildAvailabilityError(issues: AvailabilityIssue[]): { error?: string } {
+  if (issues.length === 0) return {};
+
+  const visibleIssues = issues
+    .slice(0, 5)
+    .map((issue) => `・「${issue.label}」：${issue.reason}`)
+    .join("\n");
+  const extraCount =
+    issues.length > 5 ? `\nほか ${issues.length - 5} 件あります。` : "";
+
+  return {
+    error:
+      "交換条件に使えない譲グッズがあります。\n" +
+      visibleIssues +
+      extraCount +
+      "\n対象のグッズを個別募集から外すか、マイ在庫で状態・在庫数を確認してください。",
+  };
+}
+
 /**
  * 打診成立前の最終ガード。
  * 見た目上のマイ在庫 quantity は減らさず、合意済み打診で確保済みの数量を
@@ -188,7 +265,9 @@ export async function assertProposalItemsMarketAvailable(
   const [{ data: rows }, reservedQtyByInvId] = await Promise.all([
     supabase
       .from("goods_inventory")
-      .select("id, user_id, kind, status, quantity, title")
+      .select(
+        "id, user_id, kind, status, quantity, title, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      )
       .in("id", allIds),
     getAgreedReservedQtyByInvId(supabase, allIds, input.excludeProposalId),
   ]);
@@ -200,33 +279,58 @@ export async function assertProposalItemsMarketAvailable(
   const checkSide = (
     needed: Map<string, number>,
     ownerId: string,
-  ): { error?: string } => {
+  ): AvailabilityIssue[] => {
+    const issues: AvailabilityIssue[] = [];
+
     for (const [id, qty] of needed) {
       const row = invById.get(id);
       if (!row || row.user_id !== ownerId) {
-        return { error: "打診に含まれるグッズが見つかりません" };
+        issues.push({
+          id,
+          label: buildInventoryLabel(row, id),
+          reason: row
+            ? "このアカウントの譲グッズではありません"
+            : "グッズが削除されているか、参照できません",
+        });
+        continue;
       }
-      if (row.kind !== "for_trade" || row.status !== "active") {
-        return {
-          error: "すでに交換対象ではないグッズが含まれています。条件を見直してください",
-        };
+      if (row.kind !== "for_trade") {
+        issues.push({
+          id,
+          label: buildInventoryLabel(row, id),
+          reason: `マイ在庫の分類が「${labelInventoryKind(row.kind)}」です`,
+        });
+        continue;
+      }
+      if (row.status !== "active") {
+        issues.push({
+          id,
+          label: buildInventoryLabel(row, id),
+          reason: `マイ在庫の状態が「${labelInventoryStatus(row.status)}」です`,
+        });
+        continue;
       }
       const available = Math.max(
         0,
         (row.quantity ?? 1) - (reservedQtyByInvId.get(id) ?? 0),
       );
       if (qty > available) {
-        return {
-          error: `「${row.title ?? "グッズ"}」は別の成立済み取引で確保されているため、交換可能数が不足しています`,
-        };
+        issues.push({
+          id,
+          label: buildInventoryLabel(row, id),
+          reason: `交換可能数が不足しています（必要 ${qty} / 市場残数 ${available} / 登録数 ${row.quantity ?? 1}）`,
+        });
       }
     }
-    return {};
+
+    return issues;
   };
 
-  const senderCheck = checkSide(senderNeeded, input.senderId);
-  if (senderCheck.error) return senderCheck;
-  return checkSide(receiverNeeded, input.receiverId);
+  const issues = [
+    ...checkSide(senderNeeded, input.senderId),
+    ...checkSide(receiverNeeded, input.receiverId),
+  ];
+  return buildAvailabilityError(issues);
 }
 
 /**
