@@ -894,7 +894,7 @@ export function HomeView({
             ) : (
               <>
                 <WishShelfSectionView
-                  title="マッチ！"
+                  title="マッチしてるよ！"
                   rows={wishShelfSections.listingRows}
                   baseDelayMs={0}
                   onSelect={handleSelectCandidate}
@@ -997,7 +997,7 @@ function WishShelfSectionView({
 
   return (
     <section className="space-y-1.5 pt-2 first:pt-0">
-      <h1 className="px-0.5 text-[18px] font-extrabold leading-tight text-[#111111]">
+      <h1 className="px-0.5 text-[22px] font-extrabold leading-tight text-[#111111]">
         {title}
       </h1>
       {rows.map((row, idx) => (

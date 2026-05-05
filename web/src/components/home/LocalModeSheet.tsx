@@ -205,6 +205,7 @@ export function LocalModeSheet({
   // iter132: open のたびに draft → DB 値の順で再初期化
   //   draft（localStorage）：グッズ選択画面など別画面に行って戻ってきた時の途中状態
   //   draft が無ければ DB 値（currentAW）を使う
+  /* eslint-disable react-hooks/set-state-in-effect -- シートを開く瞬間に localStorage / DB 値からフォーム draft を復元する */
   useEffect(() => {
     if (open) {
       const draft = loadDraft();
@@ -228,6 +229,7 @@ export function LocalModeSheet({
       setError(null);
     }
   }, [open, initial, currentAW]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // iter132: center 変化で reverse geocode → 自動で venue を埋める
   //   ただし「ユーザーが venue を手入力済」の場合は上書きしない
@@ -284,6 +286,7 @@ export function LocalModeSheet({
   }, [open]);
 
   // 検索（debounce）
+  /* eslint-disable react-hooks/set-state-in-effect -- 検索文字数が足りない時に候補表示を即時クリアする */
   useEffect(() => {
     const q = searchQ.trim();
     if (q.length < 2) {
@@ -308,6 +311,7 @@ export function LocalModeSheet({
     }, 350);
     return () => clearTimeout(t);
   }, [searchQ]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function pickSearchResult(p: Place) {
     const lat = parseFloat(p.lat);
@@ -339,7 +343,7 @@ export function LocalModeSheet({
   function applyDuration(minutes: number) {
     const baseStartMs = showAdvanced
       ? new Date(startAt).getTime()
-      : Date.now();
+      : new Date().getTime();
     const newEnd = new Date(baseStartMs + minutes * 60_000);
     setEndAt(newEnd.toISOString());
     // 詳細パネルが閉じている時は startAt も now に揃える（表示の整合性）
@@ -381,8 +385,8 @@ export function LocalModeSheet({
         centerLat: center[0],
         centerLng: center[1],
         radiusM,
-        startAt: isoToDatetimeLocal(finalStartIso),
-        endAt: isoToDatetimeLocal(finalEndIso),
+        startAt: finalStartIso,
+        endAt: finalEndIso,
       });
       if (r?.error) {
         setError(r.error);
@@ -449,7 +453,7 @@ export function LocalModeSheet({
           open ? "translate-y-0" : "translate-y-full"
         }`}
         style={{
-          maxHeight: "92vh",
+          maxHeight: "78vh",
           paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
