@@ -287,7 +287,9 @@ function getCandidatePriority(card: MatchCardData): CandidatePriority {
 }
 
 function truncateByChars(value: string, max: number): string {
-  return Array.from(value).slice(0, max).join("");
+  const chars = Array.from(value);
+  if (chars.length <= max) return value;
+  return `${chars.slice(0, max).join("")}…`;
 }
 
 function buildTagScoreByInvId(
@@ -557,9 +559,9 @@ export function HomeView({
 
   // chosen AW info
   const chosenAW = currentAW;
-  const placeButtonLabel = chosenAW?.venue
+  const placeButtonLabel = isLocal && chosenAW?.venue
     ? truncateByChars(chosenAW.venue, 8)
-    : "場所設定";
+    : "（現地交換モードOFF）";
 
   function handlePlaceButtonClick() {
     if (isLocal || currentAW) {
@@ -649,7 +651,7 @@ export function HomeView({
             <button
               type="button"
               onClick={handlePlaceButtonClick}
-              className="flex h-9 min-w-[76px] max-w-[122px] items-center justify-center truncate rounded-full border border-[#a695d83d] bg-white px-3 text-[12.5px] font-extrabold text-[#3a324a] shadow-sm active:scale-[0.98]"
+              className="flex h-9 min-w-[76px] max-w-[170px] items-center justify-center truncate rounded-full border border-[#a695d83d] bg-white px-3 text-[12.5px] font-extrabold text-[#3a324a] shadow-sm active:scale-[0.98]"
               aria-label="交換場所と現地交換設定を開く"
             >
               <span className="truncate">{placeButtonLabel}</span>
