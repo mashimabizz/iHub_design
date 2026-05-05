@@ -286,22 +286,8 @@ function getCandidatePriority(card: MatchCardData): CandidatePriority {
   return 2;
 }
 
-function getPriorityLabel(priority: CandidatePriority): string {
-  if (priority === 0) return "双方条件";
-  if (priority === 1) return "条件一致";
-  return "通常候補";
-}
-
-function getPriorityClass(priority: CandidatePriority): string {
-  if (priority === 0) return "bg-[#a695d8] text-white";
-  if (priority === 1) return "bg-[#a8d4e633] text-[#5c8da8]";
-  return "bg-[#f3c5d433] text-[#b66f87]";
-}
-
-function getTagMatchLabel(score: number): string | null {
-  if (score >= 0.999) return "タグ完全一致";
-  if (score > 0) return "タグ一致";
-  return null;
+function truncateByChars(value: string, max: number): string {
+  return Array.from(value).slice(0, max).join("");
 }
 
 function buildTagScoreByInvId(
@@ -486,14 +472,6 @@ export function HomeView({
     () => buildWishShelves(allCards, tagScoreByInvId),
     [allCards, tagScoreByInvId],
   );
-  const totalCandidateCount = useMemo(
-    () => wishShelves.reduce((sum, row) => sum + row.candidates.length, 0),
-    [wishShelves],
-  );
-  const localCandidateCount = useMemo(
-    () => wishShelves.reduce((sum, row) => sum + row.localCount, 0),
-    [wishShelves],
-  );
 
   // 現地モード state（DB から取得した初期値）
   const [sheetOpen, setSheetOpen] = useState(autoOpenLocalSheet);
@@ -579,6 +557,17 @@ export function HomeView({
 
   // chosen AW info
   const chosenAW = currentAW;
+  const placeButtonLabel = chosenAW?.venue
+    ? truncateByChars(chosenAW.venue, 8)
+    : "場所設定";
+
+  function handlePlaceButtonClick() {
+    if (isLocal || currentAW) {
+      setSheetOpen(true);
+      return;
+    }
+    handleEnableLocal();
+  }
 
   return (
     <main className="relative flex flex-1 flex-col bg-[#fbf9fc] pb-[88px]">
@@ -597,15 +586,17 @@ export function HomeView({
         </div>
       )}
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
-        {/* Title row */}
-        <div className="flex items-start justify-between px-5 pb-1.5 pt-4">
-          <div>
-            <h1 className="text-[26px] font-bold leading-tight text-gray-900">
-              マッチング
-            </h1>
-          </div>
+        <div className="flex items-center justify-between gap-3 px-5 pb-1.5 pt-4">
+          <button
+            type="button"
+            onClick={handlePlaceButtonClick}
+            className="flex h-9 min-w-[82px] max-w-[132px] items-center justify-center truncate rounded-full border border-[#a695d83d] bg-white px-3 text-[12.5px] font-extrabold text-[#3a324a] shadow-sm active:scale-[0.98]"
+            aria-label="交換場所と現地交換設定を開く"
+          >
+            <span className="truncate">{placeButtonLabel}</span>
+          </button>
           <div className="flex items-center gap-2">
-            {/* iter133 + iter140: 現地交換モードのトグル chip
+            {/* iter153: タイトル撤去に伴い、現地モード操作は compact icon に集約
                 - isLocal=true：ON 表示、タップ → OFF 確認
                 - isLocal=false：AW config が残っている場合 OFF 表示、タップで再 ON
                 - AW がそもそも無い場合は非表示（初回はピル経由でセットアップ） */}
@@ -620,7 +611,7 @@ export function HomeView({
                     handleQuickReenable();
                   }
                 }}
-                className={`flex h-9 items-center gap-1.5 rounded-full border px-3 shadow-sm transition-colors ${
+                className={`flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-colors ${
                   isLocal
                     ? "border-[#a695d855] bg-[#a695d80a] active:bg-[#a695d814]"
                     : "border-[#3a324a14] bg-white active:bg-[#3a324a08]"
@@ -631,14 +622,6 @@ export function HomeView({
                     : "現地交換モードを再開する"
                 }
               >
-                <span
-                  className={`text-[11px] font-extrabold tracking-[0.3px] ${
-                    isLocal ? "text-[#a695d8]" : "text-[#3a324a8c]"
-                  }`}
-                >
-                  📍 現地交換モード
-                </span>
-                {/* トグルアイコン */}
                 <span
                   aria-hidden="true"
                   className={`flex h-3.5 w-6 items-center rounded-full px-0.5 ${
@@ -753,75 +736,7 @@ export function HomeView({
           </button>
         </div>
 
-        {/* 現地モード ON 時のみ：設定サマリ */}
-        {isLocal && (
-          <div className="mx-5 mt-3 flex items-center gap-3 rounded-2xl border border-[#a695d855] bg-[linear-gradient(120deg,#a695d826,#a8d4e630)] px-4 py-3">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] shadow-[0_4px_10px_rgba(166,149,216,0.33)]">
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 15 15"
-                fill="none"
-                stroke="#fff"
-                strokeWidth="1.6"
-              >
-                <path d="M7.5 1.5C5 1.5 3 3.4 3 5.7c0 3.4 4.5 8 4.5 8s4.5-4.6 4.5-8c0-2.3-2-4.2-4.5-4.2z" />
-                <circle cx="7.5" cy="5.7" r="1.5" />
-              </svg>
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[13.5px] font-bold leading-tight text-gray-900">
-                {chosenAW
-                  ? chosenAW.venue
-                  : "交換場所／時間／グッズを選択（タップ）"}
-              </div>
-              <div className="mt-0.5 text-[11px] tabular-nums text-gray-600">
-                {chosenAW
-                  ? `半径 ${chosenAW.radiusM >= 1000 ? `${(chosenAW.radiusM / 1000).toFixed(1)}km` : `${chosenAW.radiusM}m`}`
-                  : "範囲は設定値を使用"}
-                {" · "}
-                持参 {settings.selectedCarryingIds.length} 件
-              </div>
-              {/* iter133: 時間帯と残り時間表示 */}
-              {chosenAW && (
-                <ActiveAWTimeRow
-                  startAt={chosenAW.startAt}
-                  endAt={chosenAW.endAt}
-                />
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setSheetOpen(true)}
-              className="flex-shrink-0 rounded-full bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#a695d8] shadow-sm"
-            >
-              設定
-            </button>
-          </div>
-        )}
-
-        <section className="mt-4 flex min-h-0 flex-1 flex-col">
-          <div className="mb-2 flex items-end justify-between px-5">
-            <div>
-              <div className="text-[14px] font-extrabold tracking-[0.2px] text-gray-900">
-                Wishに届いた譲
-              </div>
-              <div className="mt-0.5 text-[10.5px] font-medium text-gray-500">
-                キャラ×種別ごとに候補を整理
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {localCandidateCount > 0 && (
-                <span className="rounded-full bg-[#a695d8] px-2.5 py-1 text-[10px] font-extrabold tabular-nums text-white shadow-[0_3px_10px_rgba(166,149,216,0.28)]">
-                  現地 {localCandidateCount}
-                </span>
-              )}
-              <span className="rounded-full bg-[#3a324a0a] px-2.5 py-1 text-[10px] font-extrabold tabular-nums text-[#3a324a8c]">
-                {totalCandidateCount}件
-              </span>
-            </div>
-          </div>
-
+        <section className="mt-3 flex min-h-0 flex-1 flex-col">
           <div className="flex-1 space-y-4 overflow-y-auto px-5 py-2">
             {wishShelves.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white px-5 py-10 text-center">
@@ -928,49 +843,19 @@ function WishShelfRowView({
 }) {
   return (
     <section
-      className="animate-section-fade-down rounded-[18px] border border-[#3a324a10] bg-white py-3 shadow-[0_6px_18px_rgba(58,50,74,0.06)]"
+      className="animate-section-fade-down py-1.5"
       style={{ animationDelay: `${delayMs}ms` }}
     >
-      <div className="flex items-start justify-between gap-3 px-3.5">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <h2 className="truncate text-[14px] font-extrabold leading-tight text-[#3a324a]">
-              {row.characterLabel}
-            </h2>
-            <span className="flex-shrink-0 text-[11px] font-bold text-[#3a324a66]">
-              × {row.goodsTypeName}
-            </span>
-          </div>
-          <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] font-bold text-[#3a324a73]">
-            <span>{getPriorityLabel(row.bestPriority)}</span>
-            <span className="text-[#3a324a33]">/</span>
-            <span className="tabular-nums">候補 {row.candidates.length}件</span>
-            {row.localCount > 0 && (
-              <>
-                <span className="text-[#3a324a33]">/</span>
-                <span className="tabular-nums text-[#a695d8]">
-                  現地 {row.localCount}件
-                </span>
-              </>
-            )}
-            {row.bestTagScore > 0 && (
-              <>
-                <span className="text-[#3a324a33]">/</span>
-                <span className="text-[#5f8b73]">タグ一致</span>
-              </>
-            )}
-          </div>
-        </div>
-        <span
-          className={`flex-shrink-0 rounded-full px-2 py-1 text-[9.5px] font-extrabold ${getPriorityClass(
-            row.bestPriority,
-          )}`}
-        >
-          {getPriorityLabel(row.bestPriority)}
+      <div className="flex min-w-0 items-center gap-1.5 px-0.5">
+        <h2 className="truncate text-[13px] font-extrabold leading-tight text-[#3a324a]">
+          {row.characterLabel}
+        </h2>
+        <span className="flex-shrink-0 text-[10.5px] font-bold text-[#3a324a66]">
+          × {row.goodsTypeName}
         </span>
       </div>
 
-      <div className="-mx-5 mt-3 flex gap-2.5 overflow-x-auto px-8 pb-1.5 pt-1 [&::-webkit-scrollbar]:hidden">
+      <div className="-mx-5 mt-2 flex gap-3 overflow-x-auto px-5 pb-3 pt-2 [&::-webkit-scrollbar]:hidden">
         {row.candidates.map((candidate) => (
           <WishShelfTile
             key={candidate.key}
@@ -992,118 +877,49 @@ function WishShelfTile({
 }) {
   const item = candidate.item;
   const hasPhoto = !!item.photoUrl;
-  const tagLabel = getTagMatchLabel(candidate.tagScore);
   const fallbackBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 88%) 0 6px, hsl(${item.hue}, 28%, 78%) 6px 12px)`;
-  const handle =
-    candidate.card.userHandle.length > 11
-      ? `${candidate.card.userHandle.slice(0, 10)}…`
-      : candidate.card.userHandle;
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="group w-[88px] flex-shrink-0 text-left active:scale-[0.97]"
+      className="group w-[112px] flex-shrink-0 text-left active:scale-[0.97]"
       aria-label={`${item.label}の候補を開く`}
     >
       <div
-        className="relative h-[112px] w-[88px] overflow-hidden rounded-[13px] border border-[#3a324a12] bg-[#f4f1f7] shadow-[0_5px_14px_rgba(58,50,74,0.12)] transition-transform duration-150 group-hover:-translate-y-0.5"
-        style={{ background: hasPhoto ? "#3a324a" : fallbackBg }}
+        className={
+          candidate.local
+            ? "match-card-local-aura rounded-[16px]"
+            : "rounded-[16px]"
+        }
       >
-        {hasPhoto ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={item.photoUrl!}
-            alt={item.label}
-            className="absolute inset-0 h-full w-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <span className="absolute inset-0 flex items-center justify-center text-[26px] font-extrabold text-white/95 drop-shadow">
-            {item.label[0] ?? "?"}
-          </span>
-        )}
         {candidate.local && (
-          <span className="absolute left-1 top-1 rounded-full bg-[#a695d8] px-1.5 py-[2px] text-[8.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_8px_rgba(166,149,216,0.35)]">
-            LIVE
-          </span>
+          <>
+            <span className="match-card-local-spark match-card-local-spark-1" />
+            <span className="match-card-local-spark match-card-local-spark-2" />
+            <span className="match-card-local-spark match-card-local-spark-3" />
+          </>
         )}
-        {tagLabel && (
-          <span className="absolute bottom-1 left-1 rounded-full bg-white/92 px-1.5 py-[2px] text-[8px] font-extrabold text-[#5f8b73] shadow-[0_1px_5px_rgba(58,50,74,0.18)] backdrop-blur">
-            {tagLabel}
-          </span>
-        )}
-      </div>
-      <div className="mt-1.5 min-w-0">
-        <span
-          className={`inline-flex max-w-full rounded-full px-1.5 py-[2px] text-[8.5px] font-extrabold ${getPriorityClass(
-            candidate.priority,
-          )}`}
+        <div
+          className="match-card-inner relative h-[142px] w-[112px] overflow-hidden rounded-[16px] border border-[#3a324a12] bg-[#f4f1f7] shadow-[0_7px_18px_rgba(58,50,74,0.14)] transition-transform duration-150 group-hover:-translate-y-0.5"
+          style={{ background: hasPhoto ? "#3a324a" : fallbackBg }}
         >
-          {getPriorityLabel(candidate.priority)}
-        </span>
-        <div className="mt-1 truncate text-[10px] font-bold text-[#3a324a]">
-          @{handle}
-        </div>
-        <div className="mt-0.5 truncate text-[9.5px] text-[#3a324a80]">
-          {candidate.card.distanceText ?? candidate.card.distance}
+          {hasPhoto ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.photoUrl!}
+              alt={item.label}
+              className="absolute inset-0 h-full w-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <span className="absolute inset-0 flex items-center justify-center text-[30px] font-extrabold text-white/95 drop-shadow">
+              {item.label[0] ?? "?"}
+            </span>
+          )}
         </div>
       </div>
     </button>
-  );
-}
-
-/* ─── iter133: AW の時間帯 + 残り時間表示 ─── */
-
-function ActiveAWTimeRow({
-  startAt,
-  endAt,
-}: {
-  startAt: string;
-  endAt: string;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  // 1 分ごとに残り時間を更新
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(t);
-  }, []);
-
-  const start = new Date(startAt);
-  const end = new Date(endAt);
-  const hh = (d: Date) =>
-    `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  const remainMs = end.getTime() - now;
-  const beforeStart = now < start.getTime();
-
-  let remainText: string;
-  if (beforeStart) {
-    const minsToStart = Math.max(0, Math.floor((start.getTime() - now) / 60000));
-    if (minsToStart >= 60) {
-      remainText = `あと ${Math.floor(minsToStart / 60)}h ${minsToStart % 60}m で開始`;
-    } else {
-      remainText = `あと ${minsToStart} 分で開始`;
-    }
-  } else if (remainMs > 0) {
-    const mins = Math.floor(remainMs / 60000);
-    if (mins >= 60) {
-      remainText = `あと ${Math.floor(mins / 60)}h ${mins % 60}m で終了`;
-    } else {
-      remainText = `あと ${mins} 分で終了`;
-    }
-  } else {
-    remainText = "終了済み";
-  }
-
-  return (
-    <div className="mt-0.5 flex items-center gap-1 text-[11px] tabular-nums text-[#a695d8]">
-      <span>🕒</span>
-      <span className="font-bold">
-        {hh(start)} - {hh(end)}
-      </span>
-      <span className="text-[#3a324a8c]">·</span>
-      <span className={remainMs > 0 ? "font-extrabold" : ""}>{remainText}</span>
-    </div>
   );
 }
 
