@@ -286,13 +286,10 @@ function ProfileHub({ tweaks }) {
           </HSRow>
         </HSSection>
 
-        {/* Logout / Delete row */}
+        {/* Logout row */}
         <HSSection colors={c}>
-          <HSRow colors={c}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: c.mute, textAlign: 'center' }}>ログアウト</div>
-          </HSRow>
           <HSRow colors={c} last>
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: c.warn, textAlign: 'center' }}>アカウント削除</div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: c.mute, textAlign: 'center' }}>ログアウト</div>
           </HSRow>
         </HSSection>
 

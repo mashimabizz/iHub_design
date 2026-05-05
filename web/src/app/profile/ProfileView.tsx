@@ -42,8 +42,6 @@ export function ProfileView({
   userId,
   profile,
   oshiGroups,
-  awCount: _awCount,
-  listingsCount: _listingsCount,
   tradeCount,
   ratingAvg,
   ratingCount,
@@ -194,22 +192,13 @@ export function ProfileView({
           </Section>
         </div>
 
-        {/* Logout / Delete */}
+        {/* Logout */}
         <div
           className="animate-section-fade-down"
           style={{ animationDelay: "320ms" }}
         >
           <Section>
             <LogoutRow />
-            <Row>
-              <button
-                type="button"
-                disabled
-                className="block w-full px-3.5 py-3 text-center text-[11.5px] font-semibold text-[#d4866b] opacity-60"
-              >
-                アカウント削除（準備中）
-              </button>
-            </Row>
           </Section>
         </div>
 
