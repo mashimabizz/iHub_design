@@ -248,6 +248,16 @@ body {
   scrollbar-width: none;
 }
 
+.home-shelf-tile {
+  flex: 0 0 calc((min(100vw, 28rem) - 64px) / 2.5);
+  width: calc((min(100vw, 28rem) - 64px) / 2.5);
+}
+
+.home-shelf-tile-card {
+  width: 100%;
+  aspect-ratio: 112 / 142;
+}
+
 .home-shelf-local-aura {
   position: relative;
   isolation: isolate;

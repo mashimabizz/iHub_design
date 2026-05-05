@@ -916,7 +916,7 @@ function WishShelfTile({
     <button
       type="button"
       onClick={onSelect}
-      className="group animate-home-shelf-panel-in w-[112px] flex-shrink-0 text-left active:scale-[0.97]"
+      className="home-shelf-tile group animate-home-shelf-panel-in text-left active:scale-[0.97]"
       style={{ animationDelay: `${delayMs}ms` }}
       aria-label={`${item.label}の候補を開く`}
     >
@@ -928,7 +928,7 @@ function WishShelfTile({
         }
       >
         <div
-          className={`match-card-inner relative h-[142px] w-[112px] overflow-hidden rounded-[16px] bg-[#f4f1f7] transition-transform duration-150 group-hover:-translate-y-0.5 ${getPriorityFrameClass(candidate.priority)}`}
+          className={`home-shelf-tile-card match-card-inner relative overflow-hidden rounded-[16px] bg-[#f4f1f7] transition-transform duration-150 group-hover:-translate-y-0.5 ${getPriorityFrameClass(candidate.priority)}`}
           style={{ background: hasPhoto ? "#3a324a" : fallbackBg }}
         >
           {hasPhoto ? (
