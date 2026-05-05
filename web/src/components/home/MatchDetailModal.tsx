@@ -92,6 +92,36 @@ export type MatchDetailPageData = {
   simpleProposeHref?: string | null;
 };
 
+function collectMiniItemPhotoUrl(item: MiniItem | null | undefined, urls: Set<string>) {
+  if (item?.photoUrl) urls.add(item.photoUrl);
+}
+
+function collectListingPhotoUrls(
+  listings: MatchCardListingInfo[],
+  urls: Set<string>,
+) {
+  for (const listing of listings) {
+    for (const have of listing.haves) {
+      collectMiniItemPhotoUrl(have.item, urls);
+    }
+    for (const option of listing.options) {
+      for (const wish of option.wishes) {
+        collectMiniItemPhotoUrl(wish.item, urls);
+        for (const candidate of wish.candidates) {
+          collectMiniItemPhotoUrl(candidate.item, urls);
+        }
+      }
+    }
+  }
+}
+
+function collectPagePhotoUrls(page: MatchDetailPageData, urls: Set<string>) {
+  collectListingPhotoUrls(page.myListings, urls);
+  collectListingPhotoUrls(page.partnerListings, urls);
+  for (const item of page.simpleReceives ?? []) collectMiniItemPhotoUrl(item, urls);
+  for (const item of page.simpleGives ?? []) collectMiniItemPhotoUrl(item, urls);
+}
+
 export function MatchDetailModal({
   partnerHandle,
   partnerId,
@@ -183,6 +213,47 @@ export function MatchDetailModal({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const urls = new Set<string>();
+    collectPagePhotoUrls(
+      {
+        partnerHandle,
+        partnerId,
+        partnerAvatarUrl,
+        myAvatarUrl,
+        myListings,
+        partnerListings,
+        myInventoryQty,
+        simpleReceives,
+        simpleGives,
+        simpleProposeHref,
+      },
+      urls,
+    );
+    if (previousPage) collectPagePhotoUrls(previousPage, urls);
+    if (nextPage) collectPagePhotoUrls(nextPage, urls);
+
+    for (const url of urls) {
+      const img = new window.Image();
+      img.decoding = "async";
+      img.src = url;
+    }
+  }, [
+    partnerHandle,
+    partnerId,
+    partnerAvatarUrl,
+    myAvatarUrl,
+    myListings,
+    partnerListings,
+    myInventoryQty,
+    simpleReceives,
+    simpleGives,
+    simpleProposeHref,
+    previousPage,
+    nextPage,
+  ]);
 
   /**
    * iter121: OR 条件の haves でどれを選ぶか（listingId → 選択中 inv id Set）
@@ -555,7 +626,7 @@ export function MatchDetailModal({
     return (
       target instanceof Element &&
       !!target.closest(
-        'button,a,input,textarea,select,[contenteditable="true"],[data-swipe-ignore="true"]',
+        'input,textarea,select,[contenteditable="true"],[data-swipe-ignore="true"]',
       )
     );
   }
@@ -684,8 +755,8 @@ export function MatchDetailModal({
       Math.abs(velocity) >= SWIPE_VELOCITY_PX_PER_MS;
     const farEnough = absX >= threshold && absX >= absY * 1.12;
 
+    suppressClickRef.current = true;
     if (canCommit && navigate && (farEnough || fastEnough)) {
-      suppressClickRef.current = true;
       setIsSwipeDragging(false);
       setIsSwipeSettling(true);
       setDragOffset(wantsNext ? -width : width);
@@ -755,6 +826,7 @@ export function MatchDetailModal({
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
         <button
           type="button"
+          data-swipe-ignore="true"
           onClick={onClose}
           aria-label="閉じる"
           className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-[#3a324a14] bg-white text-[18px] font-bold text-[#3a324a8c]"
@@ -865,6 +937,7 @@ export function MatchDetailModal({
           <div className="mx-auto flex w-full max-w-md items-center gap-2.5 px-[18px] pt-3 pb-[max(env(safe-area-inset-bottom),12px)]">
             <button
               type="button"
+              data-swipe-ignore="true"
               onClick={() => setSelection(new Map())}
               className="rounded-[10px] border border-[#3a324a14] bg-white px-3 py-2.5 text-[11px] font-bold text-[#3a324a8c]"
             >
@@ -872,6 +945,7 @@ export function MatchDetailModal({
             </button>
             <button
               type="button"
+              data-swipe-ignore="true"
               onClick={() => handleProposeClick(false)}
               className="flex-1 rounded-[12px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-3 text-center text-[13.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] active:scale-[0.98]"
             >
@@ -886,6 +960,7 @@ export function MatchDetailModal({
           <div className="mx-auto flex w-full max-w-md items-center gap-2.5 px-[18px] pt-3 pb-[max(env(safe-area-inset-bottom),12px)]">
             <button
               type="button"
+              data-swipe-ignore="true"
               onClick={onClose}
               className="rounded-[10px] border border-[#3a324a14] bg-white px-3 py-2.5 text-[11px] font-bold text-[#3a324a8c]"
             >
@@ -893,6 +968,7 @@ export function MatchDetailModal({
             </button>
             <button
               type="button"
+              data-swipe-ignore="true"
               onClick={handleSimpleProposeClick}
               className="flex-1 rounded-[12px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-3 text-center text-[13.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_4px_14px_rgba(166,149,216,0.33)] active:scale-[0.98]"
             >
@@ -971,6 +1047,7 @@ function SwipePreviewPage({
       <header className="flex items-center gap-3 border-b border-[#3a324a14] bg-white/95 px-[18px] pt-12 pb-3 backdrop-blur-xl">
         <button
           type="button"
+          data-swipe-ignore="true"
           tabIndex={-1}
           aria-label="閉じる"
           className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-[#3a324a14] bg-white text-[18px] font-bold text-[#3a324a8c]"
@@ -1122,6 +1199,7 @@ function WishPopup({
           </div>
           <button
             type="button"
+            data-swipe-ignore="true"
             onClick={onClose}
             aria-label="閉じる"
             className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[#3a324a08] text-[#3a324a8c]"
@@ -1206,6 +1284,7 @@ function WishPopup({
         <div className="border-t border-[#3a324a08] bg-[#fbf9fc] px-3 py-2.5">
           <button
             type="button"
+            data-swipe-ignore="true"
             onClick={onClose}
             className="block w-full rounded-[10px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] py-2.5 text-center text-[12.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_2px_8px_rgba(166,149,216,0.3)]"
           >
@@ -1945,7 +2024,7 @@ function ItemPhoto({
       style={{
         width: size,
         height: size,
-        background: hasPhoto ? "#3a324a" : stripeBg,
+        background: hasPhoto ? "#fbf9fc" : stripeBg,
       }}
       title={`${item.label}${qty > 1 ? ` ×${qty}` : ""}`}
     >
@@ -1955,7 +2034,9 @@ function ItemPhoto({
           src={item.photoUrl!}
           alt={item.label}
           className="absolute inset-0 h-full w-full object-cover"
-          loading="lazy"
+          decoding="async"
+          draggable={false}
+          loading="eager"
         />
       )}
       {!hasPhoto && (
@@ -2040,6 +2121,7 @@ function ValidationAlert({
         <div className="flex gap-2 border-t border-[#3a324a08] bg-[#fbf9fc] px-4 py-3">
           <button
             type="button"
+            data-swipe-ignore="true"
             onClick={onCancel}
             className="flex-1 rounded-[10px] border border-[#3a324a14] bg-white py-2.5 text-[12px] font-extrabold text-[#3a324a]"
           >
@@ -2047,6 +2129,7 @@ function ValidationAlert({
           </button>
           <button
             type="button"
+            data-swipe-ignore="true"
             onClick={onProceed}
             className="flex-1 rounded-[10px] bg-[#d9826b] py-2.5 text-[12px] font-extrabold text-white shadow-[0_2px_6px_rgba(217,130,107,0.35)]"
           >
