@@ -122,6 +122,10 @@ export function ListingNewForm({
     !initialValues && preselectWishId
       ? wishItems.find((w) => w.id === preselectWishId) ?? null
       : null;
+  const inventoryItemById = useMemo(
+    () => new Map(inventoryItems.map((it) => [it.id, it] as const)),
+    [inventoryItems],
+  );
   const router = useRouter();
 
   /* ─ 譲側 ─ */
@@ -136,10 +140,10 @@ export function ListingNewForm({
   // iter144: edit 時の初期値は、現在の在庫数を超えていたら clamp する
   //         （listing 作成後に在庫数が減っているケースのフェイルセーフ）
   const [selectedHaves, setSelectedHaves] = useState<SelectedItem[]>(
-    (initialValues?.selectedHaves ?? []).map((s) => {
-      const cap =
-        inventoryItems.find((it) => it.id === s.id)?.availableQty ?? 1;
-      return { ...s, qty: Math.min(Math.max(1, s.qty), cap) };
+    (initialValues?.selectedHaves ?? []).flatMap((s) => {
+      const item = inventoryItemById.get(s.id);
+      if (!item || item.availableQty < 1) return [];
+      return [{ ...s, qty: Math.min(Math.max(1, s.qty), item.availableQty) }];
     }),
   );
   const [haveLogic, setHaveLogic] = useState<ListingLogic>(
@@ -221,8 +225,20 @@ export function ListingNewForm({
 
   /** iter144: id の在庫数（見つからなければ 1 を返す） */
   function getAvailableQty(id: string): number {
-    const it = inventoryItems.find((x) => x.id === id);
-    return it?.availableQty ?? 1;
+    return inventoryItemById.get(id)?.availableQty ?? 1;
+  }
+
+  function getSubmittableHaves(): SelectedItem[] {
+    return selectedHaves.flatMap((s) => {
+      const item = inventoryItemById.get(s.id);
+      if (!item || item.availableQty < 1) return [];
+      return [
+        {
+          id: s.id,
+          qty: Math.min(Math.max(1, s.qty), item.availableQty),
+        },
+      ];
+    });
   }
 
   /* ─ 譲側のフィルタ済みインベントリ ─ */
@@ -359,7 +375,8 @@ export function ListingNewForm({
       setError("譲るグッズのグループと種別を選んでください");
       return;
     }
-    if (selectedHaves.length === 0) {
+    const submittableHaves = getSubmittableHaves();
+    if (submittableHaves.length === 0) {
       setError("譲るグッズを 1 件以上選んでください");
       return;
     }
@@ -407,15 +424,15 @@ export function ListingNewForm({
       mode === "edit" && listingId
         ? await updateListingFull({
             id: listingId,
-            haveIds: selectedHaves.map((s) => s.id),
-            haveQtys: selectedHaves.map((s) => s.qty),
+            haveIds: submittableHaves.map((s) => s.id),
+            haveQtys: submittableHaves.map((s) => s.qty),
             haveLogic,
             options: optionsInput,
             note: note.trim() || undefined,
           })
         : await createListing({
-            haveIds: selectedHaves.map((s) => s.id),
-            haveQtys: selectedHaves.map((s) => s.qty),
+            haveIds: submittableHaves.map((s) => s.id),
+            haveQtys: submittableHaves.map((s) => s.qty),
             haveLogic,
             options: optionsInput,
             note: note.trim() || undefined,

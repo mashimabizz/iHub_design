@@ -4,6 +4,53 @@
 
 ---
 
+## イテレーション154.14：個別募集編集の隠れ譲参照を除外
+
+### 背景・問題意識
+
+オーナーから、個別募集更新時に「交換条件に使えない譲グッズがあります」として `V トレカ` や `ジョングク トレカ` が表示されるが、実際の編集画面上部の譲候補にも表示されず、選択もしていないためユーザーが外しようがないという指摘があった。
+
+個別募集作成後にマイ在庫側で自分キープ化・取引成立による市場残数減少などが起きると、DB の `listings.have_ids` には古い参照が残る一方、編集画面の候補一覧には出ないことがある。この古い参照をフォーム内部の初期選択として保持したまま更新 payload に送っていたため、ユーザーに見えない譲グッズでバリデーションが止まっていた。
+
+### 変更内容
+
+#### `web/src/app/listings/[id]/edit/page.tsx`
+- 個別募集編集時、譲側は「現在 active かつ市場残数がある候補」だけを `inventoryItems` として渡すように整理。
+- 過去に `listing.have_ids` に入っていたが、現在候補に出せない譲は初期選択から除外。
+- 既存 `have_group_id` / `have_goods_type_id` が現在の候補 dropdown に存在しない場合は、初期選択を空にしてユーザーが選び直せる状態にした。
+- wish 側は既存選択を編集画面で外せるよう、参照中 wish の union fetch を維持。
+
+#### `web/src/app/listings/new/ListingNewForm.tsx`
+- edit 初期化時、`inventoryItems` に存在しない譲 ID や `availableQty < 1` の譲 ID は `selectedHaves` に入れない。
+- submit 直前にも、現在候補に存在する譲だけを `haveIds` / `haveQtys` として送る防御を追加。
+- 数量は現在の `availableQty` で clamp し、過去の数量が市場残数を超えたまま送られないようにした。
+
+### 影響範囲
+
+- `/listings/[id]/edit` 個別募集編集画面
+- 個別募集更新時の市場残数・在庫状態バリデーション
+- 自分キープ化、成立済み取引による市場残数 0、在庫数減少後の個別募集更新体験
+
+### 確認方法
+
+- `npx eslint 'src/app/listings/[id]/edit/page.tsx' src/app/listings/new/ListingNewForm.tsx`
+
+### 関連ファイル
+
+- `web/src/app/listings/[id]/edit/page.tsx`
+- `web/src/app/listings/new/ListingNewForm.tsx`
+
+### セルフレビュー結果
+
+- ✅ 候補に出ない譲グッズが hidden selection として送信されない
+- ✅ 見えていないグッズ名で更新エラーになり続ける状態を解消
+- ✅ wish 側の既存参照は編集で外せるよう維持
+- ✅ `notes/09_state_machines.md` は既存の Listing Lifecycle ルール内の実装修正のため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` は既存の `have_ids` 整合ルールの実装修正のため更新不要
+
+---
+
 ## イテレーション154.13：モード切替中表示を上部ステータス化
 
 ### 背景・問題意識

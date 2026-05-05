@@ -137,29 +137,15 @@ export default async function ListingEditPage({
       .order("created_at", { ascending: false }),
   ]);
 
-  // 編集対象が参照する have/wish が現在 active でない可能性があるため、
-  // 参照されてる id を別途 union fetch して inventoryItems / wishItems に注入する
-  const referencedHaveIds = new Set<string>(listing.have_ids ?? []);
+  // 編集対象が参照する wish が現在 active でない可能性があるため、
+  // wish 側だけは参照 id を別途 union fetch して、編集時に外せるようにする。
+  // 譲側は「いま市場に出せる候補」だけを表示し、古い have_id は初期選択から外す。
   const referencedWishIds = new Set<string>();
   for (const o of options) for (const wid of o.wish_ids ?? []) referencedWishIds.add(wid);
-  const haveIdsToFetch = Array.from(referencedHaveIds).filter(
-    (id) => !(inventoryRows ?? []).some((r) => r.id === id),
-  );
   const wishIdsToFetch = Array.from(referencedWishIds).filter(
     (id) => !(wishRows ?? []).some((r) => r.id === id),
   );
-  const extraInventoryRows: typeof inventoryRows = [];
   const extraWishRows: typeof wishRows = [];
-  if (haveIdsToFetch.length > 0) {
-    const { data } = await supabase
-      .from("goods_inventory")
-      .select(
-        // iter144: 譲側の選択上限を在庫数に揃えるため quantity も取得
-"id, title, photo_urls, hue, quantity, group_id, goods_type_id, group:groups_master(id, name), character:characters_master(id, name), goods_type:goods_types_master(id, name)",
-      )
-      .in("id", haveIdsToFetch);
-    if (data) extraInventoryRows.push(...data);
-  }
   if (wishIdsToFetch.length > 0) {
     const { data } = await supabase
       .from("goods_inventory")
@@ -170,7 +156,7 @@ export default async function ListingEditPage({
       .in("id", wishIdsToFetch);
     if (data) extraWishRows.push(...data);
   }
-  const allInventoryRows = [...(inventoryRows ?? []), ...extraInventoryRows];
+  const allInventoryRows = inventoryRows ?? [];
   const allWishRows = [...(wishRows ?? []), ...extraWishRows];
   const reservedQtyByInvId = await getAgreedReservedQtyByInvId(
     serviceSupabase,
@@ -274,17 +260,32 @@ export default async function ListingEditPage({
       name: pickName(r.goods_type),
     })),
   );
+  const inventoryItemById = new Map(inventoryItems.map((it) => [it.id, it]));
+  const canUseInitialHaveGroup =
+    !!listing.have_group_id &&
+    inventoryGroups.some((g) => g.id === listing.have_group_id);
+  const canUseInitialHaveGoodsType =
+    !!listing.have_goods_type_id &&
+    inventoryGoodsTypes.some((g) => g.id === listing.have_goods_type_id);
 
   // 初期値構築
   const haveIds = listing.have_ids ?? [];
   const haveQtys = listing.have_qtys ?? [];
   const initialValues: ListingFormInitialValues = {
-    haveGroupId: listing.have_group_id,
-    haveGoodsTypeId: listing.have_goods_type_id,
-    selectedHaves: haveIds.map((hid, i) => ({
-      id: hid,
-      qty: haveQtys[i] ?? 1,
-    })),
+    haveGroupId: canUseInitialHaveGroup ? listing.have_group_id : null,
+    haveGoodsTypeId: canUseInitialHaveGoodsType
+      ? listing.have_goods_type_id
+      : null,
+    selectedHaves: haveIds.flatMap((hid, i) => {
+      const item = inventoryItemById.get(hid);
+      if (!item || item.availableQty < 1) return [];
+      return [
+        {
+          id: hid,
+          qty: Math.min(Math.max(1, haveQtys[i] ?? 1), item.availableQty),
+        },
+      ];
+    }),
     haveLogic: listing.have_logic,
     options: options.map((o) => ({
       position: o.position,
