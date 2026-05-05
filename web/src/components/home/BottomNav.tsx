@@ -47,7 +47,7 @@ export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#3a324a14] bg-white/95 backdrop-blur-xl">
+    <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#3a324a14] bg-white">
       <div className="mx-auto flex max-w-md items-stretch px-1 pb-[env(safe-area-inset-bottom)]">
         {links}
       </div>
