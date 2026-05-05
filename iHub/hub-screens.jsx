@@ -243,6 +243,16 @@ function ProfileHub({ tweaks }) {
               <span style={{ fontSize: 14, color: c.lavender }}>›</span>
             </div>
           </HSRow>
+          <HSRow colors={c}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18, width: 24, textAlign: 'center' }}>📅</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700 }}>スケジュール</div>
+                <div style={{ fontSize: 10.5, color: c.mute }}>個人予定 · 公開設定 · 取引候補日の整理</div>
+              </div>
+              <span style={{ fontSize: 14, color: c.lavender }}>›</span>
+            </div>
+          </HSRow>
           <HSRow colors={c} last>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 18, width: 24, textAlign: 'center' }}>✓</span>

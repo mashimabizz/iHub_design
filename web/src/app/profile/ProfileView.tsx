@@ -117,29 +117,10 @@ export function ProfileView({
           </div>
         </div>
 
-        {/* 予定 */}
-        <div
-          className="animate-section-fade-down"
-          style={{ animationDelay: "80ms" }}
-        >
-          <Section label="予定">
-            <Link href="/schedules" className="block">
-              <Row>
-                <RowItem
-                  icon="📅"
-                  title="スケジュール"
-                  sub="自分の予定（取引と無関係の用事も登録可）"
-                  chevron
-                />
-              </Row>
-            </Link>
-          </Section>
-        </div>
-
         {/* アイデンティティ */}
         <div
           className="animate-section-fade-down"
-          style={{ animationDelay: "160ms" }}
+          style={{ animationDelay: "80ms" }}
         >
           <Section label="アイデンティティ">
             <Link href="/profile/edit" className="block">
@@ -162,13 +143,21 @@ export function ProfileView({
                 chevron
               />
             </Link>
+            <Link href="/schedules" className="block">
+              <RowItem
+                icon="📅"
+                title="スケジュール"
+                sub="自分の予定（取引と無関係の用事も登録可）"
+                chevron
+              />
+            </Link>
           </Section>
         </div>
 
         {/* 設定・サポート */}
         <div
           className="animate-section-fade-down"
-          style={{ animationDelay: "240ms" }}
+          style={{ animationDelay: "160ms" }}
         >
           <Section label="設定・サポート">
             <RowLink
@@ -195,7 +184,7 @@ export function ProfileView({
         {/* Logout */}
         <div
           className="animate-section-fade-down"
-          style={{ animationDelay: "320ms" }}
+          style={{ animationDelay: "240ms" }}
         >
           <Section>
             <LogoutRow />
