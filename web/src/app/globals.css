@@ -297,13 +297,8 @@ body {
 @keyframes homeShelfPanelIn {
   0% {
     opacity: 0;
-    transform: translate3d(115vw, 0, 0) scale(0.985);
+    transform: translate3d(118vw, 0, 0) scale(0.985);
     filter: blur(1.8px);
-  }
-  58% {
-    opacity: 1;
-    transform: translate3d(10px, 0, 0) scale(1);
-    filter: blur(0);
   }
   100% {
     opacity: 1;
@@ -313,7 +308,7 @@ body {
 }
 
 .animate-home-shelf-panel-in {
-  animation: homeShelfPanelIn 680ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: homeShelfPanelIn 860ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity, filter;
 }
 
@@ -327,11 +322,6 @@ body {
     transform: translateY(-18px) scale(0.985);
     filter: blur(1.5px);
   }
-  48% {
-    opacity: 0.72;
-    transform: translateY(-5px) scale(0.997);
-    filter: blur(0.4px);
-  }
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -340,7 +330,7 @@ body {
 }
 
 .animate-transaction-panel-in {
-  animation: transactionPanelIn 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: transactionPanelIn 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity, filter;
 }
 

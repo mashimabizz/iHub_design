@@ -4,6 +4,56 @@
 
 ---
 
+## イテレーション152.6：ホームと取引一覧の着地アニメーションを滑らかに調整
+
+### 背景・問題意識
+
+オーナーから、ホームの候補パネルが右からスライドしてくる動きは良いが、終着点に近づいたところで一度また動き出すようなぎこちなさがあると指摘があった。同じ違和感が取引一覧にも出ているため、両方のアニメーションを滑らかに着地するよう調整する。
+
+また、ホームでは上の行から順に少し早くカードが来るようにしつつ、全体の動きは少しゆっくりでよいという指示があった。
+
+### 変更内容
+
+#### `web/src/app/globals.css`
+- `homeShelfPanelIn` から終点直前の中間 transform keyframe を削除し、右外から終点まで単調に減速する動きに変更。
+- ホーム候補パネルの duration を `680ms` から `860ms` に延長。
+- `transactionPanelIn` から終点直前の中間 transform keyframe を削除し、取引一覧も滑らかに着地するよう変更。
+- 取引一覧パネルの duration を `760ms` から `900ms` に延長。
+
+#### `web/src/components/home/HomeView.tsx`
+- ホーム候補行の row delay を `55ms` から `95ms` に広げ、上の行から順にカードが先に来る見え方を強めた。
+- 同一行内の候補 stagger を `70ms` から `85ms` に広げ、全体の動きを少しゆっくりにした。
+
+### 影響範囲
+
+- `/` ホーム / マッチング画面
+- `/transactions` 取引一覧
+- ホーム候補画像パネルの登場アニメーション
+- 取引一覧カードの登場アニメーション
+
+### 確認方法
+
+- `npx eslint src/components/home/HomeView.tsx`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/globals.css`
+- `web/src/components/home/HomeView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 終点手前の中間 transform を削除し、二段階に動く違和感を解消
+- ✅ ホーム候補パネルの duration / stagger を少し遅めに調整
+- ✅ 上の行から順に候補が先に来る row delay を調整
+- ✅ 取引一覧の登場アニメーションも同じ着地方針に統一
+- ✅ `notes/09_state_machines.md` は状態変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル変更なしのため更新不要
+- ✅ 対象 TSX ESLint / build 成功
+
+---
+
 ## イテレーション152.5：ホーム場所表示のOFF文言と省略記号を調整
 
 ### 背景・問題意識

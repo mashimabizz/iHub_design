@@ -756,7 +756,7 @@ export function HomeView({
                 <WishShelfRowView
                   key={row.key}
                   row={row}
-                  delayMs={idx * 55}
+                  delayMs={idx * 95}
                   onSelect={setSelectedCandidate}
                 />
               ))
@@ -864,7 +864,7 @@ function WishShelfRowView({
           <WishShelfTile
             key={candidate.key}
             candidate={candidate}
-            delayMs={delayMs + idx * 70}
+            delayMs={delayMs + idx * 85}
             onSelect={() => onSelect(candidate)}
           />
         ))}
