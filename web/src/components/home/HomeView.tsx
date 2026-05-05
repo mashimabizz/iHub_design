@@ -260,6 +260,9 @@ function matchToCard(
 type CandidatePriority = 0 | 1 | 2;
 type HomeModeView = "national" | "local";
 
+const MODE_SWITCH_STATUS_MS = 480;
+const MODE_SWITCH_SHEET_STATUS_MS = 260;
+
 type WishShelfCandidate = {
   key: string;
   card: MatchCardData;
@@ -669,7 +672,7 @@ export function HomeView({
     setModeSwitching(true);
   }
 
-  function hideModeSwitchOverlay(delayMs = 280) {
+  function hideModeSwitchOverlay(delayMs = MODE_SWITCH_STATUS_MS) {
     clearModeSwitchTimer();
     if (typeof window === "undefined") {
       setModeSwitching(false);
@@ -696,7 +699,7 @@ export function HomeView({
     const timer = window.setTimeout(() => {
       setOptimisticMode(null);
       setModeSwitching(false);
-    }, 180);
+    }, MODE_SWITCH_STATUS_MS);
     return () => window.clearTimeout(timer);
   }, [actualViewMode, optimisticMode, pending]);
 
@@ -736,7 +739,7 @@ export function HomeView({
             return;
           }
           setSheetOpen(true);
-          hideModeSwitchOverlay(120);
+          hideModeSwitchOverlay(MODE_SWITCH_SHEET_STATUS_MS);
         } catch (error) {
           cancelModeSwitch();
           throw error;
@@ -757,7 +760,7 @@ export function HomeView({
               return;
             }
             setSheetOpen(true);
-            hideModeSwitchOverlay(120);
+            hideModeSwitchOverlay(MODE_SWITCH_SHEET_STATUS_MS);
           } catch (error) {
             cancelModeSwitch();
             throw error;
@@ -774,7 +777,7 @@ export function HomeView({
               return;
             }
             setSheetOpen(true);
-            hideModeSwitchOverlay(120);
+            hideModeSwitchOverlay(MODE_SWITCH_SHEET_STATUS_MS);
           } catch (error) {
             cancelModeSwitch();
             throw error;
@@ -832,8 +835,8 @@ export function HomeView({
 
       {/* モード切替・適用中のローディングオーバーレイ */}
       {showModeSwitchOverlay && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#fbf9fc]/45 px-5 backdrop-blur-md">
-          <div className="flex min-w-[210px] items-center gap-3 rounded-[22px] border border-white/75 bg-white/82 px-4 py-3 shadow-[0_18px_45px_rgba(58,50,74,0.22)] backdrop-blur-xl">
+        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-[#fbf9fc]/38 px-5 pt-[calc(env(safe-area-inset-top)+86px)] backdrop-blur-[3px]">
+          <div className="flex min-w-[210px] items-center gap-3 rounded-full border border-white/75 bg-white/86 px-4 py-3 shadow-[0_14px_32px_rgba(58,50,74,0.18)] backdrop-blur-xl">
             <span className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#a695d81c]">
               <span className="absolute h-8 w-8 animate-ping rounded-full bg-[#a695d833]" />
               <span className="relative block h-3.5 w-3.5 rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] shadow-[0_0_14px_rgba(166,149,216,0.55)]" />
