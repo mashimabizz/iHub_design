@@ -12,6 +12,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { deleteListing, updateListing } from "./actions";
 
 export type ListingHaveItem = {
@@ -57,6 +58,12 @@ export type ListingItem = {
   note: string | null;
 };
 
+type DeckWishSlot = {
+  key: string;
+  option: ListingOption;
+  wish: ListingWishItem | null;
+};
+
 const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
   same_kind: "同種",
   cross_kind: "異種",
@@ -87,6 +94,8 @@ export function ListingsView({
   readOnly?: boolean;
 }) {
   const router = useRouter();
+  const [deckIndex, setDeckIndex] = useState(0);
+  const activeDeckIndex = Math.min(deckIndex, Math.max(0, items.length - 1));
 
   async function handleDelete(id: string) {
     if (readOnly) return;
@@ -133,18 +142,569 @@ export function ListingsView({
   }
 
   return (
-    <div className="space-y-3">
-      {items.map((it) => (
-        <ListingCard
-          key={it.id}
-          listing={it}
-          onTogglePause={() => togglePause(it.id, it.status)}
-          onDelete={() => handleDelete(it.id)}
-          readOnly={readOnly}
-        />
-      ))}
+    <div className="space-y-4">
+      <ListingDeck
+        items={items}
+        activeIndex={activeDeckIndex}
+        onActiveIndexChange={setDeckIndex}
+        onTogglePause={(item) => togglePause(item.id, item.status)}
+        onDelete={(item) => handleDelete(item.id)}
+        readOnly={readOnly}
+      />
+      <div className="space-y-3">
+        {items.map((it) => (
+          <ListingCard
+            key={it.id}
+            listing={it}
+            onTogglePause={() => togglePause(it.id, it.status)}
+            onDelete={() => handleDelete(it.id)}
+            readOnly={readOnly}
+          />
+        ))}
+      </div>
     </div>
   );
+}
+
+/* ─── 募集デッキ — 横スワイプで 1 募集ずつ大きく見る ─── */
+
+function ListingDeck({
+  items,
+  activeIndex,
+  onActiveIndexChange,
+  onTogglePause,
+  onDelete,
+  readOnly,
+}: {
+  items: ListingItem[];
+  activeIndex: number;
+  onActiveIndexChange: (index: number) => void;
+  onTogglePause: (item: ListingItem) => void;
+  onDelete: (item: ListingItem) => void;
+  readOnly?: boolean;
+}) {
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (frameRef.current != null) window.cancelAnimationFrame(frameRef.current);
+    };
+  }, []);
+
+  function handleScroll() {
+    const scroller = scrollerRef.current;
+    if (!scroller || frameRef.current != null) return;
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      const cards = Array.from(
+        scroller.querySelectorAll<HTMLElement>("[data-listing-deck-card]"),
+      );
+      const center = scroller.scrollLeft + scroller.clientWidth / 2;
+      let nearest = activeIndex;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      cards.forEach((card, index) => {
+        const cardCenter = card.offsetLeft + card.offsetWidth / 2;
+        const distance = Math.abs(cardCenter - center);
+        if (distance < nearestDistance) {
+          nearest = index;
+          nearestDistance = distance;
+        }
+      });
+      if (nearest !== activeIndex) onActiveIndexChange(nearest);
+    });
+  }
+
+  function scrollToIndex(index: number) {
+    const scroller = scrollerRef.current;
+    const card = scroller?.querySelectorAll<HTMLElement>(
+      "[data-listing-deck-card]",
+    )[index];
+    if (!scroller || !card) return;
+    scroller.scrollTo({
+      left: card.offsetLeft - (scroller.clientWidth - card.offsetWidth) / 2,
+      behavior: "smooth",
+    });
+    onActiveIndexChange(index);
+  }
+
+  return (
+    <section className="-mx-4 overflow-hidden pb-1">
+      <div className="mb-2 flex items-center justify-between px-4">
+        <div className="text-[13px] font-extrabold tracking-[0.2px] text-[#3a324a]">
+          募集デッキ
+        </div>
+        <div className="rounded-full bg-[#3a324a08] px-2.5 py-1 text-[10px] font-extrabold tabular-nums text-[#3a324a8c]">
+          {Math.min(activeIndex + 1, items.length)} / {items.length}
+        </div>
+      </div>
+      <div
+        ref={scrollerRef}
+        onScroll={handleScroll}
+        className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-5 pb-2 pt-1 [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
+      >
+        {items.map((item, index) => {
+          const offset = index - activeIndex;
+          const active = offset === 0;
+          return (
+            <div
+              key={item.id}
+              data-listing-deck-card
+              className="w-[84%] flex-shrink-0 snap-center transition-transform duration-300 ease-out"
+              style={{
+                transform: active
+                  ? "translateY(0) scale(1) rotateY(0deg)"
+                  : `translateY(5px) scale(0.94) rotateY(${offset < 0 ? 6 : -6}deg)`,
+                transformStyle: "preserve-3d",
+              }}
+            >
+              <ListingDeckCard
+                listing={item}
+                active={active}
+                onTogglePause={() => onTogglePause(item)}
+                onDelete={() => onDelete(item)}
+                readOnly={readOnly}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {items.length > 1 && (
+        <div className="mt-1 flex justify-center gap-1.5">
+          {items.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-label={`募集 ${index + 1} を表示`}
+              onClick={() => scrollToIndex(index)}
+              className={`h-1.5 rounded-full transition-all ${
+                index === activeIndex
+                  ? "w-5 bg-[#a695d8]"
+                  : "w-1.5 bg-[#3a324a1f]"
+              }`}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ListingDeckCard({
+  listing,
+  active,
+  onTogglePause,
+  onDelete,
+  readOnly,
+}: {
+  listing: ListingItem;
+  active: boolean;
+  onTogglePause: () => void;
+  onDelete: () => void;
+  readOnly?: boolean;
+}) {
+  const isActive = listing.status === "active";
+  const wishSlots = getDeckWishSlots(listing);
+  const mode =
+    wishSlots.length <= 1 ? "duel" : wishSlots.length <= 3 ? "fan" : "orb";
+
+  return (
+    <article
+      className={`relative min-h-[254px] overflow-hidden rounded-[20px] border bg-white shadow-[0_14px_34px_rgba(58,50,74,0.14)] ${
+        active ? "border-[#a695d866]" : "border-[#3a324a12]"
+      }`}
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(166,149,216,0.22),transparent_42%),radial-gradient(circle_at_92%_18%,rgba(168,212,230,0.18),transparent_38%),linear-gradient(180deg,#ffffff,#fbf9fc)]" />
+      <div className="relative z-10 flex items-center gap-2 px-3 py-2">
+        <span
+          className={`rounded-full px-2 py-[2px] text-[9.5px] font-extrabold tracking-[0.5px] ${
+            isActive
+              ? "bg-emerald-500 text-white"
+              : "bg-[#3a324a14] text-[#3a324a8c]"
+          }`}
+        >
+          {isActive
+            ? "ACTIVE"
+            : listing.status === "paused"
+              ? "一時停止"
+              : listing.status === "matched"
+                ? "MATCHED"
+                : listing.status === "closed"
+                  ? "完了"
+                  : listing.status.toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-[#3a324a8c]">
+          {[listing.haveGroupName, listing.haveGoodsTypeName]
+            .filter(Boolean)
+            .join(" × ") || "個別募集"}
+        </div>
+        {!readOnly && (
+          <div className="flex items-center gap-1">
+            <Link
+              href={`/listings/${listing.id}/edit`}
+              aria-label="個別募集を編集"
+              title="編集"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-white/85 text-[#a695d8] shadow-[0_2px_8px_rgba(58,50,74,0.08)] active:scale-95"
+            >
+              <EditIcon />
+            </Link>
+            <button
+              type="button"
+              onClick={onTogglePause}
+              disabled={listing.status === "matched" || listing.status === "closed"}
+              aria-label={listing.status === "paused" ? "個別募集を再開" : "個別募集を一時停止"}
+              title={listing.status === "paused" ? "再開" : "一時停止"}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-white/85 text-[#3a324acc] shadow-[0_2px_8px_rgba(58,50,74,0.08)] active:scale-95 disabled:opacity-40"
+            >
+              {listing.status === "paused" ? <PlayIcon /> : <PauseIcon />}
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label="個別募集を削除"
+              title="削除"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-white/85 text-red-500 shadow-[0_2px_8px_rgba(58,50,74,0.08)] active:scale-95"
+            >
+              <TrashIcon />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="relative z-10 px-3 pb-3">
+        {mode === "duel" ? (
+          <DeckDuel listing={listing} slot={wishSlots[0] ?? null} />
+        ) : mode === "fan" ? (
+          <DeckFan listing={listing} slots={wishSlots} />
+        ) : (
+          <DeckOrb listing={listing} slots={wishSlots} />
+        )}
+      </div>
+    </article>
+  );
+}
+
+function getDeckWishSlots(listing: ListingItem): DeckWishSlot[] {
+  return [...listing.options]
+    .sort((a, b) => a.position - b.position)
+    .flatMap<DeckWishSlot>((option) => {
+      if (option.isCashOffer) {
+        return [{ key: `${option.id}:cash`, option, wish: null }];
+      }
+      return option.wishes.map((wish) => ({
+        key: `${option.id}:${wish.id}`,
+        option,
+        wish,
+      }));
+    });
+}
+
+function DeckDuel({
+  listing,
+  slot,
+}: {
+  listing: ListingItem;
+  slot: DeckWishSlot | null;
+}) {
+  return (
+    <div className="grid min-h-[190px] grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-center gap-2">
+      <div className="flex min-w-0 flex-col items-center">
+        <DeckHaveVisual listing={listing} size={112} />
+        <DeckCaption text="譲る" />
+      </div>
+      <DeckVersusMark />
+      <div className="flex min-w-0 flex-col items-center">
+        <DeckWishVisual slot={slot} size={112} />
+        <DeckCaption text={deckWishCaption(slot)} chip={slot?.option} />
+      </div>
+    </div>
+  );
+}
+
+function DeckFan({
+  listing,
+  slots,
+}: {
+  listing: ListingItem;
+  slots: DeckWishSlot[];
+}) {
+  const visible = slots.slice(0, 3);
+  const transforms = [
+    "translate3d(-6px, 24px, 0) rotate(-10deg)",
+    "translate3d(38px, 2px, 0) rotate(0deg)",
+    "translate3d(82px, 24px, 0) rotate(10deg)",
+  ];
+
+  return (
+    <div className="relative min-h-[190px]">
+      <div className="absolute left-1 top-10 z-20 flex flex-col items-center">
+        <DeckHaveVisual listing={listing} size={104} />
+        <DeckCaption text="譲る" />
+      </div>
+      <div className="absolute left-[112px] top-[86px] z-30">
+        <DeckVersusMark compact />
+      </div>
+      <div className="absolute right-0 top-4 h-[162px] w-[178px]">
+        {visible.map((slot, index) => (
+          <div
+            key={slot.key}
+            className="absolute left-0 top-0 z-10 flex flex-col items-center"
+            style={{ transform: transforms[index] }}
+          >
+            <DeckWishVisual slot={slot} size={78} />
+          </div>
+        ))}
+        {slots.length > visible.length && (
+          <span className="absolute bottom-2 right-3 z-30 rounded-full bg-[#3a324acc] px-2 py-1 text-[10px] font-extrabold text-white">
+            +{slots.length - visible.length}
+          </span>
+        )}
+      </div>
+      <div className="absolute bottom-1 left-[142px] right-2 z-30 flex min-w-0 items-center justify-end">
+        <DeckCaption text={deckWishCaption(visible[0] ?? null)} />
+      </div>
+    </div>
+  );
+}
+
+function DeckOrb({
+  listing,
+  slots,
+}: {
+  listing: ListingItem;
+  slots: DeckWishSlot[];
+}) {
+  const visible = slots.slice(0, 6);
+  const positions: CSSProperties[] = [
+    { left: 2, top: 8 },
+    { right: 0, top: 8 },
+    { left: 16, bottom: 18 },
+    { right: 12, bottom: 20 },
+    { left: 88, top: 0 },
+    { left: 94, bottom: 0 },
+  ];
+
+  return (
+    <div className="relative min-h-[198px]">
+      <div className="absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center">
+        <div className="rounded-[24px] bg-white/65 p-1 shadow-[0_12px_28px_rgba(58,50,74,0.14)] backdrop-blur-sm">
+          <DeckHaveVisual listing={listing} size={102} />
+        </div>
+        <span className="mt-1 rounded-full bg-white/85 px-2 py-[2px] text-[9px] font-extrabold text-[#3a324a99] shadow-[0_2px_8px_rgba(58,50,74,0.08)]">
+          {logicLabel(listing.haveLogic)}
+        </span>
+      </div>
+      <div className="absolute inset-0 rounded-[18px] border border-white/60 bg-[radial-gradient(circle_at_50%_50%,rgba(166,149,216,0.2),transparent_34%)]" />
+      {visible.map((slot, index) => (
+        <div
+          key={slot.key}
+          className="absolute z-10 flex flex-col items-center"
+          style={positions[index]}
+        >
+          <DeckWishVisual slot={slot} size={58} />
+        </div>
+      ))}
+      {slots.length > visible.length && (
+        <span className="absolute right-2 top-1/2 z-30 -translate-y-1/2 rounded-full bg-[#3a324acc] px-2 py-1 text-[10px] font-extrabold text-white">
+          +{slots.length - visible.length}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function DeckHaveVisual({
+  listing,
+  size,
+}: {
+  listing: ListingItem;
+  size: number;
+}) {
+  if (listing.haves.length === 0) {
+    return <DeckEmptyVisual label="譲" size={size} />;
+  }
+
+  if (listing.haves.length === 1) {
+    return <DeckItemVisual item={listing.haves[0]} kind="have" size={size} />;
+  }
+
+  const visible = listing.haves.slice(0, 3);
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      {visible.map((item, index) => (
+        <DeckItemVisual
+          key={item.id}
+          item={item}
+          kind="have"
+          size={size - index * 12}
+          className="absolute"
+          style={{
+            left: index * 8,
+            top: index * 8,
+            zIndex: visible.length - index,
+          }}
+        />
+      ))}
+      <span className="absolute left-1 top-1 z-20 rounded-full bg-[#a8d4e6] px-2 py-[2px] text-[9px] font-extrabold text-white shadow-[0_2px_6px_rgba(58,50,74,0.16)]">
+        {logicLabel(listing.haveLogic)}
+      </span>
+      {listing.haves.length > visible.length && (
+        <span className="absolute bottom-1 right-1 z-20 rounded-full bg-[#3a324acc] px-2 py-[2px] text-[9px] font-extrabold text-white">
+          +{listing.haves.length - visible.length}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function DeckWishVisual({
+  slot,
+  size,
+}: {
+  slot: DeckWishSlot | null;
+  size: number;
+}) {
+  if (!slot) return <DeckEmptyVisual label="求" size={size} />;
+  if (slot.option.isCashOffer) {
+    return <DeckCashVisual amount={slot.option.cashAmount} size={size} />;
+  }
+  if (!slot.wish) return <DeckEmptyVisual label="求" size={size} />;
+  return <DeckItemVisual item={slot.wish} kind="wish" size={size} />;
+}
+
+function DeckItemVisual({
+  item,
+  kind,
+  size,
+  className = "",
+  style,
+}: {
+  item: ListingHaveItem | ListingWishItem;
+  kind: "have" | "wish";
+  size: number;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const name = item.characterName ?? item.groupName ?? item.title;
+  const hue = itemHueFromName(name);
+  const stripeBg = `repeating-linear-gradient(135deg, hsl(${hue}, 30%, 88%) 0 6px, hsl(${hue}, 32%, 80%) 6px 12px)`;
+  const hasPhoto = !!item.photoUrl;
+  const radius = size >= 80 ? 18 : 13;
+
+  return (
+    <div
+      className={`relative flex flex-shrink-0 items-center justify-center overflow-hidden border bg-white shadow-[0_8px_18px_rgba(58,50,74,0.16)] ${className} ${
+        kind === "have" ? "border-[#a8d4e6]" : "border-[#f3c5d4]"
+      }`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: radius,
+        background: hasPhoto ? "#fff" : stripeBg,
+        ...style,
+      }}
+      title={`${item.title} ×${item.qty}`}
+    >
+      {hasPhoto && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.photoUrl!}
+          alt={item.title}
+          className="absolute inset-0 h-full w-full object-cover"
+          decoding="async"
+        />
+      )}
+      {!hasPhoto && (
+        <span
+          className="font-extrabold text-white/95"
+          style={{
+            fontSize: Math.max(16, Math.round(size * 0.32)),
+            textShadow: `0 2px 4px hsla(${hue}, 30%, 28%, 0.5)`,
+          }}
+        >
+          {name[0] || "?"}
+        </span>
+      )}
+      <span className="absolute right-0 top-0 rounded-bl-lg bg-black/55 px-1.5 py-[1px] text-[9px] font-extrabold leading-tight text-white">
+        ×{item.qty}
+      </span>
+    </div>
+  );
+}
+
+function DeckCashVisual({
+  amount,
+  size,
+}: {
+  amount: number | null;
+  size: number;
+}) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center rounded-[18px] border border-[#7a9a8a55] bg-[#7a9a8a14] text-[#3a324a] shadow-[0_8px_18px_rgba(58,50,74,0.12)]"
+      style={{ width: size, height: size }}
+    >
+      <span className="text-[24px] leading-none">¥</span>
+      <span className="mt-1 max-w-[86%] truncate text-[10px] font-extrabold">
+        {amount?.toLocaleString() ?? "相談"}
+      </span>
+    </div>
+  );
+}
+
+function DeckEmptyVisual({
+  label,
+  size,
+}: {
+  label: string;
+  size: number;
+}) {
+  return (
+    <div
+      className="flex items-center justify-center rounded-[18px] border border-dashed border-[#3a324a24] bg-white/70 text-[12px] font-extrabold text-[#3a324a66]"
+      style={{ width: size, height: size }}
+    >
+      {label}
+    </div>
+  );
+}
+
+function DeckVersusMark({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] font-black italic text-white shadow-[0_8px_18px_rgba(166,149,216,0.34)] ${
+        compact ? "h-9 w-9 text-[13px]" : "h-11 w-11 text-[15px]"
+      }`}
+    >
+      VS
+    </div>
+  );
+}
+
+function DeckCaption({
+  text,
+  chip,
+}: {
+  text: string;
+  chip?: ListingOption;
+}) {
+  return (
+    <div className="mt-2 flex max-w-full items-center justify-center gap-1 rounded-full bg-white/80 px-2 py-1 shadow-[0_2px_8px_rgba(58,50,74,0.08)]">
+      {chip && <ExchangeChip option={chip} />}
+      <span className="max-w-[112px] truncate text-[10px] font-extrabold text-[#3a324a]">
+        {text}
+      </span>
+    </div>
+  );
+}
+
+function deckWishCaption(slot: DeckWishSlot | null): string {
+  if (!slot) return "求める";
+  if (slot.option.isCashOffer) {
+    return `¥${slot.option.cashAmount?.toLocaleString() ?? "相談"}`;
+  }
+  if (!slot.wish) return "求める";
+  return `${itemLabel(slot.wish)} ×${slot.wish.qty}`;
 }
 
 /* ─── 個別募集カード ─── */
@@ -415,6 +975,11 @@ function itemLabel(item: ListingHaveItem | ListingWishItem): string {
   return item.characterName ?? item.groupName ?? item.title;
 }
 
+function itemHueFromName(name: string): number {
+  const code = name.length > 0 ? name.charCodeAt(0) : 63;
+  return (Math.abs(code * 17) + 260) % 360;
+}
+
 function hasConcreteWishImages(option: ListingOption): boolean {
   return option.wishes.length > 0 && option.wishes.every((w) => !!w.photoUrl);
 }
@@ -564,7 +1129,7 @@ function ItemThumb({
   kind: "have" | "wish";
 }) {
   const name = item.characterName ?? item.groupName ?? item.title;
-  const hue = (Math.abs(name.charCodeAt(0) * 17) + 260) % 360;
+  const hue = itemHueFromName(name);
   const stripeBg = `repeating-linear-gradient(135deg, hsl(${hue}, 28%, 86%) 0 4px, hsl(${hue}, 28%, 78%) 4px 8px)`;
   const initialShadow = `0 1px 2px hsla(${hue}, 30%, 30%, 0.5)`;
   const hasPhoto = !!item.photoUrl;
