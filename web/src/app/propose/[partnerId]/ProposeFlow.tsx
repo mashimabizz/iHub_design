@@ -304,6 +304,14 @@ function meetupCandidateIsIncomplete(candidate: MeetupCandidate): boolean {
   return candidateHasAnyInput(candidate) && !meetupCandidateIsSet(candidate);
 }
 
+function findNextMeetupCandidateId(candidates: MeetupCandidate[]): string | null {
+  for (let index = 1; index <= MAX_MEETUP_CANDIDATES; index += 1) {
+    const id = `candidate-${index}`;
+    if (!candidates.some((candidate) => candidate.id === id)) return id;
+  }
+  return null;
+}
+
 function toMeetupPayload(
   candidate: MeetupCandidate,
 ): MeetupCandidatePayload {
@@ -565,13 +573,56 @@ export function ProposeFlow({
   }
 
   function setActiveMeetupTimeRange(start: string, end: string) {
-    updateActiveMeetup({
-      mode: start.slice(0, 10) === roundUpTokyoLocal().slice(0, 10)
+    const mode: MeetupMode =
+      start.slice(0, 10) === roundUpTokyoLocal().slice(0, 10)
         ? "today"
-        : "scheduled",
-      start,
-      end,
-      place: "",
+        : "scheduled";
+    const activeCandidate =
+      meetupCandidates.find((candidate) => candidate.id === activeMeetupId) ??
+      meetupCandidates[0];
+    const incompleteCandidate = meetupCandidates.find(
+      (candidate) =>
+        candidate.id !== activeMeetupId && meetupCandidateIsIncomplete(candidate),
+    );
+    const shouldCreateNext =
+      activeCandidate &&
+      meetupCandidateIsSet(activeCandidate) &&
+      !incompleteCandidate &&
+      meetupCandidates.length < MAX_MEETUP_CANDIDATES;
+    const nextCandidateId = shouldCreateNext
+      ? findNextMeetupCandidateId(meetupCandidates)
+      : null;
+    const targetCandidateId =
+      incompleteCandidate?.id ?? nextCandidateId ?? activeCandidate?.id ?? activeMeetupId;
+    const center = activeCandidate?.center ?? FALLBACK_CENTER;
+
+    skipReverseRef.current = true;
+    setActiveMeetupId(targetCandidateId);
+    setMeetupCandidates((prev) => {
+      const patch = {
+        mode,
+        start,
+        end,
+        place: "",
+      };
+      if (nextCandidateId && targetCandidateId === nextCandidateId) {
+        return [
+          ...prev,
+          {
+            id: nextCandidateId,
+            ...patch,
+            center,
+          },
+        ];
+      }
+      return prev.map((candidate) =>
+        candidate.id === targetCandidateId
+          ? {
+              ...candidate,
+              ...patch,
+            }
+          : candidate,
+      );
     });
     placeManuallyEditedRef.current = false;
   }
@@ -1505,15 +1556,15 @@ function MeetupTab({
 
   return (
     <div className="-mx-[18px] -mt-3.5 h-full overflow-hidden bg-white">
-        <WeekMeetupCalendar
-          candidates={meetupCandidates}
-          activeMeetupId={activeMeetupId}
-          weekDateKeys={weekDateKeys}
-          onSelectCandidate={onSelectCandidate}
-          onTimeRangeSelect={handleTimeRangeSelect}
-          onOpenPlaceSheet={openPlaceSheet}
-          onShiftWeek={shiftCalendarWeek}
-        />
+      <WeekMeetupCalendar
+        candidates={meetupCandidates}
+        activeMeetupId={activeMeetupId}
+        weekDateKeys={weekDateKeys}
+        onSelectCandidate={onSelectCandidate}
+        onTimeRangeSelect={handleTimeRangeSelect}
+        onOpenPlaceSheet={openPlaceSheet}
+        onShiftWeek={shiftCalendarWeek}
+      />
 
       {placeSheetOpen && activeCandidate && (
         <PlacePickerSheet
@@ -1773,9 +1824,11 @@ function WeekMeetupCalendar({
   return (
     <div
       data-propose-swipe-ignore
-      className="h-full bg-white"
+      className="h-full select-none bg-white [-webkit-touch-callout:none] [-webkit-user-select:none]"
       onTouchStart={handleCalendarTouchStart}
       onTouchEnd={handleCalendarTouchEnd}
+      onContextMenu={(e) => e.preventDefault()}
+      onSelect={(e) => e.preventDefault()}
     >
       <div className="h-[calc(100dvh-250px)] min-h-0 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
         <div className="sticky top-0 z-20 grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a12] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.05)]">
@@ -1826,7 +1879,7 @@ function WeekMeetupCalendar({
         {weekDateKeys.map((dateKey, dayIndex) => (
           <div
             key={dateKey}
-            className="relative border-r border-[#3a324a0d] last:border-r-0"
+            className="relative select-none border-r border-[#3a324a0d] last:border-r-0 [-webkit-touch-callout:none] [-webkit-user-select:none]"
             onPointerDown={(e) => handlePointerDown(e, dayIndex)}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
