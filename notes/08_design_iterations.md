@@ -4,6 +4,64 @@
 
 ---
 
+## イテレーション154.32：関係図経由の提示物選択を待ち合わせ起点へ
+
+### 背景・問題意識
+
+オーナーから、関係図経由で提示物の選択へ進んだ場合、すでに提示物は関係図で選んでいるため、「私が出す」「受け取る」ではなく、そのまま「待ち合わせ」タブから始めたいという指摘があった。
+
+また、提示物選択へ進む直前に一瞬ホーム画面が見える挙動、`wish一致` の意味が伝わりにくい表記、各タブ上部の案内文が重い点も合わせて改善する。
+
+### 変更内容
+
+#### `web/src/components/home/MatchDetailModal.tsx`
+- 関係図から生成する `/propose/[partnerId]` URL に `tab=meetup` を付与。
+- 通常の譲 × wish 関係から打診へ進む場合も、モーダル内の導線では `tab=meetup` を付与するようにした。
+
+#### `web/src/components/home/HomeView.tsx`
+- 関係図からルート遷移する時は、モーダルを先に閉じず、URL の履歴整理だけ行うように変更。
+- これにより、提示物選択へ進む前にホーム画面が一瞬見える挙動を抑える。
+
+#### `web/src/app/propose/[partnerId]/page.tsx`
+- `tab` query を読み取り、`mine` / `theirs` / `meetup` の初期タブとして `ProposeFlow` へ渡すようにした。
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- `initialTab` prop を追加し、関係図経由では「待ち合わせ」タブから開始できるようにした。
+- `★ wish 一致` 表記を廃止し、「私が出す」では「相手がほしいものかも？」、「受け取る」では「私がほしいものかも？」に変更。
+- 「私が出す」「受け取る」「待ち合わせ」各タブ上部の案内文を削除。
+- 待ち合わせ入力のラベルを「交換できる開始」「交換できる終了」「交換できる場所」に変更。
+- iter138 以前の未使用メッセージテンプレ関数と未使用ステップコンポーネントを整理。
+
+### 影響範囲
+
+- `/` ホーム画面の関係図モーダルから打診へ進む導線
+- `/propose/[partnerId]` 提示物選択画面
+- 提示物選択の wish ヒット表示
+
+### 確認方法
+
+- `npx eslint src/components/home/HomeView.tsx src/components/home/MatchDetailModal.tsx src/app/propose/[partnerId]/page.tsx src/app/propose/[partnerId]/ProposeFlow.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/home/HomeView.tsx`
+- `web/src/components/home/MatchDetailModal.tsx`
+- `web/src/app/propose/[partnerId]/page.tsx`
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ 関係図経由の打診 URL は `tab=meetup` を持ち、提示物選択画面は待ち合わせタブから始まる
+- ✅ 遷移時に関係図モーダルを先に消さないため、ホーム画面の瞬間表示を抑制
+- ✅ `wish一致` は画面文言から除去
+- ✅ 状態名・DB スキーマ・公式用語の追加はないため `notes/09_state_machines.md`、`notes/10_glossary.md`、`notes/05_data_model.md` は更新不要
+- ⚠️ `npm run build` は Google Fonts の woff2 取得タイムアウトで失敗。`eslint` / `tsc --noEmit` / `git diff --check` は通過
+
+---
+
 ## イテレーション154.31：推し追加モーダルを中央固定化
 
 ### 背景・問題意識

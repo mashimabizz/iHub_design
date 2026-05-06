@@ -65,8 +65,6 @@ type Selectable = ProposeInv & {
 // iter138: "message" step は廃止（confirm でメッセージ入力可）
 type Step = "select" | "confirm";
 type Tab = "mine" | "theirs" | "meetup";
-type Tone = "standard" | "casual" | "polite";
-
 const PROPOSE_TAB_ORDER: Tab[] = ["mine", "theirs", "meetup"];
 
 type Props = {
@@ -74,6 +72,7 @@ type Props = {
   myInv: ProposeInv[];
   theirInv: ProposeInv[];
   matchType: "perfect" | "forward" | "backward";
+  initialTab?: Tab;
   /** iter67.7：listing/option 経由打診の初期値プリフィル
    *  iter70-C：再打診の元 proposal id・既存 meetup・message も載せられる */
   initial?: {
@@ -145,77 +144,6 @@ function sortBySelectionFirst<T extends { id: string; wishMatch?: boolean }>(
   });
 }
 
-function buildSummaryText(items: Selectable[]): string {
-  return items
-    .filter((i) => i.selected)
-    .map((i) => {
-      const name = i.title.split(" ").slice(-1)[0] ?? i.title;
-      return `${name} ×${i.selectedQty}`;
-    })
-    .join(" / ");
-}
-
-function templateFor(input: {
-  tone: Tone;
-  partnerHandle: string;
-  myItems: Selectable[];
-  theirItems: Selectable[];
-  meetupStart: string;
-  meetupEnd: string;
-  meetupPlace: string;
-  matchType: "perfect" | "forward" | "backward";
-}): string {
-  const matchPhrase =
-    input.matchType === "perfect"
-      ? "お互いの希望が一致していました◎"
-      : input.matchType === "forward"
-        ? "私の譲があなたの欲しいものに該当しているようです。"
-        : "あなたの譲が私の欲しいものに該当しているようです。";
-
-  const summaryMine = buildSummaryText(input.myItems);
-  const summaryTheirs = buildSummaryText(input.theirItems);
-  const meetupLine =
-    input.meetupStart && input.meetupEnd && input.meetupPlace
-      ? `日時：${formatRange(input.meetupStart, input.meetupEnd)}\n場所：${input.meetupPlace}`
-      : "";
-
-  if (input.tone === "casual") {
-    return [
-      `${input.partnerHandle} こんにちは〜！`,
-      matchPhrase,
-      `▼ 私が出す: ${summaryMine || "（後ほど指定）"}`,
-      `▼ 受け取る: ${summaryTheirs || "（後ほど指定）"}`,
-      meetupLine,
-      "もしよかったら交換しませんか？",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-  if (input.tone === "polite") {
-    return [
-      `${input.partnerHandle} 様`,
-      "突然のご連絡を失礼いたします。",
-      matchPhrase,
-      `▼ こちらが出すもの：${summaryMine || "（後ほど指定）"}`,
-      `▼ お受け取りするもの：${summaryTheirs || "（後ほど指定）"}`,
-      meetupLine,
-      "ご検討いただけますと幸いです。よろしくお願いいたします。",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-  return [
-    `${input.partnerHandle} はじめまして！`,
-    matchPhrase,
-    `▼ 私が出す: ${summaryMine || "（後ほど指定）"}`,
-    `▼ 受け取る: ${summaryTheirs || "（後ほど指定）"}`,
-    meetupLine,
-    "ご都合いかがでしょうか？",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
 function formatRange(startLocal: string, endLocal: string): string {
   if (!startLocal || !endLocal) return "";
   const s = new Date(startLocal);
@@ -267,6 +195,7 @@ export function ProposeFlow({
   myInv,
   theirInv,
   matchType,
+  initialTab = "mine",
   initial,
 }: Props) {
   const router = useRouter();
@@ -388,7 +317,7 @@ export function ProposeFlow({
 
   /* ── ステップ・タブ ── */
   const [step, setStep] = useState<Step>("select");
-  const [tab, setTab] = useState<Tab>("mine");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const swipeStateRef = useRef<{
     startX: number;
     startY: number;
@@ -889,7 +818,6 @@ export function ProposeFlow({
               <ItemTab
                 tab={tab}
                 partnerHandle={partner.handle}
-                matchType={matchType}
                 items={tab === "mine" ? myItems : theirItems}
                 onToggle={(id) => toggleItem(tab, id)}
                 onQty={(id, d) => updateQty(tab, id, d)}
@@ -932,7 +860,7 @@ export function ProposeFlow({
                 ? "次へ：送信確認 →"
                 : myCount === 0 || theirCount === 0
                   ? "提示物を両方から選んでください"
-                  : "待ち合わせを設定してください"}
+                  : "交換できる時間・場所を設定してください"}
             </button>
           )}
           {step === "confirm" && (
@@ -971,52 +899,25 @@ function ChevronLeft() {
 function ItemTab({
   tab,
   partnerHandle,
-  matchType,
   items,
   onToggle,
   onQty,
 }: {
   tab: "mine" | "theirs";
   partnerHandle: string;
-  matchType: "perfect" | "forward" | "backward";
   items: Selectable[];
   onToggle: (id: string) => void;
   onQty: (id: string, delta: number) => void;
 }) {
-  // iter102: 「完全マッチ」表記を「両方向候補」に変更
-  const scenarioLabel =
-    matchType === "perfect"
-      ? "両方向候補 からの打診"
-      : matchType === "forward"
-        ? "私の譲が欲しい人 への打診"
-        : "私が欲しい譲を持つ人 への打診";
-
   const sectionLabel =
     tab === "mine"
       ? "あなたの在庫（譲る候補）"
       : `@${partnerHandle} の譲一覧`;
+  const wishMatchLabel =
+    tab === "mine" ? "相手がほしいものかも？" : "私がほしいものかも？";
 
   return (
     <>
-      <div className="mb-3 rounded-[10px] bg-[#a695d810] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#3a324a]">
-        <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
-          {scenarioLabel}
-        </span>
-        {tab === "mine" ? (
-          <>
-            あなたの在庫から、<b>相手に提示するもの</b>を選びます。
-            <br />
-            同じグッズを複数提示する時は ＋／− で個数を調整してください。
-          </>
-        ) : (
-          <>
-            @{partnerHandle} の譲から、<b>あなたが受け取るもの</b>を選びます。
-            <b className="text-[#a695d8]">★ wish 一致</b>
-            は一番上に並びます。
-          </>
-        )}
-      </div>
-
       <div className="mb-2 px-1 text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
         {sectionLabel} ({items.length}件)
       </div>
@@ -1030,6 +931,7 @@ function ItemTab({
           <ItemRow
             key={it.id}
             it={it}
+            wishMatchLabel={wishMatchLabel}
             onToggle={() => onToggle(it.id)}
             onQty={(d) => onQty(it.id, d)}
           />
@@ -1041,10 +943,12 @@ function ItemTab({
 
 function ItemRow({
   it,
+  wishMatchLabel,
   onToggle,
   onQty,
 }: {
   it: Selectable;
+  wishMatchLabel: string;
   onToggle: () => void;
   onQty: (delta: number) => void;
 }) {
@@ -1112,7 +1016,7 @@ function ItemRow({
           </span>
           {it.wishMatch && (
             <span className="rounded-full bg-[linear-gradient(135deg,#a695d8,#f3c5d4)] px-1.5 py-0.5 text-[9px] font-extrabold tracking-[0.3px] text-white">
-              ★ wish 一致
+              {wishMatchLabel}
             </span>
           )}
         </span>
@@ -1215,18 +1119,11 @@ function MeetupTab({
         </div>
       )}
 
-      <div className="mb-3 rounded-[10px] bg-[#a695d810] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#3a324a]">
-        <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
-          📍 待ち合わせ
-        </span>
-        <b>時間帯</b>と<b>場所</b>を決めます。<b>地図のピンを動かすと場所名が自動で入ります</b>（直接編集も可）。
-      </div>
-
       {/* 時間帯（開始 + 終了） */}
       <div className="mb-3 grid grid-cols-2 gap-2">
         <div>
           <div className="mb-1 px-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-            開始
+            交換できる開始
           </div>
           <input
             type="datetime-local"
@@ -1237,7 +1134,7 @@ function MeetupTab({
         </div>
         <div>
           <div className="mb-1 px-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-            終了
+            交換できる終了
           </div>
           <input
             type="datetime-local"
@@ -1251,7 +1148,7 @@ function MeetupTab({
       {/* 場所名 + 検索 */}
       <div className="mb-1 flex items-center justify-between px-0.5">
         <span className="text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-          場所
+          交換できる場所
         </span>
         {reverseFetching && (
           <span className="text-[9.5px] text-[#a695d8]">取得中…</span>
@@ -1328,110 +1225,6 @@ function MeetupTab({
           ピンをドラッグ or 地図をタップで位置を調整できます。場所名は自動で更新されます。
         </div>
       </div>
-    </>
-  );
-}
-
-function MessageStep({
-  tone,
-  setTone,
-  message,
-  onChange,
-  exposeCalendar,
-  setExposeCalendar,
-}: {
-  tone: Tone;
-  setTone: (t: Tone) => void;
-  message: string;
-  onChange: (m: string) => void;
-  exposeCalendar: boolean;
-  setExposeCalendar: (b: boolean) => void;
-}) {
-  return (
-    <>
-      <div className="mb-3 rounded-[10px] bg-[#a695d810] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#3a324a]">
-        <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
-          ✏️ メッセージ
-        </span>
-        トーンを選ぶと自動でメッセージが入ります。文面はそのままでも、編集してから送ってもOK。
-      </div>
-
-      <div className="mb-3 flex gap-1 rounded-[10px] bg-[#3a324a08] p-[3px]">
-        {(
-          [
-            { id: "standard", label: "標準" },
-            { id: "casual", label: "カジュアル" },
-            { id: "polite", label: "丁寧" },
-          ] as const
-        ).map((t) => {
-          const active = tone === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTone(t.id)}
-              className={`flex-1 rounded-[8px] py-2 text-[12px] ${
-                active
-                  ? "bg-white font-bold text-[#a695d8] shadow-[0_1px_3px_rgba(58,50,74,0.1)]"
-                  : "font-medium text-[#3a324a8c]"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <textarea
-        value={message}
-        onChange={(e) => onChange(e.target.value)}
-        rows={9}
-        maxLength={400}
-        className="block w-full resize-none rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white p-3 text-[13px] leading-relaxed text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
-      />
-      <div className="mt-1.5 flex justify-between px-1 text-[10.5px] text-[#3a324a8c]">
-        <span>テンプレを編集できます</span>
-        <span className="tabular-nums">{message.length} / 400</span>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setExposeCalendar(!exposeCalendar)}
-        className={`mt-4 flex w-full items-start gap-2.5 rounded-[12px] p-3 text-left ${
-          exposeCalendar
-            ? "border-[1.5px] border-[#a695d8] bg-[#a695d810]"
-            : "border-[0.5px] border-[#3a324a14] bg-white"
-        }`}
-      >
-        <span
-          className={`mt-0.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-[4px] border-[1.5px] ${
-            exposeCalendar
-              ? "border-[#a695d8] bg-[#a695d8]"
-              : "border-[#3a324a14] bg-white"
-          }`}
-        >
-          {exposeCalendar && (
-            <svg width="10" height="10" viewBox="0 0 11 11">
-              <path
-                d="M2 5.5L4.5 8L9 3"
-                stroke="#fff"
-                strokeWidth="1.8"
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          )}
-        </span>
-        <span className="flex-1">
-          <span className="block text-[12.5px] font-bold">
-            スケジュールを共有する
-          </span>
-          <span className="mt-0.5 block text-[10.5px] leading-snug text-[#3a324a8c]">
-            あなたの「予定（スケジュール）」が相手に表示されます。日時を相談するときに便利。
-          </span>
-        </span>
-      </button>
     </>
   );
 }

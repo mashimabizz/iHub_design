@@ -82,6 +82,8 @@ type Props = {
     meetupStart?: string;
     meetupEnd?: string;
     meetupPlace?: string;
+    /** 関係図経由など、提示物選択の初期タブ指定 */
+    tab?: string;
   }>;
 };
 
@@ -101,6 +103,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
     meetupStart: meetupStartOverride,
     meetupEnd: meetupEndOverride,
     meetupPlace: meetupPlaceOverride,
+    tab: initialTabRaw,
   } = await searchParams;
   const reviseFromProposalId =
     reviseFlagRaw === "1" && reviseProposalIdRaw ? reviseProposalIdRaw : null;
@@ -245,6 +248,10 @@ export default async function ProposePage({ params, searchParams }: Props) {
         : matchTypeRaw === "complete" || matchTypeRaw === "perfect"
           ? "perfect"
           : "perfect";
+  const initialTab: "mine" | "theirs" | "meetup" =
+    initialTabRaw === "theirs" || initialTabRaw === "meetup"
+      ? initialTabRaw
+      : "mine";
 
   /* ─ iter67.7：listing / option 経由打診の初期値プリフィル ─ */
   type Initial = {
@@ -613,6 +620,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
       theirInv={theirInvWithFlag}
       matchType={matchType}
       initial={initial ?? undefined}
+      initialTab={initialTab}
     />
   );
 }

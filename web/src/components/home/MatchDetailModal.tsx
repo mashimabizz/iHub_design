@@ -79,6 +79,16 @@ type SwipeGesture = {
   axis: "undecided" | "horizontal" | "vertical";
 };
 
+function withProposeInitialTab(
+  href: string,
+  tab: "mine" | "theirs" | "meetup",
+): string {
+  const [path, query = ""] = href.split("?");
+  const params = new URLSearchParams(query);
+  params.set("tab", tab);
+  return `${path}?${params.toString()}`;
+}
+
 function buildInitialSelectionFromHighlightedItem(
   listings: MatchCardListingInfo[],
   highlightedItemId: string | null | undefined,
@@ -544,6 +554,7 @@ export function MatchDetailModal({
       params.set("receives", aggregated.receiveIds.join(","));
     if (aggregated.referencedListingIds.length > 0)
       params.set("listings", aggregated.referencedListingIds.join(","));
+    params.set("tab", "meetup");
     return `/propose/${partnerId}?${params.toString()}`;
   }, [
     aggregated.giveIds,
@@ -655,11 +666,15 @@ export function MatchDetailModal({
     router.push(proposeHref);
   }
 
+  const simpleProposeHrefWithMeetup = simpleProposeHref
+    ? withProposeInitialTab(simpleProposeHref, "meetup")
+    : null;
+
   function handleSimpleProposeClick() {
-    if (!simpleProposeHref) return;
+    if (!simpleProposeHrefWithMeetup) return;
     if (onNavigateAway) onNavigateAway();
     else onClose();
-    router.push(simpleProposeHref);
+    router.push(simpleProposeHrefWithMeetup);
   }
 
   function shouldIgnoreSwipe(target: EventTarget | null): boolean {

@@ -969,7 +969,6 @@ export function HomeView({
 
   function handleLeaveMatchDetailForRoute() {
     clearMatchDetailHistoryEntry();
-    setSelectedCandidate(null);
   }
 
   function navigateMatchDetail(delta: -1 | 1) {
