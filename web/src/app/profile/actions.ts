@@ -117,6 +117,51 @@ export async function removeOshiGroup(groupId: string): Promise<ActionResult> {
 }
 
 /**
+ * 推し設定: 登録済みマスタのグループ / 作品を追加（箱推し）
+ *
+ * - 既に同 group_id が登録済みなら何もしない
+ * - priority はユーザー内の末尾へ追加
+ */
+export async function addOshiGroup(groupId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: existing } = await supabase
+    .from("user_oshi")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("group_id", groupId)
+    .limit(1);
+
+  if (existing && existing.length > 0) return undefined;
+
+  const { data: maxRow } = await supabase
+    .from("user_oshi")
+    .select("priority")
+    .eq("user_id", user.id)
+    .order("priority", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextPriority = (maxRow?.priority ?? 0) + 1;
+
+  const { error } = await supabase.from("user_oshi").insert({
+    user_id: user.id,
+    group_id: groupId,
+    character_id: null,
+    kind: "box",
+    priority: nextPriority,
+  });
+
+  if (error) return { error: error.message };
+  revalidatePath("/profile/oshi");
+  revalidatePath("/profile");
+  return undefined;
+}
+
+/**
  * 推しメンバーをグループに追加（user_oshi に新規行）
  *
  * - 既存の同 group + character エントリがあれば何もしない

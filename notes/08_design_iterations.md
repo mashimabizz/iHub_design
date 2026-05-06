@@ -4,6 +4,63 @@
 
 ---
 
+## イテレーション154.29：推し設定にマスタ検索追加モーダルを導入
+
+### 背景・問題意識
+
+オーナーから、「＋ 登録済みの推しを追加（グループ・作品）」がオンボーディングの推し登録画面へ遷移してしまうため、推し設定の文脈で完結するよう抜本的に変えたいという指摘があった。
+
+登録済みマスタの追加は、オンボーディング画面を流用せず、推し設定内で自由検索・ジャンルタブ・未ヒット時の追加リクエストまで一連で扱える設計にする。
+
+### 変更内容
+
+#### `web/src/app/profile/oshi/OshiEditView.tsx`
+- 「登録済みの推しを追加」ボタンをページ遷移から画面内モーダル起動に変更。
+- モーダル上部に自由検索バーを配置し、入力に応じてリアルタイムでマスタ候補を絞り込むようにした。
+- 「すべて」+ `genres_master` のタブを横並びで表示し、K-POP / 2.5次元 / アニメ / ゲームなどのジャンルごとに候補を切り替えられるようにした。
+- モーダル右上に「追加リクエスト」ボタンを追加し、検索文字列があればその名前を引き継いで追加リクエストモーダルを開くようにした。
+- 検索結果が 0 件の場合、該当名で追加リクエストへ進める空状態を追加。
+- マスタ候補を選択したら、推し設定画面に即反映しつつ `addOshiGroup` で保存するようにした。
+
+#### `web/src/app/profile/oshi/page.tsx`
+- 推し設定ページ側で `groups_master` と `genres_master`、関連 `characters_master` を取得し、マスタ選択モーダルへ渡すようにした。
+
+#### `web/src/app/profile/actions.ts`
+- 登録済みマスタを箱推しとして追加する `addOshiGroup` server action を追加。
+- 既に登録済みの group は重複追加せず、未登録の場合はユーザー内 priority の末尾へ追加する。
+
+### 影響範囲
+
+- `/profile/oshi` 推し設定画面
+- 登録済みマスタからの推し追加
+- 推し追加リクエストへの導線
+
+### 確認方法
+
+- `npx eslint src/app/profile/oshi/OshiEditView.tsx src/app/profile/oshi/page.tsx src/app/profile/actions.ts src/app/onboarding/oshi/OshiForm.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/profile/oshi/OshiEditView.tsx`
+- `web/src/app/profile/oshi/page.tsx`
+- `web/src/app/profile/actions.ts`
+- `web/src/app/onboarding/oshi/OshiForm.tsx`
+
+### セルフレビュー結果
+
+- ✅ 登録済みマスタ追加はオンボーディングへ遷移せず推し設定内で完結
+- ✅ 自由検索・ジャンルタブ・未ヒット時追加リクエストの導線を実装
+- ✅ 追加リクエストは既存の `saveOshiRequest` を流用し、検索文字列の引き継ぎに対応
+- ✅ `user_oshi` への追加は既存スキーマに沿った `kind=box` 追加のため DB スキーマ変更なし
+- ✅ `notes/09_state_machines.md` は状態追加・変更なしのため更新不要
+- ✅ `notes/10_glossary.md` は新用語・廃止用語なしのため更新不要
+- ✅ `notes/05_data_model.md` はデータモデル構造変更なしのため更新不要
+
+---
+
 ## イテレーション154.28：推し追加リクエストを画面内モーダル化
 
 ### 背景・問題意識

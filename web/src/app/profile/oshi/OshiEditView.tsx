@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -16,6 +16,7 @@ import {
   saveOshiRequest,
 } from "@/app/onboarding/actions";
 import {
+  addOshiGroup,
   addCharacterToOshi,
   removeCharacterFromOshi,
   removeOshiGroup,
@@ -34,8 +35,19 @@ type OshiMutation = () => Promise<ActionResult>;
 type GenreOption = { id: string; name: string };
 type OshiRequestKind = "group" | "work" | "solo";
 type RequestModalState =
-  | { type: "oshi" }
+  | { type: "oshi"; initialName?: string }
   | { type: "member"; groupId: string; groupName: string };
+type OshiMasterOption = {
+  id: string;
+  name: string;
+  aliases: string[];
+  kind: OshiRequestKind;
+  displayOrder: number;
+  genreId: string;
+  genreName: string;
+  genreKind: "idol" | "anime" | "game" | "other";
+  characters: { id: string; name: string }[];
+};
 
 const REQUEST_KINDS: { value: OshiRequestKind; label: string }[] = [
   { value: "group", label: "グループ" },
@@ -49,17 +61,19 @@ const REQUEST_KINDS: { value: OshiRequestKind; label: string }[] = [
  * - グループ削除
  * - メンバー削除（各 chip の ×）
  * - メンバー追加（同グループの未選択キャラを inline 展開）
- * - 「+ 推しを追加」→ /onboarding/oshi?return=profile
+ * - 登録済みマスタからの推し追加 → 画面内モーダルで検索・選択
  * - 推し / メンバー追加リクエスト（マスタにない）→ 画面内モーダルで送信
  */
 export function OshiEditView({
   oshiGroups,
   initialRequestModal = false,
   genreOptions,
+  masterOptions,
 }: {
   oshiGroups: Group[];
   initialRequestModal?: boolean;
   genreOptions: GenreOption[];
+  masterOptions: OshiMasterOption[];
 }) {
   const router = useRouter();
   const [groups, setGroups] = useState<Group[]>(oshiGroups);
@@ -68,8 +82,13 @@ export function OshiEditView({
   const [requestModal, setRequestModal] = useState<RequestModalState | null>(
     initialRequestModal ? { type: "oshi" } : null,
   );
+  const [masterModalOpen, setMasterModalOpen] = useState(false);
   const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingMutationsRef = useRef(0);
+  const selectedGroupIds = useMemo(
+    () => new Set(groups.map((g) => g.groupId)),
+    [groups],
+  );
 
   useEffect(() => {
     if (pendingMutationsRef.current === 0) {
@@ -117,9 +136,9 @@ export function OshiEditView({
     mutationQueueRef.current = tracked.then(() => undefined);
   }
 
-  function openOshiRequest() {
+  function openOshiRequest(initialName?: string) {
     setRequestNotice(null);
-    setRequestModal({ type: "oshi" });
+    setRequestModal({ type: "oshi", initialName });
   }
 
   function openMemberRequest(group: Pick<Group, "groupId" | "groupName">) {
@@ -135,6 +154,34 @@ export function OshiEditView({
     setRequestModal(null);
     setRequestNotice(message);
     router.refresh();
+  }
+
+  function handleAddMasterOption(option: OshiMasterOption) {
+    if (selectedGroupIds.has(option.id)) {
+      setMasterModalOpen(false);
+      return;
+    }
+
+    const nextGroup: Group = {
+      groupId: option.id,
+      groupName: option.name,
+      members: [],
+      availableCharacters: option.characters,
+    };
+
+    setGroups((prev) => {
+      if (prev.some((g) => g.groupId === option.id)) return prev;
+      return [...prev, nextGroup];
+    });
+    setMasterModalOpen(false);
+    setRequestNotice(null);
+
+    enqueueMutation(
+      () => addOshiGroup(option.id),
+      () => {
+        setGroups((prev) => prev.filter((g) => g.groupId !== option.id));
+      },
+    );
   }
 
   return (
@@ -159,15 +206,16 @@ export function OshiEditView({
         <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white py-8 text-center text-[12px] text-[#3a324a8c]">
           推しがまだ設定されていません
           <br />
-          <Link
-            href="/onboarding/oshi?return=profile"
+          <button
+            type="button"
+            onClick={() => setMasterModalOpen(true)}
             className="mt-2 inline-block font-bold text-[#a695d8]"
           >
             + 登録済みの推しを追加 →
-          </Link>
+          </button>
           <button
             type="button"
-            onClick={openOshiRequest}
+            onClick={() => openOshiRequest()}
             className="mt-2 block w-full font-bold text-[#a695d8]"
           >
             マスタに無い推しを追加リクエスト
@@ -186,15 +234,16 @@ export function OshiEditView({
       )}
 
       {/* + 推しを追加（グループ） */}
-      <Link
-        href="/onboarding/oshi?return=profile"
+      <button
+        type="button"
+        onClick={() => setMasterModalOpen(true)}
         className="block w-full rounded-[14px] border-[1.5px] border-dashed border-[#a695d855] bg-white px-4 py-4 text-center text-[13px] font-bold text-[#a695d8] transition-all active:scale-[0.99]"
       >
         ＋ 登録済みの推しを追加（グループ・作品）
-      </Link>
+      </button>
       <button
         type="button"
-        onClick={openOshiRequest}
+        onClick={() => openOshiRequest()}
         className="block w-full rounded-[14px] border border-[#3a324a14] bg-white px-4 py-3.5 text-center text-[12.5px] font-bold text-[#a695d8] transition-all active:scale-[0.99]"
       >
         マスタに無い推しを追加リクエスト
@@ -206,6 +255,19 @@ export function OshiEditView({
           genres={genreOptions}
           onClose={() => setRequestModal(null)}
           onDone={handleRequestDone}
+        />
+      )}
+      {masterModalOpen && (
+        <MasterSelectModal
+          genres={genreOptions}
+          options={masterOptions}
+          selectedGroupIds={selectedGroupIds}
+          onSelect={handleAddMasterOption}
+          onRequest={(name) => {
+            setMasterModalOpen(false);
+            openOshiRequest(name);
+          }}
+          onClose={() => setMasterModalOpen(false)}
         />
       )}
     </div>
@@ -453,6 +515,249 @@ function GroupCard({
   );
 }
 
+/* ─── Master Select Modal ───────────────────────────────────── */
+
+function MasterSelectModal({
+  genres,
+  options,
+  selectedGroupIds,
+  onSelect,
+  onRequest,
+  onClose,
+}: {
+  genres: GenreOption[];
+  options: OshiMasterOption[];
+  selectedGroupIds: Set<string>;
+  onSelect: (option: OshiMasterOption) => void;
+  onRequest: (initialName?: string) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [activeGenreId, setActiveGenreId] = useState<"all" | string>("all");
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredOptions = useMemo(() => {
+    return options.filter((option) => {
+      if (activeGenreId !== "all" && option.genreId !== activeGenreId) {
+        return false;
+      }
+      if (!normalizedQuery) return true;
+      const haystacks = [option.name, ...option.aliases].map((value) =>
+        value.toLowerCase(),
+      );
+      return haystacks.some((value) => value.includes(normalizedQuery));
+    });
+  }, [activeGenreId, normalizedQuery, options]);
+
+  if (typeof document === "undefined") return null;
+
+  const modal = (
+    <div
+      className="fixed inset-0 z-[118] flex items-end justify-center bg-black/45 px-0 backdrop-blur-[2px]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="登録済みの推しを追加"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/80 bg-[#fbf9fc] shadow-[0_-22px_54px_rgba(58,50,74,0.24)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex-shrink-0 rounded-t-[28px] bg-white px-5 pb-3 pt-3">
+          <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-[#3a324a1f]" />
+          <div className="mb-4 flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[17px] font-extrabold text-[#3a324a]">
+                登録済みの推しを追加
+              </h2>
+              <p className="mt-0.5 text-[11px] font-medium text-[#3a324a8c]">
+                グループ・作品マスタから選択
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onRequest(query.trim() || undefined)}
+              className="rounded-full bg-[#a695d814] px-3.5 py-2 text-[11.5px] font-extrabold text-[#a695d8] transition-all active:scale-[0.97]"
+            >
+              追加リクエスト
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#3a324a08] text-[18px] font-bold text-[#3a324a8c] transition-all active:scale-[0.96]"
+              aria-label="閉じる"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-xl border border-[#3a324a14] bg-white px-3.5 py-3 shadow-[0_6px_16px_rgba(58,50,74,0.05)]">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="#6b6478"
+              strokeWidth="1.4"
+            >
+              <circle cx="6" cy="6" r="4.5" />
+              <path d="M9.5 9.5L13 13" />
+            </svg>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="作品名・グループ名で検索"
+              className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none"
+              autoFocus
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-[#3a324a08] text-[15px] font-bold text-[#3a324a8c]"
+                aria-label="検索を消す"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <div className="-mx-5 mt-3 flex gap-1.5 overflow-x-auto px-5 pb-1 [&::-webkit-scrollbar]:hidden">
+            <GenreTab
+              label="すべて"
+              active={activeGenreId === "all"}
+              onClick={() => setActiveGenreId("all")}
+            />
+            {genres.map((genre) => (
+              <GenreTab
+                key={genre.id}
+                label={genre.name}
+                active={activeGenreId === genre.id}
+                onClick={() => setActiveGenreId(genre.id)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 space-y-2 overflow-y-auto px-5 py-3 pb-[calc(env(safe-area-inset-bottom)+18px)]">
+          {filteredOptions.length > 0 ? (
+            filteredOptions.map((option) => {
+              const selected = selectedGroupIds.has(option.id);
+              const latin = isLatin(option.name);
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  disabled={selected}
+                  onClick={() => onSelect(option)}
+                  className={`flex w-full items-center gap-3 rounded-2xl border-[1.5px] border-solid px-4 py-3.5 text-left shadow-[0_6px_18px_rgba(58,50,74,0.05)] transition-all duration-150 active:scale-[0.99] disabled:opacity-65 ${
+                    selected
+                      ? "border-[#a695d833] bg-[#a695d80d]"
+                      : "border-[#3a324a14] bg-white hover:border-[#a695d855]"
+                  }`}
+                >
+                  <div
+                    className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px] text-[14px] font-extrabold ${
+                      selected
+                        ? "bg-[#a695d822] text-[#a695d8]"
+                        : "bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] text-white"
+                    }`}
+                    style={
+                      latin
+                        ? {
+                            fontFamily:
+                              "var(--font-inter-tight), system-ui",
+                          }
+                        : undefined
+                    }
+                  >
+                    {option.name[0]}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className="truncate text-[14px] font-extrabold text-[#3a324a]"
+                      style={
+                        latin
+                          ? {
+                              fontFamily:
+                                "var(--font-inter-tight), system-ui",
+                              letterSpacing: "0.2px",
+                            }
+                          : undefined
+                      }
+                    >
+                      {option.name}
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] font-medium text-[#3a324a8c]">
+                      {option.genreName}・{kindLabel(option.kind)}
+                      {option.characters.length > 0
+                        ? `・メンバー ${option.characters.length}件`
+                        : ""}
+                    </div>
+                  </div>
+                  <div
+                    className={`rounded-full px-2.5 py-1 text-[10.5px] font-extrabold ${
+                      selected
+                        ? "bg-[#3a324a0a] text-[#3a324a8c]"
+                        : "bg-[#a695d814] text-[#a695d8]"
+                    }`}
+                  >
+                    {selected ? "追加済み" : "追加"}
+                  </div>
+                </button>
+              );
+            })
+          ) : (
+            <div className="rounded-2xl border border-dashed border-[#3a324a14] bg-white px-4 py-8 text-center">
+              <div className="text-[13px] font-extrabold text-[#3a324a]">
+                該当する推しが見つかりません
+              </div>
+              <p className="mt-2 text-[11.5px] leading-relaxed text-[#3a324a8c]">
+                表記ゆれや未登録の可能性があります。
+              </p>
+              <button
+                type="button"
+                onClick={() => onRequest(query.trim() || undefined)}
+                className="mt-4 inline-flex items-center justify-center rounded-full bg-[#a695d8] px-4 py-2 text-[12px] font-extrabold text-white shadow-[0_8px_18px_rgba(166,149,216,0.32)] transition-all active:scale-[0.97]"
+              >
+                {query.trim()
+                  ? `「${query.trim()}」を追加リクエスト`
+                  : "追加リクエストを送る"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modal, document.body);
+}
+
+function GenreTab({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-shrink-0 whitespace-nowrap rounded-full border-[1.5px] border-solid px-3.5 py-1.5 text-[12px] transition-all duration-150 active:scale-[0.97] ${
+        active
+          ? "border-[#a695d8] bg-[#a695d8] font-bold text-white"
+          : "border-[#3a324a14] bg-white font-medium text-gray-900 hover:border-[#3a324a26]"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 /* ─── Request Modal ─────────────────────────────────────────── */
 
 function RequestModal({
@@ -466,7 +771,9 @@ function RequestModal({
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(
+    state.type === "oshi" ? (state.initialName ?? "") : "",
+  );
   const [genreId, setGenreId] = useState("");
   const [kind, setKind] = useState<OshiRequestKind | "">("");
   const [note, setNote] = useState("");
@@ -712,4 +1019,19 @@ function RequestModal({
 
 function sortCharacters<T extends { name: string }>(characters: T[]): T[] {
   return [...characters].sort((a, b) => a.name.localeCompare(b.name, "ja"));
+}
+
+function kindLabel(kind: OshiRequestKind): string {
+  switch (kind) {
+    case "work":
+      return "作品";
+    case "solo":
+      return "ソロ";
+    default:
+      return "グループ";
+  }
+}
+
+function isLatin(name: string): boolean {
+  return /^[A-Za-z0-9\s\-_!&]+$/.test(name);
 }
