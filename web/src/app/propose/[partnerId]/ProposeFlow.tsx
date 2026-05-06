@@ -1630,18 +1630,20 @@ function WeekMeetupCalendar({
   const [drag, setDrag] = useState<MeetupDragSelection | null>(null);
   const dragRef = useRef<MeetupDragSelection | null>(null);
   const [nowParts, setNowParts] = useState(nowTokyoParts);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const calendarSwipeRef = useRef<{
     startX: number;
     startY: number;
   } | null>(null);
   const touchPressRef = useRef<{
     timer: number;
-    armed: boolean;
+    mode: "pending" | "scrolling" | "dragging";
     dayIndex: number;
     startSlot: number;
     identifier: number;
     startX: number;
     startY: number;
+    scrollTop: number;
   } | null>(null);
 
   function clearTouchPress() {
@@ -1764,18 +1766,21 @@ function WeekMeetupCalendar({
     const target = e.currentTarget;
     const startSlot = slotFromTouch(touch, target);
     const timer = window.setTimeout(() => {
-      if (!touchPressRef.current) return;
-      touchPressRef.current.armed = true;
+      if (!touchPressRef.current || touchPressRef.current.mode !== "pending") {
+        return;
+      }
+      touchPressRef.current.mode = "dragging";
       setDragSelection({ dayIndex, startSlot, currentSlot: startSlot });
     }, MEETUP_LONG_PRESS_MS);
     touchPressRef.current = {
       timer,
-      armed: false,
+      mode: "pending",
       dayIndex,
       startSlot,
       identifier: touch.identifier,
       startX: touch.clientX,
       startY: touch.clientY,
+      scrollTop: scrollRef.current?.scrollTop ?? 0,
     };
   }
 
@@ -1789,19 +1794,35 @@ function WeekMeetupCalendar({
       }
       const dx = touch.clientX - press.startX;
       const dy = touch.clientY - press.startY;
-      if (!press.armed) {
+      if (press.mode === "pending") {
         if (
           Math.hypot(dx, dy) > MEETUP_TOUCH_CANCEL_PX ||
           Math.abs(dy) > MEETUP_TOUCH_CANCEL_PX
         ) {
-          clearTouchPress();
+          window.clearTimeout(press.timer);
+          if (Math.abs(dy) > Math.abs(dx)) {
+            press.mode = "scrolling";
+          } else {
+            clearTouchPress();
+            return;
+          }
         }
+      }
+
+      if (press.mode === "scrolling") {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = press.scrollTop - dy;
+        }
+        e.preventDefault();
         return;
       }
-      e.preventDefault();
-      e.stopPropagation();
-      updateDragSelection(slotFromTouch(touch, e.currentTarget));
-      return;
+
+      if (press.mode === "dragging") {
+        e.preventDefault();
+        e.stopPropagation();
+        updateDragSelection(slotFromTouch(touch, e.currentTarget));
+        return;
+      }
     }
 
     if (!dragRef.current) return;
@@ -1816,7 +1837,7 @@ function WeekMeetupCalendar({
     const selection = dragRef.current;
     const press = touchPressRef.current;
     clearTouchPress();
-    if (!selection || !press?.armed) {
+    if (!selection || press?.mode !== "dragging") {
       setDragSelection(null);
       return;
     }
@@ -1886,7 +1907,10 @@ function WeekMeetupCalendar({
       onContextMenu={(e) => e.preventDefault()}
       onSelect={(e) => e.preventDefault()}
     >
-      <div className="h-[calc(100dvh-250px)] min-h-0 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
+      <div
+        ref={scrollRef}
+        className="h-[calc(100dvh-250px)] min-h-0 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]"
+      >
         <div className="sticky top-0 z-20 grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a12] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.05)]">
           <div />
           {weekDateKeys.map((dateKey, index) => (
@@ -1961,7 +1985,7 @@ function WeekMeetupCalendar({
             onTouchMove={handleDayTouchMove}
             onTouchEnd={handleDayTouchEnd}
             onTouchCancel={handleDayTouchCancel}
-            style={{ touchAction: "pan-y" }}
+            style={{ touchAction: "none" }}
           >
             {Array.from({ length: MEETUP_SLOT_COUNT / 4 }, (_, hourIndex) => (
               <div

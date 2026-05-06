@@ -4,6 +4,48 @@
 
 ---
 
+## イテレーション154.43：待ち合わせカレンダーのタッチ選択を自前制御へ変更
+
+### 背景・問題意識
+
+オーナーから、待ち合わせカレンダーでまだ長押しドラッグ選択ができないという指摘があった。
+
+前回の修正では、長押し後に touchmove を拾ってドラッグへ切り替える設計だったが、iOS Safari では `pan-y` のブラウザスクロール判定に持っていかれ、長押し成立後の移動が安定して届かないケースが残っていた。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- カレンダーの日別列を `touch-action: none` にし、iOS のブラウザ pan 判定に依存しないようにした。
+- 長押し前に軽く縦へ動いた場合は、カレンダーの `scrollTop` を自前で更新して通常スクロールとして扱うようにした。
+- 長押し成立後は touch を `dragging` モードへ固定し、その後の移動を候補時間の preview 更新に使うようにした。
+- 横方向へ動いた場合は週切り替え用のスワイプ判定へ渡すため、候補作成タイマーだけ解除するようにした。
+- タッチ操作の内部状態を `pending` / `scrolling` / `dragging` の3モードに整理し、スクロールと候補作成の競合を減らした。
+
+### 影響範囲
+
+- `/propose/[partnerId]` C-0 待ち合わせタブ
+- iOS Safari / モバイルブラウザでのカレンダー縦スクロールと候補時間ドラッグ作成
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ 軽い縦移動は自前スクロールとして扱う
+- ✅ 長押し成立後はブラウザ pan 判定に頼らず候補時間ドラッグへ固定
+- ✅ 横スワイプの週切り替え余地は維持
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` 通過
+
+---
+
 ## イテレーション154.42：待ち合わせカレンダーの長押し復旧と現在時刻表示
 
 ### 背景・問題意識
