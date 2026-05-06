@@ -119,6 +119,8 @@ const MEETUP_CALENDAR_START_HOUR = 0;
 const MEETUP_CALENDAR_END_HOUR = 24;
 const MEETUP_SLOT_MINUTES = 15;
 const MEETUP_SLOT_HEIGHT = 10;
+const MEETUP_LONG_PRESS_MS = 320;
+const MEETUP_TOUCH_CANCEL_PX = 10;
 const MEETUP_SLOT_COUNT =
   ((MEETUP_CALENDAR_END_HOUR - MEETUP_CALENDAR_START_HOUR) * 60) /
   MEETUP_SLOT_MINUTES;
@@ -518,6 +520,7 @@ export function ProposeFlow({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [submitComplete, setSubmitComplete] = useState(false);
+  const meetupCalendarActive = step === "select" && tab === "meetup";
 
   /* ── derived ── */
   const myCount = myItems
@@ -938,7 +941,11 @@ export function ProposeFlow({
   }
 
   return (
-    <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[112px] text-[#3a324a]">
+    <main
+      className={`flex flex-1 flex-col bg-[#fbf9fc] text-[#3a324a] ${
+        meetupCalendarActive ? "h-[100dvh] overflow-hidden" : "pb-[112px]"
+      }`}
+    >
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-[#3a324a14] bg-white/90 px-[18px] pb-3 pt-12 backdrop-blur-xl">
         <div className="mx-auto flex max-w-md items-center gap-3">
@@ -1043,7 +1050,9 @@ export function ProposeFlow({
       </header>
 
       <div
-        className="mx-auto w-full max-w-md flex-1 px-[18px] pt-3.5 [touch-action:pan-y]"
+        className={`mx-auto w-full max-w-md flex-1 px-[18px] pt-3.5 [touch-action:pan-y] ${
+          meetupCalendarActive ? "min-h-0 overflow-hidden" : ""
+        }`}
         onTouchStart={handleTabSwipeStart}
         onTouchMove={handleTabSwipeMove}
         onTouchEnd={handleTabSwipeEnd}
@@ -1495,7 +1504,7 @@ function MeetupTab({
   }
 
   return (
-    <div className="-mx-[18px] -mt-3.5 bg-white">
+    <div className="-mx-[18px] -mt-3.5 h-full overflow-hidden bg-white">
         <WeekMeetupCalendar
           candidates={meetupCandidates}
           activeMeetupId={activeMeetupId}
@@ -1562,6 +1571,23 @@ function WeekMeetupCalendar({
     startX: number;
     startY: number;
   } | null>(null);
+  const touchPressRef = useRef<{
+    timer: number;
+    dayIndex: number;
+    startSlot: number;
+    identifier: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+
+  function clearTouchPress() {
+    if (typeof window !== "undefined" && touchPressRef.current) {
+      window.clearTimeout(touchPressRef.current.timer);
+    }
+    touchPressRef.current = null;
+  }
+
+  useEffect(() => clearTouchPress, []);
 
   function slotFromPointer(
     e: PointerEvent<HTMLDivElement>,
@@ -1573,6 +1599,31 @@ function WeekMeetupCalendar({
       0,
       Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
     );
+  }
+
+  function slotFromTouch(touch: { clientY: number }, el: HTMLDivElement): number {
+    const rect = el.getBoundingClientRect();
+    const y = Math.max(0, Math.min(rect.height, touch.clientY - rect.top));
+    return Math.max(
+      0,
+      Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
+    );
+  }
+
+  function findTouch(
+    touches: {
+      length: number;
+      item: (
+        index: number,
+      ) => { identifier: number; clientX: number; clientY: number } | null;
+    },
+    identifier: number,
+  ): { identifier: number; clientX: number; clientY: number } | null {
+    for (let i = 0; i < touches.length; i += 1) {
+      const touch = touches.item(i);
+      if (touch?.identifier === identifier) return touch;
+    }
+    return null;
   }
 
   function normalizedDragRange(selection: NonNullable<typeof drag>) {
@@ -1595,10 +1646,9 @@ function WeekMeetupCalendar({
     dayIndex: number,
   ) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    if (e.pointerType !== "touch") {
-      e.preventDefault();
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
+    if (e.pointerType === "touch") return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     const slot = slotFromPointer(e, e.currentTarget);
     setDrag({ dayIndex, startSlot: slot, currentSlot: slot });
   }
@@ -1618,6 +1668,77 @@ function WeekMeetupCalendar({
       currentSlot: slotFromPointer(e, e.currentTarget),
     };
     commitDrag(next);
+    setDrag(null);
+  }
+
+  function handleDayTouchStart(
+    e: TouchEvent<HTMLDivElement>,
+    dayIndex: number,
+  ) {
+    if (e.touches.length !== 1 || typeof window === "undefined") return;
+    clearTouchPress();
+    const touch = e.touches[0];
+    const target = e.currentTarget;
+    const startSlot = slotFromTouch(touch, target);
+    const timer = window.setTimeout(() => {
+      setDrag({ dayIndex, startSlot, currentSlot: startSlot });
+      touchPressRef.current = null;
+    }, MEETUP_LONG_PRESS_MS);
+    touchPressRef.current = {
+      timer,
+      dayIndex,
+      startSlot,
+      identifier: touch.identifier,
+      startX: touch.clientX,
+      startY: touch.clientY,
+    };
+  }
+
+  function handleDayTouchMove(e: TouchEvent<HTMLDivElement>) {
+    const press = touchPressRef.current;
+    if (press) {
+      const touch = findTouch(e.touches, press.identifier);
+      if (!touch) {
+        clearTouchPress();
+        return;
+      }
+      const dx = touch.clientX - press.startX;
+      const dy = touch.clientY - press.startY;
+      if (
+        Math.hypot(dx, dy) > MEETUP_TOUCH_CANCEL_PX ||
+        Math.abs(dy) > MEETUP_TOUCH_CANCEL_PX
+      ) {
+        clearTouchPress();
+      }
+      return;
+    }
+
+    if (!drag) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const slot = slotFromTouch(touch, e.currentTarget);
+    setDrag((prev) => (prev ? { ...prev, currentSlot: slot } : prev));
+  }
+
+  function handleDayTouchEnd(e: TouchEvent<HTMLDivElement>) {
+    clearTouchPress();
+    if (!drag) return;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const next = {
+      ...drag,
+      currentSlot: slotFromTouch(touch, e.currentTarget),
+    };
+    commitDrag(next);
+    setDrag(null);
+  }
+
+  function handleDayTouchCancel() {
+    clearTouchPress();
     setDrag(null);
   }
 
@@ -1652,11 +1773,11 @@ function WeekMeetupCalendar({
   return (
     <div
       data-propose-swipe-ignore
-      className="bg-white"
+      className="h-full bg-white"
       onTouchStart={handleCalendarTouchStart}
       onTouchEnd={handleCalendarTouchEnd}
     >
-      <div className="h-[calc(100dvh-250px)] min-h-[520px] overflow-y-auto">
+      <div className="h-[calc(100dvh-250px)] min-h-0 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
         <div className="sticky top-0 z-20 grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a12] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.05)]">
           <div />
           {weekDateKeys.map((dateKey, index) => (
@@ -1709,7 +1830,14 @@ function WeekMeetupCalendar({
             onPointerDown={(e) => handlePointerDown(e, dayIndex)}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
-            onPointerCancel={() => setDrag(null)}
+            onPointerCancel={() => {
+              clearTouchPress();
+              setDrag(null);
+            }}
+            onTouchStart={(e) => handleDayTouchStart(e, dayIndex)}
+            onTouchMove={handleDayTouchMove}
+            onTouchEnd={handleDayTouchEnd}
+            onTouchCancel={handleDayTouchCancel}
             style={{ touchAction: "pan-y" }}
           >
             {Array.from({ length: MEETUP_SLOT_COUNT / 4 }, (_, hourIndex) => (
