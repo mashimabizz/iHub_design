@@ -26,6 +26,11 @@ type Props = {
   radiusM: number;
   onCenterChange: (lat: number, lng: number) => void;
   className?: string;
+  markers?: Array<{
+    center: [number, number];
+    label?: string;
+  }>;
+  interactive?: boolean;
 };
 
 // iHub lavender pin（DivIcon で完全カスタム）
@@ -55,6 +60,32 @@ const pinIcon = L.divIcon({
   iconAnchor: [16, 16],
 });
 
+function buildPinIcon(label?: string) {
+  if (!label) return pinIcon;
+  return L.divIcon({
+    className: "ihub-pin",
+    html: `
+      <div style="
+        position: relative;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #a695d8;
+        box-shadow: 0 0 0 5px #fff, 0 6px 14px rgba(0,0,0,0.25);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 900;
+        line-height: 1;
+      ">${label}</div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+  });
+}
+
 /**
  * 地図クリック・地図ドラッグ後の center 通知用の inner component。
  * react-leaflet の hooks は MapContainer の中でしか使えない。
@@ -83,13 +114,44 @@ function FlyToCenter({ center }: { center: [number, number] }) {
   return null;
 }
 
+function FitMarkers({
+  markers,
+  center,
+}: {
+  markers: Array<{ center: [number, number] }>;
+  center: [number, number];
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (markers.length <= 1) {
+      map.setView(markers[0]?.center ?? center, map.getZoom(), {
+        animate: true,
+      });
+      return;
+    }
+    const bounds = L.latLngBounds(
+      markers.map((marker) => [marker.center[0], marker.center[1]]),
+    );
+    map.fitBounds(bounds, {
+      padding: [36, 36],
+      maxZoom: 16,
+      animate: true,
+    });
+  }, [center, map, markers]);
+  return null;
+}
+
 export default function MapPicker({
   center,
   radiusM,
   onCenterChange,
   className,
+  markers,
+  interactive = true,
 }: Props) {
   const markerRef = useRef<L.Marker | null>(null);
+  const displayMarkers =
+    markers && markers.length > 0 ? markers : [{ center }];
 
   // Marker drag end handler
   const eventHandlers = useMemo(
@@ -111,7 +173,9 @@ export default function MapPicker({
         center={center}
         zoom={15}
         style={{ width: "100%", height: "100%" }}
-        scrollWheelZoom
+        dragging={interactive}
+        doubleClickZoom={interactive}
+        scrollWheelZoom={interactive}
         zoomControl={false}
       >
         <TileLayer
@@ -119,25 +183,38 @@ export default function MapPicker({
           url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
           maxZoom={19}
         />
-        <Circle
-          center={center}
-          radius={radiusM}
-          pathOptions={{
-            color: "#a695d8",
-            fillColor: "#a695d8",
-            fillOpacity: 0.15,
-            weight: 2,
-          }}
-        />
-        <Marker
-          position={center}
-          draggable
-          icon={pinIcon}
-          eventHandlers={eventHandlers}
-          ref={markerRef}
-        />
-        <MapEventHandler onCenterChange={onCenterChange} />
-        <FlyToCenter center={center} />
+        {(!markers || markers.length <= 1) && (
+          <Circle
+            center={center}
+            radius={radiusM}
+            pathOptions={{
+              color: "#a695d8",
+              fillColor: "#a695d8",
+              fillOpacity: 0.15,
+              weight: 2,
+            }}
+          />
+        )}
+        {displayMarkers.map((marker, index) => (
+          <Marker
+            key={`${marker.center[0]}-${marker.center[1]}-${index}`}
+            position={marker.center}
+            draggable={interactive && (!markers || markers.length <= 1)}
+            icon={buildPinIcon(marker.label)}
+            eventHandlers={
+              interactive && (!markers || markers.length <= 1)
+                ? eventHandlers
+                : undefined
+            }
+            ref={index === 0 ? markerRef : undefined}
+          />
+        ))}
+        {interactive && <MapEventHandler onCenterChange={onCenterChange} />}
+        {markers && markers.length > 0 ? (
+          <FitMarkers markers={markers} center={center} />
+        ) : (
+          <FlyToCenter center={center} />
+        )}
       </MapContainer>
     </div>
   );

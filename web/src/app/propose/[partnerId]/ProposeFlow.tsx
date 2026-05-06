@@ -26,6 +26,11 @@ const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
   ),
 });
 
+type MapPreviewMarker = {
+  center: [number, number];
+  label: string;
+};
+
 /* ─── types ─────────────────────────────────────────────── */
 
 export type ProposeInv = {
@@ -318,6 +323,10 @@ function meetupCandidateIsIncomplete(candidate: MeetupCandidate): boolean {
   return candidateHasAnyInput(candidate) && !meetupCandidateIsSet(candidate);
 }
 
+function meetupCandidateIsEmpty(candidate: MeetupCandidate): boolean {
+  return !candidateHasAnyInput(candidate);
+}
+
 function findNextMeetupCandidateId(candidates: MeetupCandidate[]): string | null {
   for (let index = 1; index <= MAX_MEETUP_CANDIDATES; index += 1) {
     const id = `candidate-${index}`;
@@ -505,8 +514,6 @@ export function ProposeFlow({
   const activeMeetup =
     meetupCandidates.find((candidate) => candidate.id === activeMeetupId) ??
     meetupCandidates[0];
-  const meetupStart = activeMeetup?.start ?? "";
-  const meetupEnd = activeMeetup?.end ?? "";
   const meetupPlace = activeMeetup?.place ?? "";
   const meetupCenter = activeMeetup?.center ?? FALLBACK_CENTER;
 
@@ -559,6 +566,7 @@ export function ProposeFlow({
   const primaryMeetup = validMeetupCandidates[0];
   const meetupSet = validMeetupCandidates.length > 0;
   const meetupReady = meetupSet && incompleteMeetupCandidates.length === 0;
+  const meetupHasTimeDraft = meetupCandidates.some(candidateHasTime);
 
   // 定価交換モードでは receivers (相手の譲) は要らない（金銭で受け取る/支払う）
   const canProceedSelect = isCashMode
@@ -594,20 +602,22 @@ export function ProposeFlow({
     const activeCandidate =
       meetupCandidates.find((candidate) => candidate.id === activeMeetupId) ??
       meetupCandidates[0];
-    const incompleteCandidate = meetupCandidates.find(
+    const emptyCandidate = meetupCandidates.find(
       (candidate) =>
-        candidate.id !== activeMeetupId && meetupCandidateIsIncomplete(candidate),
+        candidate.id !== activeMeetupId && meetupCandidateIsEmpty(candidate),
     );
     const shouldCreateNext =
       activeCandidate &&
-      meetupCandidateIsSet(activeCandidate) &&
-      !incompleteCandidate &&
+      candidateHasTime(activeCandidate) &&
+      !emptyCandidate &&
       meetupCandidates.length < MAX_MEETUP_CANDIDATES;
     const nextCandidateId = shouldCreateNext
       ? findNextMeetupCandidateId(meetupCandidates)
       : null;
     const targetCandidateId =
-      incompleteCandidate?.id ?? nextCandidateId ?? activeCandidate?.id ?? activeMeetupId;
+      activeCandidate && !candidateHasTime(activeCandidate)
+        ? activeCandidate.id
+        : emptyCandidate?.id ?? nextCandidateId ?? activeCandidate?.id ?? activeMeetupId;
     const center = activeCandidate?.center ?? FALLBACK_CENTER;
 
     skipReverseRef.current = true;
@@ -639,6 +649,47 @@ export function ProposeFlow({
       );
     });
     placeManuallyEditedRef.current = false;
+  }
+
+  function deleteMeetupCandidate(id: string) {
+    const deletedIndex = meetupCandidates.findIndex(
+      (candidate) => candidate.id === id,
+    );
+    if (deletedIndex < 0) return;
+
+    const deleted = meetupCandidates[deletedIndex];
+    const remaining = meetupCandidates.filter((candidate) => candidate.id !== id);
+    if (remaining.length === 0) {
+      const blankCandidate: MeetupCandidate = {
+        id: "candidate-1",
+        mode: partner.localModeEnabled ? "today" : "scheduled",
+        start: "",
+        end: "",
+        place: "",
+        center: deleted?.center ?? FALLBACK_CENTER,
+      };
+      setMeetupCandidates([blankCandidate]);
+      setActiveMeetupId(blankCandidate.id);
+      placeManuallyEditedRef.current = false;
+      skipReverseRef.current = true;
+      return;
+    }
+
+    const renumbered = remaining.map((candidate, index) => ({
+      ...candidate,
+      id: `candidate-${index + 1}`,
+    }));
+    const nextActiveIndex =
+      id === activeMeetupId
+        ? Math.min(deletedIndex, renumbered.length - 1)
+        : Math.max(
+            0,
+            remaining.findIndex((candidate) => candidate.id === activeMeetupId),
+          );
+    setMeetupCandidates(renumbered);
+    setActiveMeetupId(renumbered[nextActiveIndex]?.id ?? renumbered[0].id);
+    placeManuallyEditedRef.current = false;
+    skipReverseRef.current = true;
   }
 
   function copyActivePlaceToAllCandidates() {
@@ -1130,6 +1181,7 @@ export function ProposeFlow({
             activeMeetupId={activeMeetupId}
             onSelectCandidate={selectMeetupCandidate}
             onTimeRangeSelect={setActiveMeetupTimeRange}
+            onDeleteCandidate={deleteMeetupCandidate}
             onCopyPlaceToAll={copyActivePlaceToAllCandidates}
             meetupPlace={meetupPlace}
             onPlaceInputChange={handlePlaceInputChange}
@@ -1181,10 +1233,6 @@ export function ProposeFlow({
             myItems={myItems.filter((i) => i.selected)}
             theirItems={theirItems.filter((i) => i.selected)}
             meetupCandidates={validMeetupCandidates}
-            meetupStart={primaryMeetup?.start ?? meetupStart}
-            meetupEnd={primaryMeetup?.end ?? meetupEnd}
-            meetupPlace={primaryMeetup?.place ?? meetupPlace}
-            meetupCenter={primaryMeetup?.center ?? meetupCenter}
             message={message}
             onMessageChange={setMessage}
             exposeCalendar={exposeCalendar}
@@ -1208,7 +1256,7 @@ export function ProposeFlow({
                 ? "次へ：送信確認 →"
                 : myCount === 0 || theirCount === 0
                   ? "提示物を両方から選んでください"
-                  : meetupSet
+                  : meetupHasTimeDraft
                     ? "場所未設定の候補があります"
                     : "交換できる時間を設定してください"}
             </button>
@@ -1504,6 +1552,7 @@ function MeetupTab({
   activeMeetupId,
   onSelectCandidate,
   onTimeRangeSelect,
+  onDeleteCandidate,
   onCopyPlaceToAll,
   meetupPlace,
   onPlaceInputChange,
@@ -1523,6 +1572,7 @@ function MeetupTab({
   activeMeetupId: string;
   onSelectCandidate: (id: string) => void;
   onTimeRangeSelect: (start: string, end: string) => void;
+  onDeleteCandidate: (id: string) => void;
   onCopyPlaceToAll: () => void;
   meetupPlace: string;
   onPlaceInputChange: (s: string) => void;
@@ -1561,7 +1611,6 @@ function MeetupTab({
 
   function handleTimeRangeSelect(start: string, end: string) {
     onTimeRangeSelect(start, end);
-    setPlaceSheetOpen(true);
   }
 
   function shiftCalendarWeek(direction: 1 | -1) {
@@ -1577,6 +1626,7 @@ function MeetupTab({
         onSelectCandidate={onSelectCandidate}
         onTimeRangeSelect={handleTimeRangeSelect}
         onOpenPlaceSheet={openPlaceSheet}
+        onDeleteCandidate={onDeleteCandidate}
         onShiftWeek={shiftCalendarWeek}
       />
 
@@ -1617,6 +1667,7 @@ function WeekMeetupCalendar({
   onSelectCandidate,
   onTimeRangeSelect,
   onOpenPlaceSheet,
+  onDeleteCandidate,
   onShiftWeek,
 }: {
   candidates: MeetupCandidate[];
@@ -1625,6 +1676,7 @@ function WeekMeetupCalendar({
   onSelectCandidate: (id: string) => void;
   onTimeRangeSelect: (start: string, end: string) => void;
   onOpenPlaceSheet: (id: string) => void;
+  onDeleteCandidate: (id: string) => void;
   onShiftWeek: (direction: 1 | -1) => void;
 }) {
   const [drag, setDrag] = useState<MeetupDragSelection | null>(null);
@@ -2008,15 +2060,22 @@ function WeekMeetupCalendar({
               const active = candidate.id === activeMeetupId;
               const placeMissing = !candidate.place.trim();
               return (
-                <button
+                <div
                   key={candidate.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => {
                     onSelectCandidate(candidate.id);
                     onOpenPlaceSheet(candidate.id);
                   }}
-                  className={`absolute left-[4px] right-[4px] rounded-[8px] border px-1.5 py-1 text-left text-[8.5px] font-extrabold leading-tight shadow-[0_3px_9px_rgba(166,149,216,0.2)] ${
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    onSelectCandidate(candidate.id);
+                    onOpenPlaceSheet(candidate.id);
+                  }}
+                  className={`absolute left-[4px] right-[4px] rounded-[8px] border py-1 pl-1.5 pr-5 text-left text-[8.5px] font-extrabold leading-tight shadow-[0_3px_9px_rgba(166,149,216,0.2)] ${
                     active ? "ring-2 ring-[#f3c5d4]" : ""
                   } ${
                     placeMissing
@@ -2029,7 +2088,23 @@ function WeekMeetupCalendar({
                   <span className="block truncate font-bold">
                     {placeMissing ? "⚠ 場所を設定" : candidate.place}
                   </span>
-                </button>
+                  <button
+                    type="button"
+                    aria-label={`候補${index + 1}を削除`}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteCandidate(candidate.id);
+                    }}
+                    className={`absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-black leading-none ${
+                      placeMissing
+                        ? "bg-[#9a3412]/12 text-[#9a3412]"
+                        : "bg-white/22 text-white"
+                    }`}
+                  >
+                    ×
+                  </button>
+                </div>
               );
             })}
             {preview && preview.dayIndex === dayIndex && (
@@ -2219,10 +2294,6 @@ function ConfirmStep({
   myItems,
   theirItems,
   meetupCandidates,
-  meetupStart,
-  meetupEnd,
-  meetupPlace,
-  meetupCenter,
   message,
   onMessageChange,
   exposeCalendar,
@@ -2233,10 +2304,6 @@ function ConfirmStep({
   myItems: Selectable[];
   theirItems: Selectable[];
   meetupCandidates: MeetupCandidate[];
-  meetupStart: string;
-  meetupEnd: string;
-  meetupPlace: string;
-  meetupCenter: [number, number];
   message: string;
   onMessageChange: (m: string) => void;
   exposeCalendar: boolean;
@@ -2275,64 +2342,7 @@ function ConfirmStep({
 
       {/* 待ち合わせ：交換できる候補 */}
       <Section label="交換できる候補">
-        {meetupCandidates.length > 1 && (
-          <div className="mb-2 rounded-[12px] bg-[#a695d810] px-3 py-2 text-[11px] leading-relaxed text-[#3a324a]">
-            相手には候補1を主候補として見せ、ほかの候補も選べる形で送ります。
-          </div>
-        )}
-        <div className="mb-2 space-y-2">
-          {meetupCandidates.map((candidate, index) => (
-            <div
-              key={candidate.id}
-              className={`rounded-[12px] border px-3 py-2.5 ${
-                index === 0
-                  ? "border-[#a695d855] bg-[#a695d80d]"
-                  : "border-[#3a324a14] bg-white"
-              }`}
-            >
-              <div className="mb-1 flex items-center gap-1.5">
-                <span className="rounded-full bg-white px-2 py-[2px] text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
-                  候補{index + 1}
-                </span>
-                {index === 0 && (
-                  <span className="text-[9.5px] font-bold text-[#3a324a8c]">
-                    主候補
-                  </span>
-                )}
-              </div>
-              <div className="text-[13px] font-extrabold tabular-nums text-[#3a324a]">
-                {formatRange(candidate.start, candidate.end)}
-              </div>
-              <div className="mt-0.5 text-[12px] font-bold text-[#3a324a]">
-                📍 {candidate.place}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="overflow-hidden rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white">
-          <div className="px-3 py-2.5">
-            <div className="mb-0.5 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-              主候補の日時
-            </div>
-            <div className="text-[13px] font-bold tabular-nums text-[#3a324a]">
-              {formatRange(meetupStart, meetupEnd)}
-            </div>
-            <div className="mt-2 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-              主候補の場所
-            </div>
-            <div className="text-[13px] font-bold text-[#3a324a]">
-              📍 {meetupPlace}
-            </div>
-          </div>
-          <div className="h-[160px] w-full border-t border-[#3a324a14]">
-            <MapPicker
-              center={meetupCenter}
-              radiusM={120}
-              onCenterChange={() => {}}
-              className="h-full w-full"
-            />
-          </div>
-        </div>
+        <MeetupPlanPreview candidates={meetupCandidates} />
       </Section>
 
       {/* iter138: メッセージ入力（任意・空でも送信可能）+ スケジュール共有トグル */}
@@ -2397,6 +2407,200 @@ function ConfirmStep({
         </div>
       )}
     </>
+  );
+}
+
+function getMeetupMapCenter(candidates: MeetupCandidate[]): [number, number] {
+  if (candidates.length === 0) return FALLBACK_CENTER;
+  const sum = candidates.reduce(
+    (acc, candidate) => ({
+      lat: acc.lat + candidate.center[0],
+      lng: acc.lng + candidate.center[1],
+    }),
+    { lat: 0, lng: 0 },
+  );
+  return [sum.lat / candidates.length, sum.lng / candidates.length];
+}
+
+function getMeetupPreviewMarkers(
+  candidates: MeetupCandidate[],
+): MapPreviewMarker[] {
+  return candidates.map((candidate, index) => ({
+    center: candidate.center,
+    label: String(index + 1),
+  }));
+}
+
+function getMeetupCalendarPreviewWindow(candidates: MeetupCandidate[]) {
+  const slots = candidates.flatMap((candidate) => {
+    const startSlot = localToCalendarSlot(candidate.start);
+    const endSlot = localToCalendarSlot(candidate.end);
+    if (startSlot == null || endSlot == null) return [];
+    return [startSlot, endSlot];
+  });
+  if (slots.length === 0) {
+    return { startSlot: 32, endSlot: 88 };
+  }
+  const minSlot = Math.min(...slots);
+  const maxSlot = Math.max(...slots);
+  return {
+    startSlot: Math.max(0, Math.floor(minSlot / 4) * 4 - 4),
+    endSlot: Math.min(MEETUP_SLOT_COUNT, Math.ceil(maxSlot / 4) * 4 + 4),
+  };
+}
+
+function MeetupPlanPreview({
+  candidates,
+}: {
+  candidates: MeetupCandidate[];
+}) {
+  const weekDateKeys = buildMeetupWeekDateKeys(candidates[0]?.start);
+  const markers = getMeetupPreviewMarkers(candidates);
+  const mapCenter = getMeetupMapCenter(candidates);
+  const previewWindow = getMeetupCalendarPreviewWindow(candidates);
+  const slotHeight = 6;
+  const calendarHeight = Math.max(
+    138,
+    (previewWindow.endSlot - previewWindow.startSlot) * slotHeight,
+  );
+  const calendarBlocks = candidates.flatMap((candidate, index) => {
+    const start = splitTokyoLocal(candidate.start);
+    const end = splitTokyoLocal(candidate.end);
+    const startSlot = localToCalendarSlot(candidate.start);
+    const endSlot = localToCalendarSlot(candidate.end);
+    if (!start || !end || start.dateKey !== end.dateKey) return [];
+    if (startSlot == null || endSlot == null) return [];
+    const dayIndex = weekDateKeys.indexOf(start.dateKey);
+    if (dayIndex < 0) return [];
+    return [
+      {
+        candidate,
+        index,
+        dayIndex,
+        top: (startSlot - previewWindow.startSlot) * slotHeight,
+        height: Math.max(slotHeight * 2, (endSlot - startSlot) * slotHeight),
+      },
+    ];
+  });
+  const hourStart = Math.ceil(previewWindow.startSlot / 4);
+  const hourEnd = Math.floor(previewWindow.endSlot / 4);
+
+  return (
+    <div className="overflow-hidden rounded-[18px] border border-[#3a324a14] bg-white shadow-[0_8px_24px_rgba(58,50,74,0.07)]">
+      <div className="flex items-center justify-between gap-2 border-b border-[#3a324a12] bg-[linear-gradient(135deg,#fbf9fc,#ffffff)] px-3 py-2.5">
+        <div className="min-w-0 text-[12px] font-extrabold text-[#3a324a]">
+          待ち合わせ候補
+        </div>
+        <div className="rounded-full bg-[#a695d814] px-2 py-1 text-[9.5px] font-extrabold text-[#a695d8]">
+          {candidates.length}件
+        </div>
+      </div>
+
+      <div className="border-b border-[#3a324a12]">
+        <div className="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a0d] bg-white">
+          <div />
+          {weekDateKeys.map((dateKey, index) => (
+            <div
+              key={dateKey}
+              className={`px-0.5 py-2 text-center ${
+                index === 0 ? "text-[#a695d8]" : "text-[#3a324acc]"
+              }`}
+            >
+              <div className="text-[9px] font-extrabold">
+                {formatDateKeyWeekday(dateKey)}
+              </div>
+              <div className="mt-0.5 text-[15px] font-extrabold leading-none tabular-nums">
+                {formatDateKeyDayNumber(dateKey)}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div
+          className="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] bg-[#fbf9fc]"
+          style={{ height: calendarHeight }}
+        >
+          <div className="relative border-r border-[#3a324a0d] bg-white">
+            {Array.from(
+              { length: Math.max(0, hourEnd - hourStart + 1) },
+              (_, index) => hourStart + index,
+            ).map((hour) => (
+              <div
+                key={hour}
+                className="absolute right-1 text-[9px] font-bold text-[#3a324a70]"
+                style={{
+                  top:
+                    (hour * 4 - previewWindow.startSlot) * slotHeight - 4,
+                }}
+              >
+                {hour}:00
+              </div>
+            ))}
+          </div>
+          {weekDateKeys.map((dateKey, dayIndex) => (
+            <div
+              key={dateKey}
+              className="relative border-r border-[#3a324a0d] last:border-r-0"
+            >
+              {Array.from(
+                { length: Math.max(0, hourEnd - hourStart + 1) },
+                (_, index) => hourStart + index,
+              ).map((hour) => (
+                <div
+                  key={hour}
+                  className="absolute inset-x-0 border-t border-[#3a324a08]"
+                  style={{
+                    top: (hour * 4 - previewWindow.startSlot) * slotHeight,
+                  }}
+                />
+              ))}
+              {calendarBlocks
+                .filter((block) => block.dayIndex === dayIndex)
+                .map((block) => (
+                  <div
+                    key={block.candidate.id}
+                    className="absolute left-[3px] right-[3px] rounded-[7px] border border-[#a695d8] bg-[#a695d8] px-1 py-0.5 text-[8px] font-extrabold leading-tight text-white shadow-[0_3px_9px_rgba(166,149,216,0.22)]"
+                    style={{
+                      top: block.top,
+                      height: block.height,
+                    }}
+                  >
+                    <span className="block truncate">候補{block.index + 1}</span>
+                  </div>
+                ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="h-[184px] w-full bg-[#e8eef0]">
+        <MapPicker
+          center={mapCenter}
+          radiusM={120}
+          markers={markers}
+          interactive={false}
+          onCenterChange={() => {}}
+          className="h-full w-full"
+        />
+      </div>
+
+      <div className="grid gap-1.5 px-3 py-2.5">
+        {candidates.map((candidate, index) => (
+          <div key={candidate.id} className="flex items-start gap-2">
+            <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[#a695d8] text-[10px] font-extrabold text-white">
+              {index + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[11.5px] font-extrabold tabular-nums text-[#3a324a]">
+                {formatRange(candidate.start, candidate.end)}
+              </div>
+              <div className="truncate text-[10.5px] font-bold text-[#3a324a8c]">
+                {candidate.place}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
