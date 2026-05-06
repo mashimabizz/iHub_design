@@ -230,6 +230,37 @@ function ListingDeck({
 
   return (
     <section className="-mx-4 overflow-hidden pb-1">
+      <style>{`
+        @keyframes ihub-listing-card-float {
+          0%, 100% { transform: translate3d(0, 0, 0) rotate(-0.25deg); }
+          50% { transform: translate3d(0, -7px, 0) rotate(0.35deg); }
+        }
+        @keyframes ihub-listing-cord-flow {
+          from { stroke-dashoffset: 0; }
+          to { stroke-dashoffset: -36; }
+        }
+        @keyframes ihub-listing-knot-pulse {
+          0%, 100% { transform: scale(1); opacity: 0.92; }
+          50% { transform: scale(1.08); opacity: 1; }
+        }
+        .ihub-listing-card-float {
+          animation: ihub-listing-card-float 5.4s ease-in-out infinite;
+        }
+        .ihub-listing-cord-line {
+          stroke-dasharray: 7 10;
+          animation: ihub-listing-cord-flow 8s linear infinite;
+        }
+        .ihub-listing-knot {
+          animation: ihub-listing-knot-pulse 3.6s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .ihub-listing-card-float,
+          .ihub-listing-cord-line,
+          .ihub-listing-knot {
+            animation: none;
+          }
+        }
+      `}</style>
       <div className="mb-2 flex items-center justify-between px-4">
         <div className="text-[13px] font-extrabold tracking-[0.2px] text-[#3a324a]">
           募集デッキ
@@ -250,11 +281,11 @@ function ListingDeck({
             <div
               key={item.id}
               data-listing-deck-card
-              className="w-[84%] flex-shrink-0 snap-center transition-transform duration-300 ease-out"
+              className="w-[84%] flex-shrink-0 snap-center transition-transform duration-500 ease-out [perspective:900px]"
               style={{
                 transform: active
                   ? "translateY(0) scale(1) rotateY(0deg)"
-                  : `translateY(5px) scale(0.94) rotateY(${offset < 0 ? 6 : -6}deg)`,
+                  : `translateY(9px) scale(0.93) rotateY(${offset < 0 ? 4 : -4}deg)`,
                 transformStyle: "preserve-3d",
               }}
             >
@@ -310,11 +341,17 @@ function ListingDeckCard({
 
   return (
     <article
-      className={`relative min-h-[254px] overflow-hidden rounded-[20px] border bg-white shadow-[0_14px_34px_rgba(58,50,74,0.14)] ${
+      className={`ihub-listing-card-float relative min-h-[254px] overflow-hidden rounded-[22px] border bg-white shadow-[0_18px_44px_rgba(58,50,74,0.13)] ${
         active ? "border-[#a695d866]" : "border-[#3a324a12]"
       }`}
+      style={{
+        animationDelay: `${-(listing.id.length % 5) * 0.38}s`,
+      }}
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(166,149,216,0.22),transparent_42%),radial-gradient(circle_at_92%_18%,rgba(168,212,230,0.18),transparent_38%),linear-gradient(180deg,#ffffff,#fbf9fc)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_4%,rgba(166,149,216,0.17),transparent_38%),radial-gradient(circle_at_92%_24%,rgba(243,197,212,0.16),transparent_36%),radial-gradient(circle_at_48%_92%,rgba(168,212,230,0.16),transparent_42%),linear-gradient(180deg,#ffffff,#fbf9fc)]" />
+      <span className="absolute left-8 top-14 h-2 w-2 rounded-full bg-[#f3c5d4aa] blur-[0.5px]" />
+      <span className="absolute right-10 top-20 h-1.5 w-1.5 rounded-full bg-[#a8d4e6cc] blur-[0.5px]" />
+      <span className="absolute bottom-8 left-12 h-1.5 w-1.5 rounded-full bg-[#a695d899] blur-[0.5px]" />
       <div className="relative z-10 flex items-center gap-2 px-3 py-2">
         <span
           className={`rounded-full px-2 py-[2px] text-[9.5px] font-extrabold tracking-[0.5px] ${
@@ -407,13 +444,16 @@ function DeckDuel({
   slot: DeckWishSlot | null;
 }) {
   return (
-    <div className="grid min-h-[190px] grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-center gap-2">
-      <div className="flex min-w-0 flex-col items-center">
+    <div className="relative grid min-h-[190px] grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] items-center gap-2">
+      <DeckCord variant="duel" />
+      <div className="relative z-10 flex min-w-0 flex-col items-center">
         <DeckHaveVisual listing={listing} size={112} />
         <DeckCaption text="譲る" />
       </div>
-      <DeckVersusMark />
-      <div className="flex min-w-0 flex-col items-center">
+      <div className="relative z-20 flex justify-center">
+        <DeckKnot />
+      </div>
+      <div className="relative z-10 flex min-w-0 flex-col items-center">
         <DeckWishVisual slot={slot} size={112} />
         <DeckCaption text={deckWishCaption(slot)} chip={slot?.option} />
       </div>
@@ -437,12 +477,13 @@ function DeckFan({
 
   return (
     <div className="relative min-h-[190px]">
+      <DeckCord variant="fan" />
       <div className="absolute left-1 top-10 z-20 flex flex-col items-center">
         <DeckHaveVisual listing={listing} size={104} />
         <DeckCaption text="譲る" />
       </div>
-      <div className="absolute left-[112px] top-[86px] z-30">
-        <DeckVersusMark compact />
+      <div className="absolute left-[114px] top-[88px] z-30">
+        <DeckKnot compact />
       </div>
       <div className="absolute right-0 top-4 h-[162px] w-[178px]">
         {visible.map((slot, index) => (
@@ -486,6 +527,7 @@ function DeckOrb({
 
   return (
     <div className="relative min-h-[198px]">
+      <DeckCord variant="orb" />
       <div className="absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center">
         <div className="rounded-[24px] bg-white/65 p-1 shadow-[0_12px_28px_rgba(58,50,74,0.14)] backdrop-blur-sm">
           <DeckHaveVisual listing={listing} size={102} />
@@ -669,14 +711,95 @@ function DeckEmptyVisual({
   );
 }
 
-function DeckVersusMark({ compact = false }: { compact?: boolean }) {
+function DeckCord({ variant }: { variant: "duel" | "fan" | "orb" }) {
+  const viewBox = variant === "orb" ? "0 0 320 198" : "0 0 320 190";
+  const paths =
+    variant === "duel"
+      ? ["M82 96 C126 58 190 132 238 94"]
+      : variant === "fan"
+        ? [
+            "M82 96 C128 44 190 48 248 58",
+            "M84 98 C132 96 190 94 248 94",
+            "M82 100 C128 150 190 142 248 132",
+          ]
+        : [
+            "M160 100 C112 58 78 38 34 36",
+            "M160 100 C212 56 244 38 292 36",
+            "M160 100 C108 130 72 154 50 166",
+            "M160 100 C212 132 248 154 286 164",
+            "M160 100 C146 50 132 26 116 24",
+            "M160 100 C172 148 134 176 124 184",
+          ];
+  return (
+    <svg
+      viewBox={viewBox}
+      preserveAspectRatio="none"
+      className="pointer-events-none absolute inset-0 z-0 h-full w-full"
+      aria-hidden="true"
+    >
+      {paths.map((d) => (
+        <g key={d}>
+          <path
+            d={d}
+            fill="none"
+            stroke="#ffffff"
+            strokeLinecap="round"
+            strokeWidth="7"
+            opacity="0.88"
+          />
+          <path
+            d={d}
+            fill="none"
+            stroke="#cbbce8"
+            strokeLinecap="round"
+            strokeWidth="2.2"
+            opacity="0.92"
+          />
+          <path
+            d={d}
+            fill="none"
+            stroke="#a695d8"
+            strokeLinecap="round"
+            strokeWidth="1.35"
+            opacity="0.42"
+            className="ihub-listing-cord-line"
+          />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function DeckKnot({ compact = false }: { compact?: boolean }) {
+  const size = compact ? 30 : 36;
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] font-black italic text-white shadow-[0_8px_18px_rgba(166,149,216,0.34)] ${
-        compact ? "h-9 w-9 text-[13px]" : "h-11 w-11 text-[15px]"
-      }`}
+      className="ihub-listing-knot relative flex shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 shadow-[0_8px_20px_rgba(166,149,216,0.18)] backdrop-blur-sm"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
     >
-      VS
+      <svg
+        width={compact ? 20 : 24}
+        height={compact ? 20 : 24}
+        viewBox="0 0 24 24"
+      >
+        <path
+          d="M12 12C8.6 7.8 5.6 7.4 4.2 9.1 2.6 11 4.7 14 8 13.4c1.5-.3 2.8-.9 4-1.4Zm0 0c3.4-4.2 6.4-4.6 7.8-2.9 1.6 1.9-.5 4.9-3.8 4.3-1.5-.3-2.8-.9-4-1.4Z"
+          fill="none"
+          stroke="#a695d8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
+        <path
+          d="M8 16c1.5-1.3 2.8-2.6 4-4 1.2 1.4 2.5 2.7 4 4"
+          fill="none"
+          stroke="#f3c5d4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.6"
+        />
+      </svg>
     </div>
   );
 }
@@ -689,7 +812,7 @@ function DeckCaption({
   chip?: ListingOption;
 }) {
   return (
-    <div className="mt-2 flex max-w-full items-center justify-center gap-1 rounded-full bg-white/80 px-2 py-1 shadow-[0_2px_8px_rgba(58,50,74,0.08)]">
+    <div className="mt-2 flex max-w-full items-center justify-center gap-1 rounded-full bg-white/80 px-2 py-1 shadow-[0_4px_12px_rgba(58,50,74,0.07)] backdrop-blur-sm">
       {chip && <ExchangeChip option={chip} />}
       <span className="max-w-[112px] truncate text-[10px] font-extrabold text-[#3a324a]">
         {text}
