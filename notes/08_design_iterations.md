@@ -4,6 +4,72 @@
 
 ---
 
+## イテレーション154.33：追加リクエストを推し仮登録へ反映
+
+### 背景・問題意識
+
+オーナーから、推し設定画面で追加リクエストを送った推しが、そのまま推し設定として仮登録されてほしいという指摘があった。
+
+また、仮登録中の推しグループに対しても、メンバー／キャラクターを追加リクエストとして登録できる必要がある。
+
+### 変更内容
+
+#### `web/src/app/profile/actions.ts`
+- `requestOshiAndAddToProfile` を追加し、`oshi_requests` 作成後に `user_oshi.oshi_request_id` へ即時仮登録するようにした。
+- `requestCharacterAndAddToProfile` を追加し、既存 master グループだけでなく仮登録中の `oshi_request_id` にも `character_requests` を紐付け、`user_oshi.character_request_id` として即時仮登録するようにした。
+- 推しグループ削除・推しメンバー削除を `group_id` と `oshi_request_id` の両方に対応させた。
+
+#### `web/src/app/profile/oshi/page.tsx`
+- `user_oshi` の `oshi_request` / `character_request` relation を読み込み、承認待ちの推し・メンバーも推し設定カードへ集約するようにした。
+- master グループと仮登録グループを `source` で区別し、仮登録グループでは master メンバー候補を出さず、追加リクエスト導線を残すようにした。
+
+#### `web/src/app/profile/oshi/OshiEditView.tsx`
+- 推し追加リクエスト送信後、画面上に即「承認待ち」グループとして表示するようにした。
+- メンバー追加リクエスト送信後、該当グループ内に「承認待ち」メンバーとして即表示するようにした。
+- 仮登録中の推しグループからもメンバー追加リクエストモーダルを開けるようにした。
+
+#### `web/src/app/profile/page.tsx`
+- プロフ画面の推し要約でも、仮登録中の推し・メンバー名を拾えるようにした。
+
+#### `notes/05_data_model.md`
+- `user_oshi` の `oshi_request_id` / `character_request_id` を明記し、仮登録の扱いを補足。
+
+#### `notes/10_glossary.md`
+- 「追加リクエスト」「仮登録」「承認待ち」を用語として追加。
+
+### 影響範囲
+
+- `/profile/oshi` 推し設定画面
+- 推し追加リクエスト / メンバー追加リクエストの送信後 UX
+- `/profile` プロフ画面の推し要約
+- `user_oshi` の request id 利用方針
+
+### 確認方法
+
+- `npx eslint src/app/profile/actions.ts src/app/profile/page.tsx src/app/profile/oshi/page.tsx src/app/profile/oshi/OshiEditView.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/profile/actions.ts`
+- `web/src/app/profile/page.tsx`
+- `web/src/app/profile/oshi/page.tsx`
+- `web/src/app/profile/oshi/OshiEditView.tsx`
+- `notes/05_data_model.md`
+- `notes/10_glossary.md`
+
+### セルフレビュー結果
+
+- ✅ 推し追加リクエストは `oshi_requests` 作成と同時に `user_oshi.oshi_request_id` へ仮登録される
+- ✅ メンバー追加リクエストは master グループ / 仮登録グループの両方に紐付けられる
+- ✅ 仮登録中の推し・メンバーは推し設定画面上で「承認待ち」として識別できる
+- ✅ 新しい状態名は追加していないため `notes/09_state_machines.md` は更新不要
+- ✅ `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過（build は Google Fonts 取得のためネットワーク許可付きで再実行）
+
+---
+
 ## イテレーション154.32：関係図経由の提示物選択を待ち合わせ起点へ
 
 ### 背景・問題意識

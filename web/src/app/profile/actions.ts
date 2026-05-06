@@ -5,8 +5,67 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 type ActionResult = { error?: string } | undefined;
+type RequestAndAddResult = {
+  error?: string;
+  requestId?: string;
+  name?: string;
+};
+type OshiGroupTarget =
+  | string
+  | {
+      groupId?: string;
+      oshiRequestId?: string;
+    };
+type OshiMemberTarget = {
+  groupId?: string;
+  oshiRequestId?: string;
+  characterId?: string;
+  characterRequestId?: string;
+};
 
 const VALID_GENDER = ["female", "male", "other", "no_answer"] as const;
+
+function resolveGroupTarget(input: OshiGroupTarget): {
+  groupId?: string;
+  oshiRequestId?: string;
+} {
+  return typeof input === "string" ? { groupId: input } : input;
+}
+
+async function getNextUserOshiPriority(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<number> {
+  const { data: maxRow } = await supabase
+    .from("user_oshi")
+    .select("priority")
+    .eq("user_id", userId)
+    .order("priority", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return (maxRow?.priority ?? 0) + 1;
+}
+
+async function getNextParentPriority(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  target: { groupId?: string; oshiRequestId?: string },
+): Promise<number> {
+  let query = supabase
+    .from("user_oshi")
+    .select("priority")
+    .eq("user_id", userId)
+    .order("priority", { ascending: false })
+    .limit(1);
+
+  query = target.groupId
+    ? query.eq("group_id", target.groupId)
+    : query.eq("oshi_request_id", target.oshiRequestId!);
+
+  const { data: maxRow } = await query.maybeSingle();
+  return (maxRow?.priority ?? 0) + 1;
+}
 
 /**
  * プロフィール基本情報を更新（display_name / handle / avatar_url / gender / primary_area）
@@ -95,20 +154,32 @@ export async function updateProfile(input: {
 }
 
 /**
- * 推し設定: グループを丸ごと削除（user_oshi の該当 group_id 全行）
+ * 推し設定: グループを丸ごと削除（user_oshi の該当 parent 全行）
  */
-export async function removeOshiGroup(groupId: string): Promise<ActionResult> {
+export async function removeOshiGroup(
+  input: OshiGroupTarget,
+): Promise<ActionResult> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { error } = await supabase
+  const target = resolveGroupTarget(input);
+  if (!target.groupId && !target.oshiRequestId) {
+    return { error: "削除する推しの指定が不正です" };
+  }
+
+  let query = supabase
     .from("user_oshi")
     .delete()
-    .eq("user_id", user.id)
-    .eq("group_id", groupId);
+    .eq("user_id", user.id);
+
+  query = target.groupId
+    ? query.eq("group_id", target.groupId)
+    : query.eq("oshi_request_id", target.oshiRequestId!);
+
+  const { error } = await query;
 
   if (error) return { error: error.message };
   revalidatePath("/profile/oshi");
@@ -138,14 +209,7 @@ export async function addOshiGroup(groupId: string): Promise<ActionResult> {
 
   if (existing && existing.length > 0) return undefined;
 
-  const { data: maxRow } = await supabase
-    .from("user_oshi")
-    .select("priority")
-    .eq("user_id", user.id)
-    .order("priority", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const nextPriority = (maxRow?.priority ?? 0) + 1;
+  const nextPriority = await getNextUserOshiPriority(supabase, user.id);
 
   const { error } = await supabase.from("user_oshi").insert({
     user_id: user.id,
@@ -159,6 +223,66 @@ export async function addOshiGroup(groupId: string): Promise<ActionResult> {
   revalidatePath("/profile/oshi");
   revalidatePath("/profile");
   return undefined;
+}
+
+/**
+ * 推し追加リクエストを送信し、承認待ちのまま user_oshi に仮登録する。
+ */
+export async function requestOshiAndAddToProfile(input: {
+  name: string;
+  genreId?: string;
+  kind?: "group" | "work" | "solo";
+  note?: string;
+}): Promise<RequestAndAddResult> {
+  const name = input.name.trim();
+  if (!name || name.length > 100) {
+    return { error: "推しの名前は 1〜100 文字で入力してください" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: request, error: requestError } = await supabase
+    .from("oshi_requests")
+    .insert({
+      user_id: user.id,
+      requested_name: name,
+      requested_genre_id: input.genreId || null,
+      requested_kind: input.kind || null,
+      note: input.note?.trim() || null,
+    })
+    .select("id, requested_name")
+    .single();
+
+  if (requestError) return { error: requestError.message };
+
+  const nextPriority = await getNextUserOshiPriority(supabase, user.id);
+  const { error: addError } = await supabase.from("user_oshi").insert({
+    user_id: user.id,
+    group_id: null,
+    character_id: null,
+    oshi_request_id: request.id,
+    character_request_id: null,
+    kind: "box",
+    priority: nextPriority,
+  });
+
+  if (addError) {
+    await supabase
+      .from("oshi_requests")
+      .delete()
+      .eq("id", request.id)
+      .eq("user_id", user.id);
+    return { error: addError.message };
+  }
+
+  revalidatePath("/profile/oshi");
+  revalidatePath("/profile");
+  revalidatePath("/onboarding/oshi");
+  return { requestId: request.id, name: request.requested_name };
 }
 
 /**
@@ -223,42 +347,186 @@ export async function addCharacterToOshi(input: {
 }
 
 /**
- * 推しメンバーを削除（user_oshi 該当行を 1 件 delete）
+ * メンバー追加リクエストを送信し、承認待ちのまま user_oshi に仮登録する。
  *
- * 削除後、同グループに行が 1 つもなくなったら、kind='box' のエントリを 1 つ復活させる
- * （= グループ自体は推しのまま、メンバー指定なし状態）
+ * 親は既存 master グループ（groupId）または仮登録中の推し（oshiRequestId）。
  */
-export async function removeCharacterFromOshi(input: {
-  groupId: string;
-  characterId: string;
-}): Promise<ActionResult> {
+export async function requestCharacterAndAddToProfile(input: {
+  groupId?: string;
+  oshiRequestId?: string;
+  name: string;
+  note?: string;
+}): Promise<RequestAndAddResult> {
+  const name = input.name.trim();
+  if (!name || name.length > 100) {
+    return { error: "メンバー名は 1〜100 文字で入力してください" };
+  }
+  if (!input.groupId && !input.oshiRequestId) {
+    return { error: "追加先の推しが見つかりません" };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { error } = await supabase
-    .from("user_oshi")
-    .delete()
-    .eq("user_id", user.id)
-    .eq("group_id", input.groupId)
-    .eq("character_id", input.characterId);
-  if (error) return { error: error.message };
+  const target = {
+    groupId: input.groupId,
+    oshiRequestId: input.oshiRequestId,
+  };
 
-  // 同グループに残っている行を確認
-  const { data: remaining } = await supabase
+  let parentQuery = supabase
     .from("user_oshi")
     .select("id")
     .eq("user_id", user.id)
-    .eq("group_id", input.groupId);
+    .limit(1);
+  parentQuery = target.groupId
+    ? parentQuery.eq("group_id", target.groupId)
+    : parentQuery.eq("oshi_request_id", target.oshiRequestId!);
+  const { data: parent } = await parentQuery.maybeSingle();
+  if (!parent) {
+    return {
+      error:
+        "追加先の推しが推し設定にありません。先に推しを追加してください",
+    };
+  }
+
+  const { data: request, error: requestError } = await supabase
+    .from("character_requests")
+    .insert({
+      user_id: user.id,
+      group_id: target.groupId ?? null,
+      oshi_request_id: target.oshiRequestId ?? null,
+      requested_name: name,
+      note: input.note?.trim() || null,
+    })
+    .select("id, requested_name")
+    .single();
+
+  if (requestError) return { error: requestError.message };
+
+  let deleteBoxQuery = supabase
+    .from("user_oshi")
+    .delete()
+    .eq("user_id", user.id)
+    .is("character_id", null)
+    .is("character_request_id", null);
+  deleteBoxQuery = target.groupId
+    ? deleteBoxQuery.eq("group_id", target.groupId)
+    : deleteBoxQuery.eq("oshi_request_id", target.oshiRequestId!);
+  const { error: deleteBoxError } = await deleteBoxQuery;
+  if (deleteBoxError) {
+    await supabase
+      .from("character_requests")
+      .delete()
+      .eq("id", request.id)
+      .eq("user_id", user.id);
+    return { error: deleteBoxError.message };
+  }
+
+  const nextPriority = await getNextParentPriority(supabase, user.id, target);
+  const { error: addError } = await supabase.from("user_oshi").insert({
+    user_id: user.id,
+    group_id: target.groupId ?? null,
+    oshi_request_id: target.oshiRequestId ?? null,
+    character_id: null,
+    character_request_id: request.id,
+    kind: "specific",
+    priority: nextPriority,
+  });
+
+  if (addError) {
+    await supabase
+      .from("character_requests")
+      .delete()
+      .eq("id", request.id)
+      .eq("user_id", user.id);
+    let remainingQuery = supabase
+      .from("user_oshi")
+      .select("id")
+      .eq("user_id", user.id);
+    remainingQuery = target.groupId
+      ? remainingQuery.eq("group_id", target.groupId)
+      : remainingQuery.eq("oshi_request_id", target.oshiRequestId!);
+    const { data: remaining } = await remainingQuery;
+    if (!remaining || remaining.length === 0) {
+      await supabase.from("user_oshi").insert({
+        user_id: user.id,
+        group_id: target.groupId ?? null,
+        oshi_request_id: target.oshiRequestId ?? null,
+        character_id: null,
+        character_request_id: null,
+        kind: "box",
+        priority: 1,
+      });
+    }
+    return { error: addError.message };
+  }
+
+  revalidatePath("/profile/oshi");
+  revalidatePath("/profile");
+  revalidatePath("/onboarding/members");
+  return { requestId: request.id, name: request.requested_name };
+}
+
+/**
+ * 推しメンバーを削除（user_oshi 該当行を 1 件 delete）
+ *
+ * 削除後、同グループに行が 1 つもなくなったら、kind='box' のエントリを 1 つ復活させる
+ * （= グループ自体は推しのまま、メンバー指定なし状態）
+ */
+export async function removeCharacterFromOshi(
+  input: OshiMemberTarget,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  if ((!input.groupId && !input.oshiRequestId) || (!input.characterId && !input.characterRequestId)) {
+    return { error: "削除するメンバーの指定が不正です" };
+  }
+
+  const target = {
+    groupId: input.groupId,
+    oshiRequestId: input.oshiRequestId,
+  };
+
+  let deleteQuery = supabase
+    .from("user_oshi")
+    .delete()
+    .eq("user_id", user.id);
+  deleteQuery = target.groupId
+    ? deleteQuery.eq("group_id", target.groupId)
+    : deleteQuery.eq("oshi_request_id", target.oshiRequestId!);
+  deleteQuery = input.characterId
+    ? deleteQuery.eq("character_id", input.characterId)
+    : deleteQuery.eq("character_request_id", input.characterRequestId!);
+
+  const { error } = await deleteQuery;
+  if (error) return { error: error.message };
+
+  // 同グループに残っている行を確認
+  let remainingQuery = supabase
+    .from("user_oshi")
+    .select("id")
+    .eq("user_id", user.id);
+  remainingQuery = target.groupId
+    ? remainingQuery.eq("group_id", target.groupId)
+    : remainingQuery.eq("oshi_request_id", target.oshiRequestId!);
+
+  const { data: remaining } = await remainingQuery;
 
   if (!remaining || remaining.length === 0) {
     // 箱推し復活
     await supabase.from("user_oshi").insert({
       user_id: user.id,
-      group_id: input.groupId,
+      group_id: target.groupId ?? null,
+      oshi_request_id: target.oshiRequestId ?? null,
       character_id: null,
+      character_request_id: null,
       kind: "box",
       priority: 1,
     });

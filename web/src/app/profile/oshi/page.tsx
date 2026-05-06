@@ -20,6 +20,14 @@ type OshiRow = {
     | { id: string; name: string }
     | { id: string; name: string }[]
     | null;
+  oshi_request:
+    | { id: string; requested_name: string }
+    | { id: string; requested_name: string }[]
+    | null;
+  character_request:
+    | { id: string; requested_name: string }
+    | { id: string; requested_name: string }[]
+    | null;
 };
 
 type GenreRow = {
@@ -66,7 +74,7 @@ export default async function ProfileOshiPage({ searchParams }: Props) {
     supabase
       .from("user_oshi")
       .select(
-        "id, group_id, character_id, oshi_request_id, character_request_id, kind, priority, group:groups_master(id, name), character:characters_master(id, name)",
+        "id, group_id, character_id, oshi_request_id, character_request_id, kind, priority, group:groups_master(id, name), character:characters_master(id, name), oshi_request:oshi_requests(id, requested_name), character_request:character_requests(id, requested_name)",
       )
       .eq("user_id", user.id)
       .order("priority", { ascending: true }),
@@ -87,32 +95,62 @@ export default async function ProfileOshiPage({ searchParams }: Props) {
   ]);
 
   // グループごとにまとめる
+  type GroupSource = "master" | "request";
+  type Member = {
+    id: string;
+    name: string;
+    source: "master" | "request";
+  };
   type Group = {
     groupId: string;
+    source: GroupSource;
     groupName: string;
-    members: { id: string; name: string }[];
+    members: Member[];
     availableCharacters: { id: string; name: string }[];
   };
 
   const groupMap = new Map<string, Group>();
   for (const row of (oshi as OshiRow[]) ?? []) {
-    if (!row.group_id) continue;
     const grp = pickOne(row.group);
-    if (!grp) continue;
-    if (!groupMap.has(row.group_id)) {
-      groupMap.set(row.group_id, {
-        groupId: row.group_id,
-        groupName: grp.name,
+    const oshiReq = pickOne(row.oshi_request);
+    const source: GroupSource | null = row.group_id
+      ? "master"
+      : row.oshi_request_id
+        ? "request"
+        : null;
+    const groupId = row.group_id ?? row.oshi_request_id;
+    const groupName = grp?.name ?? oshiReq?.requested_name;
+    if (!source || !groupId || !groupName) continue;
+
+    const mapKey = `${source}:${groupId}`;
+    if (!groupMap.has(mapKey)) {
+      groupMap.set(mapKey, {
+        groupId,
+        source,
+        groupName,
         members: [],
         availableCharacters: [],
       });
     }
+
     if (row.character_id) {
       const ch = pickOne(row.character);
       if (ch) {
-        groupMap.get(row.group_id)!.members.push({
+        groupMap.get(mapKey)!.members.push({
           id: row.character_id,
           name: ch.name,
+          source: "master",
+        });
+      }
+    }
+
+    if (row.character_request_id) {
+      const chReq = pickOne(row.character_request);
+      if (chReq) {
+        groupMap.get(mapKey)!.members.push({
+          id: row.character_request_id,
+          name: chReq.requested_name,
+          source: "request",
         });
       }
     }
@@ -120,7 +158,12 @@ export default async function ProfileOshiPage({ searchParams }: Props) {
 
   // availableCharacters: 各グループの全キャラから、すでに登録済みのキャラを除外
   for (const group of groupMap.values()) {
-    const memberIds = new Set(group.members.map((m) => m.id));
+    if (group.source !== "master") continue;
+    const memberIds = new Set(
+      group.members
+        .filter((m) => m.source === "master")
+        .map((m) => m.id),
+    );
     group.availableCharacters = (characters ?? [])
       .filter(
         (c) => c.group_id === group.groupId && !memberIds.has(c.id),

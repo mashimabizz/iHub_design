@@ -12,21 +12,28 @@ import {
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
-  saveCharacterRequest,
-  saveOshiRequest,
-} from "@/app/onboarding/actions";
-import {
   addOshiGroup,
   addCharacterToOshi,
+  requestCharacterAndAddToProfile,
+  requestOshiAndAddToProfile,
   removeCharacterFromOshi,
   removeOshiGroup,
 } from "@/app/profile/actions";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 
+type GroupSource = "master" | "request";
+type MemberSource = "master" | "request";
+type OshiMember = {
+  id: string;
+  name: string;
+  source: MemberSource;
+};
+
 type Group = {
   groupId: string;
+  source: GroupSource;
   groupName: string;
-  members: { id: string; name: string }[];
+  members: OshiMember[];
   availableCharacters: { id: string; name: string }[];
 };
 
@@ -36,7 +43,21 @@ type GenreOption = { id: string; name: string };
 type OshiRequestKind = "group" | "work" | "solo";
 type RequestModalState =
   | { type: "oshi"; initialName?: string }
-  | { type: "member"; groupId: string; groupName: string };
+  | {
+      type: "member";
+      groupName: string;
+      groupId?: string;
+      oshiRequestId?: string;
+    };
+type RequestDonePayload =
+  | { type: "oshi"; requestId: string; name: string }
+  | {
+      type: "member";
+      requestId: string;
+      name: string;
+      groupId?: string;
+      oshiRequestId?: string;
+    };
 type OshiMasterOption = {
   id: string;
   name: string;
@@ -85,8 +106,11 @@ export function OshiEditView({
   const [masterModalOpen, setMasterModalOpen] = useState(false);
   const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingMutationsRef = useRef(0);
-  const selectedGroupIds = useMemo(
-    () => new Set(groups.map((g) => g.groupId)),
+  const selectedMasterGroupIds = useMemo(
+    () =>
+      new Set(
+        groups.filter((g) => g.source === "master").map((g) => g.groupId),
+      ),
     [groups],
   );
 
@@ -141,36 +165,92 @@ export function OshiEditView({
     setRequestModal({ type: "oshi", initialName });
   }
 
-  function openMemberRequest(group: Pick<Group, "groupId" | "groupName">) {
+  function openMemberRequest(
+    group: Pick<Group, "groupId" | "groupName" | "source">,
+  ) {
     setRequestNotice(null);
     setRequestModal({
       type: "member",
-      groupId: group.groupId,
+      groupId: group.source === "master" ? group.groupId : undefined,
+      oshiRequestId: group.source === "request" ? group.groupId : undefined,
       groupName: group.groupName,
     });
   }
 
-  function handleRequestDone(message: string) {
+  function handleRequestDone(payload: RequestDonePayload) {
     setRequestModal(null);
-    setRequestNotice(message);
+    if (payload.type === "oshi") {
+      setGroups((prev) => {
+        if (
+          prev.some(
+            (g) => g.source === "request" && g.groupId === payload.requestId,
+          )
+        ) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            groupId: payload.requestId,
+            source: "request",
+            groupName: payload.name,
+            members: [],
+            availableCharacters: [],
+          },
+        ];
+      });
+      setRequestNotice("推し追加リクエストを送信し、推し設定に仮登録しました。");
+    } else {
+      setGroups((prev) =>
+        prev.map((group) => {
+          const sameParent = payload.groupId
+            ? group.source === "master" && group.groupId === payload.groupId
+            : group.source === "request" &&
+              group.groupId === payload.oshiRequestId;
+          if (!sameParent) return group;
+          if (group.members.some((member) => member.id === payload.requestId)) {
+            return group;
+          }
+          return {
+            ...group,
+            members: [
+              ...group.members,
+              {
+                id: payload.requestId,
+                name: payload.name,
+                source: "request",
+              },
+            ],
+          };
+        }),
+      );
+      setRequestNotice(
+        "メンバー追加リクエストを送信し、推しメンバーに仮登録しました。",
+      );
+    }
     router.refresh();
   }
 
   function handleAddMasterOption(option: OshiMasterOption) {
-    if (selectedGroupIds.has(option.id)) {
+    if (selectedMasterGroupIds.has(option.id)) {
       setMasterModalOpen(false);
       return;
     }
 
     const nextGroup: Group = {
       groupId: option.id,
+      source: "master",
       groupName: option.name,
       members: [],
       availableCharacters: option.characters,
     };
 
     setGroups((prev) => {
-      if (prev.some((g) => g.groupId === option.id)) return prev;
+      if (
+        prev.some((g) => g.source === "master" && g.groupId === option.id)
+      ) {
+        return prev;
+      }
       return [...prev, nextGroup];
     });
     setMasterModalOpen(false);
@@ -179,7 +259,11 @@ export function OshiEditView({
     enqueueMutation(
       () => addOshiGroup(option.id),
       () => {
-        setGroups((prev) => prev.filter((g) => g.groupId !== option.id));
+        setGroups((prev) =>
+          prev.filter(
+            (g) => g.source !== "master" || g.groupId !== option.id,
+          ),
+        );
       },
     );
   }
@@ -224,7 +308,7 @@ export function OshiEditView({
       ) : (
         groups.map((g) => (
           <GroupCard
-            key={g.groupId}
+            key={`${g.source}:${g.groupId}`}
             group={g}
             setGroups={setGroups}
             enqueueMutation={enqueueMutation}
@@ -261,7 +345,7 @@ export function OshiEditView({
         <MasterSelectModal
           genres={genreOptions}
           options={masterOptions}
-          selectedGroupIds={selectedGroupIds}
+          selectedGroupIds={selectedMasterGroupIds}
           onSelect={handleAddMasterOption}
           onRequest={(name) => {
             setMasterModalOpen(false);
@@ -288,7 +372,9 @@ function GroupCard({
     task: OshiMutation,
     onRollback?: (error: Error) => void,
   ) => void;
-  onMemberRequest: (group: Pick<Group, "groupId" | "groupName">) => void;
+  onMemberRequest: (
+    group: Pick<Group, "groupId" | "groupName" | "source">,
+  ) => void;
 }) {
   const [showAddChars, setShowAddChars] = useState(false);
 
@@ -305,16 +391,31 @@ function GroupCard({
     setGroups((prev) => {
       previousIndex = Math.max(
         0,
-        prev.findIndex((g) => g.groupId === group.groupId),
+        prev.findIndex(
+          (g) => g.source === group.source && g.groupId === group.groupId,
+        ),
       );
-      return prev.filter((g) => g.groupId !== group.groupId);
+      return prev.filter(
+        (g) => g.source !== group.source || g.groupId !== group.groupId,
+      );
     });
 
     enqueueMutation(
-      () => removeOshiGroup(group.groupId),
+      () =>
+        removeOshiGroup({
+          groupId: group.source === "master" ? group.groupId : undefined,
+          oshiRequestId:
+            group.source === "request" ? group.groupId : undefined,
+        }),
       () => {
         setGroups((prev) => {
-          if (prev.some((g) => g.groupId === snapshot.groupId)) return prev;
+          if (
+            prev.some(
+              (g) => g.source === snapshot.source && g.groupId === snapshot.groupId,
+            )
+          ) {
+            return prev;
+          }
           const next = [...prev];
           next.splice(previousIndex, 0, snapshot);
           return next;
@@ -323,18 +424,18 @@ function GroupCard({
     );
   }
 
-  function handleRemoveMember(characterId: string) {
-    const member = group.members.find((m) => m.id === characterId);
-    if (!member) return;
-
+  function handleRemoveMember(member: OshiMember) {
     setGroups((prev) =>
       prev.map((g) => {
-        if (g.groupId !== group.groupId) return g;
-        const availableCharacters = g.availableCharacters.some(
-          (c) => c.id === member.id,
-        )
-          ? g.availableCharacters
-          : sortCharacters([...g.availableCharacters, member]);
+        if (g.source !== group.source || g.groupId !== group.groupId) return g;
+        const availableCharacters =
+          member.source === "master" &&
+          !g.availableCharacters.some((c) => c.id === member.id)
+            ? sortCharacters([
+                ...g.availableCharacters,
+                { id: member.id, name: member.name },
+              ])
+            : g.availableCharacters;
         return {
           ...g,
           members: g.members.filter((m) => m.id !== member.id),
@@ -346,21 +447,26 @@ function GroupCard({
     enqueueMutation(
       () =>
         removeCharacterFromOshi({
-          groupId: group.groupId,
-          characterId,
+          groupId: group.source === "master" ? group.groupId : undefined,
+          oshiRequestId:
+            group.source === "request" ? group.groupId : undefined,
+          characterId: member.source === "master" ? member.id : undefined,
+          characterRequestId:
+            member.source === "request" ? member.id : undefined,
         }),
       () => {
         setGroups((prev) =>
           prev.map((g) => {
-            if (g.groupId !== group.groupId) return g;
+            if (g.source !== group.source || g.groupId !== group.groupId) return g;
             return {
               ...g,
               members: g.members.some((m) => m.id === member.id)
                 ? g.members
                 : [...g.members, member],
-              availableCharacters: g.availableCharacters.filter(
-                (c) => c.id !== member.id,
-              ),
+              availableCharacters:
+                member.source === "master"
+                  ? g.availableCharacters.filter((c) => c.id !== member.id)
+                  : g.availableCharacters,
             };
           }),
         );
@@ -369,6 +475,7 @@ function GroupCard({
   }
 
   function handleAddMember(characterId: string) {
+    if (group.source !== "master") return;
     const character = group.availableCharacters.find(
       (c) => c.id === characterId,
     );
@@ -376,12 +483,12 @@ function GroupCard({
 
     setGroups((prev) =>
       prev.map((g) => {
-        if (g.groupId !== group.groupId) return g;
+        if (g.source !== group.source || g.groupId !== group.groupId) return g;
         return {
           ...g,
           members: g.members.some((m) => m.id === character.id)
             ? g.members
-            : [...g.members, character],
+            : [...g.members, { ...character, source: "master" }],
           availableCharacters: g.availableCharacters.filter(
             (c) => c.id !== character.id,
           ),
@@ -398,7 +505,7 @@ function GroupCard({
       () => {
         setGroups((prev) =>
           prev.map((g) => {
-            if (g.groupId !== group.groupId) return g;
+            if (g.source !== group.source || g.groupId !== group.groupId) return g;
             const availableCharacters = g.availableCharacters.some(
               (c) => c.id === character.id,
             )
@@ -426,8 +533,15 @@ function GroupCard({
           {group.groupName[0]}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="truncate text-[14px] font-bold text-gray-900">
-            {group.groupName}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="truncate text-[14px] font-bold text-gray-900">
+              {group.groupName}
+            </div>
+            {group.source === "request" && (
+              <span className="flex-shrink-0 rounded-full bg-[#a695d814] px-2 py-0.5 text-[9.5px] font-extrabold text-[#a695d8]">
+                承認待ち
+              </span>
+            )}
           </div>
           <div className="mt-0.5 text-[11px] text-[#3a324a8c]">
             {group.members.length === 0
@@ -454,11 +568,16 @@ function GroupCard({
             <button
               key={m.id}
               type="button"
-              onClick={() => handleRemoveMember(m.id)}
+              onClick={() => handleRemoveMember(m)}
               className="inline-flex items-center gap-1.5 rounded-full bg-[#a695d814] px-3 py-1 text-[12px] font-bold text-[#a695d8] transition-all active:scale-[0.97]"
               title="タップで削除"
             >
               {m.name}
+              {m.source === "request" && (
+                <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[9px] font-extrabold text-[#a695d8]">
+                  承認待ち
+                </span>
+              )}
               <span className="text-[14px] leading-none text-[#3a324a8c]">×</span>
             </button>
           ))}
@@ -478,7 +597,9 @@ function GroupCard({
           <div className="mt-3 rounded-xl border border-[#3a324a0f] bg-[#fbf9fc] p-3">
             {group.availableCharacters.length === 0 ? (
               <div className="text-[11.5px] text-[#3a324a8c]">
-                追加可能なメンバーがマスタにありません。
+                {group.source === "request"
+                  ? "承認待ちの推しです。メンバーは追加リクエストで仮登録できます。"
+                  : "追加可能なメンバーがマスタにありません。"}
               </div>
             ) : (
               <>
@@ -768,7 +889,7 @@ function RequestModal({
   state: RequestModalState;
   genres: GenreOption[];
   onClose: () => void;
-  onDone: (message: string) => void;
+  onDone: (payload: RequestDonePayload) => void;
 }) {
   const [name, setName] = useState(
     state.type === "oshi" ? (state.initialName ?? "") : "",
@@ -786,8 +907,8 @@ function RequestModal({
     ? "メンバー追加リクエスト"
     : "推し追加リクエスト";
   const description = isMemberRequest
-    ? "マスタに無いメンバー・キャラクターを運営へ送ります。"
-    : "マスタに無いグループ・作品・ソロを運営へ送ります。";
+    ? "送信後すぐ推しメンバーに仮登録し、運営確認後に正式反映されます。"
+    : "送信後すぐ推し設定に仮登録し、運営確認後に正式反映されます。";
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -805,12 +926,13 @@ function RequestModal({
     setError(null);
     const result =
       state.type === "member"
-        ? await saveCharacterRequest({
+        ? await requestCharacterAndAddToProfile({
             groupId: state.groupId,
+            oshiRequestId: state.oshiRequestId,
             name: trimmed,
             note: note.trim() || undefined,
           })
-        : await saveOshiRequest({
+        : await requestOshiAndAddToProfile({
             name: trimmed,
             genreId: genreId || undefined,
             kind: kind || undefined,
@@ -823,10 +945,26 @@ function RequestModal({
       return;
     }
 
+    if (!result.requestId || !result.name) {
+      setPending(false);
+      setError("追加リクエストの保存結果を確認できませんでした");
+      return;
+    }
+
     onDone(
-      isMemberRequest
-        ? "メンバー追加リクエストを送信しました。運営確認後に反映されます。"
-        : "推し追加リクエストを送信しました。運営確認後に反映されます。",
+      state.type === "member"
+        ? {
+            type: "member",
+            requestId: result.requestId,
+            name: result.name,
+            groupId: state.groupId,
+            oshiRequestId: state.oshiRequestId,
+          }
+        : {
+            type: "oshi",
+            requestId: result.requestId,
+            name: result.name,
+          },
     );
   }
 

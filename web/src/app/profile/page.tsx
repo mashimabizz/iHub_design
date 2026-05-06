@@ -16,6 +16,14 @@ type OshiRow = {
   priority: number;
   group: { name: string } | { name: string }[] | null;
   character: { name: string } | { name: string }[] | null;
+  oshi_request:
+    | { requested_name: string }
+    | { requested_name: string }[]
+    | null;
+  character_request:
+    | { requested_name: string }
+    | { requested_name: string }[]
+    | null;
 };
 
 function pickOne<T>(v: T | T[] | null): T | null {
@@ -52,7 +60,7 @@ export default async function ProfilePage() {
     supabase
       .from("user_oshi")
       .select(
-        "group_id, character_id, oshi_request_id, character_request_id, kind, priority, group:groups_master(name), character:characters_master(name)",
+        "group_id, character_id, oshi_request_id, character_request_id, kind, priority, group:groups_master(name), character:characters_master(name), oshi_request:oshi_requests(requested_name), character_request:character_requests(requested_name)",
       )
       .eq("user_id", user.id)
       .order("priority", { ascending: true }),
@@ -88,22 +96,36 @@ export default async function ProfilePage() {
     { groupId: string; groupName: string; members: { id: string; name: string }[] }
   >();
   for (const row of (oshi as OshiRow[]) ?? []) {
-    if (!row.group_id) continue;
     const grp = pickOne(row.group);
-    if (!grp) continue;
-    if (!groupMap.has(row.group_id)) {
-      groupMap.set(row.group_id, {
-        groupId: row.group_id,
-        groupName: grp.name,
+    const oshiReq = pickOne(row.oshi_request);
+    const groupId = row.group_id ?? row.oshi_request_id;
+    const groupName = grp?.name ?? oshiReq?.requested_name;
+    if (!groupId || !groupName) continue;
+
+    if (!groupMap.has(groupId)) {
+      groupMap.set(groupId, {
+        groupId,
+        groupName,
         members: [],
       });
     }
+
     if (row.character_id) {
       const ch = pickOne(row.character);
       if (ch) {
-        groupMap.get(row.group_id)!.members.push({
+        groupMap.get(groupId)!.members.push({
           id: row.character_id,
           name: ch.name,
+        });
+      }
+    }
+
+    if (row.character_request_id) {
+      const chReq = pickOne(row.character_request);
+      if (chReq) {
+        groupMap.get(groupId)!.members.push({
+          id: row.character_request_id,
+          name: chReq.requested_name,
         });
       }
     }
