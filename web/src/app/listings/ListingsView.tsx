@@ -64,12 +64,15 @@ const EXCHANGE_LABEL: Record<"same_kind" | "cross_kind" | "any", string> = {
 };
 
 /* レイアウト数値（MatchDetailModal と揃える） */
-const HAVE_W = 64;
-const HAVE_H = 84;
-const OPT_H = 64;
-const OPT_GAP = 8;
-const SVG_W = 56;
-const RIGHT_W = 220;
+const HAVE_W = 72;
+const HAVE_SINGLE_H = 42;
+const HAVE_MULTI_BASE_H = 106;
+const OPT_SINGLE_H = 48;
+const OPT_MULTI_H = 78;
+const OPT_CASH_H = 50;
+const OPT_GAP = 10;
+const SVG_W = 50;
+const RIGHT_W = 228;
 
 export function ListingsView({
   items,
@@ -131,11 +134,10 @@ export function ListingsView({
 
   return (
     <div className="space-y-3">
-      {items.map((it, idx) => (
+      {items.map((it) => (
         <ListingCard
           key={it.id}
           listing={it}
-          index={idx}
           onTogglePause={() => togglePause(it.id, it.status)}
           onDelete={() => handleDelete(it.id)}
           readOnly={readOnly}
@@ -149,13 +151,11 @@ export function ListingsView({
 
 function ListingCard({
   listing,
-  index,
   onTogglePause,
   onDelete,
   readOnly,
 }: {
   listing: ListingItem;
-  index: number;
   onTogglePause: () => void;
   onDelete: () => void;
   /** iter146：閲覧専用（他人プロフ表示時）— アクションボタン群を非表示 */
@@ -176,9 +176,6 @@ function ListingCard({
     >
       {/* ヘッダ */}
       <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[linear-gradient(135deg,#fbf9fc,#ffffff)] px-3 py-2">
-        <span className="text-[10px] font-extrabold tracking-[0.4px] text-[#a695d8]">
-          #{index + 1}
-        </span>
         <span
           className={`rounded-full px-2 py-[2px] text-[9.5px] font-extrabold tracking-[0.5px] ${
             isActive
@@ -206,9 +203,6 @@ function ListingCard({
           </span>
         )}
         <div className="flex-1" />
-        <span className="text-[9.5px] text-[#3a324a8c]">
-          {listing.options.length} 選択肢
-        </span>
         {!readOnly && (
           <div className="ml-0.5 flex items-center gap-1">
             <Link
@@ -323,13 +317,21 @@ function Diagram({ listing }: { listing: ListingItem }) {
   const sortedOptions = [...listing.options].sort(
     (a, b) => a.position - b.position,
   );
-  const containerH =
-    sortedOptions.length * OPT_H +
-    Math.max(0, sortedOptions.length - 1) * OPT_GAP;
-  const optionYs = sortedOptions.map(
-    (_, i) => i * (OPT_H + OPT_GAP) + OPT_H / 2,
-  );
-  const haveAnchorY = containerH / 2;
+  const haveH = getHaveBlockHeight(listing.haves.length);
+  const optionHeights = sortedOptions.map(getOptionRowHeight);
+  const optionsH =
+    optionHeights.reduce((sum, h) => sum + h, 0) +
+    Math.max(0, optionHeights.length - 1) * OPT_GAP;
+  const containerH = Math.max(haveH, optionsH || OPT_SINGLE_H);
+  const optionStartY = (containerH - optionsH) / 2;
+  const optionTops = optionHeights.map((_, i) => {
+    const previous =
+      optionHeights.slice(0, i).reduce((sum, h) => sum + h, 0) + i * OPT_GAP;
+    return optionStartY + previous;
+  });
+  const optionYs = optionTops.map((top, i) => top + optionHeights[i] / 2);
+  const haveTop = (containerH - haveH) / 2;
+  const haveAnchorY = haveTop + haveH / 2;
 
   const totalW = HAVE_W + SVG_W + RIGHT_W;
 
@@ -365,40 +367,14 @@ function Diagram({ listing }: { listing: ListingItem }) {
 
         {/* 左カラム：譲群 */}
         <div
-          className="absolute left-0 flex flex-col items-center justify-center gap-1"
+          className="absolute left-0"
           style={{
-            top: haveAnchorY - HAVE_H / 2,
+            top: haveTop,
             width: HAVE_W,
-            height: HAVE_H,
+            height: haveH,
           }}
         >
-          {listing.haves.length > 0 ? (
-            <>
-              <div className="flex flex-col gap-0.5">
-                {listing.haves.slice(0, 2).map((h) => (
-                  <ItemThumb key={h.id} item={h} kind="have" />
-                ))}
-              </div>
-              {listing.haves.length > 2 && (
-                <span className="text-[8.5px] font-bold text-[#3a324a8c]">
-                  +{listing.haves.length - 2}
-                </span>
-              )}
-              {listing.haves.length > 1 && (
-                <span
-                  className={`mt-0.5 rounded-full px-1 py-[1px] text-[8.5px] font-extrabold ${
-                    listing.haveLogic === "and"
-                      ? "bg-[#a695d8] text-white"
-                      : "border border-[#a695d855] bg-white text-[#a695d8]"
-                  }`}
-                >
-                  {listing.haveLogic === "and" ? "AND" : "OR"}
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-[9px] text-[#3a324a8c]">譲 — 0</span>
-          )}
+          <HaveBlock listing={listing} />
         </div>
 
         {/* 右カラム：選択肢縦並び */}
@@ -408,9 +384,9 @@ function Diagram({ listing }: { listing: ListingItem }) {
             className="absolute"
             style={{
               left: HAVE_W + SVG_W,
-              top: i * (OPT_H + OPT_GAP),
+              top: optionTops[i],
               width: RIGHT_W,
-              height: OPT_H,
+              height: optionHeights[i],
             }}
           >
             <OptionRow option={opt} />
@@ -421,64 +397,156 @@ function Diagram({ listing }: { listing: ListingItem }) {
   );
 }
 
+function getHaveBlockHeight(count: number): number {
+  if (count <= 1) return HAVE_SINGLE_H;
+  return HAVE_MULTI_BASE_H + (count > 2 ? 10 : 0);
+}
+
+function getOptionRowHeight(option: ListingOption): number {
+  if (option.isCashOffer) return OPT_CASH_H;
+  return option.wishes.length > 1 ? OPT_MULTI_H : OPT_SINGLE_H;
+}
+
+function logicLabel(logic: "and" | "or"): string {
+  return logic === "and" ? "すべて" : "1pick";
+}
+
+function itemLabel(item: ListingHaveItem | ListingWishItem): string {
+  return item.characterName ?? item.groupName ?? item.title;
+}
+
+function hasConcreteWishImages(option: ListingOption): boolean {
+  return option.wishes.length > 0 && option.wishes.every((w) => !!w.photoUrl);
+}
+
+function shouldShowExchangeType(option: ListingOption): boolean {
+  return (
+    !option.isCashOffer &&
+    option.wishes.length > 0 &&
+    !hasConcreteWishImages(option)
+  );
+}
+
+function LogicTag({ logic }: { logic: "and" | "or" }) {
+  return (
+    <span
+      className={`absolute left-1.5 top-1.5 rounded-full px-1.5 py-[1px] text-[8.5px] font-extrabold leading-tight ${
+        logic === "and"
+          ? "bg-[#a695d8] text-white"
+          : "border border-[#a695d855] bg-white text-[#a695d8]"
+      }`}
+    >
+      {logicLabel(logic)}
+    </span>
+  );
+}
+
+function ExchangeChip({ option }: { option: ListingOption }) {
+  if (!shouldShowExchangeType(option)) return null;
+  return (
+    <span
+      className="inline-flex rounded-full px-1.5 py-[1px] text-[8.5px] font-extrabold leading-tight text-white"
+      style={{
+        background:
+          option.exchangeType === "same_kind"
+            ? "#5fa884"
+            : option.exchangeType === "cross_kind"
+              ? "#d9826b"
+              : "linear-gradient(135deg, #5fa884, #d9826b)",
+      }}
+    >
+      {EXCHANGE_LABEL[option.exchangeType]}
+    </span>
+  );
+}
+
+function HaveBlock({ listing }: { listing: ListingItem }) {
+  if (listing.haves.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center text-[9px] text-[#3a324a8c]">
+        譲 — 0
+      </div>
+    );
+  }
+
+  if (listing.haves.length === 1) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <ItemThumb item={listing.haves[0]} kind="have" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex h-full flex-col items-center justify-center gap-1 rounded-[12px] border border-[#a8d4e655] bg-[#a8d4e614] px-2 pb-2 pt-5">
+      <LogicTag logic={listing.haveLogic} />
+      <div className="flex flex-col gap-1">
+        {listing.haves.slice(0, 2).map((h) => (
+          <ItemThumb key={h.id} item={h} kind="have" />
+        ))}
+      </div>
+      {listing.haves.length > 2 && (
+        <span className="text-[8.5px] font-bold leading-none text-[#3a324a8c]">
+          +{listing.haves.length - 2}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ─── 選択肢 1 行 ─── */
 
 function OptionRow({ option }: { option: ListingOption }) {
+  if (!option.isCashOffer && option.wishes.length > 1) {
+    return (
+      <div className="relative flex h-full w-full items-center gap-2 rounded-[12px] border border-[#f3c5d466] bg-[#f3c5d412] px-2 pb-2 pt-5">
+        <LogicTag logic={option.logic} />
+        <div className="flex flex-shrink-0 gap-1">
+          {option.wishes.slice(0, 3).map((w) => (
+            <ItemThumb key={w.id} item={w} kind="wish" />
+          ))}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[10px] font-bold text-[#3a324a]">
+            {option.wishes
+              .map((w) => `${itemLabel(w)} ×${w.qty}`)
+              .join(" / ")}
+          </div>
+          <div className="mt-1 flex items-center gap-1">
+            <ExchangeChip option={option} />
+            {option.wishes.length > 3 && (
+              <span className="text-[8.5px] font-bold text-[#3a324a8c]">
+                +{option.wishes.length - 3}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-full w-full items-center gap-2 rounded-[10px] border border-[#a695d855] bg-white px-2 py-1.5">
+    <div className="flex h-full w-full items-center gap-2 px-1 py-1">
       {option.isCashOffer ? (
         <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md border border-[#7a9a8a55] bg-[#7a9a8a14] text-[16px]">
           💴
         </div>
       ) : (
         <div className="flex flex-shrink-0 gap-0.5">
-          {option.wishes.slice(0, 2).map((w) => (
-            <ItemThumb key={w.id} item={w} kind="wish" />
-          ))}
-          {option.wishes.length > 2 && (
-            <span className="self-center text-[8.5px] text-[#3a324a8c]">
-              +{option.wishes.length - 2}
-            </span>
+          {option.wishes[0] && (
+            <ItemThumb item={option.wishes[0]} kind="wish" />
           )}
         </div>
       )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1 text-[9.5px]">
-          <span className="rounded-full bg-[#3a324a08] px-1 py-[1px] font-extrabold text-[#3a324a8c]">
-            #{option.position}
-          </span>
-          {!option.isCashOffer && (
-            <span
-              className="rounded-full px-1 py-[1px] font-extrabold text-white"
-              style={{
-                background:
-                  option.exchangeType === "same_kind"
-                    ? "#5fa884"
-                    : option.exchangeType === "cross_kind"
-                      ? "#d9826b"
-                      : "linear-gradient(135deg, #5fa884, #d9826b)",
-              }}
-            >
-              {EXCHANGE_LABEL[option.exchangeType]}
-            </span>
-          )}
-          {!option.isCashOffer && option.wishes.length > 1 && (
-            <span
-              className={`rounded-full px-1 py-[1px] font-extrabold ${
-                option.logic === "and"
-                  ? "bg-[#a695d8] text-white"
-                  : "border border-[#a695d855] bg-white text-[#a695d8]"
-              }`}
-            >
-              {option.logic === "and" ? "AND" : "OR"}
-            </span>
-          )}
+          <ExchangeChip option={option} />
         </div>
         <div className="mt-0.5 truncate text-[10px] font-bold text-[#3a324a]">
           {option.isCashOffer
             ? `¥${option.cashAmount?.toLocaleString() ?? "—"}`
             : option.wishes
-                .map((w) => `${w.characterName ?? w.groupName ?? w.title} ×${w.qty}`)
+                .map((w) => `${itemLabel(w)} ×${w.qty}`)
                 .join(" / ")}
         </div>
       </div>
