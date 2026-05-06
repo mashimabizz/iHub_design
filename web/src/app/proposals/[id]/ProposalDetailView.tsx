@@ -26,6 +26,15 @@ export type ProposalItem = {
   qty: number;
 };
 
+export type ProposalMeetupCandidate = {
+  startAt: string;
+  endAt: string;
+  placeName: string;
+  lat: number;
+  lng: number;
+  mode: "today" | "scheduled";
+};
+
 export type ProposalDetail = {
   id: string;
   isReceiver: boolean;
@@ -49,6 +58,7 @@ export type ProposalDetail = {
   meetupPlaceName: string | null;
   meetupLat: number | null;
   meetupLng: number | null;
+  meetupCandidates: ProposalMeetupCandidate[];
   exposeCalendar: boolean;
   cashOffer: boolean;
   cashAmount: number | null;
@@ -103,12 +113,35 @@ const REJECT_TEMPLATES: { id: string; label: string }[] = [
   { id: "place", label: "場所が遠い" },
   { id: "no_reason", label: "理由非開示" },
 ];
+const INITIAL_RENDER_NOW_MS = Date.now();
 
 export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [rejectMode, setRejectMode] = useState(false);
+  const fallbackMeetup =
+    detail.meetupStartAt &&
+    detail.meetupEndAt &&
+    detail.meetupPlaceName &&
+    detail.meetupLat != null &&
+    detail.meetupLng != null
+      ? {
+          startAt: detail.meetupStartAt,
+          endAt: detail.meetupEndAt,
+          placeName: detail.meetupPlaceName,
+          lat: detail.meetupLat,
+          lng: detail.meetupLng,
+          mode: "scheduled" as const,
+        }
+      : null;
+  const meetupCandidates =
+    detail.meetupCandidates.length > 0
+      ? detail.meetupCandidates
+      : fallbackMeetup
+        ? [fallbackMeetup]
+        : [];
+  const primaryMeetup = meetupCandidates[0] ?? null;
 
   const canRespond =
     detail.isReceiver &&
@@ -171,7 +204,11 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
           </span>
           <div className="flex-1" />
           {detail.expiresAt && (
-            <ExpiresLabel iso={detail.expiresAt} status={detail.status} />
+            <ExpiresLabel
+              iso={detail.expiresAt}
+              status={detail.status}
+              nowMs={INITIAL_RENDER_NOW_MS}
+            />
           )}
         </div>
 
@@ -220,6 +257,7 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
         status={detail.status}
         onExtend={handleExtend}
         pending={pending}
+        nowMs={INITIAL_RENDER_NOW_MS}
       />
 
       {/* iter77-B: 提案内容を統合カード化（紫グラデ・「📩 提案内容」バッジ・待ち合わせ内包） */}
@@ -299,7 +337,7 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
         <div className="mt-3 overflow-hidden rounded-[10px] border border-[#a695d833] bg-white/70">
           <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1 pt-2.5">
             <span className="rounded-full bg-white px-2 py-[2px] text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
-              📍 待ち合わせ
+              📍 交換できる候補
             </span>
             {detail.matchAw && (
               <span
@@ -313,20 +351,43 @@ export function ProposalDetailView({ detail }: { detail: ProposalDetail }) {
               </span>
             )}
           </div>
-          <div className="px-3 pb-2.5">
-            <div className="text-[14px] font-extrabold tabular-nums text-[#3a324a]">
-              {detail.meetupStartAt && detail.meetupEndAt
-                ? formatRange(detail.meetupStartAt, detail.meetupEndAt)
-                : "—"}
-            </div>
-            <div className="text-[12px] font-bold text-[#3a324a]">
-              📍 {detail.meetupPlaceName ?? "—"}
-            </div>
+          <div className="space-y-2 px-3 pb-2.5">
+            {meetupCandidates.length > 0 ? (
+              meetupCandidates.map((candidate, index) => (
+                <div
+                  key={`${candidate.startAt}-${candidate.placeName}-${index}`}
+                  className={`rounded-[10px] border px-3 py-2 ${
+                    index === 0
+                      ? "border-[#a695d855] bg-[#a695d80d]"
+                      : "border-[#3a324a14] bg-white"
+                  }`}
+                >
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <span className="rounded-full bg-white px-2 py-[2px] text-[9px] font-extrabold text-[#a695d8]">
+                      候補{index + 1}
+                    </span>
+                    {index === 0 && (
+                      <span className="text-[9px] font-bold text-[#3a324a8c]">
+                        主候補
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[13px] font-extrabold tabular-nums text-[#3a324a]">
+                    {formatRange(candidate.startAt, candidate.endAt)}
+                  </div>
+                  <div className="text-[11.5px] font-bold text-[#3a324a]">
+                    📍 {candidate.placeName}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-[13px] font-bold text-[#3a324a8c]">—</div>
+            )}
           </div>
-          {detail.meetupLat != null && detail.meetupLng != null && (
+          {primaryMeetup && (
             <div className="h-[140px] w-full border-t border-[#3a324a14]">
               <MapPicker
-                center={[detail.meetupLat, detail.meetupLng]}
+                center={[primaryMeetup.lat, primaryMeetup.lng]}
                 radiusM={120}
                 onCenterChange={() => {}}
                 className="h-full w-full"
@@ -527,12 +588,14 @@ function ExpireBanner({
   status,
   onExtend,
   pending,
+  nowMs,
 }: {
   expiresAt: string | null;
   extensionCount: number;
   status: ProposalDetail["status"];
   onExtend: () => void;
   pending: boolean;
+  nowMs: number;
 }) {
   if (!expiresAt) return null;
   if (
@@ -542,7 +605,7 @@ function ExpireBanner({
   )
     return null;
 
-  const remainMs = new Date(expiresAt).getTime() - Date.now();
+  const remainMs = new Date(expiresAt).getTime() - nowMs;
   const remainDays = Math.ceil(remainMs / (1000 * 60 * 60 * 24));
   if (remainDays > 3) return null;
 
@@ -603,14 +666,16 @@ function ExpireBanner({
 function ExpiresLabel({
   iso,
   status,
+  nowMs,
 }: {
   iso: string;
   status: ProposalDetail["status"];
+  nowMs: number;
 }) {
   if (status !== "sent" && status !== "negotiating") return null;
   const days = Math.max(
     0,
-    Math.ceil((new Date(iso).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+    Math.ceil((new Date(iso).getTime() - nowMs) / (1000 * 60 * 60 * 24)),
   );
   return (
     <span
@@ -774,16 +839,35 @@ function AttachRow({
 }
 
 function formatRange(startIso: string, endIso: string): string {
-  const s = new Date(startIso);
-  const e = new Date(endIso);
-  const sameDay =
-    s.getFullYear() === e.getFullYear() &&
-    s.getMonth() === e.getMonth() &&
-    s.getDate() === e.getDate();
-  const dateFmt = (d: Date) =>
-    `${d.getMonth() + 1}/${d.getDate()}(${"日月火水木金土"[d.getDay()]})`;
-  const timeFmt = (d: Date) =>
-    `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const tokyoParts = (iso: string) => {
+    const parts = new Intl.DateTimeFormat("ja-JP-u-ca-gregory", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(iso));
+    const get = (type: string) =>
+      parts.find((part) => part.type === type)?.value ?? "";
+    return {
+      month: get("month"),
+      day: get("day"),
+      weekday: get("weekday"),
+      hour: get("hour"),
+      minute: get("minute"),
+      dateKey: `${get("year")}-${get("month")}-${get("day")}`,
+    };
+  };
+  const s = tokyoParts(startIso);
+  const e = tokyoParts(endIso);
+  const sameDay = s.dateKey === e.dateKey;
+  const dateFmt = (d: ReturnType<typeof tokyoParts>) =>
+    `${d.month}/${d.day}(${d.weekday})`;
+  const timeFmt = (d: ReturnType<typeof tokyoParts>) =>
+    `${d.hour}:${d.minute}`;
   return sameDay
     ? `${dateFmt(s)} ${timeFmt(s)}〜${timeFmt(e)}`
     : `${dateFmt(s)} ${timeFmt(s)} 〜 ${dateFmt(e)} ${timeFmt(e)}`;

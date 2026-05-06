@@ -4,6 +4,91 @@
 
 ---
 
+## イテレーション154.34：待ち合わせを交換できる候補へ刷新
+
+### 背景・問題意識
+
+オーナーから、C-0 の待ち合わせタブが「なんの時間設定？なんの場所設定？」と見えやすく、分単位指定も重いという相談があった。
+
+打診段階では合流を確定するよりも、「交換できる時間・場所の候補」を相手に提示する方が自然。今日このあと／日時指定を軽く選び、必要なら複数候補を送れる設計へ変更する。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 待ち合わせタブを「交換できる候補」UIへ刷新し、最大3件の候補を追加・削除・切替できるようにした。
+- 候補ごとに「今日このあと」「日時を指定」を切り替え、30分/1時間/2時間/今日中、今日/明日/昼/夕方/夜のプリセットを用意した。
+- 日時入力は JST 前提で ISO へ変換し、確認画面では候補1を主候補として表示するようにした。
+- 複数候補の場所を一括コピーできるようにした。
+
+#### `web/src/app/propose/actions.ts`
+- `meetupCandidates` を create / revise の入力として受け取り、最大3件・時間順序・場所・座標を検証するようにした。
+- 候補1を既存の `meetup_start_at` / `meetup_end_at` / `meetup_place_name` / `meetup_lat` / `meetup_lng` へミラーし、全候補を `meetup_candidates` へ保存するようにした。
+- C-0 確認画面の「メッセージ（任意）」表記と合わせ、空メッセージでも打診送信できるようにした。
+
+#### `web/src/app/propose/[partnerId]/page.tsx`
+- 再打診時に `meetup_candidates` を読み込み、C-0 の候補 UI へ復元するようにした。
+- 既存の単一待ち合わせデータやクエリ override との互換を維持した。
+
+#### `web/src/app/proposals/[id]/page.tsx`
+- 打診詳細で `meetup_candidates` を読み込み、旧データは既存 `meetup_*` 5列から候補1として復元するようにした。
+
+#### `web/src/app/proposals/[id]/ProposalDetailView.tsx`
+- 受信側の提案内容カードで「交換できる候補」を候補リストとして表示するようにした。
+- 候補1を主候補として強調し、地図は主候補の座標を表示するようにした。
+- 表示時刻を Asia/Tokyo 基準で整えた。
+
+#### `supabase/migrations/20260506100000_add_proposal_meetup_candidates.sql`
+- `proposals.meetup_candidates jsonb not null default []` を追加した。
+- 既存レコードは `meetup_*` 5列から候補1へバックフィルするようにした。
+- JSON 配列かつ最大3件の CHECK 制約を追加した。
+
+#### `notes/05_data_model.md`
+- `proposals.meetup_candidates` と候補1ミラー方針を追記した。
+
+#### `notes/10_glossary.md`
+- 「交換できる候補」を用語として追加した。
+
+#### `notes/13_api_spec.md`
+- proposal 作成・修正 API の待ち合わせ入力を `meetup_candidates` 方式へ更新した。
+
+### 影響範囲
+
+- `/propose/[partnerId]` 提示物選択 C-0 待ち合わせタブ
+- `/proposals/[id]` 打診詳細の受信・送信表示
+- `proposals` DB スキーマ
+- 再打診時の待ち合わせ復元
+
+### 確認方法
+
+- `npx eslint src/app/propose/actions.ts 'src/app/propose/[partnerId]/page.tsx' 'src/app/propose/[partnerId]/ProposeFlow.tsx' 'src/app/proposals/[id]/page.tsx' 'src/app/proposals/[id]/ProposalDetailView.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`（sandbox 内では Google Fonts 取得失敗。ネットワーク権限付き再実行は自動レビューがタイムアウト）
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- `web/src/app/propose/[partnerId]/page.tsx`
+- `web/src/app/propose/actions.ts`
+- `web/src/app/proposals/[id]/page.tsx`
+- `web/src/app/proposals/[id]/ProposalDetailView.tsx`
+- `supabase/migrations/20260506100000_add_proposal_meetup_candidates.sql`
+- `notes/05_data_model.md`
+- `notes/10_glossary.md`
+- `notes/13_api_spec.md`
+
+### セルフレビュー結果
+
+- ✅ 「今日このあと」と「日時を指定」の入口を分け、分単位の細かい操作をプリセット中心へ寄せた
+- ✅ 複数の交換できる候補を保存・再編集・受信側表示まで接続した
+- ✅ 候補1を既存 `meetup_*` 列へミラーするため、旧画面や取引チャットの単一待ち合わせ参照と互換
+- ✅ メッセージ任意の UI 表記と server action のバリデーションを揃えた
+- ✅ 新しい proposal 状態は追加していないため `notes/09_state_machines.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` 通過
+- ⚠️ `npm run build` は Google Fonts の外部取得で sandbox 失敗。権限付き再実行は自動レビューがタイムアウトしたため未完了
+
+---
+
 ## イテレーション154.33：追加リクエストを推し仮登録へ反映
 
 ### 背景・問題意識

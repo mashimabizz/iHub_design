@@ -28,6 +28,7 @@ type ProposalRaw = {
   meetup_place_name: string | null;
   meetup_lat: number | null;
   meetup_lng: number | null;
+  meetup_candidates: unknown;
   expose_calendar: boolean;
   cash_offer: boolean;
   cash_amount: number | null;
@@ -36,6 +37,15 @@ type ProposalRaw = {
   last_action_at: string | null;
   created_at: string;
   extension_count: number;
+};
+
+type MeetupCandidateDetail = {
+  startAt: string;
+  endAt: string;
+  placeName: string;
+  lat: number;
+  lng: number;
+  mode: "today" | "scheduled";
 };
 
 type GoodsRow = {
@@ -52,6 +62,58 @@ function pickName(
 ): string | null {
   if (!v) return null;
   return Array.isArray(v) ? v[0]?.name ?? null : v.name;
+}
+
+function parseMeetupCandidates(p: ProposalRaw): MeetupCandidateDetail[] {
+  const raw = p.meetup_candidates;
+  if (Array.isArray(raw)) {
+    const parsed = raw
+      .slice(0, 3)
+      .map((candidate): MeetupCandidateDetail | null => {
+        if (!candidate || typeof candidate !== "object") return null;
+        const c = candidate as Record<string, unknown>;
+        if (
+          typeof c.startAt !== "string" ||
+          typeof c.endAt !== "string" ||
+          typeof c.placeName !== "string" ||
+          typeof c.lat !== "number" ||
+          typeof c.lng !== "number"
+        ) {
+          return null;
+        }
+        return {
+          startAt: c.startAt,
+          endAt: c.endAt,
+          placeName: c.placeName,
+          lat: c.lat,
+          lng: c.lng,
+          mode: c.mode === "today" ? "today" : "scheduled",
+        };
+      })
+      .filter((candidate): candidate is MeetupCandidateDetail => !!candidate);
+    if (parsed.length > 0) return parsed;
+  }
+
+  if (
+    p.meetup_start_at &&
+    p.meetup_end_at &&
+    p.meetup_place_name &&
+    p.meetup_lat != null &&
+    p.meetup_lng != null
+  ) {
+    return [
+      {
+        startAt: p.meetup_start_at,
+        endAt: p.meetup_end_at,
+        placeName: p.meetup_place_name,
+        lat: p.meetup_lat,
+        lng: p.meetup_lng,
+        mode: "scheduled",
+      },
+    ];
+  }
+
+  return [];
 }
 
 export default async function ProposalDetailPage({
@@ -77,6 +139,7 @@ export default async function ProposalDetailPage({
        message, message_tone, status, agreed_by_sender, agreed_by_receiver,
        rejected_template,
        meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
+       meetup_candidates,
        expose_calendar, cash_offer, cash_amount, listing_id,
        expires_at, last_action_at, created_at, extension_count`,
     )
@@ -148,6 +211,7 @@ export default async function ProposalDetailPage({
     latestOutfitMsg && latestOutfitMsg.length > 0
       ? (latestOutfitMsg[0].photo_url as string | null)
       : null;
+  const meetupCandidates = parseMeetupCandidates(p);
 
   // 提示物アイテムの詳細を fetch
   const allInvIds = [
@@ -217,6 +281,7 @@ export default async function ProposalDetailPage({
     meetupPlaceName: p.meetup_place_name,
     meetupLat: p.meetup_lat,
     meetupLng: p.meetup_lng,
+    meetupCandidates,
     exposeCalendar: p.expose_calendar,
     cashOffer: p.cash_offer,
     cashAmount: p.cash_amount,

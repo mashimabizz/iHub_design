@@ -61,6 +61,23 @@ type Selectable = ProposeInv & {
   selected: boolean;
   selectedQty: number;
 };
+type MeetupMode = "today" | "scheduled";
+type MeetupCandidate = {
+  id: string;
+  mode: MeetupMode;
+  start: string;
+  end: string;
+  place: string;
+  center: [number, number];
+};
+type MeetupCandidatePayload = {
+  startAt: string;
+  endAt: string;
+  placeName: string;
+  lat: number;
+  lng: number;
+  mode: MeetupMode;
+};
 
 // iter138: "message" step は廃止（confirm でメッセージ入力可）
 type Step = "select" | "confirm";
@@ -88,6 +105,7 @@ type Props = {
     meetupPlaceName?: string;
     meetupLat?: number;
     meetupLng?: number;
+    meetupCandidates?: MeetupCandidatePayload[];
     message?: string;
   };
 };
@@ -99,22 +117,71 @@ type Place = { display_name: string; lat: string; lon: string; address?: Record<
 
 /* ─── helpers ───────────────────────────────────────────── */
 
-/** ISO → datetime-local（YYYY-MM-DDTHH:mm） */
-function isoToLocal(iso: string): string {
-  const d = new Date(iso);
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
+function formatTokyoLocalFromDate(date: Date): string {
+  const parts = new Intl.DateTimeFormat("ja-JP-u-ca-gregory", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "00";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
-/** datetime-local → ISO */
+
+function parseTokyoLocal(s: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(s);
+  if (!m) return new Date(s);
+  const [, y, mo, d, h, mi] = m;
+  return new Date(
+    Date.UTC(
+      Number(y),
+      Number(mo) - 1,
+      Number(d),
+      Number(h) - 9,
+      Number(mi),
+    ),
+  );
+}
+
+function roundUpTokyoLocal(minutes = 30, base = new Date()): string {
+  const d = new Date(base.getTime());
+  const next = Math.ceil(d.getMinutes() / minutes) * minutes;
+  d.setMinutes(next, 0, 0);
+  return formatTokyoLocalFromDate(d);
+}
+
+function addMinutesToTokyoLocal(local: string, minutes: number): string {
+  const d = parseTokyoLocal(local);
+  d.setMinutes(d.getMinutes() + minutes);
+  return formatTokyoLocalFromDate(d);
+}
+
+function setTokyoLocalTime(local: string, hour: number, minute = 0): string {
+  const date = local.slice(0, 10) || roundUpTokyoLocal().slice(0, 10);
+  return `${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function addDaysToTokyoLocal(local: string, days: number): string {
+  const d = parseTokyoLocal(local || roundUpTokyoLocal());
+  d.setDate(d.getDate() + days);
+  return formatTokyoLocalFromDate(d);
+}
+
+/** ISO → JST datetime-local（YYYY-MM-DDTHH:mm） */
+function isoToLocal(iso: string): string {
+  return formatTokyoLocalFromDate(new Date(iso));
+}
+/** JST datetime-local → ISO */
 function localToIso(s: string): string {
   if (!s) return "";
-  return new Date(s).toISOString();
+  return parseTokyoLocal(s).toISOString();
 }
 function nowPlusHoursLocal(h: number): string {
-  const d = new Date();
-  d.setHours(d.getHours() + h);
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
+  return formatTokyoLocalFromDate(new Date(Date.now() + h * 60 * 60_000));
 }
 
 /** wishMatch を先頭にソート（同フラグ内は元の順） */
@@ -144,21 +211,54 @@ function sortBySelectionFirst<T extends { id: string; wishMatch?: boolean }>(
   });
 }
 
+function splitTokyoLocal(local: string) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
+  if (!m) return null;
+  return {
+    y: Number(m[1]),
+    mo: Number(m[2]),
+    d: Number(m[3]),
+    h: m[4],
+    mi: m[5],
+    dateKey: `${m[1]}-${m[2]}-${m[3]}`,
+  };
+}
+
 function formatRange(startLocal: string, endLocal: string): string {
   if (!startLocal || !endLocal) return "";
-  const s = new Date(startLocal);
-  const e = new Date(endLocal);
-  const sameDay =
-    s.getFullYear() === e.getFullYear() &&
-    s.getMonth() === e.getMonth() &&
-    s.getDate() === e.getDate();
-  const dateFmt = (d: Date) =>
-    `${d.getMonth() + 1}/${d.getDate()}(${"日月火水木金土"[d.getDay()]})`;
-  const timeFmt = (d: Date) =>
-    `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const s = splitTokyoLocal(startLocal);
+  const e = splitTokyoLocal(endLocal);
+  if (!s || !e) return "";
+  const sameDay = s.dateKey === e.dateKey;
+  const dateFmt = (p: NonNullable<ReturnType<typeof splitTokyoLocal>>) =>
+    `${p.mo}/${p.d}(${"日月火水木金土"[new Date(Date.UTC(p.y, p.mo - 1, p.d)).getUTCDay()]})`;
+  const timeFmt = (p: NonNullable<ReturnType<typeof splitTokyoLocal>>) =>
+    `${p.h}:${p.mi}`;
   return sameDay
     ? `${dateFmt(s)} ${timeFmt(s)}〜${timeFmt(e)}`
     : `${dateFmt(s)} ${timeFmt(s)} 〜 ${dateFmt(e)} ${timeFmt(e)}`;
+}
+
+function meetupCandidateIsSet(candidate: MeetupCandidate): boolean {
+  return (
+    !!candidate.start &&
+    !!candidate.end &&
+    !!candidate.place.trim() &&
+    new Date(localToIso(candidate.end)) > new Date(localToIso(candidate.start))
+  );
+}
+
+function toMeetupPayload(
+  candidate: MeetupCandidate,
+): MeetupCandidatePayload {
+  return {
+    startAt: localToIso(candidate.start),
+    endAt: localToIso(candidate.end),
+    placeName: candidate.place.trim(),
+    lat: candidate.center[0],
+    lng: candidate.center[1],
+    mode: candidate.mode,
+  };
 }
 
 function labelFromAddress(p: Place): string {
@@ -289,19 +389,48 @@ export function ProposeFlow({
       : nowPlusHoursLocal(2);
   const initPlace =
     initial?.meetupPlaceName ?? partner.localModeAW?.venue ?? "";
-  const initCenter: [number, number] =
-    initial?.meetupLat != null && initial?.meetupLng != null
-      ? [initial.meetupLat, initial.meetupLng]
-      : partner.localModeAW?.centerLat != null &&
-          partner.localModeAW?.centerLng != null
-        ? [partner.localModeAW.centerLat, partner.localModeAW.centerLng]
-        : FALLBACK_CENTER;
+  const initLat =
+    initial?.meetupLat ??
+    partner.localModeAW?.centerLat ??
+    FALLBACK_CENTER[0];
+  const initLng =
+    initial?.meetupLng ??
+    partner.localModeAW?.centerLng ??
+    FALLBACK_CENTER[1];
 
-  const [meetupStart, setMeetupStart] = useState(initStart);
-  const [meetupEnd, setMeetupEnd] = useState(initEnd);
-  const [meetupPlace, setMeetupPlace] = useState(initPlace);
-  const [meetupCenter, setMeetupCenter] =
-    useState<[number, number]>(initCenter);
+  const buildInitialMeetupCandidates = (): MeetupCandidate[] => {
+    const fromInitial =
+      initial?.meetupCandidates?.slice(0, 3).map((candidate, index) => ({
+        id: `candidate-${index + 1}`,
+        mode: candidate.mode,
+        start: isoToLocal(candidate.startAt),
+        end: isoToLocal(candidate.endAt),
+        place: candidate.placeName,
+        center: [candidate.lat, candidate.lng] as [number, number],
+      })) ?? [];
+    if (fromInitial.length > 0) return fromInitial;
+    return [
+      {
+        id: "candidate-1",
+        mode: partner.localModeEnabled ? "today" : "scheduled",
+        start: initStart,
+        end: initEnd,
+        place: initPlace,
+        center: [initLat, initLng],
+      },
+    ];
+  };
+
+  const [meetupCandidates, setMeetupCandidates] =
+    useState<MeetupCandidate[]>(buildInitialMeetupCandidates);
+  const [activeMeetupId, setActiveMeetupId] = useState("candidate-1");
+  const activeMeetup =
+    meetupCandidates.find((candidate) => candidate.id === activeMeetupId) ??
+    meetupCandidates[0];
+  const meetupStart = activeMeetup?.start ?? "";
+  const meetupEnd = activeMeetup?.end ?? "";
+  const meetupPlace = activeMeetup?.place ?? "";
+  const meetupCenter = activeMeetup?.center ?? FALLBACK_CENTER;
 
   /** ユーザーが place 入力欄を直接編集している間は reverse-geocode で上書きしない */
   const placeManuallyEditedRef = useRef(false);
@@ -343,11 +472,9 @@ export function ProposeFlow({
     .filter((i) => i.selected)
     .reduce((s, i) => s + i.selectedQty, 0);
 
-  const meetupSet =
-    !!meetupStart &&
-    !!meetupEnd &&
-    !!meetupPlace.trim() &&
-    new Date(meetupEnd) > new Date(meetupStart);
+  const validMeetupCandidates = meetupCandidates.filter(meetupCandidateIsSet);
+  const primaryMeetup = validMeetupCandidates[0];
+  const meetupSet = validMeetupCandidates.length > 0;
 
   // 定価交換モードでは receivers (相手の譲) は要らない（金銭で受け取る/支払う）
   const canProceedSelect = isCashMode
@@ -355,6 +482,95 @@ export function ProposeFlow({
     : myCount > 0 && theirCount > 0 && meetupSet;
 
   // iter138: 自動テンプレ廃止。メッセージは confirm 画面で任意入力。
+
+  function updateActiveMeetup(patch: Partial<MeetupCandidate>) {
+    setMeetupCandidates((prev) =>
+      prev.map((candidate) =>
+        candidate.id === activeMeetupId
+          ? {
+              ...candidate,
+              ...patch,
+            }
+          : candidate,
+      ),
+    );
+  }
+
+  function selectMeetupCandidate(id: string) {
+    skipReverseRef.current = true;
+    placeManuallyEditedRef.current = false;
+    setActiveMeetupId(id);
+  }
+
+  function addMeetupCandidate() {
+    if (meetupCandidates.length >= 3 || !activeMeetup) return;
+    const id = `candidate-${Date.now()}`;
+    const baseEnd = Number.isNaN(parseTokyoLocal(activeMeetup.end).getTime())
+      ? roundUpTokyoLocal()
+      : activeMeetup.end;
+    const next: MeetupCandidate = {
+      ...activeMeetup,
+      id,
+      start: addMinutesToTokyoLocal(baseEnd, 30),
+      end: addMinutesToTokyoLocal(baseEnd, 120),
+    };
+    setMeetupCandidates((prev) => [...prev, next]);
+    setActiveMeetupId(id);
+    skipReverseRef.current = true;
+  }
+
+  function removeMeetupCandidate(id: string) {
+    if (meetupCandidates.length <= 1) return;
+    const next = meetupCandidates.filter((candidate) => candidate.id !== id);
+    setMeetupCandidates(next);
+    if (activeMeetupId === id) {
+      setActiveMeetupId(next[0]?.id ?? "candidate-1");
+      skipReverseRef.current = true;
+    }
+  }
+
+  function applyTodayPreset(kind: "30m" | "1h" | "2h" | "today") {
+    const start = roundUpTokyoLocal(30);
+    const end =
+      kind === "30m"
+        ? addMinutesToTokyoLocal(start, 30)
+        : kind === "1h"
+          ? addMinutesToTokyoLocal(start, 60)
+          : kind === "2h"
+            ? addMinutesToTokyoLocal(start, 120)
+            : setTokyoLocalTime(start, 22, 0);
+    updateActiveMeetup({ mode: "today", start, end });
+  }
+
+  function applyScheduledDay(day: "today" | "tomorrow") {
+    const base =
+      day === "tomorrow"
+        ? addDaysToTokyoLocal(roundUpTokyoLocal(), 1)
+        : roundUpTokyoLocal();
+    const start = setTokyoLocalTime(base, 15, 0);
+    updateActiveMeetup({
+      mode: "scheduled",
+      start,
+      end: addMinutesToTokyoLocal(start, 120),
+    });
+  }
+
+  function applyScheduledRange(startHour: number, endHour: number) {
+    const start = setTokyoLocalTime(meetupStart, startHour, 0);
+    const end = setTokyoLocalTime(meetupStart, endHour, 0);
+    updateActiveMeetup({ mode: "scheduled", start, end });
+  }
+
+  function copyActivePlaceToAllCandidates() {
+    if (!activeMeetup) return;
+    setMeetupCandidates((prev) =>
+      prev.map((candidate) => ({
+        ...candidate,
+        place: activeMeetup.place,
+        center: activeMeetup.center,
+      })),
+    );
+  }
 
   /* 地図中心が動いた時の reverse geocoding（自動で場所名を埋める） */
   const reverseAbortRef = useRef<AbortController | null>(null);
@@ -379,7 +595,18 @@ export function ProposeFlow({
         const data = await res.json();
         if (data && typeof data === "object" && !Array.isArray(data)) {
           const label = labelFromAddress(data as Place);
-          if (label) setMeetupPlace(label);
+          if (label) {
+            setMeetupCandidates((prev) =>
+              prev.map((candidate) =>
+                candidate.id === activeMeetupId
+                  ? {
+                      ...candidate,
+                      place: label,
+                    }
+                  : candidate,
+              ),
+            );
+          }
         }
       } catch {
         // ignore（abort or network error）
@@ -388,7 +615,7 @@ export function ProposeFlow({
       }
     }, 600); // ピンドラッグ中の連続イベントを debounce
     return () => clearTimeout(handle);
-  }, [meetupCenter]);
+  }, [activeMeetupId, meetupCenter]);
 
   /* 場所検索 debounce */
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -433,8 +660,10 @@ export function ProposeFlow({
       // 検索結果由来の label は reverse geocode より信頼できるので確定させる
       placeManuallyEditedRef.current = false;
       skipReverseRef.current = true;
-      setMeetupCenter([lat, lon]);
-      setMeetupPlace(labelFromAddress(p));
+      updateActiveMeetup({
+        center: [lat, lon],
+        place: labelFromAddress(p),
+      });
       setSearchQ("");
       setShowResults(false);
     }
@@ -446,7 +675,9 @@ export function ProposeFlow({
       (pos) => {
         // 現在地ジャンプは reverse で名前を取り直す
         placeManuallyEditedRef.current = false;
-        setMeetupCenter([pos.coords.latitude, pos.coords.longitude]);
+        updateActiveMeetup({
+          center: [pos.coords.latitude, pos.coords.longitude],
+        });
       },
       () => {},
       { enableHighAccuracy: true, timeout: 10000 },
@@ -456,13 +687,13 @@ export function ProposeFlow({
   /** 地図ピン操作（drag / click） */
   function handleMapCenterChange(lat: number, lng: number) {
     placeManuallyEditedRef.current = false; // 地図動かしたら自動 reverse を許可
-    setMeetupCenter([lat, lng]);
+    updateActiveMeetup({ center: [lat, lng] });
   }
 
   /** place 入力欄を手動で編集 */
   function handlePlaceInputChange(value: string) {
     placeManuallyEditedRef.current = true;
-    setMeetupPlace(value);
+    updateActiveMeetup({ place: value });
   }
 
   /* ── handlers ── */
@@ -589,6 +820,16 @@ export function ProposeFlow({
 
   function handleSubmit() {
     setError(null);
+    if (!primaryMeetup) {
+      setError("交換できる候補を 1 件以上設定してください");
+      setTab("meetup");
+      setStep("select");
+      return;
+    }
+    const primaryMeetupPayload = toMeetupPayload(primaryMeetup);
+    const meetupPayloads = validMeetupCandidates
+      .slice(0, 3)
+      .map(toMeetupPayload);
     startTransition(async () => {
       const senderHaveIds: string[] = [];
       const senderHaveQtys: number[] = [];
@@ -616,11 +857,12 @@ export function ProposeFlow({
           meReceiverHaveIds: isCashMode ? [] : receiverHaveIds,
           meReceiverHaveQtys: isCashMode ? [] : receiverHaveQtys,
           message,
-          meetupStartAt: localToIso(meetupStart),
-          meetupEndAt: localToIso(meetupEnd),
-          meetupPlaceName: meetupPlace.trim(),
-          meetupLat: meetupCenter[0],
-          meetupLng: meetupCenter[1],
+          meetupStartAt: primaryMeetupPayload.startAt,
+          meetupEndAt: primaryMeetupPayload.endAt,
+          meetupPlaceName: primaryMeetupPayload.placeName,
+          meetupLat: primaryMeetupPayload.lat,
+          meetupLng: primaryMeetupPayload.lng,
+          meetupCandidates: meetupPayloads,
           cashOffer: isCashMode,
           cashAmount: cashOffer?.amount ?? null,
         });
@@ -644,11 +886,12 @@ export function ProposeFlow({
         message,
         // iter138: tone 廃止 → DB 互換のため "standard" で固定送信
         messageTone: "standard",
-        meetupStartAt: localToIso(meetupStart),
-        meetupEndAt: localToIso(meetupEnd),
-        meetupPlaceName: meetupPlace.trim(),
-        meetupLat: meetupCenter[0],
-        meetupLng: meetupCenter[1],
+        meetupStartAt: primaryMeetupPayload.startAt,
+        meetupEndAt: primaryMeetupPayload.endAt,
+        meetupPlaceName: primaryMeetupPayload.placeName,
+        meetupLat: primaryMeetupPayload.lat,
+        meetupLng: primaryMeetupPayload.lng,
+        meetupCandidates: meetupPayloads,
         exposeCalendar,
         listingId: initial?.listingId ?? null,
         cashOffer: isCashMode,
@@ -780,10 +1023,20 @@ export function ProposeFlow({
         {step === "select" && tab === "meetup" && (
           <MeetupTab
             partner={partner}
+            meetupCandidates={meetupCandidates}
+            activeMeetupId={activeMeetupId}
+            onSelectCandidate={selectMeetupCandidate}
+            onAddCandidate={addMeetupCandidate}
+            onRemoveCandidate={removeMeetupCandidate}
+            onCandidateModeChange={(mode) => updateActiveMeetup({ mode })}
+            onTodayPreset={applyTodayPreset}
+            onScheduledDay={applyScheduledDay}
+            onScheduledRange={applyScheduledRange}
+            onCopyPlaceToAll={copyActivePlaceToAllCandidates}
             meetupStart={meetupStart}
-            setMeetupStart={setMeetupStart}
+            setMeetupStart={(start) => updateActiveMeetup({ start })}
             meetupEnd={meetupEnd}
-            setMeetupEnd={setMeetupEnd}
+            setMeetupEnd={(end) => updateActiveMeetup({ end })}
             meetupPlace={meetupPlace}
             onPlaceInputChange={handlePlaceInputChange}
             meetupCenter={meetupCenter}
@@ -833,10 +1086,11 @@ export function ProposeFlow({
             partnerHandle={partner.handle}
             myItems={myItems.filter((i) => i.selected)}
             theirItems={theirItems.filter((i) => i.selected)}
-            meetupStart={meetupStart}
-            meetupEnd={meetupEnd}
-            meetupPlace={meetupPlace}
-            meetupCenter={meetupCenter}
+            meetupCandidates={validMeetupCandidates}
+            meetupStart={primaryMeetup?.start ?? meetupStart}
+            meetupEnd={primaryMeetup?.end ?? meetupEnd}
+            meetupPlace={primaryMeetup?.place ?? meetupPlace}
+            meetupCenter={primaryMeetup?.center ?? meetupCenter}
             message={message}
             onMessageChange={setMessage}
             exposeCalendar={exposeCalendar}
@@ -1067,6 +1321,16 @@ function ItemRow({
 
 function MeetupTab({
   partner,
+  meetupCandidates,
+  activeMeetupId,
+  onSelectCandidate,
+  onAddCandidate,
+  onRemoveCandidate,
+  onCandidateModeChange,
+  onTodayPreset,
+  onScheduledDay,
+  onScheduledRange,
+  onCopyPlaceToAll,
   meetupStart,
   setMeetupStart,
   meetupEnd,
@@ -1086,6 +1350,16 @@ function MeetupTab({
   useCurrentLocation,
 }: {
   partner: Partner;
+  meetupCandidates: MeetupCandidate[];
+  activeMeetupId: string;
+  onSelectCandidate: (id: string) => void;
+  onAddCandidate: () => void;
+  onRemoveCandidate: (id: string) => void;
+  onCandidateModeChange: (mode: MeetupMode) => void;
+  onTodayPreset: (kind: "30m" | "1h" | "2h" | "today") => void;
+  onScheduledDay: (day: "today" | "tomorrow") => void;
+  onScheduledRange: (startHour: number, endHour: number) => void;
+  onCopyPlaceToAll: () => void;
   meetupStart: string;
   setMeetupStart: (s: string) => void;
   meetupEnd: string;
@@ -1104,6 +1378,18 @@ function MeetupTab({
   pickPlace: (p: Place) => void;
   useCurrentLocation: () => void;
 }) {
+  const activeCandidate =
+    meetupCandidates.find((candidate) => candidate.id === activeMeetupId) ??
+    meetupCandidates[0];
+  const mode = activeCandidate?.mode ?? "today";
+  const activeIndex = Math.max(
+    0,
+    meetupCandidates.findIndex((candidate) => candidate.id === activeMeetupId),
+  );
+  const dateValue = meetupStart.slice(0, 10);
+  const startTime = meetupStart.slice(11, 16);
+  const endTime = meetupEnd.slice(11, 16);
+
   return (
     <>
       {/* 相手が現地交換モードならバナー */}
@@ -1114,41 +1400,215 @@ function MeetupTab({
             @{partner.handle} は現地交換モード中
           </div>
           <div className="text-[11.5px] leading-snug text-[#3a324a]">
-            相手が今いる場所と時間帯を自動で入力済みです。必要なら下で調整できます。
+            相手が今いる場所と時間帯を候補1に入れています。必要なら候補を追加して、相手が選びやすい形にできます。
           </div>
         </div>
       )}
 
-      {/* 時間帯（開始 + 終了） */}
-      <div className="mb-3 grid grid-cols-2 gap-2">
-        <div>
-          <div className="mb-1 px-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-            交換できる開始
+      <div className="mb-3 rounded-[14px] border border-[#3a324a14] bg-white p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div>
+            <div className="text-[12px] font-extrabold text-[#3a324a]">
+              交換できる候補
+            </div>
+            <div className="mt-0.5 text-[10.5px] leading-snug text-[#3a324a8c]">
+              最大3件。候補1が最初に相手へ表示されます。
+            </div>
           </div>
-          <input
-            type="datetime-local"
-            value={meetupStart}
-            onChange={(e) => setMeetupStart(e.target.value)}
-            className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
-          />
+          <button
+            type="button"
+            disabled={meetupCandidates.length >= 3}
+            onClick={onAddCandidate}
+            className="rounded-full bg-[#a695d814] px-3 py-1.5 text-[10.5px] font-extrabold text-[#a695d8] disabled:opacity-40"
+          >
+            ＋候補
+          </button>
         </div>
-        <div>
-          <div className="mb-1 px-0.5 text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-            交換できる終了
+        <div className="flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {meetupCandidates.map((candidate, index) => {
+            const active = candidate.id === activeMeetupId;
+            const ok = meetupCandidateIsSet(candidate);
+            return (
+              <div
+                key={candidate.id}
+                className={`min-w-[154px] rounded-[12px] border px-3 py-2 text-left transition-all ${
+                  active
+                    ? "border-[#a695d8] bg-[#a695d80f] shadow-[0_4px_12px_rgba(166,149,216,0.14)]"
+                    : "border-[#3a324a14] bg-[#fbf9fc]"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelectCandidate(candidate.id)}
+                  className="block w-full text-left"
+                >
+                  <span className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-extrabold text-[#a695d8]">
+                      候補{index + 1}
+                    </span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                        ok
+                          ? "bg-[#7a9a8a14] text-[#7a9a8a]"
+                          : "bg-[#d9826b14] text-[#d9826b]"
+                      }`}
+                    >
+                      {ok ? "OK" : "未設定"}
+                    </span>
+                  </span>
+                  <span className="block truncate text-[11px] font-bold text-[#3a324a]">
+                    {candidate.start && candidate.end
+                      ? formatRange(candidate.start, candidate.end)
+                      : "時間未設定"}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[10px] text-[#3a324a8c]">
+                    {candidate.place || "場所未設定"}
+                  </span>
+                </button>
+                {meetupCandidates.length > 1 && active && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveCandidate(candidate.id);
+                    }}
+                    className="mt-1.5 inline-flex rounded-full bg-[#3a324a08] px-2 py-0.5 text-[9.5px] font-bold text-[#3a324a8c]"
+                  >
+                    削除
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mb-3 rounded-[14px] border border-[#3a324a14] bg-white p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-[11px] font-extrabold text-[#3a324a]">
+            候補{activeIndex + 1} の交換できる時間
           </div>
-          <input
-            type="datetime-local"
-            value={meetupEnd}
-            onChange={(e) => setMeetupEnd(e.target.value)}
-            className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
-          />
+          <span className="text-[9.5px] font-bold text-[#3a324a8c]">
+            JST
+          </span>
+        </div>
+        <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-full bg-[#3a324a08] p-1">
+          {(
+            [
+              { id: "today", label: "今日このあと" },
+              { id: "scheduled", label: "日時を指定" },
+            ] as const
+          ).map((item) => {
+            const active = mode === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onCandidateModeChange(item.id)}
+                className={`rounded-full px-3 py-2 text-[11.5px] font-extrabold transition-all ${
+                  active
+                    ? "bg-white text-[#a695d8] shadow-[0_2px_7px_rgba(58,50,74,0.08)]"
+                    : "text-[#3a324a8c]"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {mode === "today" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { id: "30m", label: "今から30分" },
+              { id: "1h", label: "1時間以内" },
+              { id: "2h", label: "2時間以内" },
+              { id: "today", label: "今日中" },
+            ].map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() =>
+                  onTodayPreset(preset.id as "30m" | "1h" | "2h" | "today")
+                }
+                className="rounded-[12px] border border-[#3a324a14] bg-[#fbf9fc] px-3 py-2 text-[11.5px] font-bold text-[#3a324a] active:scale-[0.98]"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            <div className="mb-2 flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => onScheduledDay("today")}
+                className="rounded-full border border-[#3a324a14] bg-[#fbf9fc] px-3 py-1.5 text-[11px] font-bold text-[#3a324a]"
+              >
+                今日
+              </button>
+              <button
+                type="button"
+                onClick={() => onScheduledDay("tomorrow")}
+                className="rounded-full border border-[#3a324a14] bg-[#fbf9fc] px-3 py-1.5 text-[11px] font-bold text-[#3a324a]"
+              >
+                明日
+              </button>
+              {[
+                { label: "昼", start: 12, end: 15 },
+                { label: "夕方", start: 15, end: 18 },
+                { label: "夜", start: 18, end: 20 },
+              ].map((range) => (
+                <button
+                  key={range.label}
+                  type="button"
+                  onClick={() => onScheduledRange(range.start, range.end)}
+                  className="rounded-full border border-[#a695d855] bg-[#a695d80d] px-3 py-1.5 text-[11px] font-bold text-[#a695d8]"
+                >
+                  {range.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-[1.1fr_0.8fr_0.8fr] gap-2">
+              <input
+                type="date"
+                value={dateValue}
+                onChange={(e) => {
+                  setMeetupStart(`${e.target.value}T${startTime || "15:00"}`);
+                  setMeetupEnd(`${e.target.value}T${endTime || "17:00"}`);
+                }}
+                className="block min-w-0 rounded-lg border-[0.5px] border-[#3a324a14] bg-[#fbf9fc] px-2.5 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
+              />
+              <input
+                type="time"
+                step={1800}
+                value={startTime}
+                onChange={(e) =>
+                  setMeetupStart(`${dateValue}T${e.target.value}`)
+                }
+                className="block min-w-0 rounded-lg border-[0.5px] border-[#3a324a14] bg-[#fbf9fc] px-2.5 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
+              />
+              <input
+                type="time"
+                step={1800}
+                value={endTime}
+                onChange={(e) =>
+                  setMeetupEnd(`${dateValue}T${e.target.value}`)
+                }
+                className="block min-w-0 rounded-lg border-[0.5px] border-[#3a324a14] bg-[#fbf9fc] px-2.5 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
+              />
+            </div>
+          </>
+        )}
+        <div className="mt-2 rounded-[10px] bg-[#a8d4e614] px-3 py-2 text-[11px] font-bold text-[#3a324a]">
+          {meetupStart && meetupEnd ? formatRange(meetupStart, meetupEnd) : "時間未設定"}
         </div>
       </div>
 
       {/* 場所名 + 検索 */}
       <div className="mb-1 flex items-center justify-between px-0.5">
         <span className="text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-          交換できる場所
+          候補{activeIndex + 1} の交換できる場所
         </span>
         {reverseFetching && (
           <span className="text-[9.5px] text-[#a695d8]">取得中…</span>
@@ -1207,6 +1667,15 @@ function MeetupTab({
       >
         📍 現在地を中心に
       </button>
+      {meetupCandidates.length > 1 && (
+        <button
+          type="button"
+          onClick={onCopyPlaceToAll}
+          className="mb-2 ml-2 rounded-full border border-[#3a324a14] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#3a324a8c] active:scale-[0.97]"
+        >
+          同じ場所を全候補に使う
+        </button>
+      )}
 
       {/* 地図 */}
       <div
@@ -1233,6 +1702,7 @@ function ConfirmStep({
   partnerHandle,
   myItems,
   theirItems,
+  meetupCandidates,
   meetupStart,
   meetupEnd,
   meetupPlace,
@@ -1246,6 +1716,7 @@ function ConfirmStep({
   partnerHandle: string;
   myItems: Selectable[];
   theirItems: Selectable[];
+  meetupCandidates: MeetupCandidate[];
   meetupStart: string;
   meetupEnd: string;
   meetupPlace: string;
@@ -1286,18 +1757,52 @@ function ConfirmStep({
         </div>
       </Section>
 
-      {/* 待ち合わせ：日時 + 場所 + 地図 */}
-      <Section label="待ち合わせ">
+      {/* 待ち合わせ：交換できる候補 */}
+      <Section label="交換できる候補">
+        {meetupCandidates.length > 1 && (
+          <div className="mb-2 rounded-[12px] bg-[#a695d810] px-3 py-2 text-[11px] leading-relaxed text-[#3a324a]">
+            相手には候補1を主候補として見せ、ほかの候補も選べる形で送ります。
+          </div>
+        )}
+        <div className="mb-2 space-y-2">
+          {meetupCandidates.map((candidate, index) => (
+            <div
+              key={candidate.id}
+              className={`rounded-[12px] border px-3 py-2.5 ${
+                index === 0
+                  ? "border-[#a695d855] bg-[#a695d80d]"
+                  : "border-[#3a324a14] bg-white"
+              }`}
+            >
+              <div className="mb-1 flex items-center gap-1.5">
+                <span className="rounded-full bg-white px-2 py-[2px] text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
+                  候補{index + 1}
+                </span>
+                {index === 0 && (
+                  <span className="text-[9.5px] font-bold text-[#3a324a8c]">
+                    主候補
+                  </span>
+                )}
+              </div>
+              <div className="text-[13px] font-extrabold tabular-nums text-[#3a324a]">
+                {formatRange(candidate.start, candidate.end)}
+              </div>
+              <div className="mt-0.5 text-[12px] font-bold text-[#3a324a]">
+                📍 {candidate.place}
+              </div>
+            </div>
+          ))}
+        </div>
         <div className="overflow-hidden rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white">
           <div className="px-3 py-2.5">
             <div className="mb-0.5 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-              日時
+              主候補の日時
             </div>
             <div className="text-[13px] font-bold tabular-nums text-[#3a324a]">
               {formatRange(meetupStart, meetupEnd)}
             </div>
             <div className="mt-2 text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-              場所
+              主候補の場所
             </div>
             <div className="text-[13px] font-bold text-[#3a324a]">
               📍 {meetupPlace}

@@ -3,8 +3,8 @@
 > **目的**：iHub の全エンティティのDBスキーマ設計と、状態・マッチング・取引のデータフロー定義。
 > 実装の正解集。`09_state_machines.md` と完全に整合させ、`10_glossary.md` の用語を使う。
 
-最終更新: 2026-05-01
-ステータス: Draft v2.0（iter24/29/33/34 反映済）
+最終更新: 2026-05-06
+ステータス: Draft v2.9（iter154.34 反映済）
 
 ## 最新化履歴
 
@@ -20,6 +20,7 @@
 | **v2.6** | **2026-05-03** | **iter68-A 反映（messages テーブル新規：proposal_id × sender_id × type ('text'/'photo'/'outfit_photo'/'location'/'arrival_status'/'system') のチャット追記型）** |
 | **v2.7** | **2026-05-03** | **iter68-D/E/F 反映（proposals に evidence_photo_url / evidence_taken_at / evidence_taken_by / approved_by_* / completed_at / status='completed' 追加。user_evaluations テーブル新規（1 取引 1 評価 unique）。Storage chat-photos バケット作成）** |
 | **v2.8** | **2026-05-03** | **iter68.1 反映（proposal_evidence_photos テーブル新規：複数枚証跡対応。proposals.evidence_photo_url は最初の写真の互換ミラーとして残す）** |
+| **v2.9** | **2026-05-06** | **iter154.34 反映（proposals.meetup_candidates jsonb 追加。最大3件の「交換できる候補」を保存し、候補1を既存 meetup_* 列へミラー）** |
 
 ## このドキュメントの位置付け
 
@@ -394,6 +395,7 @@ iter28（match_type）/ iter29（数量）/ iter30（7日期限）/ iter32（合
 | `meetup_place_name` | text(≤200) | iter67.1、場所名（駅・施設名など） |
 | `meetup_lat` | numeric(9,6) | iter67.1、緯度（地図上の位置） |
 | `meetup_lng` | numeric(9,6) | iter67.1、経度 |
+| `meetup_candidates` | jsonb default `[]` | iter154.34、交換できる候補（最大3件）。各要素は `{ startAt, endAt, placeName, lat, lng, mode }`。候補1を既存 `meetup_*` 5列へミラーして旧画面・取引チャットと互換 |
 | `expose_calendar` | bool default false | iter67 で再定義：送信者が自分の **個人スケジュール（schedules）** を相手に公開する ON/OFF。受信側は受信表示画面で送信者の予定を見られる（取引完了で自動的に RLS 不可）。AW は対象外 |
 | `listing_id` | uuid nullable | iter64、個別募集 (`listings`) 経由の打診ならその id。直接打診なら null |
 | `cash_offer` | bool default false | iter67.7、定価交換打診なら true（receiver_have_ids 空 + cash_amount 必須） |
@@ -401,6 +403,7 @@ iter28（match_type）/ iter29（数量）/ iter30（7日期限）/ iter32（合
 | `created_at` / `updated_at` | timestamptz | |
 
 CHECK 制約 `proposals_meetup_required`（iter67.1）：`status='draft'` 以外なら 5 列すべて NOT NULL かつ `meetup_end_at > meetup_start_at`。
+CHECK 制約 `proposals_meetup_candidates_array`（iter154.34）：`meetup_candidates` は JSON 配列、最大3件。
 
 派生ルール：
 - iter153: `status='agreed'` の proposal は、`sender_have_ids` / `receiver_have_ids` と各 qty を市場残数から差し引く。ただし `approved_by_sender` / `approved_by_receiver` が true の側は、取引完了承認処理で実在庫が既に減算されているため二重控除しない。

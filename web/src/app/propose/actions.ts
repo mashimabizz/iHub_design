@@ -11,6 +11,79 @@ import { assertProposalItemsMarketAvailable } from "@/lib/marketAvailability";
 
 type ActionResult = { error?: string; proposalId?: string } | undefined;
 
+type MeetupMode = "today" | "scheduled";
+type MeetupCandidateInput = {
+  startAt: string;
+  endAt: string;
+  placeName: string;
+  lat: number;
+  lng: number;
+  mode?: MeetupMode;
+};
+
+function normalizeMeetupCandidates(input: {
+  meetupStartAt: string;
+  meetupEndAt: string;
+  meetupPlaceName: string;
+  meetupLat: number;
+  meetupLng: number;
+  meetupCandidates?: MeetupCandidateInput[];
+}): { candidates?: Required<MeetupCandidateInput>[]; error?: string } {
+  const rawCandidates =
+    input.meetupCandidates && input.meetupCandidates.length > 0
+      ? input.meetupCandidates
+      : [
+          {
+            startAt: input.meetupStartAt,
+            endAt: input.meetupEndAt,
+            placeName: input.meetupPlaceName,
+            lat: input.meetupLat,
+            lng: input.meetupLng,
+            mode: "scheduled" as const,
+          },
+        ];
+
+  if (rawCandidates.length > 3) {
+    return { error: "交換できる候補は 3 件までにしてください" };
+  }
+
+  const candidates: Required<MeetupCandidateInput>[] = [];
+  for (const [index, candidate] of rawCandidates.entries()) {
+    const label = `候補${index + 1}`;
+    const placeName = candidate.placeName?.trim();
+    if (!candidate.startAt || !candidate.endAt || !placeName) {
+      return { error: `${label} の交換できる時間と場所を入力してください` };
+    }
+
+    const startAt = new Date(candidate.startAt);
+    const endAt = new Date(candidate.endAt);
+    if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+      return { error: `${label} の時間をもう一度指定してください` };
+    }
+    if (endAt <= startAt) {
+      return { error: `${label} の終了時刻は開始時刻より後にしてください` };
+    }
+    if (!Number.isFinite(candidate.lat) || !Number.isFinite(candidate.lng)) {
+      return { error: `${label} の場所を地図上で選んでください` };
+    }
+
+    candidates.push({
+      startAt: startAt.toISOString(),
+      endAt: endAt.toISOString(),
+      placeName,
+      lat: candidate.lat,
+      lng: candidate.lng,
+      mode: candidate.mode === "today" ? "today" : "scheduled",
+    });
+  }
+
+  if (candidates.length === 0) {
+    return { error: "交換できる候補を 1 件以上設定してください" };
+  }
+
+  return { candidates };
+}
+
 export async function createProposal(input: {
   receiverId: string;
   matchType: "perfect" | "forward" | "backward";
@@ -26,6 +99,7 @@ export async function createProposal(input: {
   meetupPlaceName: string;
   meetupLat: number;
   meetupLng: number;
+  meetupCandidates?: MeetupCandidateInput[];
   exposeCalendar: boolean;
   listingId?: string | null;
   /** iter67.7：定価交換打診（receiverHaveIds は空で OK、金額のみ送信） */
@@ -37,7 +111,7 @@ export async function createProposal(input: {
     return { error: "あなたが出すアイテムを選んでください" };
   if (input.senderHaveIds.length !== input.senderHaveQtys.length)
     return { error: "数量配列の長さが不一致" };
-  if (!input.message.trim()) return { error: "メッセージを入力してください" };
+  const messageBody = input.message.trim();
 
   // cash_offer 分岐：通常打診 vs 定価交換打診
   if (input.cashOffer) {
@@ -60,23 +134,10 @@ export async function createProposal(input: {
       return { error: "数量配列の長さが不一致" };
   }
 
-  // 待ち合わせバリデーション
-  if (
-    !input.meetupStartAt ||
-    !input.meetupEndAt ||
-    !input.meetupPlaceName?.trim()
-  ) {
-    return { error: "待ち合わせの時間帯と場所を入力してください" };
-  }
-  if (new Date(input.meetupEndAt) <= new Date(input.meetupStartAt)) {
-    return { error: "終了時刻は開始時刻より後にしてください" };
-  }
-  if (
-    !Number.isFinite(input.meetupLat) ||
-    !Number.isFinite(input.meetupLng)
-  ) {
-    return { error: "地図上で待ち合わせ場所を選んでください" };
-  }
+  const meetupValidation = normalizeMeetupCandidates(input);
+  if (meetupValidation.error) return { error: meetupValidation.error };
+  const meetupCandidates = meetupValidation.candidates ?? [];
+  const primaryMeetup = meetupCandidates[0]!;
 
   const supabase = await createClient();
   const {
@@ -114,7 +175,7 @@ export async function createProposal(input: {
       sender_have_qtys: input.senderHaveQtys,
       receiver_have_ids: input.cashOffer ? [] : input.receiverHaveIds,
       receiver_have_qtys: input.cashOffer ? [] : input.receiverHaveQtys,
-      message: input.message.trim(),
+      message: messageBody,
       message_tone: input.messageTone ?? "standard",
       status: "sent",
       // iter74: 打診した側は自分の打診内容にデフォルト合意扱い
@@ -122,11 +183,12 @@ export async function createProposal(input: {
       agreed_by_receiver: false,
       last_action_at: now.toISOString(),
       expires_at: expires.toISOString(),
-      meetup_start_at: input.meetupStartAt,
-      meetup_end_at: input.meetupEndAt,
-      meetup_place_name: input.meetupPlaceName.trim(),
-      meetup_lat: input.meetupLat,
-      meetup_lng: input.meetupLng,
+      meetup_start_at: primaryMeetup.startAt,
+      meetup_end_at: primaryMeetup.endAt,
+      meetup_place_name: primaryMeetup.placeName,
+      meetup_lat: primaryMeetup.lat,
+      meetup_lng: primaryMeetup.lng,
+      meetup_candidates: meetupCandidates,
       expose_calendar: input.exposeCalendar,
       listing_id: input.listingId ?? null,
       cash_offer: !!input.cashOffer,
@@ -148,7 +210,7 @@ export async function createProposal(input: {
     userId: input.receiverId,
     kind: "proposal_received",
     title: `@${senderHandle} から打診が届きました`,
-    body: input.message.slice(0, 100),
+    body: messageBody.slice(0, 100) || "打診が届きました",
     linkPath: `/proposals/${data.id}`,
     proposalId: data.id,
   });
@@ -265,6 +327,7 @@ export async function reviseProposal(input: {
   meetupPlaceName: string;
   meetupLat: number;
   meetupLng: number;
+  meetupCandidates?: MeetupCandidateInput[];
   cashOffer?: boolean;
   cashAmount?: number | null;
 }): Promise<ActionResult> {
@@ -310,6 +373,11 @@ export async function reviseProposal(input: {
     ? input.meReceiverHaveQtys
     : input.meSenderHaveQtys;
 
+  const meetupValidation = normalizeMeetupCandidates(input);
+  if (meetupValidation.error) return { error: meetupValidation.error };
+  const meetupCandidates = meetupValidation.candidates ?? [];
+  const primaryMeetup = meetupCandidates[0]!;
+
   // proposal を update（status は negotiating に戻す）
   // iter74: 修正者は新内容に合意済とみなす、相手は再確認待ち
   const now = new Date();
@@ -320,11 +388,12 @@ export async function reviseProposal(input: {
     receiver_have_qtys: input.cashOffer ? [] : newReceiverQtys,
     cash_offer: !!input.cashOffer,
     cash_amount: input.cashOffer ? input.cashAmount : null,
-    meetup_start_at: input.meetupStartAt,
-    meetup_end_at: input.meetupEndAt,
-    meetup_place_name: input.meetupPlaceName.trim(),
-    meetup_lat: input.meetupLat,
-    meetup_lng: input.meetupLng,
+    meetup_start_at: primaryMeetup.startAt,
+    meetup_end_at: primaryMeetup.endAt,
+    meetup_place_name: primaryMeetup.placeName,
+    meetup_lat: primaryMeetup.lat,
+    meetup_lng: primaryMeetup.lng,
+    meetup_candidates: meetupCandidates,
     status: "agreement_one_side",
     agreed_by_sender: isMeSender,
     agreed_by_receiver: !isMeSender,

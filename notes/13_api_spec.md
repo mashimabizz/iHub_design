@@ -724,19 +724,30 @@ AW削除。
     "match_type": "perfect|forward|backward",
     "sender_have_ids": ["uuid", ...],
     "sender_have_qtys": [2, 1],
-    "receiver_have_ids": ["uuid", ...],
-    "receiver_have_qtys": [3],
-    "message": "string",
-    "meetup_type": "now|scheduled",
-    "meetup_now_minutes": 15 | null,
-    "meetup_scheduled_aw_id": "uuid" | null,
-    "meetup_scheduled_custom": { "date": "5/3 (土)", "time": "14:00", "lat": ..., "lng": ..., "place_name": "...", "register_as_aw": true } | null
-  }
-  ```
-- **Response 201**: `{ id, status: "draft", ... }`
-- **State**: → `draft`
-- **備考**: ⚠️ draft 保存タイミング（C-0 完了時 or 送信時）。`register_as_aw=true` で AW 自動作成。
-- **Screen**: `C0-*`
+	    "receiver_have_ids": ["uuid", ...],
+	    "receiver_have_qtys": [3],
+	    "message": "string",
+	    "meetup_start_at": "2026-05-06T06:00:00.000Z",
+	    "meetup_end_at": "2026-05-06T08:00:00.000Z",
+	    "meetup_place_name": "守口市駅",
+	    "meetup_lat": 34.738,
+	    "meetup_lng": 135.563,
+	    "meetup_candidates": [
+	      {
+	        "startAt": "2026-05-06T06:00:00.000Z",
+	        "endAt": "2026-05-06T08:00:00.000Z",
+	        "placeName": "守口市駅",
+	        "lat": 34.738,
+	        "lng": 135.563,
+	        "mode": "today"
+	      }
+	    ]
+	  }
+	  ```
+	- **Response 201**: `{ id, status: "draft", ... }`
+	- **State**: → `draft`
+	- **備考**: `meetup_candidates` は最大3件。候補1は既存 `meetup_*` 5列へもミラーする。`register_as_aw` は使わない。
+	- **Screen**: `C0-*`
 
 ### POST /api/v1/proposals/:id/send
 
@@ -791,7 +802,7 @@ AW削除。
 提案修正（C-1.5 中）。
 
 - **Auth**: 必須（sender or receiver、`negotiating`/`agreement_one_side` 中）
-- **Request**: 全部または部分（sender_have_ids/qtys, receiver_have_ids/qtys, meetup_*, message）
+- **Request**: 全部または部分（sender_have_ids/qtys, receiver_have_ids/qtys, meetup_* / meetup_candidates, message）
 - **Response 200**: 更新後
 - **State**: 
   - `negotiating` 維持

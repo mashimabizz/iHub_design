@@ -29,6 +29,15 @@ type GoodsRow = {
   goods_type: { name: string } | { name: string }[] | null;
 };
 
+type MeetupCandidatePayload = {
+  startAt: string;
+  endAt: string;
+  placeName: string;
+  lat: number;
+  lng: number;
+  mode: "today" | "scheduled";
+};
+
 function pickName(
   v: { name: string } | { name: string }[] | null,
 ): string | null {
@@ -50,6 +59,34 @@ function toInv(r: GoodsRow): ProposeInv | null {
     characterName: pickName(r.character),
     goodsTypeName: pickName(r.goods_type),
   };
+}
+
+function parseMeetupCandidates(raw: unknown): MeetupCandidatePayload[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, 3)
+    .map((candidate): MeetupCandidatePayload | null => {
+      if (!candidate || typeof candidate !== "object") return null;
+      const c = candidate as Record<string, unknown>;
+      if (
+        typeof c.startAt !== "string" ||
+        typeof c.endAt !== "string" ||
+        typeof c.placeName !== "string" ||
+        typeof c.lat !== "number" ||
+        typeof c.lng !== "number"
+      ) {
+        return null;
+      }
+      return {
+        startAt: c.startAt,
+        endAt: c.endAt,
+        placeName: c.placeName,
+        lat: c.lat,
+        lng: c.lng,
+        mode: c.mode === "today" ? "today" : "scheduled",
+      };
+    })
+    .filter((candidate): candidate is MeetupCandidatePayload => !!candidate);
 }
 
 type Props = {
@@ -268,6 +305,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
     meetupPlaceName?: string;
     meetupLat?: number;
     meetupLng?: number;
+    meetupCandidates?: MeetupCandidatePayload[];
     message?: string;
   } | null;
   let initial: Initial = null;
@@ -281,6 +319,7 @@ export default async function ProposePage({ params, searchParams }: Props) {
          sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
          cash_offer, cash_amount, listing_id,
          meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
+         meetup_candidates,
          message`,
       )
       .eq("id", reviseFromProposalId)
@@ -300,6 +339,8 @@ export default async function ProposePage({ params, searchParams }: Props) {
       const receiverHaveQtys = isMePrevSender
         ? (prevRow.receiver_have_qtys as number[]) ?? []
         : (prevRow.sender_have_qtys as number[]) ?? [];
+      const hasMeetupOverride =
+        !!meetupStartOverride || !!meetupEndOverride || !!meetupPlaceOverride;
       initial = {
         senderHaveIds,
         senderHaveQtys,
@@ -322,6 +363,9 @@ export default async function ProposePage({ params, searchParams }: Props) {
           undefined,
         meetupLat: (prevRow.meetup_lat as number | null) ?? undefined,
         meetupLng: (prevRow.meetup_lng as number | null) ?? undefined,
+        meetupCandidates: hasMeetupOverride
+          ? undefined
+          : parseMeetupCandidates(prevRow.meetup_candidates),
         message: (prevRow.message as string | null) ?? undefined,
       };
     }
