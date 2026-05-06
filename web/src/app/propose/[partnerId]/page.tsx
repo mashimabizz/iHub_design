@@ -89,6 +89,18 @@ function parseMeetupCandidates(raw: unknown): MeetupCandidatePayload[] {
     .filter((candidate): candidate is MeetupCandidatePayload => !!candidate);
 }
 
+function isMeetupCandidatesSchemaCacheError(error: {
+  code?: string;
+  message?: string;
+} | null) {
+  const message = error?.message ?? "";
+  return (
+    error?.code === "PGRST204" ||
+    (message.includes("meetup_candidates") &&
+      message.includes("schema cache"))
+  );
+}
+
 type Props = {
   params: Promise<{ partnerId: string }>;
   searchParams: Promise<{
@@ -312,18 +324,33 @@ export default async function ProposePage({ params, searchParams }: Props) {
 
   /* ─ iter70-C：再打診プリフィル ─ 既存 proposal の値で initial を埋める */
   if (reviseFromProposalId) {
-    const { data: prevRow } = await supabase
-      .from("proposals")
-      .select(
-        `id, sender_id, receiver_id, status,
+    const prevProposalSelectWithCandidates = `id, sender_id, receiver_id, status,
          sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
          cash_offer, cash_amount, listing_id,
          meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
          meetup_candidates,
-         message`,
-      )
+         message`;
+    const prevProposalSelectFallback = `id, sender_id, receiver_id, status,
+         sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
+         cash_offer, cash_amount, listing_id,
+         meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
+         message`;
+    let { data: prevRow, error: prevRowError } = await supabase
+      .from("proposals")
+      .select(prevProposalSelectWithCandidates)
       .eq("id", reviseFromProposalId)
       .maybeSingle();
+    if (isMeetupCandidatesSchemaCacheError(prevRowError)) {
+      const retry = await supabase
+        .from("proposals")
+        .select(prevProposalSelectFallback)
+        .eq("id", reviseFromProposalId)
+        .maybeSingle();
+      prevRow = retry.data
+        ? { ...retry.data, meetup_candidates: [] }
+        : retry.data;
+      prevRowError = retry.error;
+    }
     if (prevRow) {
       const isMePrevSender = prevRow.sender_id === user.id;
       // 視点を「自分が送信者」基準に揃える
@@ -365,7 +392,11 @@ export default async function ProposePage({ params, searchParams }: Props) {
         meetupLng: (prevRow.meetup_lng as number | null) ?? undefined,
         meetupCandidates: hasMeetupOverride
           ? undefined
-          : parseMeetupCandidates(prevRow.meetup_candidates),
+          : parseMeetupCandidates(
+              "meetup_candidates" in prevRow
+                ? prevRow.meetup_candidates
+                : undefined,
+            ),
         message: (prevRow.message as string | null) ?? undefined,
       };
     }

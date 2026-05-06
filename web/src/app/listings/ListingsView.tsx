@@ -168,15 +168,15 @@ function ListingCard({
 
   return (
     <div
-      className={`overflow-hidden rounded-2xl border bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] ${
+      className={`overflow-hidden rounded-2xl border bg-white shadow-[0_6px_18px_rgba(58,50,74,0.06)] ${
         isActive
-          ? "border-[#a695d855]"
+          ? "border-[#a695d855] ring-1 ring-[#f3c5d41f]"
           : "border-[#3a324a14] opacity-70"
       }`}
     >
       {/* ヘッダ */}
-      <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[#fbf9fc] px-3 py-2">
-        <span className="text-[10px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+      <div className="flex items-center gap-2 border-b border-[#3a324a08] bg-[linear-gradient(135deg,#fbf9fc,#ffffff)] px-3 py-2">
+        <span className="text-[10px] font-extrabold tracking-[0.4px] text-[#a695d8]">
           #{index + 1}
         </span>
         <span
@@ -209,6 +209,37 @@ function ListingCard({
         <span className="text-[9.5px] text-[#3a324a8c]">
           {listing.options.length} 選択肢
         </span>
+        {!readOnly && (
+          <div className="ml-0.5 flex items-center gap-1">
+            <Link
+              href={`/listings/${listing.id}/edit`}
+              aria-label="個別募集を編集"
+              title="編集"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-[#a695d812] text-[#a695d8] transition-transform active:scale-95"
+            >
+              <EditIcon />
+            </Link>
+            <button
+              type="button"
+              onClick={onTogglePause}
+              disabled={isMatched || isClosed}
+              aria-label={isPaused ? "個別募集を再開" : "個別募集を一時停止"}
+              title={isPaused ? "再開" : "一時停止"}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-[#3a324a08] text-[#3a324acc] transition-transform active:scale-95 disabled:opacity-40"
+            >
+              {isPaused ? <PlayIcon /> : <PauseIcon />}
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label="個別募集を削除"
+              title="削除"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-red-500 transition-transform active:scale-95"
+            >
+              <TrashIcon />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 関係図 */}
@@ -222,33 +253,67 @@ function ListingCard({
         </div>
       )}
 
-      {/* アクションボタン群（iter146: readOnly では非表示） */}
-      {!readOnly && (
-      <div className="flex gap-1.5 border-t border-[#3a324a08] px-3 py-2">
-        <Link
-          href={`/listings/${listing.id}/edit`}
-          className="flex-1 rounded-[10px] bg-[#a695d80f] py-2 text-center text-[11px] font-bold text-[#a695d8]"
-        >
-          ✎ 編集
-        </Link>
-        <button
-          type="button"
-          onClick={onTogglePause}
-          disabled={isMatched || isClosed}
-          className="flex-1 rounded-[10px] bg-[#3a324a08] py-2 text-[11px] font-bold text-[#3a324a] disabled:opacity-50"
-        >
-          {isPaused ? "再開" : "一時停止"}
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="rounded-[10px] bg-red-50 px-3 py-2 text-[11px] font-bold text-red-500"
-        >
-          削除
-        </button>
-      </div>
-      )}
     </div>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path
+        d="M2.4 10.3 2 12l1.7-.4 6.7-6.7-1.3-1.3-6.7 6.7Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+      <path
+        d="m8.4 4.2 1.3 1.3"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.4"
+      />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path
+        d="M4.5 3.2v7.6M9.5 3.2v7.6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path
+        d="M5 3.4v7.2L10.5 7 5 3.4Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path
+        d="M3.2 4.4h7.6M5.3 4.4V3.2h3.4v1.2M4.1 4.4l.5 6.4c.1.7.4 1 1.1 1h2.6c.7 0 1-.3 1.1-1l.5-6.4"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+    </svg>
   );
 }
 

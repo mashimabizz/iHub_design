@@ -360,30 +360,6 @@ function SubPanel({
 
   return (
     <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pb-4 pt-2">
-      {/* 説明バナー（keep / traded のみ） */}
-      {subId === "keep" && (
-        <div className="mb-2 flex items-start gap-2 rounded-xl border-[0.5px] border-[#f3c5d455] bg-[#f3c5d41a] px-3 py-2.5 text-[11.5px] leading-snug text-gray-900">
-          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-[#f3c5d4] text-[10px]">
-            🔒
-          </span>
-          <div>
-            <b>自分用キープ</b>
-            <span className="text-gray-500">
-              {" "}
-              — マッチング・打診の対象外。コレクションには反映されます
-            </span>
-          </div>
-        </div>
-      )}
-      {subId === "traded" && (
-        <div className="mb-2 flex items-start gap-2 rounded-xl bg-[#3a324a08] px-3 py-2.5 text-[11.5px] leading-snug text-gray-500">
-          <span className="flex-shrink-0">📦</span>
-          <div>
-            過去に譲ったアイテムの履歴。コレクションには「取得経験あり」として残ります
-          </div>
-        </div>
-      )}
-
       {/* グリッド（iter147: 各パネルがスタガーで pop-in） */}
       <div className={`grid ${GRID_CLASS_BY_COLUMNS[columnCount]}`}>
         {subId === "active" && (

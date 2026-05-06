@@ -4,6 +4,78 @@
 
 ---
 
+## イテレーション154.36：交換候補を週カレンダー選択へ変更
+
+### 背景・問題意識
+
+オーナーから、C-0 の交換できる時間を Google Calendar のように週表示上でドラッグして設定したいという要望があった。
+
+また、時間を入れた後は「場所未設定」として明示し、そこをタップして地図設定ポップアップを開く設計にしたい、場所未設定のままでは打診できないようにしたいという指示があった。
+
+あわせて、打診送信時に `Could not find the 'meetup_candidates' column of 'proposals' in the schema cache` が出て進めない問題、マイ在庫のキープ／譲り済み説明バナー、個別募集一覧の設定感も指摘された。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 待ち合わせタブの時間入力を、プリセット／日時 input から週カレンダー型 UI へ変更した。
+- 10:00〜22:00 の 7 日表示で、ドラッグした範囲を 15 分単位の交換できる時間として設定できるようにした。
+- 時間を変更した候補は場所を空に戻し、「場所未設定」として表示するようにした。
+- 場所未設定部分をタップすると、下から地図設定シートが開き、検索・現在地・地図ピンで場所を設定できるようにした。
+- 場所未設定の候補が残っている場合は、送信確認へ進めないようにした。
+
+#### `web/src/app/propose/actions.ts`
+- `meetup_candidates` 列が schema cache に存在しない場合、既存の主候補列（`meetup_start_at` / `meetup_end_at` / `meetup_place_name` / `meetup_lat` / `meetup_lng`）だけで insert / update を retry するフォールバックを追加した。
+- migration 反映前や schema cache 更新前でも、少なくとも主候補で打診送信・再打診できるようにした。
+
+#### `web/src/app/propose/[partnerId]/page.tsx`
+- 再打診プリフィル時、`meetup_candidates` を含む select が schema cache エラーになった場合は、既存主候補列だけで再取得するようにした。
+
+#### `web/src/app/proposals/[id]/page.tsx`
+- 打診詳細取得時も `meetup_candidates` の schema cache エラー時に fallback select を行い、詳細画面が落ちないようにした。
+
+#### `web/src/app/inventory/InventoryView.tsx`
+- 「自分用キープ」「過去に譲った」タブ上部の説明バナーを削除した。
+
+#### `web/src/app/listings/ListingsView.tsx`
+- 個別募集一覧の「編集」「一時停止／再開」「削除」を下部ボタン列からヘッダー右端のアイコンへ移動した。
+- active カードは少しだけ影と淡い ring を足し、個別募集の関係図そのものが主役に見えるようにした。
+
+### 影響範囲
+
+- `/propose/[partnerId]` C-0 待ち合わせタブ
+- `/proposals/[id]` 打診詳細
+- `/inventory` マイ在庫タブ表示
+- `/listings` 個別募集一覧
+- DB スキーマ自体は変更なし。`meetup_candidates` 未反映環境への runtime fallback のみ追加
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx' src/app/propose/actions.ts 'src/app/propose/[partnerId]/page.tsx' 'src/app/proposals/[id]/page.tsx' src/app/inventory/InventoryView.tsx src/app/listings/ListingsView.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`（Google Fonts 取得のためネットワーク権限付きで通過）
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- `web/src/app/propose/actions.ts`
+- `web/src/app/propose/[partnerId]/page.tsx`
+- `web/src/app/proposals/[id]/page.tsx`
+- `web/src/app/inventory/InventoryView.tsx`
+- `web/src/app/listings/ListingsView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 時間指定は 15 分単位のドラッグ選択になり、入力フォーム中心の体験からカレンダー操作へ寄せた
+- ✅ 時間変更後は場所未設定に戻し、場所未設定の候補がある状態では次へ進めない
+- ✅ `meetup_candidates` の schema cache エラー時も主候補列で保存・読込できるため、打診送信が止まらない
+- ✅ マイ在庫のキープ／譲り済み説明バナーを削除
+- ✅ 個別募集一覧の操作をアイコン化し、ヘッダー右端へ集約
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.35：関係図候補整理と打診完了演出
 
 ### 背景・問題意識

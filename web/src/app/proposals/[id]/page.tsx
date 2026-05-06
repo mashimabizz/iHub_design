@@ -116,6 +116,18 @@ function parseMeetupCandidates(p: ProposalRaw): MeetupCandidateDetail[] {
   return [];
 }
 
+function isMeetupCandidatesSchemaCacheError(error: {
+  code?: string;
+  message?: string;
+} | null) {
+  const message = error?.message ?? "";
+  return (
+    error?.code === "PGRST204" ||
+    (message.includes("meetup_candidates") &&
+      message.includes("schema cache"))
+  );
+}
+
 export default async function ProposalDetailPage({
   params,
 }: {
@@ -131,23 +143,43 @@ export default async function ProposalDetailPage({
   // iter78-E: 期限切れを自動的に expired に
   await autoExpireProposals(supabase, user.id);
 
-  const { data: row } = await supabase
-    .from("proposals")
-    .select(
-      `id, sender_id, receiver_id, match_type,
+  const proposalSelectWithCandidates = `id, sender_id, receiver_id, match_type,
        sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
        message, message_tone, status, agreed_by_sender, agreed_by_receiver,
        rejected_template,
        meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
        meetup_candidates,
        expose_calendar, cash_offer, cash_amount, listing_id,
-       expires_at, last_action_at, created_at, extension_count`,
-    )
+       expires_at, last_action_at, created_at, extension_count`;
+  const proposalSelectFallback = `id, sender_id, receiver_id, match_type,
+       sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
+       message, message_tone, status, agreed_by_sender, agreed_by_receiver,
+       rejected_template,
+       meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
+       expose_calendar, cash_offer, cash_amount, listing_id,
+       expires_at, last_action_at, created_at, extension_count`;
+
+  let { data: row, error: rowError } = await supabase
+    .from("proposals")
+    .select(proposalSelectWithCandidates)
     .eq("id", id)
     .maybeSingle();
+  if (isMeetupCandidatesSchemaCacheError(rowError)) {
+    const retry = await supabase
+      .from("proposals")
+      .select(proposalSelectFallback)
+      .eq("id", id)
+      .maybeSingle();
+    row = retry.data ? { ...retry.data, meetup_candidates: [] } : retry.data;
+    rowError = retry.error;
+  }
 
   if (!row) notFound();
-  const p = row as ProposalRaw;
+  const p = {
+    ...row,
+    meetup_candidates:
+      "meetup_candidates" in row ? row.meetup_candidates : [],
+  } as ProposalRaw;
 
   // 自分が sender or receiver のみアクセス可
   if (p.sender_id !== user.id && p.receiver_id !== user.id) notFound();

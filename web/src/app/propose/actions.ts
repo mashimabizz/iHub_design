@@ -21,6 +21,20 @@ type MeetupCandidateInput = {
   mode?: MeetupMode;
 };
 
+type SupabaseMaybeError = {
+  code?: string;
+  message?: string;
+} | null;
+
+function isMeetupCandidatesSchemaCacheError(error: SupabaseMaybeError) {
+  const message = error?.message ?? "";
+  return (
+    error?.code === "PGRST204" ||
+    (message.includes("meetup_candidates") &&
+      message.includes("schema cache"))
+  );
+}
+
 function normalizeMeetupCandidates(input: {
   meetupStartAt: string;
   meetupEndAt: string;
@@ -165,37 +179,50 @@ export async function createProposal(input: {
   const now = new Date();
   const expires = new Date(now.getTime() + 7 * 24 * 60 * 60_000);
 
-  const { data, error } = await supabase
+  const insertFields: Record<string, unknown> = {
+    sender_id: user.id,
+    receiver_id: input.receiverId,
+    match_type: input.matchType,
+    sender_have_ids: input.senderHaveIds,
+    sender_have_qtys: input.senderHaveQtys,
+    receiver_have_ids: input.cashOffer ? [] : input.receiverHaveIds,
+    receiver_have_qtys: input.cashOffer ? [] : input.receiverHaveQtys,
+    message: messageBody,
+    message_tone: input.messageTone ?? "standard",
+    status: "sent",
+    // iter74: 打診した側は自分の打診内容にデフォルト合意扱い
+    agreed_by_sender: true,
+    agreed_by_receiver: false,
+    last_action_at: now.toISOString(),
+    expires_at: expires.toISOString(),
+    meetup_start_at: primaryMeetup.startAt,
+    meetup_end_at: primaryMeetup.endAt,
+    meetup_place_name: primaryMeetup.placeName,
+    meetup_lat: primaryMeetup.lat,
+    meetup_lng: primaryMeetup.lng,
+    meetup_candidates: meetupCandidates,
+    expose_calendar: input.exposeCalendar,
+    listing_id: input.listingId ?? null,
+    cash_offer: !!input.cashOffer,
+    cash_amount: input.cashOffer ? input.cashAmount : null,
+  };
+
+  let { data, error } = await supabase
     .from("proposals")
-    .insert({
-      sender_id: user.id,
-      receiver_id: input.receiverId,
-      match_type: input.matchType,
-      sender_have_ids: input.senderHaveIds,
-      sender_have_qtys: input.senderHaveQtys,
-      receiver_have_ids: input.cashOffer ? [] : input.receiverHaveIds,
-      receiver_have_qtys: input.cashOffer ? [] : input.receiverHaveQtys,
-      message: messageBody,
-      message_tone: input.messageTone ?? "standard",
-      status: "sent",
-      // iter74: 打診した側は自分の打診内容にデフォルト合意扱い
-      agreed_by_sender: true,
-      agreed_by_receiver: false,
-      last_action_at: now.toISOString(),
-      expires_at: expires.toISOString(),
-      meetup_start_at: primaryMeetup.startAt,
-      meetup_end_at: primaryMeetup.endAt,
-      meetup_place_name: primaryMeetup.placeName,
-      meetup_lat: primaryMeetup.lat,
-      meetup_lng: primaryMeetup.lng,
-      meetup_candidates: meetupCandidates,
-      expose_calendar: input.exposeCalendar,
-      listing_id: input.listingId ?? null,
-      cash_offer: !!input.cashOffer,
-      cash_amount: input.cashOffer ? input.cashAmount : null,
-    })
+    .insert(insertFields)
     .select("id")
     .single();
+
+  if (isMeetupCandidatesSchemaCacheError(error)) {
+    delete insertFields.meetup_candidates;
+    const retry = await supabase
+      .from("proposals")
+      .insert(insertFields)
+      .select("id")
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error || !data) return { error: error?.message ?? "送信に失敗しました" };
 
@@ -417,10 +444,18 @@ export async function reviseProposal(input: {
   );
   if (capacity.error) return capacity;
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from("proposals")
     .update(updateFields)
     .eq("id", input.id);
+  if (isMeetupCandidatesSchemaCacheError(error)) {
+    delete updateFields.meetup_candidates;
+    const retry = await supabase
+      .from("proposals")
+      .update(updateFields)
+      .eq("id", input.id);
+    error = retry.error;
+  }
   if (error) return { error: error.message };
 
   await supabase.from("messages").insert({

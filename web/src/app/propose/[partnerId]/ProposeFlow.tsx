@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import {
   type MouseEvent,
+  type PointerEvent,
   type TouchEvent,
   useEffect,
   useMemo,
@@ -112,6 +113,15 @@ type Props = {
 
 /* Tokyo Station fallback */
 const FALLBACK_CENTER: [number, number] = [35.6812, 139.7671];
+const MAX_MEETUP_CANDIDATES = 3;
+const MEETUP_WEEK_DAYS = 7;
+const MEETUP_CALENDAR_START_HOUR = 10;
+const MEETUP_CALENDAR_END_HOUR = 22;
+const MEETUP_SLOT_MINUTES = 15;
+const MEETUP_SLOT_HEIGHT = 10;
+const MEETUP_SLOT_COUNT =
+  ((MEETUP_CALENDAR_END_HOUR - MEETUP_CALENDAR_START_HOUR) * 60) /
+  MEETUP_SLOT_MINUTES;
 
 type Place = { display_name: string; lat: string; lon: string; address?: Record<string, string> };
 
@@ -154,21 +164,52 @@ function roundUpTokyoLocal(minutes = 30, base = new Date()): string {
   return formatTokyoLocalFromDate(d);
 }
 
-function addMinutesToTokyoLocal(local: string, minutes: number): string {
-  const d = parseTokyoLocal(local);
-  d.setMinutes(d.getMinutes() + minutes);
-  return formatTokyoLocalFromDate(d);
+function addDaysToDateKey(dateKey: string, days: number): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day + days));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-function setTokyoLocalTime(local: string, hour: number, minute = 0): string {
-  const date = local.slice(0, 10) || roundUpTokyoLocal().slice(0, 10);
-  return `${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+function buildMeetupWeekDateKeys(anchorLocal?: string): string[] {
+  const anchorDateKey = (anchorLocal || roundUpTokyoLocal()).slice(0, 10);
+  return Array.from({ length: MEETUP_WEEK_DAYS }, (_, index) =>
+    addDaysToDateKey(anchorDateKey, index),
+  );
 }
 
-function addDaysToTokyoLocal(local: string, days: number): string {
-  const d = parseTokyoLocal(local || roundUpTokyoLocal());
-  d.setDate(d.getDate() + days);
-  return formatTokyoLocalFromDate(d);
+function formatDateKeyShort(dateKey: string): string {
+  const [, month, day] = dateKey.split("-");
+  const d = new Date(`${dateKey}T00:00:00+09:00`);
+  return `${Number(month)}/${Number(day)}(${"日月火水木金土"[d.getDay()]})`;
+}
+
+function slotToTokyoLocal(dateKey: string, slot: number): string {
+  const minutes =
+    MEETUP_CALENDAR_START_HOUR * 60 + slot * MEETUP_SLOT_MINUTES;
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  return `${dateKey}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function localToCalendarSlot(local: string): number | null {
+  const p = splitTokyoLocal(local);
+  if (!p) return null;
+  const minutes = Number(p.h) * 60 + Number(p.mi);
+  return Math.round(
+    (minutes - MEETUP_CALENDAR_START_HOUR * 60) / MEETUP_SLOT_MINUTES,
+  );
+}
+
+function candidateHasTime(candidate: MeetupCandidate): boolean {
+  return (
+    !!candidate.start &&
+    !!candidate.end &&
+    new Date(localToIso(candidate.end)) > new Date(localToIso(candidate.start))
+  );
+}
+
+function candidateHasAnyInput(candidate: MeetupCandidate): boolean {
+  return candidateHasTime(candidate) || !!candidate.place.trim();
 }
 
 /** ISO → JST datetime-local（YYYY-MM-DDTHH:mm） */
@@ -241,11 +282,14 @@ function formatRange(startLocal: string, endLocal: string): string {
 
 function meetupCandidateIsSet(candidate: MeetupCandidate): boolean {
   return (
-    !!candidate.start &&
-    !!candidate.end &&
+    candidateHasTime(candidate) &&
     !!candidate.place.trim() &&
     new Date(localToIso(candidate.end)) > new Date(localToIso(candidate.start))
   );
+}
+
+function meetupCandidateIsIncomplete(candidate: MeetupCandidate): boolean {
+  return candidateHasAnyInput(candidate) && !meetupCandidateIsSet(candidate);
 }
 
 function toMeetupPayload(
@@ -400,7 +444,7 @@ export function ProposeFlow({
 
   const buildInitialMeetupCandidates = (): MeetupCandidate[] => {
     const fromInitial =
-      initial?.meetupCandidates?.slice(0, 3).map((candidate, index) => ({
+      initial?.meetupCandidates?.slice(0, MAX_MEETUP_CANDIDATES).map((candidate, index) => ({
         id: `candidate-${index + 1}`,
         mode: candidate.mode,
         start: isoToLocal(candidate.startAt),
@@ -474,13 +518,17 @@ export function ProposeFlow({
     .reduce((s, i) => s + i.selectedQty, 0);
 
   const validMeetupCandidates = meetupCandidates.filter(meetupCandidateIsSet);
+  const incompleteMeetupCandidates = meetupCandidates.filter(
+    meetupCandidateIsIncomplete,
+  );
   const primaryMeetup = validMeetupCandidates[0];
   const meetupSet = validMeetupCandidates.length > 0;
+  const meetupReady = meetupSet && incompleteMeetupCandidates.length === 0;
 
   // 定価交換モードでは receivers (相手の譲) は要らない（金銭で受け取る/支払う）
   const canProceedSelect = isCashMode
-    ? myCount > 0 && meetupSet
-    : myCount > 0 && theirCount > 0 && meetupSet;
+    ? myCount > 0 && meetupReady
+    : myCount > 0 && theirCount > 0 && meetupReady;
 
   // iter138: 自動テンプレ廃止。メッセージは confirm 画面で任意入力。
 
@@ -504,16 +552,16 @@ export function ProposeFlow({
   }
 
   function addMeetupCandidate() {
-    if (meetupCandidates.length >= 3 || !activeMeetup) return;
+    if (meetupCandidates.length >= MAX_MEETUP_CANDIDATES || !activeMeetup)
+      return;
     const id = `candidate-${Date.now()}`;
-    const baseEnd = Number.isNaN(parseTokyoLocal(activeMeetup.end).getTime())
-      ? roundUpTokyoLocal()
-      : activeMeetup.end;
     const next: MeetupCandidate = {
-      ...activeMeetup,
       id,
-      start: addMinutesToTokyoLocal(baseEnd, 30),
-      end: addMinutesToTokyoLocal(baseEnd, 120),
+      mode: "scheduled",
+      start: "",
+      end: "",
+      place: "",
+      center: activeMeetup.center,
     };
     setMeetupCandidates((prev) => [...prev, next]);
     setActiveMeetupId(id);
@@ -530,36 +578,16 @@ export function ProposeFlow({
     }
   }
 
-  function applyTodayPreset(kind: "30m" | "1h" | "2h" | "today") {
-    const start = roundUpTokyoLocal(30);
-    const end =
-      kind === "30m"
-        ? addMinutesToTokyoLocal(start, 30)
-        : kind === "1h"
-          ? addMinutesToTokyoLocal(start, 60)
-          : kind === "2h"
-            ? addMinutesToTokyoLocal(start, 120)
-            : setTokyoLocalTime(start, 22, 0);
-    updateActiveMeetup({ mode: "today", start, end });
-  }
-
-  function applyScheduledDay(day: "today" | "tomorrow") {
-    const base =
-      day === "tomorrow"
-        ? addDaysToTokyoLocal(roundUpTokyoLocal(), 1)
-        : roundUpTokyoLocal();
-    const start = setTokyoLocalTime(base, 15, 0);
+  function setActiveMeetupTimeRange(start: string, end: string) {
     updateActiveMeetup({
-      mode: "scheduled",
+      mode: start.slice(0, 10) === roundUpTokyoLocal().slice(0, 10)
+        ? "today"
+        : "scheduled",
       start,
-      end: addMinutesToTokyoLocal(start, 120),
+      end,
+      place: "",
     });
-  }
-
-  function applyScheduledRange(startHour: number, endHour: number) {
-    const start = setTokyoLocalTime(meetupStart, startHour, 0);
-    const end = setTokyoLocalTime(meetupStart, endHour, 0);
-    updateActiveMeetup({ mode: "scheduled", start, end });
+    placeManuallyEditedRef.current = false;
   }
 
   function copyActivePlaceToAllCandidates() {
@@ -821,6 +849,20 @@ export function ProposeFlow({
 
   function handleSubmit() {
     setError(null);
+    const incompleteIndex = meetupCandidates.findIndex(
+      meetupCandidateIsIncomplete,
+    );
+    if (incompleteIndex >= 0) {
+      const incomplete = meetupCandidates[incompleteIndex];
+      setError(
+        candidateHasTime(incomplete)
+          ? `候補${incompleteIndex + 1} の場所を設定してください`
+          : `候補${incompleteIndex + 1} の交換できる時間を設定してください`,
+      );
+      setTab("meetup");
+      setStep("select");
+      return;
+    }
     if (!primaryMeetup) {
       setError("交換できる候補を 1 件以上設定してください");
       setTab("meetup");
@@ -977,7 +1019,7 @@ export function ProposeFlow({
                 {
                   id: "meetup",
                   label: "待ち合わせ",
-                  count: meetupSet ? "✓" : "!",
+                  count: meetupReady ? "✓" : "!",
                   state: true as boolean,
                 },
               ] as const
@@ -999,7 +1041,7 @@ export function ProposeFlow({
                   <span
                     className={`min-w-[18px] rounded-full px-1.5 py-0.5 text-center text-[10px] font-extrabold tabular-nums ${
                       stateBadge
-                        ? meetupSet
+                        ? meetupReady
                           ? "bg-[#7a9a8a] text-white"
                           : "bg-[#d9826b33] text-[#d9826b]"
                         : active
@@ -1033,15 +1075,8 @@ export function ProposeFlow({
             onSelectCandidate={selectMeetupCandidate}
             onAddCandidate={addMeetupCandidate}
             onRemoveCandidate={removeMeetupCandidate}
-            onCandidateModeChange={(mode) => updateActiveMeetup({ mode })}
-            onTodayPreset={applyTodayPreset}
-            onScheduledDay={applyScheduledDay}
-            onScheduledRange={applyScheduledRange}
+            onTimeRangeSelect={setActiveMeetupTimeRange}
             onCopyPlaceToAll={copyActivePlaceToAllCandidates}
-            meetupStart={meetupStart}
-            setMeetupStart={(start) => updateActiveMeetup({ start })}
-            meetupEnd={meetupEnd}
-            setMeetupEnd={(end) => updateActiveMeetup({ end })}
             meetupPlace={meetupPlace}
             onPlaceInputChange={handlePlaceInputChange}
             meetupCenter={meetupCenter}
@@ -1119,7 +1154,9 @@ export function ProposeFlow({
                 ? "次へ：送信確認 →"
                 : myCount === 0 || theirCount === 0
                   ? "提示物を両方から選んでください"
-                  : "交換できる時間・場所を設定してください"}
+                  : meetupSet
+                    ? "場所未設定の候補があります"
+                    : "交換できる時間を設定してください"}
             </button>
           )}
           {step === "confirm" && (
@@ -1376,6 +1413,38 @@ function ItemRow({
   );
 }
 
+function getCalendarBlock(
+  candidate: MeetupCandidate,
+  weekDateKeys: string[],
+):
+  | {
+      dayIndex: number;
+      top: number;
+      height: number;
+    }
+  | null {
+  if (!candidateHasTime(candidate)) return null;
+  const start = splitTokyoLocal(candidate.start);
+  const end = splitTokyoLocal(candidate.end);
+  if (!start || !end || start.dateKey !== end.dateKey) return null;
+  const dayIndex = weekDateKeys.indexOf(start.dateKey);
+  if (dayIndex < 0) return null;
+  const startSlot = localToCalendarSlot(candidate.start);
+  const endSlot = localToCalendarSlot(candidate.end);
+  if (startSlot == null || endSlot == null) return null;
+  const clampedStart = Math.max(0, Math.min(MEETUP_SLOT_COUNT, startSlot));
+  const clampedEnd = Math.max(0, Math.min(MEETUP_SLOT_COUNT, endSlot));
+  if (clampedEnd <= 0 || clampedStart >= MEETUP_SLOT_COUNT) return null;
+  return {
+    dayIndex,
+    top: clampedStart * MEETUP_SLOT_HEIGHT,
+    height: Math.max(
+      MEETUP_SLOT_HEIGHT,
+      (clampedEnd - clampedStart) * MEETUP_SLOT_HEIGHT,
+    ),
+  };
+}
+
 function MeetupTab({
   partner,
   meetupCandidates,
@@ -1383,15 +1452,8 @@ function MeetupTab({
   onSelectCandidate,
   onAddCandidate,
   onRemoveCandidate,
-  onCandidateModeChange,
-  onTodayPreset,
-  onScheduledDay,
-  onScheduledRange,
+  onTimeRangeSelect,
   onCopyPlaceToAll,
-  meetupStart,
-  setMeetupStart,
-  meetupEnd,
-  setMeetupEnd,
   meetupPlace,
   onPlaceInputChange,
   meetupCenter,
@@ -1412,15 +1474,8 @@ function MeetupTab({
   onSelectCandidate: (id: string) => void;
   onAddCandidate: () => void;
   onRemoveCandidate: (id: string) => void;
-  onCandidateModeChange: (mode: MeetupMode) => void;
-  onTodayPreset: (kind: "30m" | "1h" | "2h" | "today") => void;
-  onScheduledDay: (day: "today" | "tomorrow") => void;
-  onScheduledRange: (startHour: number, endHour: number) => void;
+  onTimeRangeSelect: (start: string, end: string) => void;
   onCopyPlaceToAll: () => void;
-  meetupStart: string;
-  setMeetupStart: (s: string) => void;
-  meetupEnd: string;
-  setMeetupEnd: (s: string) => void;
   meetupPlace: string;
   onPlaceInputChange: (s: string) => void;
   meetupCenter: [number, number];
@@ -1435,17 +1490,24 @@ function MeetupTab({
   pickPlace: (p: Place) => void;
   useCurrentLocation: () => void;
 }) {
+  const [placeSheetOpen, setPlaceSheetOpen] = useState(false);
   const activeCandidate =
     meetupCandidates.find((candidate) => candidate.id === activeMeetupId) ??
     meetupCandidates[0];
-  const mode = activeCandidate?.mode ?? "today";
   const activeIndex = Math.max(
     0,
     meetupCandidates.findIndex((candidate) => candidate.id === activeMeetupId),
   );
-  const dateValue = meetupStart.slice(0, 10);
-  const startTime = meetupStart.slice(11, 16);
-  const endTime = meetupEnd.slice(11, 16);
+  const weekDateKeys = useMemo(
+    () => buildMeetupWeekDateKeys(activeCandidate?.start),
+    [activeCandidate?.start],
+  );
+  const completeCount = meetupCandidates.filter(meetupCandidateIsSet).length;
+
+  function openPlaceSheet(candidateId: string) {
+    onSelectCandidate(candidateId);
+    setPlaceSheetOpen(true);
+  }
 
   return (
     <>
@@ -1457,7 +1519,7 @@ function MeetupTab({
             @{partner.handle} は現地交換モード中
           </div>
           <div className="text-[11.5px] leading-snug text-[#3a324a]">
-            相手が今いる場所と時間帯を候補1に入れています。必要なら候補を追加して、相手が選びやすい形にできます。
+            候補1に相手の現在設定を反映しています。時間を変えると場所は未設定に戻ります。
           </div>
         </div>
       )}
@@ -1469,12 +1531,12 @@ function MeetupTab({
               交換できる候補
             </div>
             <div className="mt-0.5 text-[10.5px] leading-snug text-[#3a324a8c]">
-              最大3件。候補1が最初に相手へ表示されます。
+              最大3件。時間と場所がそろった候補だけ送れます。
             </div>
           </div>
           <button
             type="button"
-            disabled={meetupCandidates.length >= 3}
+            disabled={meetupCandidates.length >= MAX_MEETUP_CANDIDATES}
             onClick={onAddCandidate}
             className="rounded-full bg-[#a695d814] px-3 py-1.5 text-[10.5px] font-extrabold text-[#a695d8] disabled:opacity-40"
           >
@@ -1516,11 +1578,20 @@ function MeetupTab({
                   <span className="block truncate text-[11px] font-bold text-[#3a324a]">
                     {candidate.start && candidate.end
                       ? formatRange(candidate.start, candidate.end)
-                      : "時間未設定"}
+                      : "カレンダーで時間選択"}
                   </span>
-                  <span className="mt-0.5 block truncate text-[10px] text-[#3a324a8c]">
-                    {candidate.place || "場所未設定"}
-                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!candidateHasTime(candidate)}
+                  onClick={() => openPlaceSheet(candidate.id)}
+                  className={`mt-1.5 block w-full truncate rounded-full px-2 py-1 text-left text-[10px] font-extrabold disabled:opacity-45 ${
+                    candidate.place.trim()
+                      ? "bg-[#7a9a8a14] text-[#7a9a8a]"
+                      : "bg-[#d9826b14] text-[#d9826b]"
+                  }`}
+                >
+                  {candidate.place || "場所未設定"}
                 </button>
                 {meetupCandidates.length > 1 && active && (
                   <button
@@ -1542,216 +1613,441 @@ function MeetupTab({
 
       <div className="mb-3 rounded-[14px] border border-[#3a324a14] bg-white p-3">
         <div className="mb-2 flex items-center justify-between">
-          <div className="text-[11px] font-extrabold text-[#3a324a]">
-            候補{activeIndex + 1} の交換できる時間
+          <div>
+            <div className="text-[11px] font-extrabold text-[#3a324a]">
+              候補{activeIndex + 1} の交換できる時間
+            </div>
+            <div className="mt-0.5 text-[9.5px] font-bold text-[#3a324a8c]">
+              週表示・15分単位
+            </div>
           </div>
-          <span className="text-[9.5px] font-bold text-[#3a324a8c]">
+          <span className="rounded-full bg-[#3a324a08] px-2 py-1 text-[9.5px] font-bold text-[#3a324a8c]">
             JST
           </span>
         </div>
-        <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-full bg-[#3a324a08] p-1">
-          {(
-            [
-              { id: "today", label: "今日このあと" },
-              { id: "scheduled", label: "日時を指定" },
-            ] as const
-          ).map((item) => {
-            const active = mode === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onCandidateModeChange(item.id)}
-                className={`rounded-full px-3 py-2 text-[11.5px] font-extrabold transition-all ${
-                  active
-                    ? "bg-white text-[#a695d8] shadow-[0_2px_7px_rgba(58,50,74,0.08)]"
-                    : "text-[#3a324a8c]"
-                }`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </div>
 
-        {mode === "today" ? (
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { id: "30m", label: "今から30分" },
-              { id: "1h", label: "1時間以内" },
-              { id: "2h", label: "2時間以内" },
-              { id: "today", label: "今日中" },
-            ].map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() =>
-                  onTodayPreset(preset.id as "30m" | "1h" | "2h" | "today")
-                }
-                className="rounded-[12px] border border-[#3a324a14] bg-[#fbf9fc] px-3 py-2 text-[11.5px] font-bold text-[#3a324a] active:scale-[0.98]"
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <>
-            <div className="mb-2 flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => onScheduledDay("today")}
-                className="rounded-full border border-[#3a324a14] bg-[#fbf9fc] px-3 py-1.5 text-[11px] font-bold text-[#3a324a]"
-              >
-                今日
-              </button>
-              <button
-                type="button"
-                onClick={() => onScheduledDay("tomorrow")}
-                className="rounded-full border border-[#3a324a14] bg-[#fbf9fc] px-3 py-1.5 text-[11px] font-bold text-[#3a324a]"
-              >
-                明日
-              </button>
-              {[
-                { label: "昼", start: 12, end: 15 },
-                { label: "夕方", start: 15, end: 18 },
-                { label: "夜", start: 18, end: 20 },
-              ].map((range) => (
-                <button
-                  key={range.label}
-                  type="button"
-                  onClick={() => onScheduledRange(range.start, range.end)}
-                  className="rounded-full border border-[#a695d855] bg-[#a695d80d] px-3 py-1.5 text-[11px] font-bold text-[#a695d8]"
-                >
-                  {range.label}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-[1.1fr_0.8fr_0.8fr] gap-2">
-              <input
-                type="date"
-                value={dateValue}
-                onChange={(e) => {
-                  setMeetupStart(`${e.target.value}T${startTime || "15:00"}`);
-                  setMeetupEnd(`${e.target.value}T${endTime || "17:00"}`);
-                }}
-                className="block min-w-0 rounded-lg border-[0.5px] border-[#3a324a14] bg-[#fbf9fc] px-2.5 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
-              />
-              <input
-                type="time"
-                step={1800}
-                value={startTime}
-                onChange={(e) =>
-                  setMeetupStart(`${dateValue}T${e.target.value}`)
-                }
-                className="block min-w-0 rounded-lg border-[0.5px] border-[#3a324a14] bg-[#fbf9fc] px-2.5 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
-              />
-              <input
-                type="time"
-                step={1800}
-                value={endTime}
-                onChange={(e) =>
-                  setMeetupEnd(`${dateValue}T${e.target.value}`)
-                }
-                className="block min-w-0 rounded-lg border-[0.5px] border-[#3a324a14] bg-[#fbf9fc] px-2.5 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none"
-              />
-            </div>
-          </>
-        )}
-        <div className="mt-2 rounded-[10px] bg-[#a8d4e614] px-3 py-2 text-[11px] font-bold text-[#3a324a]">
-          {meetupStart && meetupEnd ? formatRange(meetupStart, meetupEnd) : "時間未設定"}
-        </div>
-      </div>
-
-      {/* 場所名 + 検索 */}
-      <div className="mb-1 flex items-center justify-between px-0.5">
-        <span className="text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-          候補{activeIndex + 1} の交換できる場所
-        </span>
-        {reverseFetching && (
-          <span className="text-[9.5px] text-[#a695d8]">取得中…</span>
-        )}
-      </div>
-      <input
-        type="text"
-        value={meetupPlace}
-        onChange={(e) => onPlaceInputChange(e.target.value)}
-        maxLength={120}
-        placeholder="地図でピンを動かすと自動で入ります"
-        className="mb-2 block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
-      />
-
-      {/* 検索バー */}
-      <div className="relative mb-2">
-        <input
-          type="text"
-          value={searchQ}
-          onChange={(e) => setSearchQ(e.target.value)}
-          onFocus={() => searchResults.length && setShowResults(true)}
-          placeholder="🔍 駅・施設名で検索（例：渋谷駅）"
-          className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
+        <WeekMeetupCalendar
+          candidates={meetupCandidates}
+          activeMeetupId={activeMeetupId}
+          weekDateKeys={weekDateKeys}
+          onSelectCandidate={onSelectCandidate}
+          onTimeRangeSelect={onTimeRangeSelect}
+          onOpenPlaceSheet={openPlaceSheet}
         />
-        {searching && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[#3a324a8c]">
-            …
-          </span>
-        )}
-        {showResults && searchResults.length > 0 && (
-          <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-lg border border-[#3a324a14] bg-white shadow-[0_8px_20px_rgba(58,50,74,0.12)]">
-            {searchResults.slice(0, 10).map((p, i) => (
-              <button
-                key={`${p.lat}-${p.lon}-${i}`}
-                type="button"
-                onClick={() => pickPlace(p)}
-                className="block w-full border-b border-[#3a324a08] px-3 py-2 text-left last:border-0 hover:bg-[#a695d80a]"
-              >
-                <div className="text-[12px] font-semibold text-[#3a324a]">
-                  {labelFromAddress(p)}
-                </div>
-                <div className="mt-0.5 truncate text-[10px] text-[#3a324a8c]">
-                  {p.display_name}
-                </div>
-              </button>
-            ))}
+
+        <div className="mt-2 grid gap-1.5">
+          <div className="rounded-[10px] bg-[#a8d4e614] px-3 py-2 text-[11px] font-bold text-[#3a324a]">
+            {activeCandidate?.start && activeCandidate.end
+              ? formatRange(activeCandidate.start, activeCandidate.end)
+              : "時間未設定"}
           </div>
-        )}
+          <button
+            type="button"
+            disabled={!activeCandidate || !candidateHasTime(activeCandidate)}
+            onClick={() => activeCandidate && openPlaceSheet(activeCandidate.id)}
+            className={`rounded-[10px] px-3 py-2 text-left text-[11px] font-extrabold disabled:opacity-45 ${
+              activeCandidate?.place.trim()
+                ? "bg-[#7a9a8a14] text-[#7a9a8a]"
+                : "bg-[#d9826b14] text-[#d9826b]"
+            }`}
+          >
+            {activeCandidate?.place.trim()
+              ? `📍 ${activeCandidate.place}`
+              : "📍 場所未設定"}
+          </button>
+        </div>
       </div>
 
-      {/* 現在地ボタン */}
-      <button
-        type="button"
-        onClick={useCurrentLocation}
-        className="mb-2 flex items-center gap-1.5 rounded-full border border-[#a695d855] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#a695d8] active:scale-[0.97]"
-      >
-        📍 現在地を中心に
-      </button>
-      {meetupCandidates.length > 1 && (
-        <button
-          type="button"
-          onClick={onCopyPlaceToAll}
-          className="mb-2 ml-2 rounded-full border border-[#3a324a14] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#3a324a8c] active:scale-[0.97]"
-        >
-          同じ場所を全候補に使う
-        </button>
+      {completeCount > 0 && (
+        <div className="mb-2 rounded-[12px] bg-[#7a9a8a10] px-3 py-2 text-[10.5px] font-bold text-[#7a9a8a]">
+          {completeCount}件の候補を送信できます
+        </div>
       )}
 
-      {/* 地図 */}
+      {placeSheetOpen && activeCandidate && (
+        <PlacePickerSheet
+          candidateLabel={`候補${activeIndex + 1}`}
+          timeLabel={
+            activeCandidate.start && activeCandidate.end
+              ? formatRange(activeCandidate.start, activeCandidate.end)
+              : "時間未設定"
+          }
+          meetupPlace={meetupPlace}
+          onPlaceInputChange={onPlaceInputChange}
+          meetupCenter={meetupCenter}
+          onMapCenterChange={onMapCenterChange}
+          reverseFetching={reverseFetching}
+          searchQ={searchQ}
+          setSearchQ={setSearchQ}
+          searchResults={searchResults}
+          searching={searching}
+          showResults={showResults}
+          setShowResults={setShowResults}
+          pickPlace={pickPlace}
+          useCurrentLocation={useCurrentLocation}
+          onCopyPlaceToAll={onCopyPlaceToAll}
+          canCopyPlaceToAll={meetupCandidates.length > 1}
+          onClose={() => setPlaceSheetOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function WeekMeetupCalendar({
+  candidates,
+  activeMeetupId,
+  weekDateKeys,
+  onSelectCandidate,
+  onTimeRangeSelect,
+  onOpenPlaceSheet,
+}: {
+  candidates: MeetupCandidate[];
+  activeMeetupId: string;
+  weekDateKeys: string[];
+  onSelectCandidate: (id: string) => void;
+  onTimeRangeSelect: (start: string, end: string) => void;
+  onOpenPlaceSheet: (id: string) => void;
+}) {
+  const [drag, setDrag] = useState<{
+    dayIndex: number;
+    startSlot: number;
+    currentSlot: number;
+  } | null>(null);
+
+  function slotFromPointer(
+    e: PointerEvent<HTMLDivElement>,
+    el: HTMLDivElement,
+  ): number {
+    const rect = el.getBoundingClientRect();
+    const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+    return Math.max(
+      0,
+      Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
+    );
+  }
+
+  function normalizedDragRange(selection: NonNullable<typeof drag>) {
+    const startSlot = Math.min(selection.startSlot, selection.currentSlot);
+    const endSlot = Math.max(selection.startSlot, selection.currentSlot) + 1;
+    return { startSlot, endSlot };
+  }
+
+  function commitDrag(selection: NonNullable<typeof drag>) {
+    const { startSlot, endSlot } = normalizedDragRange(selection);
+    const dateKey = weekDateKeys[selection.dayIndex];
+    onTimeRangeSelect(
+      slotToTokyoLocal(dateKey, startSlot),
+      slotToTokyoLocal(dateKey, endSlot),
+    );
+  }
+
+  function handlePointerDown(
+    e: PointerEvent<HTMLDivElement>,
+    dayIndex: number,
+  ) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const slot = slotFromPointer(e, e.currentTarget);
+    setDrag({ dayIndex, startSlot: slot, currentSlot: slot });
+  }
+
+  function handlePointerMove(e: PointerEvent<HTMLDivElement>) {
+    if (!drag) return;
+    e.preventDefault();
+    const slot = slotFromPointer(e, e.currentTarget);
+    setDrag((prev) => (prev ? { ...prev, currentSlot: slot } : prev));
+  }
+
+  function handlePointerUp(e: PointerEvent<HTMLDivElement>) {
+    if (!drag) return;
+    e.preventDefault();
+    const next = {
+      ...drag,
+      currentSlot: slotFromPointer(e, e.currentTarget),
+    };
+    commitDrag(next);
+    setDrag(null);
+  }
+
+  const preview =
+    drag == null
+      ? null
+      : {
+          dayIndex: drag.dayIndex,
+          ...normalizedDragRange(drag),
+        };
+
+  return (
+    <div
+      data-propose-swipe-ignore
+      className="overflow-hidden rounded-[12px] border border-[#3a324a14] bg-[#fbf9fc]"
+    >
+      <div className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a12] bg-white">
+        <div />
+        {weekDateKeys.map((dateKey, index) => (
+          <div
+            key={dateKey}
+            className={`px-0.5 py-2 text-center text-[9px] font-extrabold ${
+              index === 0 ? "text-[#a695d8]" : "text-[#3a324a8c]"
+            }`}
+          >
+            {formatDateKeyShort(dateKey)}
+          </div>
+        ))}
+      </div>
       <div
-        data-propose-swipe-ignore
-        className="overflow-hidden rounded-[12px] border-[0.5px] border-[#3a324a14] bg-[#e8eef0]"
+        className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))]"
+        style={{ height: MEETUP_SLOT_COUNT * MEETUP_SLOT_HEIGHT }}
       >
-        <div className="h-[240px] w-full">
-          <MapPicker
-            center={meetupCenter}
-            radiusM={120}
-            onCenterChange={onMapCenterChange}
-            className="h-full w-full"
-          />
+        <div className="relative border-r border-[#3a324a12] bg-white">
+          {Array.from(
+            {
+              length:
+                MEETUP_CALENDAR_END_HOUR - MEETUP_CALENDAR_START_HOUR + 1,
+            },
+            (_, index) => MEETUP_CALENDAR_START_HOUR + index,
+          ).map((hour) => (
+            <div
+              key={hour}
+              className="absolute right-1 text-[8px] font-bold text-[#3a324a66]"
+              style={{
+                top:
+                  (hour - MEETUP_CALENDAR_START_HOUR) *
+                    (60 / MEETUP_SLOT_MINUTES) *
+                    MEETUP_SLOT_HEIGHT -
+                  5,
+              }}
+            >
+              {hour}:00
+            </div>
+          ))}
         </div>
-        <div className="border-t border-[#3a324a14] bg-white px-3 py-2 text-[10px] text-[#3a324a8c]">
-          ピンをドラッグ or 地図をタップで位置を調整できます。場所名は自動で更新されます。
+        {weekDateKeys.map((dateKey, dayIndex) => (
+          <div
+            key={dateKey}
+            className="relative border-r border-[#3a324a0d] last:border-r-0"
+            onPointerDown={(e) => handlePointerDown(e, dayIndex)}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={() => setDrag(null)}
+            style={{ touchAction: "none" }}
+          >
+            {Array.from({ length: MEETUP_SLOT_COUNT / 4 }, (_, hourIndex) => (
+              <div
+                key={hourIndex}
+                className="absolute inset-x-0 border-t border-[#3a324a0a]"
+                style={{ top: hourIndex * 4 * MEETUP_SLOT_HEIGHT }}
+              />
+            ))}
+            {candidates.map((candidate, index) => {
+              const block = getCalendarBlock(candidate, weekDateKeys);
+              if (!block || block.dayIndex !== dayIndex) return null;
+              const active = candidate.id === activeMeetupId;
+              return (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => {
+                    onSelectCandidate(candidate.id);
+                    if (!candidate.place.trim()) onOpenPlaceSheet(candidate.id);
+                  }}
+                  className={`absolute left-[3px] right-[3px] rounded-[7px] px-1 py-0.5 text-left text-[8.5px] font-extrabold leading-tight text-white shadow-[0_3px_9px_rgba(166,149,216,0.26)] ${
+                    active ? "ring-2 ring-[#f3c5d4]" : ""
+                  } ${
+                    candidate.place.trim()
+                      ? "bg-[#a695d8]"
+                      : "bg-[linear-gradient(135deg,#a695d8,#d9826b)]"
+                  }`}
+                  style={{ top: block.top, height: block.height }}
+                >
+                  <span className="block truncate">候補{index + 1}</span>
+                  <span className="block truncate font-bold opacity-90">
+                    {candidate.place || "場所未設定"}
+                  </span>
+                </button>
+              );
+            })}
+            {preview && preview.dayIndex === dayIndex && (
+              <div
+                className="pointer-events-none absolute left-[4px] right-[4px] rounded-[7px] border border-[#a695d8] bg-[#a695d833]"
+                style={{
+                  top: preview.startSlot * MEETUP_SLOT_HEIGHT,
+                  height:
+                    (preview.endSlot - preview.startSlot) * MEETUP_SLOT_HEIGHT,
+                }}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PlacePickerSheet({
+  candidateLabel,
+  timeLabel,
+  meetupPlace,
+  onPlaceInputChange,
+  meetupCenter,
+  onMapCenterChange,
+  reverseFetching,
+  searchQ,
+  setSearchQ,
+  searchResults,
+  searching,
+  showResults,
+  setShowResults,
+  pickPlace,
+  useCurrentLocation,
+  onCopyPlaceToAll,
+  canCopyPlaceToAll,
+  onClose,
+}: {
+  candidateLabel: string;
+  timeLabel: string;
+  meetupPlace: string;
+  onPlaceInputChange: (s: string) => void;
+  meetupCenter: [number, number];
+  onMapCenterChange: (lat: number, lng: number) => void;
+  reverseFetching: boolean;
+  searchQ: string;
+  setSearchQ: (s: string) => void;
+  searchResults: Place[];
+  searching: boolean;
+  showResults: boolean;
+  setShowResults: (b: boolean) => void;
+  pickPlace: (p: Place) => void;
+  useCurrentLocation: () => void;
+  onCopyPlaceToAll: () => void;
+  canCopyPlaceToAll: boolean;
+  onClose: () => void;
+}) {
+  const placeSet = !!meetupPlace.trim();
+  return (
+    <div
+      data-propose-swipe-ignore
+      className="fixed inset-0 z-40 flex items-end bg-[#1a1624]/32 px-3 pb-[max(env(safe-area-inset-bottom),12px)] pt-10 backdrop-blur-[2px]"
+    >
+      <div className="mx-auto w-full max-w-md overflow-hidden rounded-[22px] bg-white shadow-[0_-16px_46px_rgba(58,50,74,0.22)]">
+        <div className="flex items-start justify-between gap-3 border-b border-[#3a324a12] px-4 pb-3 pt-4">
+          <div className="min-w-0">
+            <div className="text-[10.5px] font-extrabold text-[#a695d8]">
+              {candidateLabel}
+            </div>
+            <div className="mt-0.5 truncate text-[13px] font-extrabold text-[#3a324a]">
+              {timeLabel}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-[#3a324a08] px-3 py-1.5 text-[11px] font-extrabold text-[#3a324a8c]"
+          >
+            閉じる
+          </button>
+        </div>
+
+        <div className="max-h-[72vh] overflow-y-auto px-4 py-3">
+          <div className="mb-1 flex items-center justify-between px-0.5">
+            <span className="text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
+              交換できる場所
+            </span>
+            {reverseFetching && (
+              <span className="text-[9.5px] text-[#a695d8]">取得中…</span>
+            )}
+          </div>
+          <input
+            type="text"
+            value={meetupPlace}
+            onChange={(e) => onPlaceInputChange(e.target.value)}
+            maxLength={120}
+            placeholder="場所未設定"
+            className="mb-2 block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-[#fbf9fc] px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] placeholder:text-[#d9826b] focus:border-[#a695d8] focus:outline-none"
+          />
+
+          <div className="relative mb-2">
+            <input
+              type="text"
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              onFocus={() => searchResults.length && setShowResults(true)}
+              placeholder="🔍 駅・施設名で検索"
+              className="block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-white px-3 py-2.5 text-[12px] text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
+            />
+            {searching && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[#3a324a8c]">
+                …
+              </span>
+            )}
+            {showResults && searchResults.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-52 overflow-y-auto rounded-lg border border-[#3a324a14] bg-white shadow-[0_8px_20px_rgba(58,50,74,0.12)]">
+                {searchResults.slice(0, 10).map((p, i) => (
+                  <button
+                    key={`${p.lat}-${p.lon}-${i}`}
+                    type="button"
+                    onClick={() => pickPlace(p)}
+                    className="block w-full border-b border-[#3a324a08] px-3 py-2 text-left last:border-0 hover:bg-[#a695d80a]"
+                  >
+                    <div className="text-[12px] font-semibold text-[#3a324a]">
+                      {labelFromAddress(p)}
+                    </div>
+                    <div className="mt-0.5 truncate text-[10px] text-[#3a324a8c]">
+                      {p.display_name}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mb-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={useCurrentLocation}
+              className="flex items-center gap-1.5 rounded-full border border-[#a695d855] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#a695d8] active:scale-[0.97]"
+            >
+              📍 現在地を中心に
+            </button>
+            {canCopyPlaceToAll && (
+              <button
+                type="button"
+                onClick={onCopyPlaceToAll}
+                disabled={!placeSet}
+                className="rounded-full border border-[#3a324a14] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#3a324a8c] active:scale-[0.97] disabled:opacity-40"
+              >
+                同じ場所を全候補に使う
+              </button>
+            )}
+          </div>
+
+          <div className="overflow-hidden rounded-[12px] border-[0.5px] border-[#3a324a14] bg-[#e8eef0]">
+            <div className="h-[240px] w-full">
+              <MapPicker
+                center={meetupCenter}
+                radiusM={120}
+                onCenterChange={onMapCenterChange}
+                className="h-full w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-[#3a324a12] px-4 pb-4 pt-3">
+          <button
+            type="button"
+            disabled={!placeSet}
+            onClick={onClose}
+            className="w-full rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-5 py-3.5 text-[13px] font-extrabold text-white shadow-[0_6px_18px_rgba(166,149,216,0.28)] disabled:opacity-45 disabled:shadow-none"
+          >
+            この場所で設定
+          </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
