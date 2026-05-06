@@ -115,8 +115,8 @@ type Props = {
 const FALLBACK_CENTER: [number, number] = [35.6812, 139.7671];
 const MAX_MEETUP_CANDIDATES = 3;
 const MEETUP_WEEK_DAYS = 7;
-const MEETUP_CALENDAR_START_HOUR = 10;
-const MEETUP_CALENDAR_END_HOUR = 22;
+const MEETUP_CALENDAR_START_HOUR = 0;
+const MEETUP_CALENDAR_END_HOUR = 24;
 const MEETUP_SLOT_MINUTES = 15;
 const MEETUP_SLOT_HEIGHT = 10;
 const MEETUP_SLOT_COUNT =
@@ -177,10 +177,23 @@ function buildMeetupWeekDateKeys(anchorLocal?: string): string[] {
   );
 }
 
+function buildMeetupWeekDateKeysFromDateKey(dateKey: string): string[] {
+  return Array.from({ length: MEETUP_WEEK_DAYS }, (_, index) =>
+    addDaysToDateKey(dateKey, index),
+  );
+}
+
 function formatDateKeyShort(dateKey: string): string {
   const [, month, day] = dateKey.split("-");
   const d = new Date(`${dateKey}T00:00:00+09:00`);
   return `${Number(month)}/${Number(day)}(${"日月火水木金土"[d.getDay()]})`;
+}
+
+function formatWeekRange(dateKeys: string[]): string {
+  if (dateKeys.length === 0) return "";
+  const first = dateKeys[0];
+  const last = dateKeys[dateKeys.length - 1];
+  return `${formatDateKeyShort(first)}〜${formatDateKeyShort(last)}`;
 }
 
 function slotToTokyoLocal(dateKey: string, slot: number): string {
@@ -1498,15 +1511,28 @@ function MeetupTab({
     0,
     meetupCandidates.findIndex((candidate) => candidate.id === activeMeetupId),
   );
+  const [calendarWeekStartKey, setCalendarWeekStartKey] = useState(
+    () => buildMeetupWeekDateKeys(activeCandidate?.start)[0],
+  );
   const weekDateKeys = useMemo(
-    () => buildMeetupWeekDateKeys(activeCandidate?.start),
-    [activeCandidate?.start],
+    () => buildMeetupWeekDateKeysFromDateKey(calendarWeekStartKey),
+    [calendarWeekStartKey],
   );
   const completeCount = meetupCandidates.filter(meetupCandidateIsSet).length;
+  const weekLabel = formatWeekRange(weekDateKeys);
 
   function openPlaceSheet(candidateId: string) {
     onSelectCandidate(candidateId);
     setPlaceSheetOpen(true);
+  }
+
+  function handleTimeRangeSelect(start: string, end: string) {
+    onTimeRangeSelect(start, end);
+    setPlaceSheetOpen(true);
+  }
+
+  function shiftCalendarWeek(direction: 1 | -1) {
+    setCalendarWeekStartKey((current) => addDaysToDateKey(current, direction * 7));
   }
 
   return (
@@ -1525,114 +1551,68 @@ function MeetupTab({
       )}
 
       <div className="mb-3 rounded-[14px] border border-[#3a324a14] bg-white p-3">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div>
-            <div className="text-[12px] font-extrabold text-[#3a324a]">
-              交換できる候補
-            </div>
-            <div className="mt-0.5 text-[10.5px] leading-snug text-[#3a324a8c]">
-              最大3件。時間と場所がそろった候補だけ送れます。
-            </div>
-          </div>
-          <button
-            type="button"
-            disabled={meetupCandidates.length >= MAX_MEETUP_CANDIDATES}
-            onClick={onAddCandidate}
-            className="rounded-full bg-[#a695d814] px-3 py-1.5 text-[10.5px] font-extrabold text-[#a695d8] disabled:opacity-40"
-          >
-            ＋候補
-          </button>
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {meetupCandidates.map((candidate, index) => {
-            const active = candidate.id === activeMeetupId;
-            const ok = meetupCandidateIsSet(candidate);
-            return (
-              <div
-                key={candidate.id}
-                className={`min-w-[154px] rounded-[12px] border px-3 py-2 text-left transition-all ${
-                  active
-                    ? "border-[#a695d8] bg-[#a695d80f] shadow-[0_4px_12px_rgba(166,149,216,0.14)]"
-                    : "border-[#3a324a14] bg-[#fbf9fc]"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => onSelectCandidate(candidate.id)}
-                  className="block w-full text-left"
-                >
-                  <span className="mb-1 flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-extrabold text-[#a695d8]">
-                      候補{index + 1}
-                    </span>
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
-                        ok
-                          ? "bg-[#7a9a8a14] text-[#7a9a8a]"
-                          : "bg-[#d9826b14] text-[#d9826b]"
-                      }`}
-                    >
-                      {ok ? "OK" : "未設定"}
-                    </span>
-                  </span>
-                  <span className="block truncate text-[11px] font-bold text-[#3a324a]">
-                    {candidate.start && candidate.end
-                      ? formatRange(candidate.start, candidate.end)
-                      : "カレンダーで時間選択"}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!candidateHasTime(candidate)}
-                  onClick={() => openPlaceSheet(candidate.id)}
-                  className={`mt-1.5 block w-full truncate rounded-full px-2 py-1 text-left text-[10px] font-extrabold disabled:opacity-45 ${
-                    candidate.place.trim()
-                      ? "bg-[#7a9a8a14] text-[#7a9a8a]"
-                      : "bg-[#d9826b14] text-[#d9826b]"
-                  }`}
-                >
-                  {candidate.place || "場所未設定"}
-                </button>
-                {meetupCandidates.length > 1 && active && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemoveCandidate(candidate.id);
-                    }}
-                    className="mt-1.5 inline-flex rounded-full bg-[#3a324a08] px-2 py-0.5 text-[9.5px] font-bold text-[#3a324a8c]"
-                  >
-                    削除
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mb-3 rounded-[14px] border border-[#3a324a14] bg-white p-3">
         <div className="mb-2 flex items-center justify-between">
           <div>
             <div className="text-[11px] font-extrabold text-[#3a324a]">
               候補{activeIndex + 1} の交換できる時間
             </div>
             <div className="mt-0.5 text-[9.5px] font-bold text-[#3a324a8c]">
-              週表示・15分単位
+              {weekLabel}
             </div>
           </div>
-          <span className="rounded-full bg-[#3a324a08] px-2 py-1 text-[9.5px] font-bold text-[#3a324a8c]">
-            JST
-          </span>
+          <div className="flex items-center gap-1.5">
+            {meetupCandidates.length > 1 && (
+              <button
+                type="button"
+                onClick={() => onRemoveCandidate(activeMeetupId)}
+                className="rounded-full bg-[#3a324a08] px-2.5 py-1 text-[9.5px] font-extrabold text-[#3a324a8c]"
+              >
+                削除
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={meetupCandidates.length >= MAX_MEETUP_CANDIDATES}
+              onClick={onAddCandidate}
+              className="rounded-full bg-[#a695d814] px-2.5 py-1 text-[9.5px] font-extrabold text-[#a695d8] disabled:opacity-40"
+            >
+              ＋候補
+            </button>
+          </div>
         </div>
+        {meetupCandidates.length > 1 && (
+          <div className="mb-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {meetupCandidates.map((candidate, index) => {
+              const active = candidate.id === activeMeetupId;
+              const ok = meetupCandidateIsSet(candidate);
+              return (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => onSelectCandidate(candidate.id)}
+                  className={`flex-shrink-0 rounded-full px-2.5 py-1 text-[9.5px] font-extrabold ${
+                    active
+                      ? "bg-[#a695d8] text-white"
+                      : ok
+                        ? "bg-[#7a9a8a14] text-[#7a9a8a]"
+                        : "bg-[#3a324a08] text-[#3a324a8c]"
+                  }`}
+                >
+                  候補{index + 1}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         <WeekMeetupCalendar
           candidates={meetupCandidates}
           activeMeetupId={activeMeetupId}
           weekDateKeys={weekDateKeys}
           onSelectCandidate={onSelectCandidate}
-          onTimeRangeSelect={onTimeRangeSelect}
+          onTimeRangeSelect={handleTimeRangeSelect}
           onOpenPlaceSheet={openPlaceSheet}
+          onShiftWeek={shiftCalendarWeek}
         />
 
         <div className="mt-2 grid gap-1.5">
@@ -1653,7 +1633,7 @@ function MeetupTab({
           >
             {activeCandidate?.place.trim()
               ? `📍 ${activeCandidate.place}`
-              : "📍 場所未設定"}
+              : `📍 候補${activeIndex + 1}の交換場所の候補を設定する`}
           </button>
         </div>
       </div>
@@ -1701,6 +1681,7 @@ function WeekMeetupCalendar({
   onSelectCandidate,
   onTimeRangeSelect,
   onOpenPlaceSheet,
+  onShiftWeek,
 }: {
   candidates: MeetupCandidate[];
   activeMeetupId: string;
@@ -1708,11 +1689,16 @@ function WeekMeetupCalendar({
   onSelectCandidate: (id: string) => void;
   onTimeRangeSelect: (start: string, end: string) => void;
   onOpenPlaceSheet: (id: string) => void;
+  onShiftWeek: (direction: 1 | -1) => void;
 }) {
   const [drag, setDrag] = useState<{
     dayIndex: number;
     startSlot: number;
     currentSlot: number;
+  } | null>(null);
+  const calendarSwipeRef = useRef<{
+    startX: number;
+    startY: number;
   } | null>(null);
 
   function slotFromPointer(
@@ -1740,6 +1726,7 @@ function WeekMeetupCalendar({
       slotToTokyoLocal(dateKey, startSlot),
       slotToTokyoLocal(dateKey, endSlot),
     );
+    onOpenPlaceSheet(activeMeetupId);
   }
 
   function handlePointerDown(
@@ -1747,22 +1734,24 @@ function WeekMeetupCalendar({
     dayIndex: number,
   ) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    if (e.pointerType !== "touch") {
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
     const slot = slotFromPointer(e, e.currentTarget);
     setDrag({ dayIndex, startSlot: slot, currentSlot: slot });
   }
 
   function handlePointerMove(e: PointerEvent<HTMLDivElement>) {
     if (!drag) return;
-    e.preventDefault();
+    if (e.pointerType !== "touch") e.preventDefault();
     const slot = slotFromPointer(e, e.currentTarget);
     setDrag((prev) => (prev ? { ...prev, currentSlot: slot } : prev));
   }
 
   function handlePointerUp(e: PointerEvent<HTMLDivElement>) {
     if (!drag) return;
-    e.preventDefault();
+    if (e.pointerType !== "touch") e.preventDefault();
     const next = {
       ...drag,
       currentSlot: slotFromPointer(e, e.currentTarget),
@@ -1779,28 +1768,51 @@ function WeekMeetupCalendar({
           ...normalizedDragRange(drag),
         };
 
+  function handleCalendarTouchStart(e: TouchEvent<HTMLDivElement>) {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    calendarSwipeRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+    };
+  }
+
+  function handleCalendarTouchEnd(e: TouchEvent<HTMLDivElement>) {
+    const state = calendarSwipeRef.current;
+    calendarSwipeRef.current = null;
+    const touch = e.changedTouches[0];
+    if (!state || !touch) return;
+    const dx = touch.clientX - state.startX;
+    const dy = touch.clientY - state.startY;
+    if (Math.abs(dx) < 58 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    onShiftWeek(dx < 0 ? 1 : -1);
+  }
+
   return (
     <div
       data-propose-swipe-ignore
       className="overflow-hidden rounded-[12px] border border-[#3a324a14] bg-[#fbf9fc]"
+      onTouchStart={handleCalendarTouchStart}
+      onTouchEnd={handleCalendarTouchEnd}
     >
-      <div className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a12] bg-white">
-        <div />
-        {weekDateKeys.map((dateKey, index) => (
-          <div
-            key={dateKey}
-            className={`px-0.5 py-2 text-center text-[9px] font-extrabold ${
-              index === 0 ? "text-[#a695d8]" : "text-[#3a324a8c]"
-            }`}
-          >
-            {formatDateKeyShort(dateKey)}
-          </div>
-        ))}
-      </div>
-      <div
-        className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))]"
-        style={{ height: MEETUP_SLOT_COUNT * MEETUP_SLOT_HEIGHT }}
-      >
+      <div className="max-h-[430px] overflow-y-auto">
+        <div className="sticky top-0 z-20 grid grid-cols-[38px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a12] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.05)]">
+          <div />
+          {weekDateKeys.map((dateKey, index) => (
+            <div
+              key={dateKey}
+              className={`px-0.5 py-2 text-center text-[9px] font-extrabold ${
+                index === 0 ? "text-[#a695d8]" : "text-[#3a324a8c]"
+              }`}
+            >
+              {formatDateKeyShort(dateKey)}
+            </div>
+          ))}
+        </div>
+        <div
+          className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))]"
+          style={{ height: MEETUP_SLOT_COUNT * MEETUP_SLOT_HEIGHT }}
+        >
         <div className="relative border-r border-[#3a324a12] bg-white">
           {Array.from(
             {
@@ -1832,7 +1844,7 @@ function WeekMeetupCalendar({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={() => setDrag(null)}
-            style={{ touchAction: "none" }}
+            style={{ touchAction: "pan-y" }}
           >
             {Array.from({ length: MEETUP_SLOT_COUNT / 4 }, (_, hourIndex) => (
               <div
@@ -1882,6 +1894,7 @@ function WeekMeetupCalendar({
             )}
           </div>
         ))}
+        </div>
       </div>
     </div>
   );
