@@ -4,6 +4,91 @@
 
 ---
 
+## イテレーション154.31：推し追加モーダルを中央固定化
+
+### 背景・問題意識
+
+オーナーから、推し設定の「登録済みの推しを追加」ポップアップで、自由検索欄に文字を入れるとヒット件数に応じてフォーム全体の縦幅が変わり、使いづらいという指摘があった。
+
+検索結果が増減しても操作面が揺れないよう、フォーム自体は画面中央に固定し、結果リストだけを内部スクロールさせる。
+
+### 変更内容
+
+#### `web/src/app/profile/oshi/OshiEditView.tsx`
+- `MasterSelectModal` をボトムシート型から画面中央の固定モーダルに変更。
+- モーダル本体に一定の高さを持たせ、検索結果の件数で外枠が伸び縮みしないようにした。
+- 検索バー・ジャンルタブ・ヘッダーは固定領域に置き、候補リストだけ `overflow-y-auto` でスクロールする構成にした。
+- ボトムシートのつまみを外し、中央モーダルとして自然に見える角丸・影へ調整した。
+
+### 影響範囲
+
+- `/profile/oshi` 推し設定画面
+- 登録済みマスタから推しを追加するポップアップ
+
+### 確認方法
+
+- `npx eslint src/app/profile/oshi/OshiEditView.tsx src/components/home/HomeView.tsx src/components/home/MatchDetailModal.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/profile/oshi/OshiEditView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 検索結果件数によってモーダル外形が変わらない
+- ✅ 候補一覧だけが内部スクロールし、検索欄・タブ・閉じるボタンは安定して操作できる
+- ✅ 新しい state / DB フィールド / 公式用語は追加していないため `notes/09_state_machines.md`、`notes/10_glossary.md`、`notes/05_data_model.md` は更新不要
+
+---
+
+## イテレーション154.30：関係図の選択元強調と不可候補折りたたみ
+
+### 背景・問題意識
+
+オーナーから、ホーム画面のマッチングパネルを押して関係図へ進んだ時、選んだ画像の候補が複数候補の中で目立つようにしたいという要望があった。
+
+また、自分が交換できなさそうな候補が最初からグレーアウト表示されると体験が暗くなるため、初期状態では折りたたみ、「＋」で見られる設計にする。
+
+### 変更内容
+
+#### `web/src/components/home/HomeView.tsx`
+- ホームでタップした候補の `item.id` を関係図モーダルへ渡すようにした。
+
+#### `web/src/components/home/MatchDetailModal.tsx`
+- タップ元の候補 ID を `highlightedItemId` として受け取り、候補サムネ・譲サムネ・通常マッチ要約のサムネを淡いピンクのリングで強調。
+- 選択元候補が関係図内の候補に含まれる場合、初期選択にも反映して、ユーザーが押した画像と遷移先の文脈がつながるようにした。
+- 候補なし wish と未一致の譲候補は初期表示から折りたたみ、「＋ 交換できない候補」で展開するようにした。
+- OR 条件の譲候補では、タップ元の譲が含まれる場合にその候補を初期選択するようにした。
+
+### 影響範囲
+
+- `/` ホーム画面からの関係図モーダル
+- 個別募集マッチ / 通常の譲 × wish マッチの候補表示
+
+### 確認方法
+
+- `npx eslint src/app/profile/oshi/OshiEditView.tsx src/components/home/HomeView.tsx src/components/home/MatchDetailModal.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/home/HomeView.tsx`
+- `web/src/components/home/MatchDetailModal.tsx`
+
+### セルフレビュー結果
+
+- ✅ ホームで選んだ画像の候補が関係図内で視覚的に追える
+- ✅ 交換できない候補は初期表示から外れ、必要時だけ展開できる
+- ✅ 既存の関係図・スワイププレビュー構造を流用し、DB スキーマ変更なし
+- ✅ 新しい state / 公式用語は追加していないため `notes/09_state_machines.md`、`notes/10_glossary.md`、`notes/05_data_model.md` は更新不要
+
+---
+
 ## イテレーション154.29：推し設定にマスタ検索追加モーダルを導入
 
 ### 背景・問題意識

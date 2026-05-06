@@ -79,6 +79,33 @@ type SwipeGesture = {
   axis: "undecided" | "horizontal" | "vertical";
 };
 
+function buildInitialSelectionFromHighlightedItem(
+  listings: MatchCardListingInfo[],
+  highlightedItemId: string | null | undefined,
+): Selection {
+  const selection: Selection = new Map();
+  if (!highlightedItemId) return selection;
+
+  for (const listing of listings) {
+    for (const option of listing.options) {
+      if (option.isCashOffer) continue;
+      for (const wish of option.wishes) {
+        if (
+          wish.candidates.some(
+            (candidate) => candidate.item.id === highlightedItemId,
+          )
+        ) {
+          const current = selection.get(listing.listingId) ?? new Set<string>();
+          current.add(highlightedItemId);
+          selection.set(listing.listingId, current);
+        }
+      }
+    }
+  }
+
+  return selection;
+}
+
 export type MatchDetailPageData = {
   partnerHandle: string;
   partnerId: string;
@@ -90,6 +117,7 @@ export type MatchDetailPageData = {
   simpleReceives?: MiniItem[];
   simpleGives?: MiniItem[];
   simpleProposeHref?: string | null;
+  highlightedItemId?: string | null;
 };
 
 function collectMiniItemPhotoUrl(item: MiniItem | null | undefined, urls: Set<string>) {
@@ -133,6 +161,7 @@ export function MatchDetailModal({
   simpleReceives,
   simpleGives,
   simpleProposeHref,
+  highlightedItemId = null,
   slideDirection = "from-right",
   previousPage = null,
   nextPage = null,
@@ -158,6 +187,8 @@ export function MatchDetailModal({
   simpleGives?: MiniItem[];
   /** iter152: 通常マッチの打診先 */
   simpleProposeHref?: string | null;
+  /** ホームでタップしたマッチングパネルの画像に対応する inventory id */
+  highlightedItemId?: string | null;
   /** iter154.20: 詳細間スワイプ時の進入方向 */
   slideDirection?: "from-right" | "from-left" | "none";
   /** iter154.22: iPhone ホーム画面風ページング用の隣接プレビュー */
@@ -180,7 +211,12 @@ export function MatchDetailModal({
     };
   }, []);
 
-  const [selection, setSelection] = useState<Selection>(new Map());
+  const [selection, setSelection] = useState<Selection>(() =>
+    buildInitialSelectionFromHighlightedItem(
+      [...myListings, ...partnerListings],
+      highlightedItemId,
+    ),
+  );
   /** iter111: 在庫超過警告トースト */
   const [toast, setToast] = useState<{ message: string; key: number } | null>(
     null,
@@ -266,7 +302,11 @@ export function MatchDetailModal({
     const m = new Map<string, Set<string>>();
     for (const l of [...myListings, ...partnerListings]) {
       if (l.haveLogic === "or" && l.haves.length >= 2) {
-        const first = l.haves.find((h) => h.matched) ?? l.haves[0];
+        const highlightedHave = highlightedItemId
+          ? l.haves.find((h) => h.item.id === highlightedItemId)
+          : null;
+        const first =
+          highlightedHave ?? l.haves.find((h) => h.matched) ?? l.haves[0];
         if (first) m.set(l.listingId, new Set([first.item.id]));
       }
     }
@@ -875,6 +915,7 @@ export function MatchDetailModal({
                 partnerHandle={partnerHandle}
                 partnerAvatarUrl={partnerAvatarUrl}
                 myAvatarUrl={myAvatarUrl}
+                highlightedItemId={highlightedItemId}
                 isSelected={(cid) => isSelected(l.listingId, cid)}
                 isHaveSelected={isHaveSelected}
                 onToggleHave={toggleHave}
@@ -899,6 +940,7 @@ export function MatchDetailModal({
                 partnerHandle={partnerHandle}
                 partnerAvatarUrl={partnerAvatarUrl}
                 myAvatarUrl={myAvatarUrl}
+                highlightedItemId={highlightedItemId}
                 isSelected={(cid) => isSelected(l.listingId, cid)}
                 isHaveSelected={isHaveSelected}
                 onToggleHave={toggleHave}
@@ -914,6 +956,7 @@ export function MatchDetailModal({
               partnerHandle={partnerHandle}
               receivesItems={simpleReceiveItems}
               givesItems={simpleGiveItems}
+              highlightedItemId={highlightedItemId}
             />
           ) : (
             <div className="rounded-[10px] border border-dashed border-[#3a324a14] bg-white p-4 text-center text-[12px] text-[#3a324a8c]">
@@ -1000,6 +1043,7 @@ export function MatchDetailModal({
           partnerHandle={partnerHandle}
           partnerAvatarUrl={partnerAvatarUrl}
           myAvatarUrl={myAvatarUrl}
+          highlightedItemId={highlightedItemId}
           isSelected={(cid) => isSelected(popupTarget.listingId, cid)}
           onToggleCandidate={(cid) =>
             toggleCandidate(popupTarget.listingId, cid)
@@ -1092,6 +1136,7 @@ function SwipePreviewPage({
                 partnerHandle={page.partnerHandle}
                 partnerAvatarUrl={page.partnerAvatarUrl}
                 myAvatarUrl={page.myAvatarUrl}
+                highlightedItemId={page.highlightedItemId ?? null}
                 isSelected={() => false}
                 isHaveSelected={isPreviewHaveSelected}
                 onToggleHave={() => undefined}
@@ -1116,6 +1161,7 @@ function SwipePreviewPage({
                 partnerHandle={page.partnerHandle}
                 partnerAvatarUrl={page.partnerAvatarUrl}
                 myAvatarUrl={page.myAvatarUrl}
+                highlightedItemId={page.highlightedItemId ?? null}
                 isSelected={() => false}
                 isHaveSelected={isPreviewHaveSelected}
                 onToggleHave={() => undefined}
@@ -1131,6 +1177,7 @@ function SwipePreviewPage({
               partnerHandle={page.partnerHandle}
               receivesItems={simpleReceiveItems}
               givesItems={simpleGiveItems}
+              highlightedItemId={page.highlightedItemId ?? null}
             />
           ) : (
             <div className="rounded-[10px] border border-dashed border-[#3a324a14] bg-white p-4 text-center text-[12px] text-[#3a324a8c]">
@@ -1153,6 +1200,7 @@ function WishPopup({
   partnerHandle,
   partnerAvatarUrl,
   myAvatarUrl,
+  highlightedItemId,
   isSelected,
   onToggleCandidate,
   onClose,
@@ -1161,6 +1209,7 @@ function WishPopup({
   partnerHandle: string;
   partnerAvatarUrl: string | null;
   myAvatarUrl: string | null;
+  highlightedItemId?: string | null;
   isSelected: (candidateInvId: string) => boolean;
   onToggleCandidate: (candidateInvId: string) => void;
   onClose: () => void;
@@ -1272,6 +1321,10 @@ function WishPopup({
                     key={c.item.id}
                     item={c.item}
                     selected={isSelected(c.item.id)}
+                    highlighted={
+                      highlightedItemId != null &&
+                      c.item.id === highlightedItemId
+                    }
                     onClick={() => onToggleCandidate(c.item.id)}
                   />
                 ))}
@@ -1353,10 +1406,12 @@ function SimpleRelationPanel({
   partnerHandle,
   receivesItems,
   givesItems,
+  highlightedItemId,
 }: {
   partnerHandle: string;
   receivesItems: MiniItem[];
   givesItems: MiniItem[];
+  highlightedItemId?: string | null;
 }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)]">
@@ -1378,7 +1433,11 @@ function SimpleRelationPanel({
             @{partnerHandle} の譲
           </div>
           <div className="mt-1.5">
-            <SummaryThumbStrip items={receivesItems} max={5} />
+            <SummaryThumbStrip
+              items={receivesItems}
+              max={5}
+              highlightedItemId={highlightedItemId}
+            />
           </div>
         </div>
 
@@ -1394,7 +1453,11 @@ function SimpleRelationPanel({
             相手の wish に一致
           </div>
           <div className="mt-1.5">
-            <SummaryThumbStrip items={givesItems} max={5} />
+            <SummaryThumbStrip
+              items={givesItems}
+              max={5}
+              highlightedItemId={highlightedItemId}
+            />
           </div>
         </div>
       </div>
@@ -1411,6 +1474,7 @@ function ListingTree({
   partnerHandle,
   partnerAvatarUrl,
   myAvatarUrl,
+  highlightedItemId,
   isSelected,
   isHaveSelected,
   onToggleHave,
@@ -1422,6 +1486,7 @@ function ListingTree({
   partnerHandle: string;
   partnerAvatarUrl: string | null;
   myAvatarUrl: string | null;
+  highlightedItemId?: string | null;
   isSelected: (candidateInvId: string) => boolean;
   isHaveSelected: (listingId: string, haveInvId: string) => boolean;
   onToggleHave: (listingId: string, haveInvId: string) => void;
@@ -1477,6 +1542,7 @@ function ListingTree({
               listing={listing}
               fallbackHavePhoto={fallbackHavePhoto}
               fallbackHaveLabel={fallbackHaveLabel}
+              highlightedItemId={highlightedItemId}
               isSelected={isSelected}
               onOpenPopup={onOpenPopup}
               viewpoint={viewpoint}
@@ -1485,6 +1551,7 @@ function ListingTree({
             // partner: 左 = haves（相手の譲、私が受け取る）
             <HaveList
               listing={listing}
+              highlightedItemId={highlightedItemId}
               isHaveSelected={isHaveSelected}
               onToggleHave={onToggleHave}
             />
@@ -1505,6 +1572,7 @@ function ListingTree({
             // mine: 右 = haves（自分の譲）
             <HaveList
               listing={listing}
+              highlightedItemId={highlightedItemId}
               isHaveSelected={isHaveSelected}
               onToggleHave={onToggleHave}
             />
@@ -1514,6 +1582,7 @@ function ListingTree({
               listing={listing}
               fallbackHavePhoto={fallbackHavePhoto}
               fallbackHaveLabel={fallbackHaveLabel}
+              highlightedItemId={highlightedItemId}
               isSelected={isSelected}
               onOpenPopup={onOpenPopup}
               viewpoint={viewpoint}
@@ -1535,19 +1604,31 @@ function ListingTree({
 
 function HaveList({
   listing,
+  highlightedItemId,
   isHaveSelected,
   onToggleHave,
 }: {
   listing: MatchCardListingInfo;
+  highlightedItemId?: string | null;
   isHaveSelected: (listingId: string, haveInvId: string) => boolean;
   onToggleHave: (listingId: string, haveInvId: string) => void;
 }) {
   const interactive =
     listing.haveLogic === "or" && listing.haves.length >= 2;
+  const [showUnavailable, setShowUnavailable] = useState(false);
+  const visibleHaves = listing.haves.filter(
+    (have) =>
+      showUnavailable ||
+      have.matched ||
+      (highlightedItemId != null && have.item.id === highlightedItemId),
+  );
+  const hiddenUnavailableCount = listing.haves.length - visibleHaves.length;
 
   return (
     <div className="flex flex-col items-center gap-2">
-      {listing.haves.map((h) => {
+      {visibleHaves.map((h) => {
+        const highlighted =
+          highlightedItemId != null && h.item.id === highlightedItemId;
         if (!interactive) {
           // AND or 単一：そのまま表示
           return (
@@ -1558,6 +1639,7 @@ function HaveList({
               size={HAVE_THUMB}
               variant="have"
               dim={!h.matched}
+              highlighted={highlighted}
             />
           );
         }
@@ -1580,6 +1662,7 @@ function HaveList({
               qty={h.qty}
               size={HAVE_THUMB}
               variant="have"
+              highlighted={highlighted}
             />
             {sel && (
               <span
@@ -1592,6 +1675,24 @@ function HaveList({
           </button>
         );
       })}
+      {hiddenUnavailableCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowUnavailable(true)}
+          className="rounded-full border border-[#3a324a14] bg-white px-2.5 py-1 text-[10px] font-extrabold text-[#3a324a8c] active:scale-[0.97]"
+        >
+          ＋ 交換できない候補 {hiddenUnavailableCount} 件
+        </button>
+      )}
+      {showUnavailable && hiddenUnavailableCount === 0 && (
+        <button
+          type="button"
+          onClick={() => setShowUnavailable(false)}
+          className="rounded-full border border-[#3a324a14] bg-white px-2.5 py-1 text-[10px] font-bold text-[#3a324a66] active:scale-[0.97]"
+        >
+          閉じる
+        </button>
+      )}
       {listing.haves.length > 1 && (
         <span
           className={`rounded-full px-1.5 py-[2px] text-[9.5px] font-extrabold ${
@@ -1616,6 +1717,7 @@ function OptionList({
   listing,
   fallbackHavePhoto,
   fallbackHaveLabel,
+  highlightedItemId,
   isSelected,
   onOpenPopup,
   viewpoint,
@@ -1623,6 +1725,7 @@ function OptionList({
   listing: MatchCardListingInfo;
   fallbackHavePhoto: string | null;
   fallbackHaveLabel: string;
+  highlightedItemId?: string | null;
   isSelected: (candidateInvId: string) => boolean;
   onOpenPopup: (target: PopupTarget) => void;
   viewpoint: "mine" | "partner";
@@ -1644,6 +1747,7 @@ function OptionList({
           listing={listing}
           fallbackHavePhoto={fallbackHavePhoto}
           fallbackHaveLabel={fallbackHaveLabel}
+          highlightedItemId={highlightedItemId}
           isSelected={isSelected}
           onOpenPopup={onOpenPopup}
           viewpoint={viewpoint}
@@ -1660,6 +1764,7 @@ function OptionGroup({
   listing,
   fallbackHavePhoto,
   fallbackHaveLabel,
+  highlightedItemId,
   isSelected,
   onOpenPopup,
   viewpoint,
@@ -1668,12 +1773,18 @@ function OptionGroup({
   listing: MatchCardListingInfo;
   fallbackHavePhoto: string | null;
   fallbackHaveLabel: string;
+  highlightedItemId?: string | null;
   isSelected: (candidateInvId: string) => boolean;
   onOpenPopup: (target: PopupTarget) => void;
   viewpoint: "mine" | "partner";
 }) {
   const isAndGroup = option.logic === "and" && option.wishes.length > 1;
   const isOrGroup = option.logic === "or" && option.wishes.length > 1;
+  const [showUnavailable, setShowUnavailable] = useState(false);
+  const visibleWishes = option.wishes.filter(
+    (wish) => showUnavailable || wish.candidates.length > 0,
+  );
+  const hiddenUnavailableCount = option.wishes.length - visibleWishes.length;
 
   const renderRow = (w: typeof option.wishes[number]) => (
     <WishRow
@@ -1684,6 +1795,7 @@ function OptionGroup({
       exchangeType={option.exchangeType}
       fallbackHavePhoto={fallbackHavePhoto}
       fallbackHaveLabel={fallbackHaveLabel}
+      highlightedItemId={highlightedItemId}
       isSelected={isSelected}
       onOpen={() =>
         onOpenPopup({
@@ -1699,6 +1811,18 @@ function OptionGroup({
       }
     />
   );
+  const unavailableToggle =
+    hiddenUnavailableCount > 0 || showUnavailable ? (
+      <button
+        type="button"
+        onClick={() => setShowUnavailable((v) => !v)}
+        className="mt-1 w-full rounded-[10px] border border-dashed border-[#3a324a18] bg-white px-2.5 py-2 text-[10px] font-extrabold text-[#3a324a8c] active:scale-[0.99]"
+      >
+        {showUnavailable
+          ? "閉じる"
+          : `＋ 交換できない候補 ${hiddenUnavailableCount} 件`}
+      </button>
+    ) : null;
 
   // AND グループ：紫枠で囲んで「セット」を強調
   if (isAndGroup) {
@@ -1710,7 +1834,8 @@ function OptionGroup({
           </span>
           <span className="text-[#3a324a8c]">全部一緒に</span>
         </div>
-        <div className="space-y-1">{option.wishes.map(renderRow)}</div>
+        <div className="space-y-1">{visibleWishes.map(renderRow)}</div>
+        {unavailableToggle}
       </div>
     );
   }
@@ -1725,13 +1850,20 @@ function OptionGroup({
           </span>
           <span className="text-[#3a324a8c]">どれか 1 つで OK</span>
         </div>
-        <div className="space-y-1">{option.wishes.map(renderRow)}</div>
+        <div className="space-y-1">{visibleWishes.map(renderRow)}</div>
+        {unavailableToggle}
       </div>
     );
   }
 
   // 単一 wish：そのまま 1 行
-  return <>{option.wishes.map(renderRow)}</>;
+  if (visibleWishes.length === 0) return <>{unavailableToggle}</>;
+  return (
+    <>
+      {visibleWishes.map(renderRow)}
+      {unavailableToggle}
+    </>
+  );
 }
 
 /* ─── iter118: 全 listing 横断の結論サマリー ───
@@ -1774,9 +1906,11 @@ function GlobalSummary({
 function SummaryThumbStrip({
   items,
   max = 4,
+  highlightedItemId,
 }: {
   items: MiniItem[];
   max?: number;
+  highlightedItemId?: string | null;
 }) {
   if (items.length === 0) {
     return <span className="text-[10px] italic text-[#3a324a4d]">未選択</span>;
@@ -1786,7 +1920,11 @@ function SummaryThumbStrip({
   return (
     <div className="flex flex-shrink-0 gap-0.5">
       {visible.map((item) => (
-        <SummaryThumb key={item.id} item={item} />
+        <SummaryThumb
+          key={item.id}
+          item={item}
+          highlighted={highlightedItemId != null && item.id === highlightedItemId}
+        />
       ))}
       {overflow > 0 && (
         <span className="self-center text-[9px] font-bold text-[#3a324a8c]">
@@ -1797,12 +1935,22 @@ function SummaryThumbStrip({
   );
 }
 
-function SummaryThumb({ item }: { item: MiniItem }) {
+function SummaryThumb({
+  item,
+  highlighted,
+}: {
+  item: MiniItem;
+  highlighted?: boolean;
+}) {
   const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 86%) 0 4px, hsl(${item.hue}, 28%, 78%) 4px 8px)`;
   const hasPhoto = !!item.photoUrl;
   return (
     <div
-      className="relative h-6 w-6 flex-shrink-0 overflow-hidden rounded border border-white/60 shadow-[0_1px_2px_rgba(58,50,74,0.12)]"
+      className={`relative h-6 w-6 flex-shrink-0 overflow-hidden rounded border border-white/60 shadow-[0_1px_2px_rgba(58,50,74,0.12)] ${
+        highlighted
+          ? "ring-2 ring-[#f3c5d4] ring-offset-1 ring-offset-white shadow-[0_0_12px_rgba(243,197,212,0.52)]"
+          : ""
+      }`}
       style={{ background: hasPhoto ? "#3a324a" : stripeBg }}
       title={item.label}
     >
@@ -1857,6 +2005,7 @@ function WishRow({
   candidates,
   exchangeType,
   fallbackHavePhoto,
+  highlightedItemId,
   isSelected,
   onOpen,
 }: {
@@ -1866,6 +2015,7 @@ function WishRow({
   exchangeType: "same_kind" | "cross_kind" | "any";
   fallbackHavePhoto: string | null;
   fallbackHaveLabel: string;
+  highlightedItemId?: string | null;
   isSelected: (candidateInvId: string) => boolean;
   onOpen: () => void;
 }) {
@@ -1946,6 +2096,9 @@ function WishRow({
                 qty={1}
                 size={38}
                 variant="candidate"
+                highlighted={
+                  highlightedItemId != null && c.item.id === highlightedItemId
+                }
               />
             ))}
           </div>
@@ -1960,10 +2113,12 @@ function WishRow({
 function CandidateButton({
   item,
   selected,
+  highlighted,
   onClick,
 }: {
   item: MiniItem;
   selected: boolean;
+  highlighted?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -1973,15 +2128,28 @@ function CandidateButton({
       aria-pressed={selected}
       aria-label={`${item.label} ${selected ? "選択解除" : "選択"}`}
       className={`relative flex flex-col items-center gap-0.5 rounded-[10px] p-1 transition-all active:scale-[0.95] ${
-        selected
-          ? "bg-[#a695d814] ring-2 ring-[#a695d8] ring-offset-1 ring-offset-[#fbf9fc]"
-          : "bg-white"
+        highlighted
+          ? "bg-[#fff7fb] ring-2 ring-[#f3c5d4] ring-offset-2 ring-offset-[#fbf9fc] shadow-[0_0_18px_rgba(243,197,212,0.55)]"
+          : selected
+            ? "bg-[#a695d814] ring-2 ring-[#a695d8] ring-offset-1 ring-offset-[#fbf9fc]"
+            : "bg-white"
       }`}
     >
-      <ItemPhoto item={item} qty={1} size={CAND_THUMB} variant="candidate" />
+      <ItemPhoto
+        item={item}
+        qty={1}
+        size={CAND_THUMB}
+        variant="candidate"
+        highlighted={highlighted}
+      />
       <span className="max-w-[64px] truncate text-[9px] font-bold text-[#3a324a]">
         {item.label}
       </span>
+      {highlighted && (
+        <span className="absolute -left-1 -top-1 rounded-full bg-[#f3c5d4] px-1.5 py-[1px] text-[8.5px] font-extrabold text-white shadow-[0_2px_6px_rgba(243,197,212,0.45)]">
+          選択元
+        </span>
+      )}
       {selected && (
         <span
           aria-hidden="true"
@@ -2002,12 +2170,14 @@ function ItemPhoto({
   size,
   variant,
   dim,
+  highlighted,
 }: {
   item: MiniItem;
   qty: number;
   size: number;
   variant: "have" | "candidate" | "wish";
   dim?: boolean;
+  highlighted?: boolean;
 }) {
   const stripeBg = `repeating-linear-gradient(135deg, hsl(${item.hue}, 28%, 86%) 0 4px, hsl(${item.hue}, 28%, 78%) 4px 8px)`;
   const initialShadow = `0 1px 2px hsla(${item.hue}, 30%, 30%, 0.5)`;
@@ -2020,6 +2190,10 @@ function ItemPhoto({
     <div
       className={`relative flex flex-shrink-0 items-center justify-center overflow-hidden rounded-[7px] border shadow-[0_1px_3px_rgba(58,50,74,0.15)] ${borderColor} ${
         dim ? "opacity-50" : ""
+      } ${
+        highlighted
+          ? "ring-2 ring-[#f3c5d4] ring-offset-2 ring-offset-white shadow-[0_0_16px_rgba(243,197,212,0.56)]"
+          : ""
       }`}
       style={{
         width: size,

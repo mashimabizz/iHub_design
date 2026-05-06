@@ -552,18 +552,17 @@ function MasterSelectModal({
 
   const modal = (
     <div
-      className="fixed inset-0 z-[118] flex items-end justify-center bg-black/45 px-0 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[118] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-[2px]"
       role="dialog"
       aria-modal="true"
       aria-label="登録済みの推しを追加"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/80 bg-[#fbf9fc] shadow-[0_-22px_54px_rgba(58,50,74,0.24)]"
+        className="flex h-[min(78dvh,640px)] max-h-[calc(100dvh-48px)] w-full max-w-[380px] flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[#fbf9fc] shadow-[0_22px_58px_rgba(58,50,74,0.24)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex-shrink-0 rounded-t-[28px] bg-white px-5 pb-3 pt-3">
-          <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-[#3a324a1f]" />
+        <div className="flex-shrink-0 bg-white px-5 pb-3 pt-4">
           <div className="mb-4 flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <h2 className="text-[17px] font-extrabold text-[#3a324a]">
@@ -639,7 +638,7 @@ function MasterSelectModal({
           </div>
         </div>
 
-        <div className="flex-1 space-y-2 overflow-y-auto px-5 py-3 pb-[calc(env(safe-area-inset-bottom)+18px)]">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-3 pb-4">
           {filteredOptions.length > 0 ? (
             filteredOptions.map((option) => {
               const selected = selectedGroupIds.has(option.id);

@@ -894,6 +894,7 @@ export function HomeView({
       simpleReceives: [candidate.item],
       simpleGives: candidate.card.myGives,
       simpleProposeHref: buildSimpleProposeHref(candidate),
+      highlightedItemId: candidate.item.id,
     };
   }
 
@@ -1193,6 +1194,7 @@ export function HomeView({
           simpleReceives={[selectedCandidate.item]}
           simpleGives={selectedCandidate.card.myGives}
           simpleProposeHref={buildSimpleProposeHref(selectedCandidate)}
+          highlightedItemId={selectedCandidate.item.id}
           slideDirection={detailSlideDirection}
           previousPage={previousDetailPage}
           nextPage={nextDetailPage}
