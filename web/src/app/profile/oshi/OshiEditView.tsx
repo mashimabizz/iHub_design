@@ -33,6 +33,7 @@ type Group = {
   groupId: string;
   source: GroupSource;
   groupName: string;
+  priority: number;
   members: OshiMember[];
   availableCharacters: { id: string; name: string }[];
 };
@@ -113,6 +114,8 @@ export function OshiEditView({
       ),
     [groups],
   );
+  const nextLocalGroupPriority = () =>
+    Math.max(0, ...groups.map((group) => group.priority)) + 1;
 
   useEffect(() => {
     if (pendingMutationsRef.current === 0) {
@@ -194,6 +197,7 @@ export function OshiEditView({
             groupId: payload.requestId,
             source: "request",
             groupName: payload.name,
+            priority: Math.max(0, ...prev.map((group) => group.priority)) + 1,
             members: [],
             availableCharacters: [],
           },
@@ -241,6 +245,7 @@ export function OshiEditView({
       groupId: option.id,
       source: "master",
       groupName: option.name,
+      priority: nextLocalGroupPriority(),
       members: [],
       availableCharacters: option.characters,
     };

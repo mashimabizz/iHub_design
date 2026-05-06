@@ -7,7 +7,6 @@ import { createClient } from "@/lib/supabase/client";
 import {
   deleteInventoryItem,
   updateInventoryItem,
-  updateInventoryStatus,
 } from "../actions";
 import { TagInput, type TagInputValue } from "@/components/common/TagInput";
 import { syncInventoryTags, type AttachedTag } from "@/lib/tags";
@@ -56,12 +55,6 @@ function splitCharacterValue(v: string): {
   return { characterId: v, characterRequestId: null };
 }
 
-const STATUS_OPTIONS = [
-  { id: "active", label: "譲る候補", color: "#a695d8" },
-  { id: "keep", label: "自分用キープ", color: "#f3c5d4" },
-  { id: "traded", label: "過去に譲った", color: "#9aa3b0" },
-] as const;
-
 export function EditForm({
   item,
   groups,
@@ -80,7 +73,6 @@ export function EditForm({
   const [description, setDescription] = useState(item.description ?? "");
   // condition は iter65.8 で廃止（DB 列は互換のため残置）
   const [quantity, setQuantity] = useState(item.quantity);
-  const [status, setStatus] = useState(item.status);
   const [photoUrls, setPhotoUrls] = useState<string[]>(item.photoUrls);
   const [photoUploading, setPhotoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -201,17 +193,6 @@ export function EditForm({
     if (isReadOnly) return;
     setError(null);
     startTransition(async () => {
-      // status 変更があった場合は別 action で先に
-      if (status !== item.status) {
-        const r = await updateInventoryStatus(
-          item.id,
-          status as "active" | "keep" | "traded" | "archived",
-        );
-        if (r?.error) {
-          setError(r.error);
-          return;
-        }
-      }
       const { characterId, characterRequestId } =
         splitCharacterValue(characterValue);
       // 「その他」以外で title が空なら、auto-title を作る
@@ -570,29 +551,6 @@ export function EditForm({
         />
       </Section>
 
-      {/* ステータス */}
-      <Section label="ステータス">
-        <div className="grid grid-cols-3 gap-2">
-          {STATUS_OPTIONS.map((s) => {
-            const sel = status === s.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setStatus(s.id)}
-                className={`rounded-xl px-2 py-2.5 text-[12px] font-bold transition-all ${
-                  sel
-                    ? "text-white shadow-[0_4px_10px_rgba(0,0,0,0.12)]"
-                    : "border border-[#3a324a14] bg-white text-gray-700"
-                }`}
-                style={sel ? { backgroundColor: s.color } : undefined}
-              >
-                {s.label}
-              </button>
-            );
-          })}
-        </div>
-      </Section>
       </fieldset>
 
       {error && (

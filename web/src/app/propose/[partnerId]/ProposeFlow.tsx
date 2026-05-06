@@ -463,6 +463,7 @@ export function ProposeFlow({
   /* ── 送信状態 ── */
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [submitComplete, setSubmitComplete] = useState(false);
 
   /* ── derived ── */
   const myCount = myItems
@@ -901,11 +902,15 @@ export function ProposeFlow({
         setError(r.error);
         return;
       }
-      router.push("/");
+      setSubmitComplete(true);
     });
   }
 
   /* ─── render ─── */
+
+  if (submitComplete) {
+    return <ProposalComplete partnerHandle={partner.handle} />;
+  }
 
   return (
     <main className="flex flex-1 flex-col bg-[#fbf9fc] pb-[112px] text-[#3a324a]">
@@ -1134,6 +1139,58 @@ export function ProposeFlow({
 }
 
 /* ─── sub-components ────────────────────────────────────── */
+
+function ProposalComplete({ partnerHandle }: { partnerHandle: string }) {
+  return (
+    <main className="flex flex-1 flex-col bg-[#fbf9fc] px-[22px] pb-[max(env(safe-area-inset-bottom),28px)] pt-16 text-[#3a324a]">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center">
+        <div className="relative mb-7 flex h-[178px] w-[178px] items-center justify-center">
+          <span className="absolute left-5 top-2 h-3 w-3 rounded-full bg-[#f3c5d4] shadow-[0_0_16px_rgba(243,197,212,0.62)]" />
+          <span className="absolute right-4 top-8 h-2.5 w-2.5 rounded-full bg-[#a8d4e6] shadow-[0_0_14px_rgba(168,212,230,0.72)]" />
+          <span className="absolute bottom-7 left-2 h-2 w-2 rounded-full bg-[#a695d8] shadow-[0_0_14px_rgba(166,149,216,0.72)]" />
+          <span className="absolute bottom-3 right-8 h-3.5 w-3.5 rounded-full bg-[#f3c5d4] shadow-[0_0_18px_rgba(243,197,212,0.55)]" />
+          <div className="absolute inset-6 rounded-full bg-[conic-gradient(from_210deg,#a695d8,#f3c5d4,#a8d4e6,#a695d8)] opacity-80 blur-[18px]" />
+          <div className="relative flex h-[112px] w-[112px] items-center justify-center rounded-full border border-white/70 bg-white shadow-[0_18px_48px_rgba(166,149,216,0.28)]">
+            <svg width="54" height="54" viewBox="0 0 54 54" aria-hidden="true">
+              <path
+                d="M15 28.5 23.2 37 40 18"
+                fill="none"
+                stroke="#a695d8"
+                strokeWidth="5.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        </div>
+
+        <div className="text-center">
+          <h1 className="text-[24px] font-extrabold tracking-[0.2px] text-gray-900">
+            打診が完了しました
+          </h1>
+          <p className="mt-2 text-[13px] leading-relaxed text-[#3a324a8c]">
+            @{partnerHandle} に打診を送りました。返事が届いたら通知と打診一覧で確認できます。
+          </p>
+        </div>
+
+        <div className="mt-8 grid w-full gap-2.5">
+          <Link
+            href="/"
+            className="block rounded-[14px] border border-[#3a324a14] bg-white px-6 py-[14px] text-center text-[13.5px] font-extrabold text-[#3a324a] shadow-[0_4px_14px_rgba(58,50,74,0.06)] active:scale-[0.98]"
+          >
+            まだ他に探す
+          </Link>
+          <Link
+            href="/proposals"
+            className="block rounded-[14px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-6 py-[14px] text-center text-[13.5px] font-extrabold tracking-[0.3px] text-white shadow-[0_6px_18px_rgba(166,149,216,0.34)] active:scale-[0.98]"
+          >
+            打診一覧に飛ぶ
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}
 
 function ChevronLeft() {
   return (

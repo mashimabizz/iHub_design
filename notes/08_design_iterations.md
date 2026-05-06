@@ -4,6 +4,84 @@
 
 ---
 
+## イテレーション154.35：関係図候補整理と打診完了演出
+
+### 背景・問題意識
+
+オーナーから、推し設定で登録のたびにグループ表示順が前後して混乱すること、関係図で条件外の選択肢が個別にグレーアウトされて悲しく見えること、打診後の完了体験が淡泊なこと、マイ在庫編集でステータスを変えられることへの懸念が出た。
+
+また、管理者画面については先に「何を載せるべきか」「どうログインさせるべきか」を設計整理する段階とした。
+
+### 変更内容
+
+#### `web/src/app/profile/actions.ts`
+- 箱推しから個別メンバー追加へ切り替える際、親グループの既存 priority を保持するようにした。
+- 承認待ちメンバー追加リクエストでも同じ priority 保持ロジックを使い、登録のたびにグループ順が動かないようにした。
+- 最後のメンバー削除で箱推し行へ戻す場合も、削除対象行の priority を引き継ぐようにした。
+
+#### `web/src/app/profile/oshi/page.tsx`
+- 推しグループ集約時に group priority を保持し、`priority -> groupName` の安定順で表示するようにした。
+
+#### `web/src/app/profile/oshi/OshiEditView.tsx`
+- 楽観更新で追加する master / request グループにも priority を付け、サーバー再読込前後で並び順が崩れにくいようにした。
+
+#### `web/src/components/home/MatchDetailModal.tsx`
+- 関係図上部の説明文を削除した。
+- 条件に合う wish 候補をすべて上へ集め、条件外の選択肢は最下部の「＋ 条件外の選択肢」内へまとめた。
+- 条件外リストは畳んだ状態を初期表示にし、必要な時だけ展開できるようにした。
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 通常の打診送信後にホームへ即遷移せず、「打診が完了しました」画面を表示するようにした。
+- 完了画面には華やかなチェック演出と、「まだ他に探す」「打診一覧に飛ぶ」の2導線を配置した。
+
+#### `web/src/app/inventory/[id]/EditForm.tsx`
+- マイ在庫編集画面からステータス更新セクションを削除した。
+- 在庫の状態変更は一覧側の専用導線に寄せ、編集画面ではグッズ情報編集に集中させる。
+
+### 管理者画面の初期設計案
+
+- 管理者入口は `/admin` とし、通常ユーザー画面とはナビゲーションを分離する。
+- ログインは「隠しURL」ではなく、Supabase Auth の通常ログインに加えて `admin_users` または `users.role = 'admin'` のサーバー側チェックで制御する。
+- 管理者操作は RLS / server action の両方で admin 判定し、すべて監査ログへ `actor / action / target / before / after / reason` を残す。
+- 初期搭載機能は、推し・メンバー追加リクエスト審査、通報・異議申し立て対応、ユーザー停止・警告、マスタ管理、取引ステータス監視、運営お知らせ、基本指標ダッシュボードを優先する。
+- UI はスマホ用ボトムナビではなく、PC 向けの左サイドバー + 検索 + 審査キュー + テーブル中心にする。
+- 破壊的操作は理由入力必須、確認モーダル必須、取り消し可能な soft action を優先する。
+
+### 影響範囲
+
+- `/profile/oshi` 推し設定
+- ホームから開く関係図モーダル
+- `/propose/[partnerId]` 打診送信後
+- `/inventory/[id]` マイ在庫編集
+- 管理者画面は設計案のみで、実装は未着手
+
+### 確認方法
+
+- `npx eslint src/app/profile/actions.ts src/app/profile/oshi/page.tsx src/app/profile/oshi/OshiEditView.tsx src/components/home/MatchDetailModal.tsx 'src/app/propose/[partnerId]/ProposeFlow.tsx' 'src/app/inventory/[id]/EditForm.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`（Google Fonts 取得のためネットワーク権限付きで通過）
+
+### 関連ファイル
+
+- `web/src/app/profile/actions.ts`
+- `web/src/app/profile/oshi/page.tsx`
+- `web/src/app/profile/oshi/OshiEditView.tsx`
+- `web/src/components/home/MatchDetailModal.tsx`
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- `web/src/app/inventory/[id]/EditForm.tsx`
+
+### セルフレビュー結果
+
+- ✅ 推し設定の表示順は priority を基準に安定化し、追加・削除・仮登録の楽観更新にも反映した
+- ✅ 関係図の条件外候補は下部の単一アーカイブに集約し、条件合致候補を先に見せる設計へ変更した
+- ✅ 打診完了後の体験に完了演出と次アクション導線を追加した
+- ✅ マイ在庫編集からステータス変更 UI を削除し、意図しない状態変更のリスクを下げた
+- ✅ 新しい取引状態・在庫状態・用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.34：待ち合わせを交換できる候補へ刷新
 
 ### 背景・問題意識

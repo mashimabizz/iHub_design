@@ -105,6 +105,7 @@ export default async function ProfileOshiPage({ searchParams }: Props) {
     groupId: string;
     source: GroupSource;
     groupName: string;
+    priority: number;
     members: Member[];
     availableCharacters: { id: string; name: string }[];
   };
@@ -128,9 +129,15 @@ export default async function ProfileOshiPage({ searchParams }: Props) {
         groupId,
         source,
         groupName,
+        priority: row.priority,
         members: [],
         availableCharacters: [],
       });
+    } else {
+      groupMap.get(mapKey)!.priority = Math.min(
+        groupMap.get(mapKey)!.priority,
+        row.priority,
+      );
     }
 
     if (row.character_id) {
@@ -171,7 +178,11 @@ export default async function ProfileOshiPage({ searchParams }: Props) {
       .map((c) => ({ id: c.id, name: c.name }));
   }
 
-  const oshiGroups = Array.from(groupMap.values());
+  const oshiGroups = Array.from(groupMap.values()).sort(
+    (a, b) =>
+      a.priority - b.priority ||
+      a.groupName.localeCompare(b.groupName, "ja"),
+  );
   const charactersByGroup = new Map<
     string,
     { id: string; name: string }[]

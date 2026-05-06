@@ -899,22 +899,6 @@ export function MatchDetailModal({
       </header>
 
       <div className="mx-auto w-full max-w-md flex-1 overflow-y-auto px-[18px] py-4">
-        <div className="mb-3 rounded-[10px] bg-[#a695d810] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#3a324a]">
-          <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
-            🔗 関係図
-          </span>
-          {hasSimpleRelation ? (
-            <>
-              譲 × wish で成立しそうな候補です。内容を確認して打診へ進めます。
-            </>
-          ) : (
-            <>
-              各 wish の候補を<b>写真で確認</b>して、受け取りたい / 出せるものを
-              タップで選択。下の「打診に進む」で確認画面に進みます。
-            </>
-          )}
-        </div>
-
         {myListings.length > 0 && (
           <SectionGroup
             title="あなたの個別募集"
@@ -1122,20 +1106,6 @@ function SwipePreviewPage({
       </header>
 
       <div className="mx-auto w-full max-w-md flex-1 overflow-y-hidden px-[18px] py-4">
-        <div className="mb-3 rounded-[10px] bg-[#a695d810] px-3 py-2.5 text-[11.5px] leading-relaxed text-[#3a324a]">
-          <span className="mr-1.5 inline-block rounded-full bg-white px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-[0.4px] text-[#a695d8]">
-            🔗 関係図
-          </span>
-          {hasSimpleRelation ? (
-            <>譲 × wish で成立しそうな候補です。内容を確認して打診へ進めます。</>
-          ) : (
-            <>
-              各 wish の候補を<b>写真で確認</b>して、受け取りたい / 出せるものを
-              タップで選択。下の「打診に進む」で確認画面に進みます。
-            </>
-          )}
-        </div>
-
         {page.myListings.length > 0 && (
           <SectionGroup
             title="あなたの個別募集"
@@ -1753,9 +1723,22 @@ function OptionList({
       </div>
     );
   }
+  const matchingOptions = [...validOptions]
+    .filter((option) => option.wishes.some((wish) => wish.candidates.length > 0))
+    .sort((a, b) => {
+      if (a.matched !== b.matched) return Number(b.matched) - Number(a.matched);
+      return a.position - b.position;
+    });
+  const unavailableGroups = validOptions
+    .map((option) => ({
+      option,
+      wishes: option.wishes.filter((wish) => wish.candidates.length === 0),
+    }))
+    .filter((group) => group.wishes.length > 0);
+
   return (
     <div className="space-y-2">
-      {validOptions.map((opt) => (
+      {matchingOptions.map((opt) => (
         <OptionGroup
           key={opt.id}
           option={opt}
@@ -1768,6 +1751,10 @@ function OptionList({
           viewpoint={viewpoint}
         />
       ))}
+      <UnavailableWishArchive
+        groups={unavailableGroups}
+        fallbackHavePhoto={fallbackHavePhoto}
+      />
     </div>
   );
 }
@@ -1795,11 +1782,7 @@ function OptionGroup({
 }) {
   const isAndGroup = option.logic === "and" && option.wishes.length > 1;
   const isOrGroup = option.logic === "or" && option.wishes.length > 1;
-  const [showUnavailable, setShowUnavailable] = useState(false);
-  const visibleWishes = option.wishes.filter(
-    (wish) => showUnavailable || wish.candidates.length > 0,
-  );
-  const hiddenUnavailableCount = option.wishes.length - visibleWishes.length;
+  const visibleWishes = option.wishes.filter((wish) => wish.candidates.length > 0);
 
   const renderRow = (w: typeof option.wishes[number]) => (
     <WishRow
@@ -1826,18 +1809,7 @@ function OptionGroup({
       }
     />
   );
-  const unavailableToggle =
-    hiddenUnavailableCount > 0 || showUnavailable ? (
-      <button
-        type="button"
-        onClick={() => setShowUnavailable((v) => !v)}
-        className="mt-1 w-full rounded-[10px] border border-dashed border-[#3a324a18] bg-white px-2.5 py-2 text-[10px] font-extrabold text-[#3a324a8c] active:scale-[0.99]"
-      >
-        {showUnavailable
-          ? "閉じる"
-          : `＋ 交換できない候補 ${hiddenUnavailableCount} 件`}
-      </button>
-    ) : null;
+  if (visibleWishes.length === 0) return null;
 
   // AND グループ：紫枠で囲んで「セット」を強調
   if (isAndGroup) {
@@ -1850,7 +1822,6 @@ function OptionGroup({
           <span className="text-[#3a324a8c]">全部一緒に</span>
         </div>
         <div className="space-y-1">{visibleWishes.map(renderRow)}</div>
-        {unavailableToggle}
       </div>
     );
   }
@@ -1866,18 +1837,62 @@ function OptionGroup({
           <span className="text-[#3a324a8c]">どれか 1 つで OK</span>
         </div>
         <div className="space-y-1">{visibleWishes.map(renderRow)}</div>
-        {unavailableToggle}
       </div>
     );
   }
 
   // 単一 wish：そのまま 1 行
-  if (visibleWishes.length === 0) return <>{unavailableToggle}</>;
   return (
     <>
       {visibleWishes.map(renderRow)}
-      {unavailableToggle}
     </>
+  );
+}
+
+function UnavailableWishArchive({
+  groups,
+  fallbackHavePhoto,
+}: {
+  groups: { option: MatchCardOption; wishes: MatchCardOption["wishes"] }[];
+  fallbackHavePhoto: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const total = groups.reduce((sum, group) => sum + group.wishes.length, 0);
+  if (total === 0) return null;
+
+  return (
+    <div className="pt-0.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-center gap-1 rounded-[10px] border border-dashed border-[#3a324a18] bg-white px-2.5 py-2 text-[10px] font-extrabold text-[#3a324a8c] active:scale-[0.99]"
+      >
+        <span>{open ? "−" : "＋"}</span>
+        <span>{open ? "閉じる" : `条件外の選択肢 ${total} 件`}</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2 rounded-[12px] border border-[#3a324a0f] bg-[#3a324a04] p-2">
+          {groups.map(({ option, wishes }) => (
+            <div key={option.id} className="space-y-1">
+              <div className="flex items-center gap-1 px-1 text-[9px] font-bold text-[#3a324a66]">
+                <span>#{option.position}</span>
+                {option.logic === "and" && wishes.length > 1 && <span>セット</span>}
+                {option.logic === "or" && wishes.length > 1 && <span>いずれか</span>}
+              </div>
+              {wishes.map((wish) => (
+                <UnavailableWishRow
+                  key={`${option.id}-${wish.item.id}`}
+                  wishItem={wish.item}
+                  qty={wish.qty}
+                  fallbackHavePhoto={fallbackHavePhoto}
+                  exchangeType={option.exchangeType}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2012,6 +2027,53 @@ function exchangeChipStyle(
   return {
     background: `linear-gradient(135deg, ${EXCHANGE_SAME_COLOR}, ${EXCHANGE_CROSS_COLOR})`,
   };
+}
+
+function UnavailableWishRow({
+  wishItem,
+  qty,
+  fallbackHavePhoto,
+  exchangeType,
+}: {
+  wishItem: MiniItem;
+  qty: number;
+  fallbackHavePhoto: string | null;
+  exchangeType: "same_kind" | "cross_kind" | "any";
+}) {
+  const hasWishPhoto = !!wishItem.photoUrl;
+  const showFallback = !hasWishPhoto && !!fallbackHavePhoto;
+  return (
+    <div className="flex items-center gap-2 rounded-[10px] border border-[#3a324a08] bg-white/70 px-2.5 py-2 opacity-60">
+      <div className="relative flex-shrink-0">
+        <ItemPhoto
+          item={hasWishPhoto ? wishItem : { ...wishItem, photoUrl: fallbackHavePhoto }}
+          qty={1}
+          size={38}
+          variant="wish"
+          dim
+        />
+        {showFallback && (
+          <span
+            className="absolute -bottom-1 -right-1 rounded-full px-1 py-[1px] text-[8px] font-extrabold text-white shadow-[0_1px_3px_rgba(58,50,74,0.3)]"
+            style={exchangeChipStyle(exchangeType)}
+          >
+            {EXCHANGE_LABEL_FULL[exchangeType]}
+          </span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1 text-[11px]">
+          <span className="truncate font-extrabold text-[#3a324a]">
+            {wishItem.label}
+          </span>
+          <span className="font-bold tabular-nums text-[#3a324a8c]">×{qty}</span>
+        </div>
+        <div className="mt-0.5 text-[9.5px] font-bold text-[#3a324a8c]">
+          条件に合う候補なし
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function WishRow({

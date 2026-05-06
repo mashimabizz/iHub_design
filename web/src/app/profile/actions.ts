@@ -47,24 +47,50 @@ async function getNextUserOshiPriority(
   return (maxRow?.priority ?? 0) + 1;
 }
 
-async function getNextParentPriority(
+async function getParentPriorityRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   target: { groupId?: string; oshiRequestId?: string },
-): Promise<number> {
+): Promise<
+  {
+    priority: number;
+    character_id: string | null;
+    character_request_id: string | null;
+  }[]
+> {
   let query = supabase
     .from("user_oshi")
-    .select("priority")
+    .select("priority, character_id, character_request_id")
     .eq("user_id", userId)
-    .order("priority", { ascending: false })
-    .limit(1);
+    .order("priority", { ascending: true });
 
   query = target.groupId
     ? query.eq("group_id", target.groupId)
     : query.eq("oshi_request_id", target.oshiRequestId!);
 
-  const { data: maxRow } = await query.maybeSingle();
-  return (maxRow?.priority ?? 0) + 1;
+  const { data } = await query;
+  return (data ?? []) as {
+    priority: number;
+    character_id: string | null;
+    character_request_id: string | null;
+  }[];
+}
+
+function nextPriorityPreservingParent(
+  rows: {
+    priority: number;
+    character_id: string | null;
+    character_request_id: string | null;
+  }[],
+): number {
+  if (rows.length === 0) return 1;
+  const hasSpecific = rows.some(
+    (row) => row.character_id != null || row.character_request_id != null,
+  );
+  if (hasSpecific) {
+    return Math.max(...rows.map((row) => row.priority)) + 1;
+  }
+  return Math.min(...rows.map((row) => row.priority));
 }
 
 /**
@@ -312,6 +338,10 @@ export async function addCharacterToOshi(input: {
 
   if (existing) return undefined; // 何もしない
 
+  const priorityRows = await getParentPriorityRows(supabase, user.id, {
+    groupId: input.groupId,
+  });
+
   // 「箱推し」エントリ（character_id = null）が同 group にあれば、それを delete してから個別を追加
   await supabase
     .from("user_oshi")
@@ -321,16 +351,7 @@ export async function addCharacterToOshi(input: {
     .is("character_id", null)
     .is("character_request_id", null);
 
-  // priority は同 group の最大値+1（無ければ 1）
-  const { data: maxRow } = await supabase
-    .from("user_oshi")
-    .select("priority")
-    .eq("user_id", user.id)
-    .eq("group_id", input.groupId)
-    .order("priority", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const nextPriority = (maxRow?.priority ?? 0) + 1;
+  const nextPriority = nextPriorityPreservingParent(priorityRows);
 
   const { error } = await supabase.from("user_oshi").insert({
     user_id: user.id,
@@ -425,7 +446,8 @@ export async function requestCharacterAndAddToProfile(input: {
     return { error: deleteBoxError.message };
   }
 
-  const nextPriority = await getNextParentPriority(supabase, user.id, target);
+  const priorityRows = await getParentPriorityRows(supabase, user.id, target);
+  const nextPriority = nextPriorityPreservingParent(priorityRows);
   const { error: addError } = await supabase.from("user_oshi").insert({
     user_id: user.id,
     group_id: target.groupId ?? null,
@@ -494,6 +516,19 @@ export async function removeCharacterFromOshi(
     oshiRequestId: input.oshiRequestId,
   };
 
+  let targetRowQuery = supabase
+    .from("user_oshi")
+    .select("priority")
+    .eq("user_id", user.id)
+    .limit(1);
+  targetRowQuery = target.groupId
+    ? targetRowQuery.eq("group_id", target.groupId)
+    : targetRowQuery.eq("oshi_request_id", target.oshiRequestId!);
+  targetRowQuery = input.characterId
+    ? targetRowQuery.eq("character_id", input.characterId)
+    : targetRowQuery.eq("character_request_id", input.characterRequestId!);
+  const { data: targetRow } = await targetRowQuery.maybeSingle();
+
   let deleteQuery = supabase
     .from("user_oshi")
     .delete()
@@ -528,7 +563,7 @@ export async function removeCharacterFromOshi(
       character_id: null,
       character_request_id: null,
       kind: "box",
-      priority: 1,
+      priority: (targetRow?.priority as number | undefined) ?? 1,
     });
   }
 
