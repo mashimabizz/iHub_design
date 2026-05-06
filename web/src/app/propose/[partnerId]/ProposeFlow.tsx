@@ -79,6 +79,11 @@ type MeetupCandidatePayload = {
   lng: number;
   mode: MeetupMode;
 };
+type MeetupDragSelection = {
+  dayIndex: number;
+  startSlot: number;
+  currentSlot: number;
+};
 
 // iter138: "message" step は廃止（confirm でメッセージ入力可）
 type Step = "select" | "confirm";
@@ -201,6 +206,15 @@ function slotToTokyoLocal(dateKey: string, slot: number): string {
   const hour = Math.floor(minutes / 60);
   const minute = minutes % 60;
   return `${dateKey}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function nowTokyoParts() {
+  const p = splitTokyoLocal(formatTokyoLocalFromDate(new Date()));
+  if (!p) return null;
+  return {
+    ...p,
+    minutes: Number(p.h) * 60 + Number(p.mi),
+  };
 }
 
 function localToCalendarSlot(local: string): number | null {
@@ -1613,17 +1627,16 @@ function WeekMeetupCalendar({
   onOpenPlaceSheet: (id: string) => void;
   onShiftWeek: (direction: 1 | -1) => void;
 }) {
-  const [drag, setDrag] = useState<{
-    dayIndex: number;
-    startSlot: number;
-    currentSlot: number;
-  } | null>(null);
+  const [drag, setDrag] = useState<MeetupDragSelection | null>(null);
+  const dragRef = useRef<MeetupDragSelection | null>(null);
+  const [nowParts, setNowParts] = useState(nowTokyoParts);
   const calendarSwipeRef = useRef<{
     startX: number;
     startY: number;
   } | null>(null);
   const touchPressRef = useRef<{
     timer: number;
+    armed: boolean;
     dayIndex: number;
     startSlot: number;
     identifier: number;
@@ -1639,6 +1652,24 @@ function WeekMeetupCalendar({
   }
 
   useEffect(() => clearTouchPress, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowParts(nowTokyoParts());
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  function setDragSelection(selection: MeetupDragSelection | null) {
+    dragRef.current = selection;
+    setDrag(selection);
+  }
+
+  function updateDragSelection(currentSlot: number) {
+    const prev = dragRef.current;
+    if (!prev) return;
+    setDragSelection({ ...prev, currentSlot });
+  }
 
   function slotFromPointer(
     e: PointerEvent<HTMLDivElement>,
@@ -1677,13 +1708,13 @@ function WeekMeetupCalendar({
     return null;
   }
 
-  function normalizedDragRange(selection: NonNullable<typeof drag>) {
+  function normalizedDragRange(selection: MeetupDragSelection) {
     const startSlot = Math.min(selection.startSlot, selection.currentSlot);
     const endSlot = Math.max(selection.startSlot, selection.currentSlot) + 1;
     return { startSlot, endSlot };
   }
 
-  function commitDrag(selection: NonNullable<typeof drag>) {
+  function commitDrag(selection: MeetupDragSelection) {
     const { startSlot, endSlot } = normalizedDragRange(selection);
     const dateKey = weekDateKeys[selection.dayIndex];
     onTimeRangeSelect(
@@ -1701,25 +1732,26 @@ function WeekMeetupCalendar({
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     const slot = slotFromPointer(e, e.currentTarget);
-    setDrag({ dayIndex, startSlot: slot, currentSlot: slot });
+    setDragSelection({ dayIndex, startSlot: slot, currentSlot: slot });
   }
 
   function handlePointerMove(e: PointerEvent<HTMLDivElement>) {
-    if (!drag) return;
+    if (!dragRef.current) return;
     if (e.pointerType !== "touch") e.preventDefault();
     const slot = slotFromPointer(e, e.currentTarget);
-    setDrag((prev) => (prev ? { ...prev, currentSlot: slot } : prev));
+    updateDragSelection(slot);
   }
 
   function handlePointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (!drag) return;
+    const selection = dragRef.current;
+    if (!selection) return;
     if (e.pointerType !== "touch") e.preventDefault();
     const next = {
-      ...drag,
+      ...selection,
       currentSlot: slotFromPointer(e, e.currentTarget),
     };
     commitDrag(next);
-    setDrag(null);
+    setDragSelection(null);
   }
 
   function handleDayTouchStart(
@@ -1732,11 +1764,13 @@ function WeekMeetupCalendar({
     const target = e.currentTarget;
     const startSlot = slotFromTouch(touch, target);
     const timer = window.setTimeout(() => {
-      setDrag({ dayIndex, startSlot, currentSlot: startSlot });
-      touchPressRef.current = null;
+      if (!touchPressRef.current) return;
+      touchPressRef.current.armed = true;
+      setDragSelection({ dayIndex, startSlot, currentSlot: startSlot });
     }, MEETUP_LONG_PRESS_MS);
     touchPressRef.current = {
       timer,
+      armed: false,
       dayIndex,
       startSlot,
       identifier: touch.identifier,
@@ -1755,42 +1789,53 @@ function WeekMeetupCalendar({
       }
       const dx = touch.clientX - press.startX;
       const dy = touch.clientY - press.startY;
-      if (
-        Math.hypot(dx, dy) > MEETUP_TOUCH_CANCEL_PX ||
-        Math.abs(dy) > MEETUP_TOUCH_CANCEL_PX
-      ) {
-        clearTouchPress();
+      if (!press.armed) {
+        if (
+          Math.hypot(dx, dy) > MEETUP_TOUCH_CANCEL_PX ||
+          Math.abs(dy) > MEETUP_TOUCH_CANCEL_PX
+        ) {
+          clearTouchPress();
+        }
+        return;
       }
+      e.preventDefault();
+      e.stopPropagation();
+      updateDragSelection(slotFromTouch(touch, e.currentTarget));
       return;
     }
 
-    if (!drag) return;
+    if (!dragRef.current) return;
     const touch = e.touches[0];
     if (!touch) return;
     e.preventDefault();
     e.stopPropagation();
-    const slot = slotFromTouch(touch, e.currentTarget);
-    setDrag((prev) => (prev ? { ...prev, currentSlot: slot } : prev));
+    updateDragSelection(slotFromTouch(touch, e.currentTarget));
   }
 
   function handleDayTouchEnd(e: TouchEvent<HTMLDivElement>) {
+    const selection = dragRef.current;
+    const press = touchPressRef.current;
     clearTouchPress();
-    if (!drag) return;
-    const touch = e.changedTouches[0];
+    if (!selection || !press?.armed) {
+      setDragSelection(null);
+      return;
+    }
+    const touch =
+      findTouch(e.changedTouches, press.identifier) ?? e.changedTouches[0];
     if (!touch) return;
     e.preventDefault();
     e.stopPropagation();
     const next = {
-      ...drag,
+      ...selection,
       currentSlot: slotFromTouch(touch, e.currentTarget),
     };
     commitDrag(next);
-    setDrag(null);
+    setDragSelection(null);
   }
 
   function handleDayTouchCancel() {
     clearTouchPress();
-    setDrag(null);
+    setDragSelection(null);
   }
 
   const preview =
@@ -1800,6 +1845,17 @@ function WeekMeetupCalendar({
           dayIndex: drag.dayIndex,
           ...normalizedDragRange(drag),
         };
+  const todayIndex = nowParts ? weekDateKeys.indexOf(nowParts.dateKey) : -1;
+  const currentTimeTop =
+    nowParts && todayIndex >= 0
+      ? ((nowParts.minutes - MEETUP_CALENDAR_START_HOUR * 60) /
+          MEETUP_SLOT_MINUTES) *
+        MEETUP_SLOT_HEIGHT
+      : null;
+  const showCurrentTime =
+    currentTimeTop != null &&
+    currentTimeTop >= 0 &&
+    currentTimeTop <= MEETUP_SLOT_COUNT * MEETUP_SLOT_HEIGHT;
 
   function handleCalendarTouchStart(e: TouchEvent<HTMLDivElement>) {
     if (e.touches.length !== 1) return;
@@ -1837,7 +1893,11 @@ function WeekMeetupCalendar({
             <div
               key={dateKey}
               className={`px-0.5 pb-2 pt-3 text-center ${
-                index === 0 ? "text-[#a695d8]" : "text-[#3a324acc]"
+                index === todayIndex
+                  ? "bg-[#a695d814] text-[#a695d8]"
+                  : index === 0
+                    ? "text-[#a695d8]"
+                    : "text-[#3a324acc]"
               }`}
             >
               <div className="text-[10px] font-extrabold">
@@ -1875,17 +1935,27 @@ function WeekMeetupCalendar({
               {hour}:00
             </div>
           ))}
+          {showCurrentTime && (
+            <div
+              className="absolute right-1 z-20 -translate-y-1/2 rounded-full bg-[#a695d8] px-1.5 py-[1px] text-[8.5px] font-extrabold leading-tight text-white shadow-[0_2px_6px_rgba(166,149,216,0.28)]"
+              style={{ top: currentTimeTop ?? 0 }}
+            >
+              今
+            </div>
+          )}
         </div>
         {weekDateKeys.map((dateKey, dayIndex) => (
           <div
             key={dateKey}
-            className="relative select-none border-r border-[#3a324a0d] last:border-r-0 [-webkit-touch-callout:none] [-webkit-user-select:none]"
+            className={`relative select-none border-r border-[#3a324a0d] last:border-r-0 [-webkit-touch-callout:none] [-webkit-user-select:none] ${
+              dayIndex === todayIndex ? "bg-[#a695d80a]" : ""
+            }`}
             onPointerDown={(e) => handlePointerDown(e, dayIndex)}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={() => {
               clearTouchPress();
-              setDrag(null);
+              setDragSelection(null);
             }}
             onTouchStart={(e) => handleDayTouchStart(e, dayIndex)}
             onTouchMove={handleDayTouchMove}
@@ -1900,6 +1970,14 @@ function WeekMeetupCalendar({
                 style={{ top: hourIndex * 4 * MEETUP_SLOT_HEIGHT }}
               />
             ))}
+            {showCurrentTime && dayIndex === todayIndex && (
+              <div
+                className="pointer-events-none absolute left-0 right-0 z-20 border-t-2 border-[#a695d8] shadow-[0_0_8px_rgba(166,149,216,0.38)]"
+                style={{ top: currentTimeTop ?? 0 }}
+              >
+                <span className="absolute -left-[3px] top-[-4px] h-2 w-2 rounded-full bg-[#a695d8]" />
+              </div>
+            )}
             {candidates.map((candidate, index) => {
               const block = getCalendarBlock(candidate, weekDateKeys);
               if (!block || block.dayIndex !== dayIndex) return null;
@@ -1912,7 +1990,7 @@ function WeekMeetupCalendar({
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => {
                     onSelectCandidate(candidate.id);
-                    if (!candidate.place.trim()) onOpenPlaceSheet(candidate.id);
+                    onOpenPlaceSheet(candidate.id);
                   }}
                   className={`absolute left-[4px] right-[4px] rounded-[8px] border px-1.5 py-1 text-left text-[8.5px] font-extrabold leading-tight shadow-[0_3px_9px_rgba(166,149,216,0.2)] ${
                     active ? "ring-2 ring-[#f3c5d4]" : ""
