@@ -4,6 +4,49 @@
 
 ---
 
+## イテレーション154.49：送信確認の待ち合わせ表示を地図中心に整理
+
+### 背景・問題意識
+
+オーナーから、提示物の選択フローの送信確認画面ではカレンダー表示は不要で、メッセージも任意のままでよく、プレースホルダーにも余計な文言を入れないでほしいという指摘があった。
+
+送信確認では、すでに待ち合わせタブで時間候補を作成済みなので、もう一度カレンダーを見せるより、場所のピンと候補詳細だけを見せた方が最終確認として軽い。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 送信確認画面の `MeetupPlanPreview` からカレンダー表示を削除した。
+- 待ち合わせ候補の確認カードを、地図 + 候補詳細リストだけの構成にした。
+- カレンダー表示に使っていた送信確認専用の計算処理を削除した。
+- メッセージ欄の placeholder を削除し、任意入力に余計な誘導文が出ないようにした。
+
+### 影響範囲
+
+- `/propose/[partnerId]` 送信確認画面
+- 待ち合わせ候補プレビュー
+- メッセージ入力欄
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ 送信確認からカレンダー表示を削除
+- ✅ 地図と候補詳細だけで待ち合わせ内容を確認できる
+- ✅ メッセージ欄の placeholder を削除し、任意入力の圧を下げた
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.48：MapTiler未設定時の地図フォールバックを軽量化
 
 ### 背景・問題意識

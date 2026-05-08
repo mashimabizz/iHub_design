@@ -2352,7 +2352,6 @@ function ConfirmStep({
           onChange={(e) => onMessageChange(e.target.value)}
           rows={5}
           maxLength={400}
-          placeholder="一言ひとこと書いておくとスムーズです（例：当日よろしくお願いします）"
           className="block w-full resize-none rounded-[14px] border-[0.5px] border-[#3a324a14] bg-white p-3 text-[13px] leading-relaxed text-[#3a324a] placeholder:text-[#3a324a4d] focus:border-[#a695d8] focus:outline-none"
         />
       </Section>
@@ -2431,59 +2430,13 @@ function getMeetupPreviewMarkers(
   }));
 }
 
-function getMeetupCalendarPreviewWindow(candidates: MeetupCandidate[]) {
-  const slots = candidates.flatMap((candidate) => {
-    const startSlot = localToCalendarSlot(candidate.start);
-    const endSlot = localToCalendarSlot(candidate.end);
-    if (startSlot == null || endSlot == null) return [];
-    return [startSlot, endSlot];
-  });
-  if (slots.length === 0) {
-    return { startSlot: 32, endSlot: 88 };
-  }
-  const minSlot = Math.min(...slots);
-  const maxSlot = Math.max(...slots);
-  return {
-    startSlot: Math.max(0, Math.floor(minSlot / 4) * 4 - 4),
-    endSlot: Math.min(MEETUP_SLOT_COUNT, Math.ceil(maxSlot / 4) * 4 + 4),
-  };
-}
-
 function MeetupPlanPreview({
   candidates,
 }: {
   candidates: MeetupCandidate[];
 }) {
-  const weekDateKeys = buildMeetupWeekDateKeys(candidates[0]?.start);
   const markers = getMeetupPreviewMarkers(candidates);
   const mapCenter = getMeetupMapCenter(candidates);
-  const previewWindow = getMeetupCalendarPreviewWindow(candidates);
-  const slotHeight = 6;
-  const calendarHeight = Math.max(
-    138,
-    (previewWindow.endSlot - previewWindow.startSlot) * slotHeight,
-  );
-  const calendarBlocks = candidates.flatMap((candidate, index) => {
-    const start = splitTokyoLocal(candidate.start);
-    const end = splitTokyoLocal(candidate.end);
-    const startSlot = localToCalendarSlot(candidate.start);
-    const endSlot = localToCalendarSlot(candidate.end);
-    if (!start || !end || start.dateKey !== end.dateKey) return [];
-    if (startSlot == null || endSlot == null) return [];
-    const dayIndex = weekDateKeys.indexOf(start.dateKey);
-    if (dayIndex < 0) return [];
-    return [
-      {
-        candidate,
-        index,
-        dayIndex,
-        top: (startSlot - previewWindow.startSlot) * slotHeight,
-        height: Math.max(slotHeight * 2, (endSlot - startSlot) * slotHeight),
-      },
-    ];
-  });
-  const hourStart = Math.ceil(previewWindow.startSlot / 4);
-  const hourEnd = Math.floor(previewWindow.endSlot / 4);
 
   return (
     <div className="overflow-hidden rounded-[18px] border border-[#3a324a14] bg-white shadow-[0_8px_24px_rgba(58,50,74,0.07)]">
@@ -2496,83 +2449,7 @@ function MeetupPlanPreview({
         </div>
       </div>
 
-      <div className="border-b border-[#3a324a12]">
-        <div className="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a0d] bg-white">
-          <div />
-          {weekDateKeys.map((dateKey, index) => (
-            <div
-              key={dateKey}
-              className={`px-0.5 py-2 text-center ${
-                index === 0 ? "text-[#a695d8]" : "text-[#3a324acc]"
-              }`}
-            >
-              <div className="text-[9px] font-extrabold">
-                {formatDateKeyWeekday(dateKey)}
-              </div>
-              <div className="mt-0.5 text-[15px] font-extrabold leading-none tabular-nums">
-                {formatDateKeyDayNumber(dateKey)}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div
-          className="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] bg-[#fbf9fc]"
-          style={{ height: calendarHeight }}
-        >
-          <div className="relative border-r border-[#3a324a0d] bg-white">
-            {Array.from(
-              { length: Math.max(0, hourEnd - hourStart + 1) },
-              (_, index) => hourStart + index,
-            ).map((hour) => (
-              <div
-                key={hour}
-                className="absolute right-1 text-[9px] font-bold text-[#3a324a70]"
-                style={{
-                  top:
-                    (hour * 4 - previewWindow.startSlot) * slotHeight - 4,
-                }}
-              >
-                {hour}:00
-              </div>
-            ))}
-          </div>
-          {weekDateKeys.map((dateKey, dayIndex) => (
-            <div
-              key={dateKey}
-              className="relative border-r border-[#3a324a0d] last:border-r-0"
-            >
-              {Array.from(
-                { length: Math.max(0, hourEnd - hourStart + 1) },
-                (_, index) => hourStart + index,
-              ).map((hour) => (
-                <div
-                  key={hour}
-                  className="absolute inset-x-0 border-t border-[#3a324a08]"
-                  style={{
-                    top: (hour * 4 - previewWindow.startSlot) * slotHeight,
-                  }}
-                />
-              ))}
-              {calendarBlocks
-                .filter((block) => block.dayIndex === dayIndex)
-                .map((block) => (
-                  <div
-                    key={block.candidate.id}
-                    className="absolute left-[3px] right-[3px] rounded-[7px] border border-[#a695d8] bg-[#a695d8] px-1 py-0.5 text-[8px] font-extrabold leading-tight text-white shadow-[0_3px_9px_rgba(166,149,216,0.22)]"
-                    style={{
-                      top: block.top,
-                      height: block.height,
-                    }}
-                  >
-                    <span className="block truncate">候補{block.index + 1}</span>
-                  </div>
-                ))}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="h-[184px] w-full bg-[#e8eef0]">
+      <div className="h-[210px] w-full border-b border-[#3a324a12] bg-[#e8eef0]">
         <ProposeMapPicker
           center={mapCenter}
           radiusM={120}
