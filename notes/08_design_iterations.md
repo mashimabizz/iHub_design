@@ -4,6 +4,49 @@
 
 ---
 
+## イテレーション154.64：待ち合わせ候補の長押しリフト表現を追加
+
+### 背景・問題意識
+
+オーナーから、一度設定した待ち合わせ時間候補について、長押ししたときに候補がふわっと浮く感じにして、動かせる対象であることが直感的に伝わるようにしたいという要望があった。
+
+既存実装では長押しで移動モードには入れるが、見た目の変化が弱く、「掴んだ」「動かせる」という手応えが不足していた。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 既存候補が `candidateEdit` 状態に入った時、カードを `translateY(-4px) scale(1.035)` で少し持ち上げるようにした。
+- 編集中の候補カードだけ影を強め、軽く明るく表示するようにした。
+- 横移動時の `translateX` と長押し時のリフト表現を同時に適用できるよう、transform を合成する形に変更した。
+- `transition-[transform,box-shadow,filter]` を追加し、長押し成立時にふわっと浮くようにした。
+
+### 影響範囲
+
+- `/propose/[partnerId]` の待ち合わせタブ
+- 設定済み候補の長押し移動
+- 設定済み候補の終了時刻リサイズ開始時の視覚フィードバック
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ 長押し編集状態でカードが少し浮き、動かせる印象を追加
+- ✅ 既存の日跨ぎ横移動 `translateX` とリフト表現を両立
+- ✅ 場所未設定候補・設定済み候補どちらにも同じフィードバックを適用
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.63：地図初回タップで場所自動取得を開始
 
 ### 背景・問題意識

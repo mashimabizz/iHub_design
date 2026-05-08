@@ -2465,6 +2465,13 @@ function WeekMeetupCalendar({
               const active = candidate.id === activeMeetupId;
               const placeMissing = !candidate.place.trim();
               const dayShift = edit ? edit.dayIndex - edit.originalDayIndex : 0;
+              const liftTransform = edit ? "translateY(-4px) scale(1.035)" : "";
+              const dayShiftTransform = dayShift
+                ? `translateX(calc(${dayShift * 100}% + ${dayShift * 8}px))`
+                : "";
+              const candidateTransform =
+                [dayShiftTransform, liftTransform].filter(Boolean).join(" ") ||
+                undefined;
               return (
                 <div
                   key={candidate.id}
@@ -2486,7 +2493,11 @@ function WeekMeetupCalendar({
                     onSelectCandidate(candidate.id);
                     onOpenPlaceSheet(candidate.id);
                   }}
-                  className={`absolute left-[4px] right-[4px] flex items-center rounded-[8px] border py-1 pl-1.5 pr-5 text-left text-[8.5px] font-extrabold leading-tight shadow-[0_4px_12px_rgba(36,167,242,0.18)] ${
+                  className={`absolute left-[4px] right-[4px] flex items-center rounded-[8px] border py-1 pl-1.5 pr-5 text-left text-[8.5px] font-extrabold leading-tight transition-[transform,box-shadow,filter] duration-200 ease-out will-change-transform ${
+                    edit
+                      ? "shadow-[0_18px_34px_rgba(58,50,74,0.24)] brightness-[1.04]"
+                      : "shadow-[0_4px_12px_rgba(36,167,242,0.18)]"
+                  } ${
                     active ? "ring-2 ring-[#a8d4e6]" : ""
                   } ${
                     placeMissing
@@ -2497,9 +2508,8 @@ function WeekMeetupCalendar({
                     top: block.top,
                     height: block.height,
                     touchAction: "none",
-                    transform: dayShift
-                      ? `translateX(calc(${dayShift * 100}% + ${dayShift * 8}px))`
-                      : undefined,
+                    transform: candidateTransform,
+                    transformOrigin: "center center",
                     zIndex: edit ? 35 : undefined,
                   }}
                 >
