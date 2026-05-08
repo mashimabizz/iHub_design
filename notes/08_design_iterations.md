@@ -4,6 +4,48 @@
 
 ---
 
+## イテレーション154.59：待ち合わせ候補の横ドラッグ継続を修正
+
+### 背景・問題意識
+
+オーナーから、待ち合わせタブで候補をドラッグ&ドロップして1つ横の日にずらすと、その後は横移動ができなくなり、縦移動だけ続くという指摘があった。
+
+確認したところ、ドラッグ中の候補カードを移動先の日付列へ描き直す実装だったため、横に日付をまたいだ瞬間に、指で掴んでいるDOM要素が別列へ移動・再描画され、ポインターキャプチャが途切れる可能性があった。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- ドラッグ中の候補編集 state に `originalDayIndex` を追加した。
+- 編集中の候補カードはDOM上では元の日付列に保持し、見た目だけ `translateX` で横の列へ移動するようにした。
+- 横方向に日付をまたいでも、掴んでいるカード要素がアンマウントされないため、横移動を継続しやすくした。
+
+### 影響範囲
+
+- `/propose/[partnerId]` の待ち合わせタブ
+- 既存候補の長押し横移動
+- 日をまたぐドラッグ操作
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ 横移動中にカードDOMを別列へ移動させない実装へ変更
+- ✅ 日付列をまたぐ見た目は `translateX` で維持
+- ✅ 縦移動・終了時刻リサイズの既存挙動を維持
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.58：待ち合わせカレンダーの警告アイコン位置と曜日計算を修正
 
 ### 背景・問題意識

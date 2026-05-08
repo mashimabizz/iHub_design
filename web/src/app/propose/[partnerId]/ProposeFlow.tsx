@@ -92,6 +92,7 @@ type MeetupDragSelection = {
 type MeetupCandidateEdit = {
   id: string;
   action: "move" | "resize-end";
+  originalDayIndex: number;
   dayIndex: number;
   startSlot: number;
   endSlot: number;
@@ -1844,6 +1845,7 @@ function WeekMeetupCalendar({
     return [
       edit.id,
       edit.action,
+      edit.originalDayIndex,
       edit.dayIndex,
       edit.startSlot,
       edit.endSlot,
@@ -1948,6 +1950,7 @@ function WeekMeetupCalendar({
     const edit: MeetupCandidateEdit = {
       id: state.id,
       action: state.action,
+      originalDayIndex: state.originalDayIndex,
       dayIndex: state.originalDayIndex,
       startSlot: state.originalStartSlot,
       endSlot: state.originalEndSlot,
@@ -1985,6 +1988,7 @@ function WeekMeetupCalendar({
       setCandidateEditing({
         id: state.id,
         action: state.action,
+        originalDayIndex: state.originalDayIndex,
         dayIndex: point.dayIndex,
         startSlot,
         endSlot: startSlot + durationSlots,
@@ -1999,6 +2003,7 @@ function WeekMeetupCalendar({
     setCandidateEditing({
       id: state.id,
       action: state.action,
+      originalDayIndex: state.originalDayIndex,
       dayIndex: state.originalDayIndex,
       startSlot: state.originalStartSlot,
       endSlot,
@@ -2427,7 +2432,7 @@ function WeekMeetupCalendar({
                 candidateEdit?.id === candidate.id ? candidateEdit : null;
               const block = edit
                 ? {
-                    dayIndex: edit.dayIndex,
+                    dayIndex: edit.originalDayIndex,
                     top: calendarSlotTop(edit.startSlot),
                     height: Math.max(
                       MEETUP_SLOT_HEIGHT,
@@ -2438,6 +2443,7 @@ function WeekMeetupCalendar({
               if (!block || block.dayIndex !== dayIndex) return null;
               const active = candidate.id === activeMeetupId;
               const placeMissing = !candidate.place.trim();
+              const dayShift = edit ? edit.dayIndex - edit.originalDayIndex : 0;
               return (
                 <div
                   key={candidate.id}
@@ -2466,7 +2472,15 @@ function WeekMeetupCalendar({
                       ? "border-[#fb923c] bg-[#fff7ed] text-[#9a3412] ring-2 ring-[#fb923c33]"
                       : "border-[#24a7f2] bg-[#24a7f2] text-white"
                   }`}
-                  style={{ top: block.top, height: block.height, touchAction: "none" }}
+                  style={{
+                    top: block.top,
+                    height: block.height,
+                    touchAction: "none",
+                    transform: dayShift
+                      ? `translateX(calc(${dayShift * 100}% + ${dayShift * 8}px))`
+                      : undefined,
+                    zIndex: edit ? 35 : undefined,
+                  }}
                 >
                   {placeMissing ? (
                     <span className="pointer-events-none absolute left-1/2 top-1/2 flex h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#fb923c] text-[11px] font-black leading-none text-white shadow-[0_2px_7px_rgba(251,146,60,0.34)]">
