@@ -901,6 +901,7 @@ export function ProposeFlow({
       (pos) => {
         // 現在地ジャンプは reverse で名前を取り直す
         placeManuallyEditedRef.current = false;
+        skipReverseRef.current = false;
         updateActiveMeetup({
           center: [pos.coords.latitude, pos.coords.longitude],
         });
@@ -913,6 +914,7 @@ export function ProposeFlow({
   /** 地図ピン操作（drag / click） */
   function handleMapCenterChange(lat: number, lng: number) {
     placeManuallyEditedRef.current = false; // 地図動かしたら自動 reverse を許可
+    skipReverseRef.current = false;
     updateActiveMeetup({ center: [lat, lng] });
   }
 

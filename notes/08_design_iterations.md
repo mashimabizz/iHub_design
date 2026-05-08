@@ -4,6 +4,48 @@
 
 ---
 
+## イテレーション154.63：地図初回タップで場所自動取得を開始
+
+### 背景・問題意識
+
+オーナーから、待ち合わせ場所の地図を開いて1回タップしても、なぜか場所の自動取得が始まらないという指摘があった。
+
+確認したところ、場所設定シートを開いた直後は初回 mount の reverse geocode を避けるための `skipReverseRef` が立っており、最初の地図タップによる center 変更でもそのフラグが残ったままになっていた。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 地図タップ・ピンドラッグ由来の `handleMapCenterChange` で `skipReverseRef.current = false` を明示するようにした。
+- 「現在地を中心に」ボタンでも同様に `skipReverseRef.current = false` を明示し、初回操作から reverse geocode が走るようにした。
+
+### 影響範囲
+
+- `/propose/[partnerId]` の待ち合わせタブ
+- 場所設定シート内の地図タップ・ピンドラッグ
+- 「現在地を中心に」ボタン
+- 「交換できる場所」入力欄の `取得中…` placeholder 表示
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ 初回 mount の自動 reverse skip は維持
+- ✅ ユーザーによる地図操作では初回から reverse geocode を許可
+- ✅ 現在地ジャンプでも初回から場所名取得を許可
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.62：待ち合わせカレンダーを5日表示へ変更
 
 ### 背景・問題意識
