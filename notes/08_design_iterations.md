@@ -4,6 +4,69 @@
 
 ---
 
+## イテレーション154.47：提示物選択フローの地図をMapTiler Streetsへ切替
+
+### 背景・問題意識
+
+オーナーから、現状の OpenStreetMap 標準タイルは情報量が多く、ごちゃついて見えるため、iOS マップのようなシンプルな地図に寄せたいという相談があった。
+
+Apple MapKit JS は見た目は近いが、既存の Leaflet ベースの `MapPicker` とは SDK が異なり、Apple Developer の Maps ID / private key / token 配布設計が必要になる。まずは実装しやすく、日本語ラベル指定もできる MapTiler SDK の `MapStyle.STREETS` を提示物の選択フローから試す。
+
+### 変更内容
+
+#### `web/src/components/map/MapTilerPicker.tsx`
+- MapTiler SDK ベースの新しい地図ピッカーを追加した。
+- `MapStyle.STREETS` と `Language.JAPANESE` を指定し、日本語地名を優先表示するようにした。
+- 既存 `MapPicker` と同じ props（`center` / `radiusM` / `markers` / `interactive` / `onCenterChange`）で使えるようにした。
+- 単一ピンのドラッグ・地図クリックで中心座標を更新できるようにした。
+- 複数ピン表示時は番号付きピンを表示し、全ピンが入るように地図範囲を自動フィットするようにした。
+- 交換範囲の円を GeoJSON レイヤーとして表示するようにした。
+- `NEXT_PUBLIC_MAPTILER_API_KEY` が未設定の場合は、既存 Leaflet `MapPicker` へフォールバックするようにした。
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 提示物の選択フロー内の場所設定シートと送信確認プレビュー地図を `MapTilerPicker` に差し替えた。
+- 横スワイプ除外対象に `.maplibregl-map` を追加した。
+
+#### `web/.env.local.example`
+- `NEXT_PUBLIC_MAPTILER_API_KEY` の設定例を追加した。
+
+#### `web/package.json` / `web/package-lock.json`
+- `@maptiler/sdk` を追加した。
+
+### 影響範囲
+
+- `/propose/[partnerId]` C-0 提示物の選択フロー
+- 場所設定シートの地図
+- 送信確認画面の待ち合わせプレビュー地図
+- 既存の他画面の `MapPicker` 呼び出しは未変更
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx' src/components/map/MapTilerPicker.tsx src/components/map/MapPicker.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/map/MapTilerPicker.tsx`
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- `web/.env.local.example`
+- `web/package.json`
+- `web/package-lock.json`
+
+### セルフレビュー結果
+
+- ✅ 提示物の選択フローだけ MapTiler Streets へ差し替え
+- ✅ 日本語ラベル優先のため `Language.JAPANESE` を指定
+- ✅ 既存 Leaflet 地図は他画面では維持
+- ✅ APIキー未設定時は旧地図へフォールバックし、画面が壊れない
+- ✅ 新しい状態名・DB migration は追加していないため `notes/09_state_machines.md` / `notes/05_data_model.md` は更新不要
+- ✅ 地図サービス名の追加であり、iHub の業務用語追加ではないため `notes/10_glossary.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.46：個別募集デッキを紐で結ばれる表現へ調整
 
 ### 背景・問題意識

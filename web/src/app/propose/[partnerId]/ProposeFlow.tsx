@@ -16,8 +16,8 @@ import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/auth/PrimaryButton";
 import { createProposal, reviseProposal } from "../actions";
 
-/* MapPicker は SSR 不可（leaflet が window 必要） */
-const MapPicker = dynamic(() => import("@/components/map/MapPicker"), {
+/* 提示物の選択フローでは MapTiler Streets を使う（SDK が window 必要） */
+const ProposeMapPicker = dynamic(() => import("@/components/map/MapTilerPicker"), {
   ssr: false,
   loading: () => (
     <div className="flex h-full w-full items-center justify-center bg-[#e8eef0] text-[11px] text-[#3a324a8c]">
@@ -370,7 +370,7 @@ function shouldIgnoreProposeSwipe(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return Boolean(
     target.closest(
-      "input, textarea, select, [contenteditable='true'], [data-propose-swipe-ignore], .leaflet-container",
+      "input, textarea, select, [contenteditable='true'], [data-propose-swipe-ignore], .leaflet-container, .maplibregl-map",
     ),
   );
 }
@@ -2264,7 +2264,7 @@ function PlacePickerSheet({
 
           <div className="overflow-hidden rounded-[12px] border-[0.5px] border-[#3a324a14] bg-[#e8eef0]">
             <div className="h-[240px] w-full">
-              <MapPicker
+              <ProposeMapPicker
                 center={meetupCenter}
                 radiusM={120}
                 onCenterChange={onMapCenterChange}
@@ -2573,7 +2573,7 @@ function MeetupPlanPreview({
       </div>
 
       <div className="h-[184px] w-full bg-[#e8eef0]">
-        <MapPicker
+        <ProposeMapPicker
           center={mapCenter}
           radiusM={120}
           markers={markers}
