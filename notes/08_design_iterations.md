@@ -4,6 +4,48 @@
 
 ---
 
+## イテレーション154.54：待ち合わせ候補移動の確定漏れを修正
+
+### 背景・問題意識
+
+オーナーから、待ち合わせタブで候補ブロックを長押しドラッグして一度は移動できるが、その後に画面をタップすると元の場所へ戻ってしまうという指摘があった。
+
+タッチ環境では、移動中の見た目を管理する一時 state は更新される一方で、`pointerup` が拾えないケースでは本体の `meetupCandidates` へ確定反映されず、次のタップや再描画で一時 state が消えて元位置に戻る可能性があった。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 既存候補の移動・終了時間リサイズ中に、プレビューだけでなく本体 state にも最新の時間帯を逐次反映するようにした。
+- 同じ編集内容の重複反映を避けるため、候補編集キーを保持して同一更新をスキップするようにした。
+- `pointercancel` で終了した場合も、編集中の最新位置を確定してから一時 state を消すようにした。
+
+### 影響範囲
+
+- `/propose/[partnerId]` の待ち合わせタブ
+- 既存候補の長押し移動
+- 候補下端ハンドルによる終了時刻リサイズ
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ ドラッグ中の最新位置を本体 state へ反映
+- ✅ `pointerup` が拾えない終了パターンでも `pointercancel` で確定
+- ✅ 同一編集内容の重複 state 更新を抑制
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.53：待ち合わせカレンダー操作をGoogle Calendar風に調整
 
 ### 背景・問題意識

@@ -1752,6 +1752,7 @@ function WeekMeetupCalendar({
   const [candidateEdit, setCandidateEdit] =
     useState<MeetupCandidateEdit | null>(null);
   const candidateEditRef = useRef<MeetupCandidateEdit | null>(null);
+  const persistedCandidateEditKeyRef = useRef<string | null>(null);
   const candidatePointerRef = useRef<MeetupCandidatePointerState | null>(null);
   const [nowParts, setNowParts] = useState(nowTokyoParts);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -1824,9 +1825,36 @@ function WeekMeetupCalendar({
     setDrag(selection);
   }
 
-  function setCandidateEditing(edit: MeetupCandidateEdit | null) {
+  function candidateEditKey(edit: MeetupCandidateEdit): string {
+    return [
+      edit.id,
+      edit.action,
+      edit.dayIndex,
+      edit.startSlot,
+      edit.endSlot,
+    ].join(":");
+  }
+
+  function persistCandidateEditing(edit: MeetupCandidateEdit) {
+    const dateKey = weekDateKeys[edit.dayIndex];
+    if (!dateKey) return;
+    const key = candidateEditKey(edit);
+    if (persistedCandidateEditKeyRef.current === key) return;
+    persistedCandidateEditKeyRef.current = key;
+    onMoveCandidateTimeRange(
+      edit.id,
+      slotToTokyoLocal(dateKey, edit.startSlot),
+      slotToTokyoLocal(dateKey, edit.endSlot),
+    );
+  }
+
+  function setCandidateEditing(
+    edit: MeetupCandidateEdit | null,
+    options?: { persist?: boolean },
+  ) {
     candidateEditRef.current = edit;
     setCandidateEdit(edit);
+    if (edit && options?.persist) persistCandidateEditing(edit);
   }
 
   function updateDragSelection(currentSlot: number) {
@@ -1972,7 +2000,7 @@ function WeekMeetupCalendar({
         dayIndex: point.dayIndex,
         startSlot,
         endSlot: startSlot + durationSlots,
-      });
+      }, { persist: true });
       return;
     }
 
@@ -1986,18 +2014,13 @@ function WeekMeetupCalendar({
       dayIndex: state.originalDayIndex,
       startSlot: state.originalStartSlot,
       endSlot,
-    });
+    }, { persist: true });
   }
 
   function commitCandidateEditing() {
     const edit = candidateEditRef.current;
     if (!edit) return;
-    const dateKey = weekDateKeys[edit.dayIndex];
-    onMoveCandidateTimeRange(
-      edit.id,
-      slotToTokyoLocal(dateKey, edit.startSlot),
-      slotToTokyoLocal(dateKey, edit.endSlot),
-    );
+    persistCandidateEditing(edit);
   }
 
   function handleCandidatePointerDown(
@@ -2100,6 +2123,9 @@ function WeekMeetupCalendar({
     const state = candidatePointerRef.current;
     if (!state || state.pointerId !== e.pointerId) return;
     e.stopPropagation();
+    if (state.mode === "editing" || candidateEditRef.current) {
+      commitCandidateEditing();
+    }
     clearCandidatePointer();
   }
 
