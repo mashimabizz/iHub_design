@@ -252,10 +252,6 @@ function localToIso(s: string): string {
   if (!s) return "";
   return parseTokyoLocal(s).toISOString();
 }
-function nowPlusHoursLocal(h: number): string {
-  return formatTokyoLocalFromDate(new Date(Date.now() + h * 60 * 60_000));
-}
-
 /** wishMatch を先頭にソート（同フラグ内は元の順） */
 function sortByWishFirst<T extends { wishMatch?: boolean }>(arr: T[]): T[] {
   return [...arr].sort((a, b) => {
@@ -466,16 +462,11 @@ export function ProposeFlow({
      iter70-C: 再打診の場合は元 proposal の値を最優先 */
   const initStart = initial?.meetupStartAt
     ? isoToLocal(initial.meetupStartAt)
-    : partner.localModeAW?.startAt
-      ? isoToLocal(partner.localModeAW.startAt)
-      : nowPlusHoursLocal(1);
+    : "";
   const initEnd = initial?.meetupEndAt
     ? isoToLocal(initial.meetupEndAt)
-    : partner.localModeAW?.endAt
-      ? isoToLocal(partner.localModeAW.endAt)
-      : nowPlusHoursLocal(2);
-  const initPlace =
-    initial?.meetupPlaceName ?? partner.localModeAW?.venue ?? "";
+    : "";
+  const initPlace = initial?.meetupPlaceName ?? "";
   const initLat =
     initial?.meetupLat ??
     partner.localModeAW?.centerLat ??
@@ -487,22 +478,41 @@ export function ProposeFlow({
 
   const buildInitialMeetupCandidates = (): MeetupCandidate[] => {
     const fromInitial =
-      initial?.meetupCandidates?.slice(0, MAX_MEETUP_CANDIDATES).map((candidate, index) => ({
-        id: `candidate-${index + 1}`,
-        mode: candidate.mode,
-        start: isoToLocal(candidate.startAt),
-        end: isoToLocal(candidate.endAt),
-        place: candidate.placeName,
-        center: [candidate.lat, candidate.lng] as [number, number],
-      })) ?? [];
+      initial?.meetupCandidates
+        ?.slice(0, MAX_MEETUP_CANDIDATES)
+        .map((candidate, index) => ({
+          id: `candidate-${index + 1}`,
+          mode: candidate.mode,
+          start: isoToLocal(candidate.startAt),
+          end: isoToLocal(candidate.endAt),
+          place: candidate.placeName,
+          center: [candidate.lat, candidate.lng] as [number, number],
+        })) ?? [];
     if (fromInitial.length > 0) return fromInitial;
+    if (initStart && initEnd) {
+      return [
+        {
+          id: "candidate-1",
+          mode:
+            initStart.slice(0, 10) === roundUpTokyoLocal().slice(0, 10)
+              ? "today"
+              : "scheduled",
+          start: initStart,
+          end: initEnd,
+          place: initPlace,
+          center: [initLat, initLng],
+        },
+      ];
+    }
+
+    // 新規打診では、見えない時間入り候補を作らず空の候補1から始める。
     return [
       {
         id: "candidate-1",
         mode: partner.localModeEnabled ? "today" : "scheduled",
-        start: initStart,
-        end: initEnd,
-        place: initPlace,
+        start: "",
+        end: "",
+        place: "",
         center: [initLat, initLng],
       },
     ];

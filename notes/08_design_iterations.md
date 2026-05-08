@@ -4,6 +4,49 @@
 
 ---
 
+## イテレーション154.52：待ち合わせ候補の初期採番を修正
+
+### 背景・問題意識
+
+オーナーから、提示物の選択 > 待ち合わせタブで、最初から見えない候補が1つ設定されているように見え、普通に1件目を設定したのに `候補2` になるという指摘があった。
+
+確認したところ、新規打診でも初期 state に `nowPlusHoursLocal(1)` / `nowPlusHoursLocal(2)` の時間入り候補1が作られており、ユーザーがドラッグで時間を設定すると「候補1はすでに時間あり」と判定されて候補2が作られていた。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 新規打診の初期 `meetupCandidates` は、時間・場所のない空の `candidate-1` から始めるようにした。
+- 再打診・既存 proposal 由来の `initial.meetupCandidates` は従来通り復元する。
+- 旧形式の `meetupStartAt` / `meetupEndAt` が渡された場合のみ、既存候補として `candidate-1` を復元する。
+- 未使用になった `nowPlusHoursLocal` を削除した。
+
+### 影響範囲
+
+- `/propose/[partnerId]` の待ち合わせタブ
+- 新規打診時の候補作成・候補番号表示
+- 再打診 / 既存 proposal の待ち合わせ候補復元
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ 新規打診で見えない時間入り候補を作らない
+- ✅ 1回目のドラッグ設定が `候補1` に反映される
+- ✅ 既存 proposal / 再打診の候補復元は維持
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.51：地図attribution表示を小さく調整
 
 ### 背景・問題意識
