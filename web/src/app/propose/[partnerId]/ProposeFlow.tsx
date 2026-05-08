@@ -89,6 +89,27 @@ type MeetupDragSelection = {
   startSlot: number;
   currentSlot: number;
 };
+type MeetupCandidateEdit = {
+  id: string;
+  action: "move" | "resize-end";
+  dayIndex: number;
+  startSlot: number;
+  endSlot: number;
+};
+type MeetupCandidatePointerState = {
+  id: string;
+  action: "move" | "resize-end";
+  pointerId: number;
+  pointerType: string;
+  startX: number;
+  startY: number;
+  originalDayIndex: number;
+  originalStartSlot: number;
+  originalEndSlot: number;
+  pointerStartOffsetSlots: number;
+  mode: "pending" | "editing";
+  timer: number | null;
+};
 
 // iter138: "message" step は廃止（confirm でメッセージ入力可）
 type Step = "select" | "confirm";
@@ -134,6 +155,11 @@ const MEETUP_TOUCH_CANCEL_PX = 10;
 const MEETUP_SLOT_COUNT =
   ((MEETUP_CALENDAR_END_HOUR - MEETUP_CALENDAR_START_HOUR) * 60) /
   MEETUP_SLOT_MINUTES;
+const MEETUP_TIMELINE_HEIGHT = MEETUP_SLOT_COUNT * MEETUP_SLOT_HEIGHT;
+const MEETUP_CALENDAR_TOP_PADDING = 18;
+const MEETUP_CALENDAR_BOTTOM_PADDING = 22;
+const MEETUP_CALENDAR_DEFAULT_SCROLL_HOUR = 10;
+const MEETUP_TIME_LABEL_WIDTH = 52;
 
 type Place = { display_name: string; lat: string; lon: string; address?: Record<string, string> };
 
@@ -229,6 +255,10 @@ function localToCalendarSlot(local: string): number | null {
   return Math.round(
     (minutes - MEETUP_CALENDAR_START_HOUR * 60) / MEETUP_SLOT_MINUTES,
   );
+}
+
+function calendarSlotTop(slot: number): number {
+  return MEETUP_CALENDAR_TOP_PADDING + slot * MEETUP_SLOT_HEIGHT;
 }
 
 function candidateHasTime(candidate: MeetupCandidate): boolean {
@@ -658,6 +688,28 @@ export function ProposeFlow({
           : candidate,
       );
     });
+    placeManuallyEditedRef.current = false;
+  }
+
+  function moveMeetupCandidateTimeRange(id: string, start: string, end: string) {
+    const mode: MeetupMode =
+      start.slice(0, 10) === roundUpTokyoLocal().slice(0, 10)
+        ? "today"
+        : "scheduled";
+    skipReverseRef.current = true;
+    setActiveMeetupId(id);
+    setMeetupCandidates((prev) =>
+      prev.map((candidate) =>
+        candidate.id === id
+          ? {
+              ...candidate,
+              mode,
+              start,
+              end,
+            }
+          : candidate,
+      ),
+    );
     placeManuallyEditedRef.current = false;
   }
 
@@ -1191,6 +1243,7 @@ export function ProposeFlow({
             activeMeetupId={activeMeetupId}
             onSelectCandidate={selectMeetupCandidate}
             onTimeRangeSelect={setActiveMeetupTimeRange}
+            onMoveCandidateTimeRange={moveMeetupCandidateTimeRange}
             onDeleteCandidate={deleteMeetupCandidate}
             onCopyPlaceToAll={copyActivePlaceToAllCandidates}
             meetupPlace={meetupPlace}
@@ -1549,7 +1602,7 @@ function getCalendarBlock(
   if (clampedEnd <= 0 || clampedStart >= MEETUP_SLOT_COUNT) return null;
   return {
     dayIndex,
-    top: clampedStart * MEETUP_SLOT_HEIGHT,
+    top: calendarSlotTop(clampedStart),
     height: Math.max(
       MEETUP_SLOT_HEIGHT,
       (clampedEnd - clampedStart) * MEETUP_SLOT_HEIGHT,
@@ -1562,6 +1615,7 @@ function MeetupTab({
   activeMeetupId,
   onSelectCandidate,
   onTimeRangeSelect,
+  onMoveCandidateTimeRange,
   onDeleteCandidate,
   onCopyPlaceToAll,
   meetupPlace,
@@ -1582,6 +1636,7 @@ function MeetupTab({
   activeMeetupId: string;
   onSelectCandidate: (id: string) => void;
   onTimeRangeSelect: (start: string, end: string) => void;
+  onMoveCandidateTimeRange: (id: string, start: string, end: string) => void;
   onDeleteCandidate: (id: string) => void;
   onCopyPlaceToAll: () => void;
   meetupPlace: string;
@@ -1635,6 +1690,7 @@ function MeetupTab({
         weekDateKeys={weekDateKeys}
         onSelectCandidate={onSelectCandidate}
         onTimeRangeSelect={handleTimeRangeSelect}
+        onMoveCandidateTimeRange={onMoveCandidateTimeRange}
         onOpenPlaceSheet={openPlaceSheet}
         onDeleteCandidate={onDeleteCandidate}
         onShiftWeek={shiftCalendarWeek}
@@ -1676,6 +1732,7 @@ function WeekMeetupCalendar({
   weekDateKeys,
   onSelectCandidate,
   onTimeRangeSelect,
+  onMoveCandidateTimeRange,
   onOpenPlaceSheet,
   onDeleteCandidate,
   onShiftWeek,
@@ -1685,14 +1742,21 @@ function WeekMeetupCalendar({
   weekDateKeys: string[];
   onSelectCandidate: (id: string) => void;
   onTimeRangeSelect: (start: string, end: string) => void;
+  onMoveCandidateTimeRange: (id: string, start: string, end: string) => void;
   onOpenPlaceSheet: (id: string) => void;
   onDeleteCandidate: (id: string) => void;
   onShiftWeek: (direction: 1 | -1) => void;
 }) {
   const [drag, setDrag] = useState<MeetupDragSelection | null>(null);
   const dragRef = useRef<MeetupDragSelection | null>(null);
+  const [candidateEdit, setCandidateEdit] =
+    useState<MeetupCandidateEdit | null>(null);
+  const candidateEditRef = useRef<MeetupCandidateEdit | null>(null);
+  const candidatePointerRef = useRef<MeetupCandidatePointerState | null>(null);
   const [nowParts, setNowParts] = useState(nowTokyoParts);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const didInitialScrollRef = useRef(false);
   const calendarSwipeRef = useRef<{
     startX: number;
     startY: number;
@@ -1715,7 +1779,38 @@ function WeekMeetupCalendar({
     touchPressRef.current = null;
   }
 
-  useEffect(() => clearTouchPress, []);
+  function clearCandidatePointer() {
+    if (
+      typeof window !== "undefined" &&
+      candidatePointerRef.current?.timer != null
+    ) {
+      window.clearTimeout(candidatePointerRef.current.timer);
+    }
+    candidatePointerRef.current = null;
+    candidateEditRef.current = null;
+    setCandidateEdit(null);
+  }
+
+  useEffect(() => {
+    return () => {
+      clearTouchPress();
+      clearCandidatePointer();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (didInitialScrollRef.current) return;
+    didInitialScrollRef.current = true;
+    window.requestAnimationFrame(() => {
+      if (!scrollRef.current) return;
+      scrollRef.current.scrollTop =
+        calendarSlotTop(
+          ((MEETUP_CALENDAR_DEFAULT_SCROLL_HOUR - MEETUP_CALENDAR_START_HOUR) *
+            60) /
+            MEETUP_SLOT_MINUTES,
+        ) - 8;
+    });
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1729,10 +1824,37 @@ function WeekMeetupCalendar({
     setDrag(selection);
   }
 
+  function setCandidateEditing(edit: MeetupCandidateEdit | null) {
+    candidateEditRef.current = edit;
+    setCandidateEdit(edit);
+  }
+
   function updateDragSelection(currentSlot: number) {
     const prev = dragRef.current;
     if (!prev) return;
     setDragSelection({ ...prev, currentSlot });
+  }
+
+  function pointToCalendarSlot(clientX: number, clientY: number) {
+    const el = gridRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    const dayAreaLeft = rect.left + MEETUP_TIME_LABEL_WIDTH;
+    const dayAreaWidth = rect.width - MEETUP_TIME_LABEL_WIDTH;
+    const dayWidth = dayAreaWidth / MEETUP_WEEK_DAYS;
+    const rawDay = Math.floor((clientX - dayAreaLeft) / dayWidth);
+    const dayIndex = Math.max(0, Math.min(MEETUP_WEEK_DAYS - 1, rawDay));
+    const y = Math.max(
+      0,
+      Math.min(MEETUP_TIMELINE_HEIGHT - 1, clientY - rect.top - MEETUP_CALENDAR_TOP_PADDING),
+    );
+    return {
+      dayIndex,
+      slot: Math.max(
+        0,
+        Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
+      ),
+    };
   }
 
   function slotFromPointer(
@@ -1740,7 +1862,13 @@ function WeekMeetupCalendar({
     el: HTMLDivElement,
   ): number {
     const rect = el.getBoundingClientRect();
-    const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+    const y = Math.max(
+      0,
+      Math.min(
+        MEETUP_TIMELINE_HEIGHT - 1,
+        e.clientY - rect.top - MEETUP_CALENDAR_TOP_PADDING,
+      ),
+    );
     return Math.max(
       0,
       Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
@@ -1749,7 +1877,13 @@ function WeekMeetupCalendar({
 
   function slotFromTouch(touch: { clientY: number }, el: HTMLDivElement): number {
     const rect = el.getBoundingClientRect();
-    const y = Math.max(0, Math.min(rect.height, touch.clientY - rect.top));
+    const y = Math.max(
+      0,
+      Math.min(
+        MEETUP_TIMELINE_HEIGHT - 1,
+        touch.clientY - rect.top - MEETUP_CALENDAR_TOP_PADDING,
+      ),
+    );
     return Math.max(
       0,
       Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
@@ -1785,6 +1919,188 @@ function WeekMeetupCalendar({
       slotToTokyoLocal(dateKey, startSlot),
       slotToTokyoLocal(dateKey, endSlot),
     );
+  }
+
+  function startCandidateEditing(state: MeetupCandidatePointerState) {
+    if (state.timer != null && typeof window !== "undefined") {
+      window.clearTimeout(state.timer);
+    }
+    const durationSlots = Math.max(
+      1,
+      state.originalEndSlot - state.originalStartSlot,
+    );
+    const edit: MeetupCandidateEdit = {
+      id: state.id,
+      action: state.action,
+      dayIndex: state.originalDayIndex,
+      startSlot: state.originalStartSlot,
+      endSlot: state.originalEndSlot,
+    };
+    candidatePointerRef.current = {
+      ...state,
+      mode: "editing",
+      timer: null,
+      pointerStartOffsetSlots: Math.max(
+        0,
+        Math.min(durationSlots - 1, state.pointerStartOffsetSlots),
+      ),
+    };
+    setCandidateEditing(edit);
+  }
+
+  function updateCandidateEditing(clientX: number, clientY: number) {
+    const state = candidatePointerRef.current;
+    if (!state || state.mode !== "editing") return;
+    const point = pointToCalendarSlot(clientX, clientY);
+    if (!point) return;
+    const durationSlots = Math.max(
+      1,
+      state.originalEndSlot - state.originalStartSlot,
+    );
+
+    if (state.action === "move") {
+      const startSlot = Math.max(
+        0,
+        Math.min(
+          MEETUP_SLOT_COUNT - durationSlots,
+          point.slot - state.pointerStartOffsetSlots,
+        ),
+      );
+      setCandidateEditing({
+        id: state.id,
+        action: state.action,
+        dayIndex: point.dayIndex,
+        startSlot,
+        endSlot: startSlot + durationSlots,
+      });
+      return;
+    }
+
+    const endSlot = Math.max(
+      state.originalStartSlot + 1,
+      Math.min(MEETUP_SLOT_COUNT, point.slot + 1),
+    );
+    setCandidateEditing({
+      id: state.id,
+      action: state.action,
+      dayIndex: state.originalDayIndex,
+      startSlot: state.originalStartSlot,
+      endSlot,
+    });
+  }
+
+  function commitCandidateEditing() {
+    const edit = candidateEditRef.current;
+    if (!edit) return;
+    const dateKey = weekDateKeys[edit.dayIndex];
+    onMoveCandidateTimeRange(
+      edit.id,
+      slotToTokyoLocal(dateKey, edit.startSlot),
+      slotToTokyoLocal(dateKey, edit.endSlot),
+    );
+  }
+
+  function handleCandidatePointerDown(
+    e: PointerEvent<HTMLElement>,
+    candidate: MeetupCandidate,
+    action: "move" | "resize-end",
+  ) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.stopPropagation();
+    const start = splitTokyoLocal(candidate.start);
+    const end = splitTokyoLocal(candidate.end);
+    const startSlot = localToCalendarSlot(candidate.start);
+    const endSlot = localToCalendarSlot(candidate.end);
+    if (!start || !end || startSlot == null || endSlot == null) return;
+    const dayIndex = weekDateKeys.indexOf(start.dateKey);
+    if (dayIndex < 0) return;
+    if (candidatePointerRef.current?.timer != null && typeof window !== "undefined") {
+      window.clearTimeout(candidatePointerRef.current.timer);
+    }
+    onSelectCandidate(candidate.id);
+    const point = pointToCalendarSlot(e.clientX, e.clientY);
+    const timer =
+      e.pointerType === "touch" && typeof window !== "undefined"
+        ? window.setTimeout(() => {
+            const state = candidatePointerRef.current;
+            if (!state || state.id !== candidate.id || state.mode !== "pending") {
+              return;
+            }
+            startCandidateEditing(state);
+          }, MEETUP_LONG_PRESS_MS)
+        : null;
+    const state: MeetupCandidatePointerState = {
+      id: candidate.id,
+      action,
+      pointerId: e.pointerId,
+      pointerType: e.pointerType,
+      startX: e.clientX,
+      startY: e.clientY,
+      originalDayIndex: dayIndex,
+      originalStartSlot: Math.max(0, Math.min(MEETUP_SLOT_COUNT - 1, startSlot)),
+      originalEndSlot: Math.max(1, Math.min(MEETUP_SLOT_COUNT, endSlot)),
+      pointerStartOffsetSlots:
+        point && point.dayIndex === dayIndex
+          ? point.slot - startSlot
+          : 0,
+      mode:
+        action === "resize-end" && e.pointerType !== "touch"
+          ? "editing"
+          : "pending",
+      timer,
+    };
+    candidatePointerRef.current = state;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    if (state.mode === "editing") {
+      e.preventDefault();
+      startCandidateEditing(state);
+    }
+  }
+
+  function handleCandidatePointerMove(e: PointerEvent<HTMLElement>) {
+    const state = candidatePointerRef.current;
+    if (!state || state.pointerId !== e.pointerId) return;
+    e.stopPropagation();
+    const dx = e.clientX - state.startX;
+    const dy = e.clientY - state.startY;
+    if (state.mode === "pending") {
+      if (
+        state.pointerType === "touch" &&
+        Math.hypot(dx, dy) > MEETUP_TOUCH_CANCEL_PX
+      ) {
+        clearCandidatePointer();
+        return;
+      }
+      if (state.pointerType !== "touch" && Math.hypot(dx, dy) > 4) {
+        startCandidateEditing(state);
+      } else {
+        return;
+      }
+    }
+    e.preventDefault();
+    updateCandidateEditing(e.clientX, e.clientY);
+  }
+
+  function handleCandidatePointerUp(e: PointerEvent<HTMLElement>) {
+    const state = candidatePointerRef.current;
+    if (!state || state.pointerId !== e.pointerId) return;
+    e.stopPropagation();
+    const wasEditing = state.mode === "editing" || !!candidateEditRef.current;
+    if (wasEditing) {
+      e.preventDefault();
+      updateCandidateEditing(e.clientX, e.clientY);
+      commitCandidateEditing();
+    } else {
+      onOpenPlaceSheet(state.id);
+    }
+    clearCandidatePointer();
+  }
+
+  function handleCandidatePointerCancel(e: PointerEvent<HTMLElement>) {
+    const state = candidatePointerRef.current;
+    if (!state || state.pointerId !== e.pointerId) return;
+    e.stopPropagation();
+    clearCandidatePointer();
   }
 
   function handlePointerDown(
@@ -1931,14 +2247,15 @@ function WeekMeetupCalendar({
   const todayIndex = nowParts ? weekDateKeys.indexOf(nowParts.dateKey) : -1;
   const currentTimeTop =
     nowParts && todayIndex >= 0
-      ? ((nowParts.minutes - MEETUP_CALENDAR_START_HOUR * 60) /
-          MEETUP_SLOT_MINUTES) *
-        MEETUP_SLOT_HEIGHT
+      ? calendarSlotTop(
+          (nowParts.minutes - MEETUP_CALENDAR_START_HOUR * 60) /
+            MEETUP_SLOT_MINUTES,
+        )
       : null;
   const showCurrentTime =
     currentTimeTop != null &&
-    currentTimeTop >= 0 &&
-    currentTimeTop <= MEETUP_SLOT_COUNT * MEETUP_SLOT_HEIGHT;
+    currentTimeTop >= MEETUP_CALENDAR_TOP_PADDING &&
+    currentTimeTop <= MEETUP_CALENDAR_TOP_PADDING + MEETUP_TIMELINE_HEIGHT;
 
   function handleCalendarTouchStart(e: TouchEvent<HTMLDivElement>) {
     if (e.touches.length !== 1) return;
@@ -1996,8 +2313,14 @@ function WeekMeetupCalendar({
           ))}
         </div>
         <div
+          ref={gridRef}
           className="grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-t-2 border-[#24a7f2]"
-          style={{ height: MEETUP_SLOT_COUNT * MEETUP_SLOT_HEIGHT }}
+          style={{
+            height:
+              MEETUP_CALENDAR_TOP_PADDING +
+              MEETUP_TIMELINE_HEIGHT +
+              MEETUP_CALENDAR_BOTTOM_PADDING,
+          }}
         >
         <div className="relative border-r border-[#3a324a12] bg-white">
           {Array.from(
@@ -2014,7 +2337,8 @@ function WeekMeetupCalendar({
                 top:
                   (hour - MEETUP_CALENDAR_START_HOUR) *
                     (60 / MEETUP_SLOT_MINUTES) *
-                    MEETUP_SLOT_HEIGHT -
+                    MEETUP_SLOT_HEIGHT +
+                  MEETUP_CALENDAR_TOP_PADDING -
                   5,
               }}
             >
@@ -2053,7 +2377,11 @@ function WeekMeetupCalendar({
               <div
                 key={hourIndex}
                 className="absolute inset-x-0 border-t border-[#3a324a0a]"
-                style={{ top: hourIndex * 4 * MEETUP_SLOT_HEIGHT }}
+                style={{
+                  top:
+                    MEETUP_CALENDAR_TOP_PADDING +
+                    hourIndex * 4 * MEETUP_SLOT_HEIGHT,
+                }}
               />
             ))}
             {showCurrentTime && dayIndex === todayIndex && (
@@ -2065,7 +2393,18 @@ function WeekMeetupCalendar({
               </div>
             )}
             {candidates.map((candidate, index) => {
-              const block = getCalendarBlock(candidate, weekDateKeys);
+              const edit =
+                candidateEdit?.id === candidate.id ? candidateEdit : null;
+              const block = edit
+                ? {
+                    dayIndex: edit.dayIndex,
+                    top: calendarSlotTop(edit.startSlot),
+                    height: Math.max(
+                      MEETUP_SLOT_HEIGHT,
+                      (edit.endSlot - edit.startSlot) * MEETUP_SLOT_HEIGHT,
+                    ),
+                  }
+                : getCalendarBlock(candidate, weekDateKeys);
               if (!block || block.dayIndex !== dayIndex) return null;
               const active = candidate.id === activeMeetupId;
               const placeMissing = !candidate.place.trim();
@@ -2074,29 +2413,33 @@ function WeekMeetupCalendar({
                   key={candidate.id}
                   role="button"
                   tabIndex={0}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => {
-                    onSelectCandidate(candidate.id);
-                    onOpenPlaceSheet(candidate.id);
-                  }}
+                  onPointerDown={(e) =>
+                    handleCandidatePointerDown(e, candidate, "move")
+                  }
+                  onPointerMove={handleCandidatePointerMove}
+                  onPointerUp={handleCandidatePointerUp}
+                  onPointerCancel={handleCandidatePointerCancel}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                  onTouchEnd={(e) => e.stopPropagation()}
+                  onTouchCancel={(e) => e.stopPropagation()}
                   onKeyDown={(e) => {
                     if (e.key !== "Enter" && e.key !== " ") return;
                     e.preventDefault();
                     onSelectCandidate(candidate.id);
                     onOpenPlaceSheet(candidate.id);
                   }}
-                  className={`absolute left-[4px] right-[4px] rounded-[8px] border py-1 pl-1.5 pr-5 text-left text-[8.5px] font-extrabold leading-tight shadow-[0_3px_9px_rgba(166,149,216,0.2)] ${
-                    active ? "ring-2 ring-[#f3c5d4]" : ""
+                  className={`absolute left-[4px] right-[4px] flex items-center rounded-[8px] border py-1 pl-1.5 pr-5 text-left text-[8.5px] font-extrabold leading-tight shadow-[0_4px_12px_rgba(36,167,242,0.18)] ${
+                    active ? "ring-2 ring-[#a8d4e6]" : ""
                   } ${
                     placeMissing
                       ? "border-[#fb923c] bg-[#fff7ed] text-[#9a3412] ring-2 ring-[#fb923c33]"
-                      : "border-[#a695d8] bg-[#a695d8] text-white"
+                      : "border-[#24a7f2] bg-[#24a7f2] text-white"
                   }`}
-                  style={{ top: block.top, height: block.height }}
+                  style={{ top: block.top, height: block.height, touchAction: "none" }}
                 >
-                  <span className="block truncate">候補{index + 1}</span>
-                  <span className="block truncate font-bold">
-                    {placeMissing ? "⚠ 場所を設定" : candidate.place}
+                  <span className="block min-w-0 truncate font-bold">
+                    {placeMissing ? "場所を設定" : candidate.place}
                   </span>
                   <button
                     type="button"
@@ -2114,14 +2457,28 @@ function WeekMeetupCalendar({
                   >
                     ×
                   </button>
+                  <span
+                    role="separator"
+                    aria-label={`候補${index + 1}の終了時間を変更`}
+                    onPointerDown={(e) =>
+                      handleCandidatePointerDown(e, candidate, "resize-end")
+                    }
+                    onPointerMove={handleCandidatePointerMove}
+                    onPointerUp={handleCandidatePointerUp}
+                    onPointerCancel={handleCandidatePointerCancel}
+                    className={`absolute inset-x-2 bottom-[2px] h-[5px] cursor-ns-resize rounded-full ${
+                      placeMissing ? "bg-[#fb923c66]" : "bg-white/55"
+                    }`}
+                    style={{ touchAction: "none" }}
+                  />
                 </div>
               );
             })}
             {preview && preview.dayIndex === dayIndex && (
               <div
-                className="pointer-events-none absolute left-[4px] right-[4px] rounded-[7px] border border-[#a695d8] bg-[#a695d833]"
+                className="pointer-events-none absolute left-[4px] right-[4px] rounded-[7px] border border-[#24a7f2] bg-[#24a7f233]"
                 style={{
-                  top: preview.startSlot * MEETUP_SLOT_HEIGHT,
+                  top: calendarSlotTop(preview.startSlot),
                   height:
                     (preview.endSlot - preview.startSlot) * MEETUP_SLOT_HEIGHT,
                 }}
@@ -2175,10 +2532,22 @@ function PlacePickerSheet({
   onClose: () => void;
 }) {
   const placeSet = !!meetupPlace.trim();
+  const [copyAppliedPlace, setCopyAppliedPlace] = useState<string | null>(null);
+  const copyApplied = placeSet && copyAppliedPlace === meetupPlace;
+
+  function handleCopyPlaceToAll() {
+    if (!placeSet) return;
+    onCopyPlaceToAll();
+    setCopyAppliedPlace(meetupPlace);
+  }
+
   return (
     <div
       data-propose-swipe-ignore
       className="fixed inset-0 z-40 flex items-end bg-[#1a1624]/32 px-3 pb-[max(env(safe-area-inset-bottom),12px)] pt-10 backdrop-blur-[2px]"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div className="mx-auto w-full max-w-md overflow-hidden rounded-[22px] bg-white shadow-[0_-16px_46px_rgba(58,50,74,0.22)]">
         <div className="flex items-start justify-between gap-3 border-b border-[#3a324a12] px-4 pb-3 pt-4">
@@ -2200,13 +2569,29 @@ function PlacePickerSheet({
         </div>
 
         <div className="max-h-[72vh] overflow-y-auto px-4 py-3">
-          <div className="mb-1 flex items-center justify-between px-0.5">
+          <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
             <span className="text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
               交換できる場所
             </span>
-            {reverseFetching && (
-              <span className="text-[9.5px] text-[#a695d8]">取得中…</span>
-            )}
+            <span className="flex flex-shrink-0 items-center gap-1.5">
+              {reverseFetching && (
+                <span className="text-[9.5px] text-[#a695d8]">取得中…</span>
+              )}
+              {canCopyPlaceToAll && (
+                <button
+                  type="button"
+                  onClick={handleCopyPlaceToAll}
+                  disabled={!placeSet}
+                  className={`rounded-full px-2.5 py-1 text-[9.5px] font-extrabold transition-colors active:scale-[0.97] disabled:opacity-40 ${
+                    copyApplied
+                      ? "bg-[#7a9a8a] text-white"
+                      : "border border-[#a8d4e666] bg-[#a8d4e61f] text-[#3a7c93]"
+                  }`}
+                >
+                  {copyApplied ? "適用済み" : "同じ場所を全候補に"}
+                </button>
+              )}
+            </span>
           </div>
           <input
             type="text"
@@ -2260,16 +2645,6 @@ function PlacePickerSheet({
             >
               📍 現在地を中心に
             </button>
-            {canCopyPlaceToAll && (
-              <button
-                type="button"
-                onClick={onCopyPlaceToAll}
-                disabled={!placeSet}
-                className="rounded-full border border-[#3a324a14] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#3a324a8c] active:scale-[0.97] disabled:opacity-40"
-              >
-                同じ場所を全候補に使う
-              </button>
-            )}
           </div>
 
           <div className="overflow-hidden rounded-[12px] border-[0.5px] border-[#3a324a14] bg-[#e8eef0]">
