@@ -4,6 +4,48 @@
 
 ---
 
+## イテレーション154.58：待ち合わせカレンダーの警告アイコン位置と曜日計算を修正
+
+### 背景・問題意識
+
+オーナーから、待ち合わせ候補の `!` アイコンが左寄りに見えることと、今日が金曜日のはずなのにカレンダー上では土曜日になっているという指摘があった。
+
+未設定候補の警告は中央に見えないと不自然であり、曜日は端末・ブラウザ・実行環境のタイムゾーン差に影響されないよう、日付キーから安定して計算する必要がある。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- 場所未設定候補の `!` アイコンを候補ブロック中央に絶対配置した。
+- `formatDateKeyWeekday` を `new Date(...+09:00).getDay()` ではなく、`YYYY-MM-DD` を `Date.UTC` で組み立てて `getUTCDay()` する方式へ変更した。
+- これにより、`2026-05-08` は必ず金曜日として表示される。
+
+### 影響範囲
+
+- `/propose/[partnerId]` の待ち合わせタブ
+- カレンダー上の曜日表示
+- 場所未設定候補ブロックの警告アイコン表示
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ `!` アイコンを候補ブロック中央に配置
+- ✅ 曜日計算をタイムゾーン差に影響されにくい実装へ変更
+- ✅ `2026-05-08` が金曜日として計算されることを確認
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.57：待ち合わせ未設定時の長押し案内を追加
 
 ### 背景・問題意識

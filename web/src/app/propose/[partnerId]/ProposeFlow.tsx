@@ -222,8 +222,9 @@ function buildMeetupWeekDateKeysFromDateKey(dateKey: string): string[] {
 }
 
 function formatDateKeyWeekday(dateKey: string): string {
-  const d = new Date(`${dateKey}T00:00:00+09:00`);
-  return "日月火水木金土"[d.getDay()];
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return "日月火水木金土"[d.getUTCDay()];
 }
 
 function formatDateKeyDayNumber(dateKey: string): string {
@@ -2468,7 +2469,7 @@ function WeekMeetupCalendar({
                   style={{ top: block.top, height: block.height, touchAction: "none" }}
                 >
                   {placeMissing ? (
-                    <span className="pointer-events-none flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full bg-[#fb923c] text-[11px] font-black leading-none text-white shadow-[0_2px_7px_rgba(251,146,60,0.34)]">
+                    <span className="pointer-events-none absolute left-1/2 top-1/2 flex h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#fb923c] text-[11px] font-black leading-none text-white shadow-[0_2px_7px_rgba(251,146,60,0.34)]">
                       !
                     </span>
                   ) : (
