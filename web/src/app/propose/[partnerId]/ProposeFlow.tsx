@@ -146,7 +146,7 @@ type Props = {
 /* Tokyo Station fallback */
 const FALLBACK_CENTER: [number, number] = [35.6812, 139.7671];
 const MAX_MEETUP_CANDIDATES = 3;
-const MEETUP_WEEK_DAYS = 7;
+const MEETUP_WEEK_DAYS = 5;
 const MEETUP_CALENDAR_START_HOUR = 0;
 const MEETUP_CALENDAR_END_HOUR = 24;
 const MEETUP_SLOT_MINUTES = 15;
@@ -1718,7 +1718,9 @@ function MeetupTab({
   }
 
   function shiftCalendarWeek(direction: 1 | -1) {
-    setCalendarWeekStartKey((current) => addDaysToDateKey(current, direction * 7));
+    setCalendarWeekStartKey((current) =>
+      addDaysToDateKey(current, direction * MEETUP_WEEK_DAYS),
+    );
   }
 
   return (
@@ -2337,14 +2339,12 @@ function WeekMeetupCalendar({
           50% { transform: scale(1.035); opacity: 0.94; }
         }
       `}</style>
-      <div
-        className="relative h-[calc(100dvh-250px)] min-h-0"
-      >
+      <div className="relative h-[calc(100dvh-250px)] min-h-0">
         <div
           ref={scrollRef}
           className="h-full overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]"
         >
-          <div className="sticky top-0 z-20 grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a12] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.05)]">
+          <div className="sticky top-0 z-20 grid grid-cols-[52px_repeat(5,minmax(0,1fr))] border-b border-[#3a324a12] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.05)]">
             <div />
             {weekDateKeys.map((dateKey, index) => (
               <div
@@ -2368,7 +2368,7 @@ function WeekMeetupCalendar({
           </div>
           <div
             ref={gridRef}
-            className="relative grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-t-2 border-[#24a7f2]"
+            className="relative grid grid-cols-[52px_repeat(5,minmax(0,1fr))] border-t-2 border-[#24a7f2]"
             style={{
               height:
                 MEETUP_CALENDAR_TOP_PADDING +
