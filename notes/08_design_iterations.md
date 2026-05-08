@@ -4,6 +4,58 @@
 
 ---
 
+## イテレーション154.71：フッター遷移を即時反応型に調整
+
+### 背景・問題意識
+
+オーナーから、フッターを押した時に選択箇所はぬるっと先に変わってほしいが、画面自体にはローディングが必要になるはずなので、読み込み中はローディング画面を見せて完了後に表示する形にできないかという要望があった。
+
+フッターはタップ直後の反応が遅いと「押せていない」感覚になりやすい。一方で、ページのデータ取得を待たずに画面だけ切り替えたように見せると内容が追いつかない。そこで、フッターの選択状態だけを先行して動かし、画面側はガラスのローディング幕で読み込み中を明示する設計にした。
+
+### 変更内容
+
+#### `web/src/components/home/BottomNav.tsx`
+- フッターリンク押下時に、遷移完了を待たず `optimisticTarget` で押した先を仮アクティブ表示するようにした。
+- アクティブ判定を「実際の現在地」と「見た目用の現在地」に分離し、`aria-current` は実際の現在地だけに残すようにした。
+- フッター遷移開始時に `body.ihub-bottom-nav-loading` を付け、遷移完了前の画面ローディング幕を出せるようにした。
+
+#### `web/src/components/home/BottomNavTransitionBridge.tsx`
+- ルート変更後に `ihub-bottom-nav-loading` を消し、次ページのフェード/リフトインへ自然につなげるようにした。
+
+#### `web/src/app/globals.css`
+- `body.ihub-bottom-nav-loading::before` で画面全体に薄いガラス幕を表示するようにした。
+- `body.ihub-bottom-nav-loading::after` でフッター上部に小さな回転インジケータを表示するようにした。
+- `prefers-reduced-motion` ではローディング幕/遷移アニメーションを止めるようにした。
+
+### 影響範囲
+
+- ボトムナビ経由のホーム/在庫/wish/取引/プロフ遷移
+- フッタータップ直後のアクティブ表示
+- ページ読み込み中の共通ローディング表示
+
+### 確認方法
+
+- `npx eslint 'src/components/home/BottomNav.tsx' 'src/components/home/BottomNavTransitionBridge.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/home/BottomNav.tsx`
+- `web/src/components/home/BottomNavTransitionBridge.tsx`
+- `web/src/app/globals.css`
+
+### セルフレビュー結果
+
+- ✅ フッターの見た目だけ先行して動かし、読み込み中の画面はガラス幕で受ける設計にした
+- ✅ `aria-current` は実際の現在ページにのみ付けているため、仮アクティブ表示でアクセシビリティ上の現在地がずれない
+- ✅ ローディング幕は `body` クラス限定で、詳細画面の右スライドや削除アニメーションとは分離している
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.70：ホーム検索をフッター左下へ移動
 
 ### 背景・問題意識

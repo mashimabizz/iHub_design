@@ -585,9 +585,46 @@ body.wish-deleting::view-transition-new(root) {
 }
 
 /*
- * iter154.69: ボトムナビ用のなめらかな画面遷移。
+ * iter154.69 / iter154.71: ボトムナビ用のなめらかな画面遷移。
  * フッタータブの遷移だけに限定し、詳細画面の右スライド演出とは干渉させない。
  */
+body.ihub-bottom-nav-loading::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  pointer-events: none;
+  background:
+    radial-gradient(64% 26% at 50% 100%, rgba(166, 149, 216, 0.16), transparent 72%),
+    linear-gradient(180deg, rgba(251, 249, 252, 0.38), rgba(251, 249, 252, 0.66));
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  animation: ihubBottomNavLoadingVeil 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+body.ihub-bottom-nav-loading::after {
+  content: "";
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 104px);
+  z-index: 36;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.96) 0 28%, rgba(255, 255, 255, 0.44) 30% 43%, transparent 45%),
+    conic-gradient(from 0deg, rgba(166, 149, 216, 0), rgba(166, 149, 216, 0.88), rgba(168, 212, 230, 0.88), rgba(166, 149, 216, 0));
+  box-shadow:
+    0 12px 26px rgba(58, 50, 74, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  transform: translateX(-50%);
+  rotate: 0deg;
+  animation:
+    ihubBottomNavLoadingIn 260ms cubic-bezier(0.16, 1, 0.3, 1) both,
+    ihubBottomNavLoadingSpin 900ms linear infinite;
+}
+
 body.ihub-bottom-nav-transitioning::view-transition-old(root) {
   animation: 240ms cubic-bezier(0.4, 0, 0.2, 1) both ihubBottomNavOld;
 }
@@ -599,6 +636,34 @@ body.ihub-bottom-nav-transitioning::view-transition-new(root) {
 body.ihub-bottom-nav-route-entering main {
   animation: ihubBottomNavPageIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity, filter;
+}
+
+@keyframes ihubBottomNavLoadingVeil {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ihubBottomNavLoadingIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.88);
+    filter: blur(1.5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes ihubBottomNavLoadingSpin {
+  to {
+    rotate: 360deg;
+  }
 }
 
 @keyframes ihubBottomNavOld {
@@ -636,6 +701,8 @@ body.ihub-bottom-nav-route-entering main {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  body.ihub-bottom-nav-loading::before,
+  body.ihub-bottom-nav-loading::after,
   body.ihub-bottom-nav-transitioning::view-transition-old(root),
   body.ihub-bottom-nav-transitioning::view-transition-new(root),
   body.ihub-bottom-nav-route-entering main {

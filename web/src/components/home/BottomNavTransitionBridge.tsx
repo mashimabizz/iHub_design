@@ -21,6 +21,7 @@ export function BottomNavTransitionBridge() {
     if (!consumeBottomNavTransitionFlag()) return;
 
     const body = window.document.body;
+    body.classList.remove("ihub-bottom-nav-loading");
     body.classList.remove("ihub-bottom-nav-transitioning");
     body.classList.add("ihub-bottom-nav-route-entering");
 
@@ -30,6 +31,7 @@ export function BottomNavTransitionBridge() {
 
     return () => {
       window.clearTimeout(timer);
+      body.classList.remove("ihub-bottom-nav-loading");
       body.classList.remove("ihub-bottom-nav-route-entering");
     };
   }, [pathname]);

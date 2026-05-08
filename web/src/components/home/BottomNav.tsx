@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 const BOTTOM_NAV_TRANSITION_KEY = "ihub-bottom-nav-transition";
 
@@ -15,6 +16,10 @@ const BOTTOM_NAV_TRANSITION_KEY = "ihub-bottom-nav-transition";
  */
 export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
   const pathname = usePathname();
+  const [optimisticTarget, setOptimisticTarget] = useState<{
+    href: string;
+    fromPath: string;
+  } | null>(null);
 
   // iter65.8: AW タブを削除（現地交換モードはホーム画面で完結）
   // iter67-E: 「取引」タブを追加（中央配置）
@@ -27,14 +32,22 @@ export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
     { href: "/profile", label: "プロフ", icon: "profile" as const },
   ];
 
+  const visualPathname =
+    optimisticTarget?.fromPath === pathname ? optimisticTarget.href : pathname;
   const activeItemIndex = items.findIndex((it) =>
-    it.href === "/" ? pathname === "/" : pathname.startsWith(it.href),
+    it.href === "/"
+      ? visualPathname === "/"
+      : visualPathname.startsWith(it.href),
   );
   const activeIndex = Math.max(0, activeItemIndex);
 
   const links = items.map((it, index) => {
-    const active =
+    const actualActive =
       it.href === "/" ? pathname === "/" : pathname.startsWith(it.href);
+    const visualActive =
+      it.href === "/"
+        ? visualPathname === "/"
+        : visualPathname.startsWith(it.href);
     return (
       <Link
         key={it.href}
@@ -42,21 +55,24 @@ export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
         scroll={false}
         transitionTypes={["ihub-bottom-nav"]}
         onNavigate={() => {
-          if (!active) markBottomNavNavigation();
+          if (!actualActive) {
+            setOptimisticTarget({ href: it.href, fromPath: pathname });
+            markBottomNavNavigation();
+          }
         }}
         className={`relative z-10 flex h-[54px] flex-1 flex-col items-center justify-center gap-[3px] rounded-full text-[9.5px] leading-none transition-[color,transform,filter] duration-300 active:scale-[0.94] ${
-          active
+          visualActive
             ? "font-extrabold text-ihub-lavender drop-shadow-[0_2px_7px_rgba(58,50,74,0.18)]"
             : "font-bold text-[#3a324a99]"
         }`}
-        aria-current={active ? "page" : undefined}
+        aria-current={actualActive ? "page" : undefined}
         style={{
-          transitionDelay: active ? "50ms" : `${index * 12}ms`,
+          transitionDelay: visualActive ? "50ms" : `${index * 12}ms`,
         }}
       >
         <span
           className={`flex h-[25px] w-[25px] items-center justify-center rounded-full transition-transform duration-300 ${
-            active ? "-translate-y-0.5 scale-105" : "scale-95"
+            visualActive ? "-translate-y-0.5 scale-105" : "scale-95"
           }`}
         >
           <NavIcon name={it.icon} />
@@ -98,6 +114,7 @@ export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
 
 function markBottomNavNavigation() {
   if (typeof window === "undefined") return;
+  window.document.body.classList.add("ihub-bottom-nav-loading");
   window.document.body.classList.add("ihub-bottom-nav-transitioning");
   try {
     window.sessionStorage.setItem(BOTTOM_NAV_TRANSITION_KEY, "1");
@@ -105,6 +122,7 @@ function markBottomNavNavigation() {
     // sessionStorage が使えない環境でもナビゲーション自体は続行する。
   }
   window.setTimeout(() => {
+    window.document.body.classList.remove("ihub-bottom-nav-loading");
     window.document.body.classList.remove("ihub-bottom-nav-transitioning");
   }, 900);
 }
