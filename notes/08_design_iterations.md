@@ -4,6 +4,48 @@
 
 ---
 
+## イテレーション154.56：待ち合わせカレンダーの24時選択余白を追加
+
+### 背景・問題意識
+
+オーナーから、待ち合わせタブのカレンダーで24時まで候補をドラッグ選択できず、一番下に操作用の遊びがないことが原因かもしれないという指摘があった。
+
+スマホ操作では、24:00 の最後の15分枠に指を正確に置くのが難しく、下端に余白がないと終了時刻を24:00に合わせづらい。
+
+### 変更内容
+
+#### `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+- カレンダー下端の余白を広げ、24:00 の下にも指を置ける遊びを作った。
+- 下端の余白エリアまでドラッグした場合も、最後の15分枠として扱い、終了時刻が24:00になるようにした。
+- pointer / touch / 既存候補編集の座標計算を共通 helper にまとめ、下端余白での判定を揃えた。
+
+### 影響範囲
+
+- `/propose/[partnerId]` の待ち合わせタブ
+- カレンダー候補のドラッグ作成
+- 既存候補の移動・終了時刻リサイズ
+
+### 確認方法
+
+- `npx eslint 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/propose/[partnerId]/ProposeFlow.tsx`
+
+### セルフレビュー結果
+
+- ✅ 24:00 下に操作用余白を追加
+- ✅ 下端余白へドラッグしても24:00終了として扱える
+- ✅ pointer / touch / 既存候補編集の座標判定を共通化
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.55：未設定候補のカレンダー表示を警告アイコン化
 
 ### 背景・問題意識

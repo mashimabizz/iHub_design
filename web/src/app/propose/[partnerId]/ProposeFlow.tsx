@@ -157,7 +157,7 @@ const MEETUP_SLOT_COUNT =
   MEETUP_SLOT_MINUTES;
 const MEETUP_TIMELINE_HEIGHT = MEETUP_SLOT_COUNT * MEETUP_SLOT_HEIGHT;
 const MEETUP_CALENDAR_TOP_PADDING = 18;
-const MEETUP_CALENDAR_BOTTOM_PADDING = 22;
+const MEETUP_CALENDAR_BOTTOM_PADDING = 88;
 const MEETUP_CALENDAR_DEFAULT_SCROLL_HOUR = 10;
 const MEETUP_TIME_LABEL_WIDTH = 52;
 
@@ -259,6 +259,20 @@ function localToCalendarSlot(local: string): number | null {
 
 function calendarSlotTop(slot: number): number {
   return MEETUP_CALENDAR_TOP_PADDING + slot * MEETUP_SLOT_HEIGHT;
+}
+
+function calendarClientYToSlot(clientY: number, rectTop: number): number {
+  const y = Math.max(
+    0,
+    Math.min(
+      MEETUP_TIMELINE_HEIGHT + MEETUP_CALENDAR_BOTTOM_PADDING - 1,
+      clientY - rectTop - MEETUP_CALENDAR_TOP_PADDING,
+    ),
+  );
+  return Math.max(
+    0,
+    Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
+  );
 }
 
 function candidateHasTime(candidate: MeetupCandidate): boolean {
@@ -1872,16 +1886,9 @@ function WeekMeetupCalendar({
     const dayWidth = dayAreaWidth / MEETUP_WEEK_DAYS;
     const rawDay = Math.floor((clientX - dayAreaLeft) / dayWidth);
     const dayIndex = Math.max(0, Math.min(MEETUP_WEEK_DAYS - 1, rawDay));
-    const y = Math.max(
-      0,
-      Math.min(MEETUP_TIMELINE_HEIGHT - 1, clientY - rect.top - MEETUP_CALENDAR_TOP_PADDING),
-    );
     return {
       dayIndex,
-      slot: Math.max(
-        0,
-        Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
-      ),
+      slot: calendarClientYToSlot(clientY, rect.top),
     };
   }
 
@@ -1890,32 +1897,12 @@ function WeekMeetupCalendar({
     el: HTMLDivElement,
   ): number {
     const rect = el.getBoundingClientRect();
-    const y = Math.max(
-      0,
-      Math.min(
-        MEETUP_TIMELINE_HEIGHT - 1,
-        e.clientY - rect.top - MEETUP_CALENDAR_TOP_PADDING,
-      ),
-    );
-    return Math.max(
-      0,
-      Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
-    );
+    return calendarClientYToSlot(e.clientY, rect.top);
   }
 
   function slotFromTouch(touch: { clientY: number }, el: HTMLDivElement): number {
     const rect = el.getBoundingClientRect();
-    const y = Math.max(
-      0,
-      Math.min(
-        MEETUP_TIMELINE_HEIGHT - 1,
-        touch.clientY - rect.top - MEETUP_CALENDAR_TOP_PADDING,
-      ),
-    );
-    return Math.max(
-      0,
-      Math.min(MEETUP_SLOT_COUNT - 1, Math.floor(y / MEETUP_SLOT_HEIGHT)),
-    );
+    return calendarClientYToSlot(touch.clientY, rect.top);
   }
 
   function findTouch(
