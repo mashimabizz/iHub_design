@@ -22,6 +22,8 @@ type RawRow = {
   sender_have_qtys: number[];
   receiver_have_ids: string[];
   receiver_have_qtys: number[];
+  agreed_by_sender: boolean;
+  agreed_by_receiver: boolean;
   meetup_start_at: string | null;
   meetup_end_at: string | null;
   meetup_place_name: string | null;
@@ -35,6 +37,7 @@ type RawRow = {
 type GoodsRow = {
   id: string;
   title: string;
+  photo_urls: string[] | null;
   group: { name: string } | { name: string }[] | null;
   character: { name: string } | { name: string }[] | null;
   goods_type: { name: string } | { name: string }[] | null;
@@ -71,6 +74,7 @@ export default async function TransactionsPage() {
     .select(
       `id, sender_id, receiver_id, status, cash_offer, cash_amount,
        sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
+       agreed_by_sender, agreed_by_receiver,
        meetup_start_at, meetup_end_at, meetup_place_name,
        expires_at, created_at, last_action_at, completed_at, message`,
     )
@@ -79,6 +83,7 @@ export default async function TransactionsPage() {
     .order("last_action_at", { ascending: false });
 
   const list = (rows as RawRow[]) ?? [];
+  const proposalIds = list.map((r) => r.id);
 
   // iter76-D: 自分が付けた評価（stars）を proposals に紐づけ
   const completedIds = list
@@ -122,6 +127,29 @@ export default async function TransactionsPage() {
     }
   }
 
+  // iter154.65: 打診中を「要対応 / 相手待ち」に分けるため、最新メッセージの主体を取得
+  const latestMessageFromByProposalId = new Map<
+    string,
+    "me" | "partner"
+  >();
+  if (proposalIds.length > 0) {
+    const { data: messages } = await supabase
+      .from("messages")
+      .select("proposal_id, sender_id, created_at")
+      .in("proposal_id", proposalIds)
+      .order("created_at", { ascending: false });
+    if (messages) {
+      for (const m of messages) {
+        const proposalId = m.proposal_id as string;
+        if (latestMessageFromByProposalId.has(proposalId)) continue;
+        latestMessageFromByProposalId.set(
+          proposalId,
+          m.sender_id === user.id ? "me" : "partner",
+        );
+      }
+    }
+  }
+
   // 相手 user
   const partnerIds = Array.from(
     new Set(
@@ -160,13 +188,13 @@ export default async function TransactionsPage() {
   }
   const invById = new Map<
     string,
-    { label: string; goodsTypeName: string | null }
+    { label: string; goodsTypeName: string | null; photoUrl: string | null }
   >();
   if (allInvIds.size > 0) {
     const { data: invs } = await supabase
       .from("goods_inventory")
       .select(
-        "id, title, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+        "id, title, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
       )
       .in("id", Array.from(allInvIds));
     if (invs) {
@@ -176,6 +204,7 @@ export default async function TransactionsPage() {
         invById.set(r.id, {
           label: charName ?? groupName ?? r.title,
           goodsTypeName: pickName(r.goods_type),
+          photoUrl: (r.photo_urls && r.photo_urls[0]) ?? null,
         });
       }
     }
@@ -193,25 +222,65 @@ export default async function TransactionsPage() {
       .join(" / ");
   }
 
+  function previewItems(
+    ids: string[],
+    qtys: number[],
+  ): TransactionRow["myGiveItems"] {
+    return ids.slice(0, 4).map((id, i) => {
+      const inv = invById.get(id);
+      return {
+        id,
+        label: inv?.label ?? "?",
+        photoUrl: inv?.photoUrl ?? null,
+        qty: qtys[i] ?? 1,
+      };
+    });
+  }
+
   const transactions: TransactionRow[] = list.map((r) => {
     const direction = r.sender_id === user.id ? "sent" : "received";
     const partnerId = direction === "sent" ? r.receiver_id : r.sender_id;
     const partner = usersById.get(partnerId);
     const senderItems = summarizeItems(r.sender_have_ids, r.sender_have_qtys);
+    const senderItemPreviews = previewItems(
+      r.sender_have_ids,
+      r.sender_have_qtys,
+    );
     const receiverItems = r.cash_offer
       ? `💴 ¥${r.cash_amount?.toLocaleString() ?? "—"}`
       : summarizeItems(r.receiver_have_ids, r.receiver_have_qtys);
+    const receiverItemPreviews = r.cash_offer
+      ? [
+          {
+            id: `cash-${r.id}`,
+            label: `¥${r.cash_amount?.toLocaleString() ?? "—"}`,
+            photoUrl: null,
+            qty: 1,
+            cash: true,
+          },
+        ]
+      : previewItems(r.receiver_have_ids, r.receiver_have_qtys);
 
     // ユーザー視点：受け取る ↔ 出す
     let myReceive: string;
     let myGive: string;
+    let myReceiveItems: TransactionRow["myReceiveItems"];
+    let myGiveItems: TransactionRow["myGiveItems"];
     if (direction === "sent") {
       myGive = senderItems;
       myReceive = receiverItems;
+      myGiveItems = senderItemPreviews;
+      myReceiveItems = receiverItemPreviews;
     } else {
       myGive = receiverItems;
       myReceive = senderItems;
+      myGiveItems = receiverItemPreviews;
+      myReceiveItems = senderItemPreviews;
     }
+    const myAgreed =
+      direction === "sent" ? r.agreed_by_sender : r.agreed_by_receiver;
+    const partnerAgreed =
+      direction === "sent" ? r.agreed_by_receiver : r.agreed_by_sender;
 
     return {
       id: r.id,
@@ -225,6 +294,10 @@ export default async function TransactionsPage() {
       cashAmount: r.cash_amount,
       myGiveSummary: myGive,
       myReceiveSummary: myReceive,
+      myGiveItems,
+      myReceiveItems,
+      myAgreed,
+      partnerAgreed,
       meetupStartAt: r.meetup_start_at,
       meetupEndAt: r.meetup_end_at,
       meetupPlaceName: r.meetup_place_name,
@@ -234,6 +307,7 @@ export default async function TransactionsPage() {
       completedAt: r.completed_at,
       myStars: myEvalByProposalId.get(r.id) ?? null,
       openDispute: openDisputeByProposalId.get(r.id) ?? null,
+      latestMessageFrom: latestMessageFromByProposalId.get(r.id) ?? null,
       messageExcerpt: r.message
         ? r.message.length > 60
           ? `${r.message.slice(0, 60)}…`

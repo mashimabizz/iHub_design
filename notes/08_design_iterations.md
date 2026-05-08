@@ -4,6 +4,57 @@
 
 ---
 
+## イテレーション154.65：打診中一覧をチケット型に刷新
+
+### 背景・問題意識
+
+オーナーから、取引一覧は上位タブを「打診中／進行中／完了」のまま維持し、打診中の中だけ「要対応」と「相手待ち」に分けたいという要望があった。
+
+また、当初案のように情報量を盛りすぎると1つのパネルが縦長になってしまうため、見たい情報を保ちながら、短時間で判断できるコンパクトなチケット型パネルに寄せる必要があった。
+
+### 変更内容
+
+#### `web/src/app/transactions/page.tsx`
+- 打診中の対応要否を判定できるよう、`proposals.agreed_by_sender` / `agreed_by_receiver` を一覧取得に追加した。
+- `messages` の最新送信者を proposal ごとに取得し、ネゴ中の「要対応／相手待ち」判定に使うようにした。
+- `goods_inventory.photo_urls` を取得し、取引一覧カードへ譲・受け取るグッズの小さな画像プレビューを渡すようにした。
+- 定価交換の候補は画像なしの金額チップとして扱うようにした。
+
+#### `web/src/app/transactions/TransactionsView.tsx`
+- 上位タブの「過去取引」を「完了」に変更した。
+- 打診中タブ内に「要対応」「相手待ち」の2分割タブを追加した。
+- 未返信・相手最新メッセージ・一方合意の自分待ちを「要対応」に、それ以外を「相手待ち」に分類するようにした。
+- 打診中カードを、ステータス／期限／相手ID／受け取る画像列／出す画像列／待ち合わせ要約／CTAだけに絞ったコンパクトなチケット型へ変更した。
+- 要対応カードは左端に細いアクセントを置き、一覧で優先して気づける見た目にした。
+
+### 影響範囲
+
+- `/transactions` の取引一覧画面
+- 打診中タブの分類・カード表示
+- 進行中／完了タブの上位タブラベル表示
+
+### 確認方法
+
+- `npx eslint 'src/app/transactions/TransactionsView.tsx' 'src/app/transactions/page.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/transactions/page.tsx`
+- `web/src/app/transactions/TransactionsView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 上位タブは「打診中／進行中／完了」に統一
+- ✅ 打診中のみ「要対応／相手待ち」の内側タブで分類
+- ✅ パネルは縦長化を避け、画像付きの短いチケット型に整理
+- ✅ 既存の `sent` / `negotiating` / `agreement_one_side` / `agreed` 状態を使っており、新しい状態名は追加していない
+- ✅ 新しいDBカラムやmigrationは追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+
+---
+
 ## イテレーション154.64：待ち合わせ候補の長押しリフト表現を追加
 
 ### 背景・問題意識

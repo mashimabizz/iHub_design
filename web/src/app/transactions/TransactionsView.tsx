@@ -5,12 +5,20 @@
  *
  * - 打診中：送信→/←受信 chip 色分け、状態文「相手の返信待ち / 返信が必要」
  * - 進行中：合流カウントダウン
- * - 過去取引：フィルタ chip（すべて/完了/キャンセル/期限切れ拒否）+ 月別セクション + ★評価
+ * - 完了：フィルタ chip（すべて/完了/キャンセル/期限切れ拒否）+ 月別セクション + ★評価
  */
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/common/Avatar";
+
+export type TransactionPreviewItem = {
+  id: string;
+  label: string;
+  photoUrl: string | null;
+  qty: number;
+  cash?: boolean;
+};
 
 export type TransactionRow = {
   id: string;
@@ -33,6 +41,10 @@ export type TransactionRow = {
   cashAmount: number | null;
   myGiveSummary: string;
   myReceiveSummary: string;
+  myGiveItems: TransactionPreviewItem[];
+  myReceiveItems: TransactionPreviewItem[];
+  myAgreed: boolean;
+  partnerAgreed: boolean;
   meetupStartAt: string | null;
   meetupEndAt: string | null;
   meetupPlaceName: string | null;
@@ -45,11 +57,14 @@ export type TransactionRow = {
   myStars: number | null;
   /** iter79-C: 進行中の dispute（あれば ID と ticket_no） */
   openDispute: { id: string; ticketNo: string } | null;
+  /** iter154.65: 最新メッセージが自分/相手どちら由来か */
+  latestMessageFrom: "me" | "partner" | null;
   /** iter91: 打診作成時のメッセージ抜粋（打診中タブで表示） */
   messageExcerpt: string | null;
 };
 
 type TabId = "pending" | "ongoing" | "past";
+type PendingSubTab = "action" | "waiting";
 type PastFilter = "all" | "completed" | "cancelled" | "rejected_expired";
 
 /** iter127: スワイプ用 tab 順 */
@@ -153,7 +168,7 @@ export function TransactionsView({
             [
               { id: "pending", label: "打診中", count: counts.pending },
               { id: "ongoing", label: "進行中", count: counts.ongoing },
-              { id: "past", label: "過去取引", count: counts.past },
+              { id: "past", label: "完了", count: counts.past },
             ] as const
           ).map((t) => {
             const active = tab === t.id;
@@ -233,47 +248,275 @@ function PendingList({
   active: boolean;
   now: number;
 }) {
+  const [pendingSubTab, setPendingSubTab] =
+    useState<PendingSubTab>("action");
+  const actionList = useMemo(
+    () => list.filter(pendingNeedsAction),
+    [list],
+  );
+  const waitingList = useMemo(
+    () => list.filter((t) => !pendingNeedsAction(t)),
+    [list],
+  );
+  const currentList =
+    pendingSubTab === "action" ? actionList : waitingList;
+
   return (
     <div className="mb-2">
-      <div className="mb-2 text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-        打診中
-        <span className="ml-1 font-normal text-[#3a324a4d]">· 新着順</span>
+      <div className="mb-3 grid grid-cols-2 rounded-full bg-[#3a324a0a] p-1">
+        {(
+          [
+            { id: "action", label: "要対応", count: actionList.length },
+            { id: "waiting", label: "相手待ち", count: waitingList.length },
+          ] as const
+        ).map((item) => {
+          const selected = pendingSubTab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setPendingSubTab(item.id)}
+              className={`rounded-full px-3 py-2 text-[12px] font-extrabold transition-all ${
+                selected
+                  ? "bg-white text-[#3a324a] shadow-[0_4px_14px_rgba(58,50,74,0.10)]"
+                  : "text-[#3a324a8c]"
+              }`}
+            >
+              {item.label}
+              <span className="ml-1 text-[10.5px] tabular-nums">
+                {item.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
-      <div className="space-y-2">
-        {list.map((t, i) => (
-          <div
-            key={t.id}
-            className={active ? "animate-transaction-panel-in" : undefined}
-            style={active ? { animationDelay: `${i * 95}ms` } : undefined}
+
+      {currentList.length === 0 ? (
+        <div
+          className={`rounded-2xl border border-dashed border-[#3a324a14] bg-white py-9 text-center text-xs text-[#3a324a8c] ${
+            active ? "animate-transaction-panel-in" : ""
+          }`}
+        >
+          {pendingSubTab === "action"
+            ? "いま対応が必要な打診はありません"
+            : "相手待ちの打診はありません"}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {currentList.map((t, i) => (
+            <div
+              key={t.id}
+              className={active ? "animate-transaction-panel-in" : undefined}
+              style={active ? { animationDelay: `${i * 95}ms` } : undefined}
+            >
+              <PendingCard t={t} now={now} subTab={pendingSubTab} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PendingCard({
+  t,
+  now,
+  subTab,
+}: {
+  t: TransactionRow;
+  now: number;
+  subTab: PendingSubTab;
+}) {
+  const href =
+    t.status === "negotiating" || t.status === "agreement_one_side"
+      ? `/transactions/${t.id}`
+      : `/proposals/${t.id}`;
+  const needsAction = pendingNeedsAction(t);
+  const statusText = pendingStatusText(t, needsAction);
+  const expiresInDays = getExpiresInDays(t, now);
+  const expiryText = expiresLabel(expiresInDays);
+  const meetup = compactMeetup(t);
+  const cta = needsAction ? "確認" : "詳細";
+
+  return (
+    <Link
+      href={href}
+      className={`relative block overflow-hidden rounded-[16px] border bg-white px-3 py-2.5 shadow-[0_6px_18px_rgba(58,50,74,0.06)] transition-all active:scale-[0.99] ${
+        needsAction ? "border-[#d9826b33]" : "border-[#3a324a12]"
+      }`}
+    >
+      {needsAction && (
+        <span className="absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full bg-[#d9826b]" />
+      )}
+      <div className="flex items-center gap-1.5">
+        <span
+          className={`rounded-full px-2 py-[2px] text-[10px] font-extrabold ${
+            needsAction
+              ? "bg-[#d9826b14] text-[#d9826b]"
+              : "bg-[#a8d4e626] text-[#3a7c93]"
+          }`}
+        >
+          {statusText}
+        </span>
+        {expiryText && (
+          <span
+            className={`text-[10px] font-bold tabular-nums ${
+              expiresInDays !== null && expiresInDays <= 1
+                ? "text-[#d9826b]"
+                : "text-[#3a324a8c]"
+            }`}
           >
-            <PendingCard t={t} now={now} />
-          </div>
-        ))}
+            {expiryText}
+          </span>
+        )}
+        <span className="min-w-0 flex-1 truncate text-right text-[11px] font-bold text-[#3a324acc]">
+          @{t.partnerHandle}
+        </span>
+      </div>
+
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_20px_minmax(0,0.82fr)] items-center gap-1.5">
+        <TradeSide label="受け取る" items={t.myReceiveItems} emphasis />
+        <div className="flex justify-center text-[12px] font-extrabold text-[#3a324a66]">
+          ⇄
+        </div>
+        <TradeSide label="出す" items={t.myGiveItems} />
+      </div>
+
+      <div className="mt-2 flex items-center gap-1.5 text-[10.5px] text-[#3a324a8c]">
+        <Avatar
+          url={t.partnerAvatarUrl}
+          fallbackName={t.partnerDisplayName || t.partnerHandle}
+          size={18}
+          variant="square"
+        />
+        <span className="min-w-0 flex-1 truncate">{meetup}</span>
+        <span
+          className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
+            subTab === "action"
+              ? "bg-[#3a324a] text-white"
+              : "bg-[#3a324a0a] text-[#3a324acc]"
+          }`}
+        >
+          {cta}
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function TradeSide({
+  label,
+  items,
+  emphasis = false,
+}: {
+  label: string;
+  items: TransactionPreviewItem[];
+  emphasis?: boolean;
+}) {
+  const visible = items.slice(0, 3);
+  const extra = Math.max(0, items.length - visible.length);
+  const summary = items.map((item) => item.label).join(" / ") || "—";
+  return (
+    <div
+      className={`min-w-0 rounded-[12px] px-2 py-1.5 ${
+        emphasis ? "bg-[#a695d80d]" : "bg-[#3a324a08]"
+      }`}
+    >
+      <div
+        className={`mb-1 text-[9.5px] font-extrabold ${
+          emphasis ? "text-[#a695d8]" : "text-[#3a324a8c]"
+        }`}
+      >
+        {label}
+      </div>
+      <div className="flex min-w-0 items-center gap-1">
+        {visible.length > 0 ? (
+          visible.map((item) => (
+            <ItemThumb key={item.id} item={item} emphasis={emphasis} />
+          ))
+        ) : (
+          <span className="text-[11px] font-bold text-[#3a324a8c]">—</span>
+        )}
+        {extra > 0 && (
+          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[8px] bg-white text-[10px] font-extrabold text-[#3a324a8c]">
+            +{extra}
+          </span>
+        )}
+        <span className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-[#3a324acc]">
+          {summary}
+        </span>
       </div>
     </div>
   );
 }
 
-function PendingCard({ t, now }: { t: TransactionRow; now: number }) {
-  // ネゴ系はチャットへ直送、未応答 (sent) は受信側なら詳細ページへ
-  const href =
-    t.status === "negotiating" || t.status === "agreement_one_side"
-      ? `/transactions/${t.id}`
-      : `/proposals/${t.id}`;
+function ItemThumb({
+  item,
+  emphasis,
+}: {
+  item: TransactionPreviewItem;
+  emphasis: boolean;
+}) {
+  return (
+    <span
+      className={`relative flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-[8px] border ${
+        emphasis ? "border-[#a695d855] bg-white" : "border-white bg-white"
+      }`}
+    >
+      {item.photoUrl ? (
+        // Supabase Storage の public URL をそのまま表示するため、Avatar と同じく img を使う。
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.photoUrl}
+          alt={item.label}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <span
+          className={`text-[10px] font-black ${
+            item.cash ? "text-[#3a7c93]" : "text-[#a695d8]"
+          }`}
+        >
+          {item.cash ? "¥" : item.label.slice(0, 1)}
+        </span>
+      )}
+      {item.qty > 1 && (
+        <span className="absolute bottom-0 right-0 rounded-tl-[5px] bg-[#3a324acc] px-[3px] text-[8px] font-black leading-[12px] text-white">
+          ×{item.qty}
+        </span>
+      )}
+    </span>
+  );
+}
 
-  // ステータス文：受信×未応答 = 「返信が必要」（赤強調）
-  const needsReply = t.direction === "received" && t.status === "sent";
-  const statusText = needsReply
-    ? "返信が必要"
-    : t.status === "negotiating"
-      ? "ネゴ中（メッセージ確認）"
-      : t.status === "agreement_one_side"
-        ? "一方合意（あなたの確認待ち or 相手待ち）"
-        : t.direction === "sent"
-          ? "相手の返信待ち"
-          : "確認お願いします";
+function pendingNeedsAction(t: TransactionRow): boolean {
+  if (t.status === "sent") return t.direction === "received";
+  if (t.status === "agreement_one_side") return !t.myAgreed;
+  if (t.status === "negotiating") {
+    if (t.latestMessageFrom) return t.latestMessageFrom === "partner";
+    return t.direction === "received";
+  }
+  return false;
+}
 
-  const expiresInDays = t.expiresAt
+function pendingStatusText(
+  t: TransactionRow,
+  needsAction: boolean,
+): string {
+  if (t.status === "sent") {
+    return needsAction ? "返信が必要" : "相手の返信待ち";
+  }
+  if (t.status === "agreement_one_side") {
+    return needsAction ? "成立まであと一歩" : "相手の合意待ち";
+  }
+  if (t.status === "negotiating") {
+    return needsAction ? "確認が必要" : "相手待ち";
+  }
+  return needsAction ? "要対応" : "相手待ち";
+}
+
+function getExpiresInDays(t: TransactionRow, now: number): number | null {
+  return t.expiresAt
     ? Math.max(
         0,
         Math.ceil(
@@ -282,81 +525,23 @@ function PendingCard({ t, now }: { t: TransactionRow; now: number }) {
         ),
       )
     : null;
-  const dirChipBg =
-    t.direction === "sent"
-      ? "bg-[#a8d4e6]"
-      : "bg-[#a695d8]";
-  const dirLabel = t.direction === "sent" ? "送信→" : "←受信";
+}
 
-  return (
-    <Link
-      href={href}
-      className="block overflow-hidden rounded-2xl border border-[#3a324a14] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] transition-all active:scale-[0.99]"
-    >
-      <div className="flex items-start gap-2.5 px-3.5 py-3">
-        <Avatar
-          url={t.partnerAvatarUrl}
-          fallbackName={t.partnerDisplayName || t.partnerHandle}
-          size={36}
-          variant="square"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="mb-0.5 flex items-center gap-1.5">
-            <span
-              className={`rounded-[3px] px-1.5 py-[1px] text-[9.5px] font-bold tracking-[0.3px] text-white ${dirChipBg}`}
-            >
-              {dirLabel}
-            </span>
-            <span className="text-[12px] font-bold text-[#3a324a]">
-              @{t.partnerHandle}
-            </span>
-            {needsReply && (
-              <span className="rounded-full bg-[#d9826b] px-1.5 py-[1px] text-[9px] font-extrabold text-white">
-                NEW
-              </span>
-            )}
-            <div className="flex-1" />
-            {expiresInDays !== null && (
-              <span
-                className={`text-[9.5px] tabular-nums ${
-                  expiresInDays <= 1
-                    ? "font-bold text-[#d9826b]"
-                    : "text-[#3a324a8c]"
-                }`}
-              >
-                残 {expiresInDays}日
-              </span>
-            )}
-          </div>
-          <div className="text-[12px] font-semibold text-[#3a324a]">
-            {t.myReceiveSummary}{" "}
-            <span className="text-[#3a324a8c]">⇄</span> {t.myGiveSummary}
-          </div>
-          {t.meetupPlaceName && (
-            <div className="mt-0.5 truncate text-[10.5px] text-[#3a324a8c]">
-              {t.meetupPlaceName}
-              {t.meetupStartAt &&
-                t.meetupEndAt &&
-                ` ・${formatRange(t.meetupStartAt, t.meetupEndAt)}`}
-            </div>
-          )}
-          {t.messageExcerpt && (
-            <div className="mt-1 line-clamp-2 text-[11px] italic leading-snug text-[#3a324a]">
-              「{t.messageExcerpt}」
-            </div>
-          )}
-          <div
-            className={`mt-1 text-[10.5px] font-bold ${
-              needsReply ? "text-[#d9826b]" : "text-[#a695d8]"
-            }`}
-          >
-            {needsReply && "● "}
-            {statusText}
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
+function expiresLabel(days: number | null): string | null {
+  if (days === null) return null;
+  if (days === 0) return "今日まで";
+  if (days === 1) return "あと1日";
+  return `あと${days}日`;
+}
+
+function compactMeetup(t: TransactionRow): string {
+  const time =
+    t.meetupStartAt && t.meetupEndAt
+      ? formatRange(t.meetupStartAt, t.meetupEndAt)
+      : null;
+  const place = t.meetupPlaceName;
+  if (time && place) return `${time}・${place}`;
+  return time ?? place ?? "待ち合わせ未設定";
 }
 
 /* ─── 進行中（合意済み）：合流時刻までのカウントダウン強調 ─── */
