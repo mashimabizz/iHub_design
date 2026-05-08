@@ -89,6 +89,9 @@ export function TransactionsView({
   const [tab, setTab] = useState<TabId>("pending");
   const [pastFilter, setPastFilter] = useState<PastFilter>("all");
   const [now] = useState(() => Date.now());
+  const [animatedTabs, setAnimatedTabs] = useState<Set<TabId>>(
+    () => new Set(),
+  );
 
   const grouped = useMemo(() => {
     const pending: TransactionRow[] = [];
@@ -159,6 +162,23 @@ export function TransactionsView({
     });
   }
 
+  function shouldAnimateTab(target: TabId): boolean {
+    return tab === target && !animatedTabs.has(target);
+  }
+
+  function markTabAnimated(target: TabId) {
+    setAnimatedTabs((prev) => {
+      if (prev.has(target)) return prev;
+      const next = new Set(prev);
+      next.add(target);
+      return next;
+    });
+  }
+
+  const animatePending = shouldAnimateTab("pending");
+  const animateOngoing = shouldAnimateTab("ongoing");
+  const animatePast = shouldAnimateTab("past");
+
   return (
     <div className="flex flex-1 flex-col">
       {/* iter127: sticky 白背景タブヘッダー */}
@@ -202,11 +222,16 @@ export function TransactionsView({
         {/* 打診中 */}
         <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pt-3 pb-4">
           {grouped.pending.length === 0 ? (
-            <EmptyState tab="pending" active={tab === "pending"} />
+            <EmptyState
+              tab="pending"
+              animate={animatePending}
+              onAnimated={() => markTabAnimated("pending")}
+            />
           ) : (
             <PendingList
               list={grouped.pending}
-              active={tab === "pending"}
+              animate={animatePending}
+              onAnimated={() => markTabAnimated("pending")}
               now={now}
             />
           )}
@@ -214,11 +239,16 @@ export function TransactionsView({
         {/* 進行中 */}
         <div className="flex w-full flex-shrink-0 snap-start flex-col overflow-y-auto px-4 pt-3 pb-4">
           {grouped.ongoing.length === 0 ? (
-            <EmptyState tab="ongoing" active={tab === "ongoing"} />
+            <EmptyState
+              tab="ongoing"
+              animate={animateOngoing}
+              onAnimated={() => markTabAnimated("ongoing")}
+            />
           ) : (
             <OngoingList
               list={grouped.ongoing}
-              active={tab === "ongoing"}
+              animate={animateOngoing}
+              onAnimated={() => markTabAnimated("ongoing")}
               now={now}
             />
           )}
@@ -229,7 +259,8 @@ export function TransactionsView({
             list={grouped.past}
             filter={pastFilter}
             onFilterChange={setPastFilter}
-            active={tab === "past"}
+            animate={animatePast}
+            onAnimated={() => markTabAnimated("past")}
           />
         </div>
       </div>
@@ -241,11 +272,13 @@ export function TransactionsView({
 
 function PendingList({
   list,
-  active,
+  animate,
+  onAnimated,
   now,
 }: {
   list: TransactionRow[];
-  active: boolean;
+  animate: boolean;
+  onAnimated: () => void;
   now: number;
 }) {
   const [pendingSubTab, setPendingSubTab] =
@@ -305,8 +338,9 @@ function PendingList({
       {currentList.length === 0 ? (
         <div
           className={`rounded-2xl border border-dashed border-[#3a324a14] bg-white py-9 text-center text-xs text-[#3a324a8c] ${
-            active ? "animate-transaction-panel-in" : ""
+            animate ? "animate-transaction-panel-in" : ""
           }`}
+          onAnimationEnd={animate ? onAnimated : undefined}
         >
           {displaySubTab === "action"
             ? "いま対応が必要な打診はありません"
@@ -314,15 +348,19 @@ function PendingList({
         </div>
       ) : (
         <div className="space-y-2">
-          {currentList.map((t, i) => (
-            <div
-              key={t.id}
-              className={active ? "animate-transaction-panel-in" : undefined}
-              style={active ? { animationDelay: `${i * 95}ms` } : undefined}
-            >
-              <PendingCard t={t} now={now} subTab={displaySubTab} />
-            </div>
-          ))}
+          {currentList.map((t, i) => {
+            const isLast = i === currentList.length - 1;
+            return (
+              <div
+                key={t.id}
+                className={animate ? "animate-transaction-panel-in" : undefined}
+                style={animate ? { animationDelay: `${i * 95}ms` } : undefined}
+                onAnimationEnd={animate && isLast ? onAnimated : undefined}
+              >
+                <PendingCard t={t} now={now} subTab={displaySubTab} />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -411,13 +449,7 @@ function PendingCard({
         </span>
       </div>
 
-      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_20px_minmax(0,0.82fr)] items-center gap-1.5">
-        <TradeSide label="受け取る" items={t.myReceiveItems} emphasis />
-        <div className="flex justify-center text-[12px] font-extrabold text-[#3a324a66]">
-          ⇄
-        </div>
-        <TradeSide label="出す" items={t.myGiveItems} />
-      </div>
+      <TradePair receiveItems={t.myReceiveItems} giveItems={t.myGiveItems} />
 
       <div className="mt-2 flex items-center gap-1.5 text-[10.5px] text-[#3a324a8c]">
         <span
@@ -445,6 +477,24 @@ function PendingCard({
         </span>
       </div>
     </Link>
+  );
+}
+
+function TradePair({
+  receiveItems,
+  giveItems,
+}: {
+  receiveItems: TransactionPreviewItem[];
+  giveItems: TransactionPreviewItem[];
+}) {
+  return (
+    <div className="mt-2 grid grid-cols-[minmax(0,1fr)_20px_minmax(0,0.82fr)] items-center gap-1.5">
+      <TradeSide label="受け取る" items={receiveItems} emphasis />
+      <div className="flex justify-center text-[12px] font-extrabold text-[#3a324a66]">
+        ⇄
+      </div>
+      <TradeSide label="出す" items={giveItems} />
+    </div>
   );
 }
 
@@ -651,112 +701,170 @@ function relativeLabel(target: number, now: number): string {
 
 function OngoingList({
   list,
-  active,
+  animate,
+  onAnimated,
   now,
 }: {
   list: TransactionRow[];
-  active: boolean;
+  animate: boolean;
+  onAnimated: () => void;
   now: number;
 }) {
+  const sorted = useMemo(() => sortOngoingCards(list, now), [list, now]);
+
   return (
-    <div>
-      <div className="mb-2 text-[11px] font-bold tracking-[0.4px] text-[#3a324a8c]">
-        進行中
-      </div>
+    <div className="mb-2">
       <div className="space-y-2">
-        {list.map((t, i) => (
-          <div
-            key={t.id}
-            className={active ? "animate-transaction-panel-in" : undefined}
-            style={active ? { animationDelay: `${i * 95}ms` } : undefined}
-          >
-            <OngoingCard t={t} now={now} />
-          </div>
-        ))}
+        {sorted.map((t, i) => {
+          const isLast = i === sorted.length - 1;
+          return (
+            <div
+              key={t.id}
+              className={animate ? "animate-transaction-panel-in" : undefined}
+              style={animate ? { animationDelay: `${i * 95}ms` } : undefined}
+              onAnimationEnd={animate && isLast ? onAnimated : undefined}
+            >
+              <OngoingCard t={t} now={now} />
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 function OngoingCard({ t, now }: { t: TransactionRow; now: number }) {
-  const meetupSummary =
-    t.meetupStartAt && t.meetupEndAt
-      ? formatRange(t.meetupStartAt, t.meetupEndAt)
-      : "—";
   const countdown = t.meetupStartAt
     ? formatCountdown(t.meetupStartAt, now)
     : null;
   const isImminent = !!t.meetupStartAt && countdown?.startsWith("合流");
+  const meetup = compactMeetup(t);
+  const updated = updatedLabel(t, now);
+  const alert = !!t.openDispute;
+  const statusText = alert
+    ? "申告中"
+    : isImminent
+      ? "まもなく合流"
+      : "取引予定";
+  const cta = alert ? "確認" : "詳細";
 
   return (
     <Link
       href={
         t.openDispute ? `/disputes/${t.openDispute.id}` : `/transactions/${t.id}`
       }
-      className={`block overflow-hidden rounded-2xl border bg-white shadow-[0_2px_8px_rgba(58,50,74,0.04)] transition-all active:scale-[0.99] ${
-        t.openDispute
-          ? "border-[#d9826b55]"
-          : "border-[#3a324a14]"
+      className={`relative block overflow-hidden rounded-[16px] border bg-white px-3 py-2.5 transition-all active:scale-[0.99] ${
+        alert
+          ? "border-[#d9826b55] shadow-[0_8px_20px_rgba(217,130,107,0.12)]"
+          : isImminent
+            ? "border-emerald-200 shadow-[0_8px_20px_rgba(16,185,129,0.10)]"
+            : "border-[#3a324a12] shadow-[0_6px_18px_rgba(58,50,74,0.06)]"
       }`}
     >
-      <div className="flex items-start gap-2.5 px-3.5 py-3">
-        {t.openDispute ? (
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#d9826b22] text-[15px] font-bold text-[#d9826b]">
-            !
-          </div>
-        ) : (
-          <Avatar
-            url={t.partnerAvatarUrl}
-            fallbackName={t.partnerDisplayName || t.partnerHandle}
-            size={40}
-            variant="square"
-          />
+      {alert && (
+        <span className="absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full bg-[#d9826b]" />
+      )}
+      <div className="flex items-center gap-1.5">
+        <Avatar
+          url={t.partnerAvatarUrl}
+          fallbackName={t.partnerDisplayName || t.partnerHandle}
+          size={22}
+          variant="square"
+        />
+        <span className="min-w-0 flex-1 truncate text-[12px] font-extrabold text-[#3a324a]">
+          @{t.partnerHandle}
+        </span>
+        <span
+          className={`rounded-full px-2 py-[2px] text-[9.5px] font-extrabold ${
+            alert
+              ? "bg-[#d9826b14] text-[#d9826b]"
+              : isImminent
+                ? "bg-emerald-50 text-emerald-600"
+                : "bg-[#a695d814] text-[#a695d8]"
+          }`}
+        >
+          {statusText}
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex items-center gap-1.5">
+        {countdown && (
+          <span
+            className={`rounded-full px-2 py-[2px] text-[10px] font-extrabold ${
+              isImminent
+                ? "bg-emerald-50 text-emerald-600"
+                : "bg-[#3a324a0a] text-[#3a324a8c]"
+            }`}
+          >
+            {countdown}
+          </span>
         )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[13.5px] font-bold text-[#3a324a]">
-              @{t.partnerHandle}
-            </span>
-            {t.openDispute && (
-              <span className="rounded-[3px] bg-[#d9826b] px-1.5 py-[1px] text-[9px] font-extrabold tracking-[0.3px] text-white">
-                申告中
-              </span>
-            )}
-          </div>
-          <div className="mt-0.5 truncate text-[11.5px] text-[#3a324a]">
-            {t.myReceiveSummary}{" "}
-            <span className="text-[#3a324a8c]">⇄</span> {t.myGiveSummary}
-          </div>
-          {t.openDispute ? (
-            <div className="mt-0.5 truncate text-[10.5px] font-bold text-[#d9826b]">
-              {t.openDispute.ticketNo} ・ 仲裁中（タップで詳細）
-            </div>
-          ) : (
-            <>
-              <div className="mt-0.5 truncate text-[10.5px] text-[#3a324a8c]">
-                {t.meetupPlaceName ? `${t.meetupPlaceName}・` : ""}
-                <span className="tabular-nums">{meetupSummary}</span>
-              </div>
-              {countdown && (
-                <div
-                  className={`mt-1 inline-flex items-center gap-1 text-[10.5px] font-bold ${
-                    isImminent ? "text-emerald-600" : "text-[#3a324a8c]"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-1.5 w-1.5 rounded-full ${
-                      isImminent ? "bg-emerald-500" : "bg-[#3a324a4d]"
-                    }`}
-                  />
-                  {countdown}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        {alert && t.openDispute && (
+          <span className="rounded-full bg-[#d9826b14] px-2 py-[2px] text-[10px] font-extrabold text-[#d9826b]">
+            {t.openDispute.ticketNo}
+          </span>
+        )}
+        <span className="min-w-0 flex-1 truncate text-right text-[10px] font-semibold text-[#3a324a66]">
+          {updated}
+        </span>
+      </div>
+
+      <TradePair receiveItems={t.myReceiveItems} giveItems={t.myGiveItems} />
+
+      <div className="mt-2 flex items-center gap-1.5 text-[10.5px] text-[#3a324a8c]">
+        <span
+          className={`inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+            alert ? "bg-[#d9826b]" : isImminent ? "bg-emerald-500" : "bg-[#a695d8]"
+          }`}
+        />
+        <span
+          className={`min-w-0 flex-1 truncate ${
+            meetup.includes("未設定")
+              ? "font-bold text-[#d9826b]"
+              : "text-[#3a324a8c]"
+          }`}
+        >
+          {meetup}
+        </span>
+        <span
+          className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
+            alert
+              ? "bg-[#d9826b] text-white"
+              : "bg-[#3a324a] text-white"
+          }`}
+        >
+          {cta}
+        </span>
       </div>
     </Link>
   );
+}
+
+function sortOngoingCards(
+  list: TransactionRow[],
+  now: number,
+): TransactionRow[] {
+  return [...list].sort((a, b) => {
+    const rankDiff = ongoingRank(a, now) - ongoingRank(b, now);
+    if (rankDiff !== 0) return rankDiff;
+    const aStart = a.meetupStartAt
+      ? new Date(a.meetupStartAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    const bStart = b.meetupStartAt
+      ? new Date(b.meetupStartAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    if (aStart !== bStart) return aStart - bStart;
+    return pendingTouchedAt(b) - pendingTouchedAt(a);
+  });
+}
+
+function ongoingRank(t: TransactionRow, now: number): number {
+  if (t.openDispute) return 0;
+  if (!t.meetupStartAt) return 3;
+  const start = new Date(t.meetupStartAt).getTime();
+  const diffMinutes = (start - now) / 60_000;
+  if (diffMinutes <= 60 && diffMinutes >= -120) return 1;
+  return 2;
 }
 
 /* ─── 過去取引：フィルタ chip + 月別セクション + ★評価 ─── */
@@ -765,12 +873,14 @@ function PastView({
   list,
   filter,
   onFilterChange,
-  active,
+  animate,
+  onAnimated,
 }: {
   list: TransactionRow[];
   filter: PastFilter;
   onFilterChange: (f: PastFilter) => void;
-  active: boolean;
+  animate: boolean;
+  onAnimated: () => void;
 }) {
   // フィルタ counts
   const filterCounts = useMemo(() => {
@@ -808,7 +918,14 @@ function PastView({
     return Array.from(groups.entries());
   }, [filtered]);
 
-  if (list.length === 0) return <EmptyState tab="past" active={active} />;
+  if (list.length === 0)
+    return (
+      <EmptyState
+        tab="past"
+        animate={animate}
+        onAnimated={onAnimated}
+      />
+    );
 
   return (
     <div>
@@ -853,9 +970,10 @@ function PastView({
       {monthlyGroups.length === 0 ? (
         <div
           className={`rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c] ${
-            active ? "animate-transaction-panel-in" : ""
+            animate ? "animate-transaction-panel-in" : ""
           }`}
-          style={active ? { animationDelay: "95ms" } : undefined}
+          style={animate ? { animationDelay: "95ms" } : undefined}
+          onAnimationEnd={animate ? onAnimated : undefined}
         >
           該当する取引がありません
         </div>
@@ -869,19 +987,27 @@ function PastView({
               <span className="text-[10px] text-[#3a324a8c]">新着順</span>
             </div>
             <div className="space-y-1.5">
-              {items.map((t, i) => (
-                <div
-                  key={t.id}
-                  className={active ? "animate-transaction-panel-in" : undefined}
-                  style={
-                    active
-                      ? { animationDelay: `${(monthIndex + i) * 85}ms` }
-                      : undefined
-                  }
-                >
-                  <PastCard t={t} />
-                </div>
-              ))}
+              {items.map((t, i) => {
+                const priorCount = monthlyGroups
+                  .slice(0, monthIndex)
+                  .reduce((sum, [, priorItems]) => sum + priorItems.length, 0);
+                const itemIndex = priorCount + i;
+                const isLast = itemIndex === filtered.length - 1;
+                return (
+                  <div
+                    key={t.id}
+                    className={animate ? "animate-transaction-panel-in" : undefined}
+                    style={
+                      animate
+                        ? { animationDelay: `${itemIndex * 85}ms` }
+                        : undefined
+                    }
+                    onAnimationEnd={animate && isLast ? onAnimated : undefined}
+                  >
+                    <PastCard t={t} />
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))
@@ -895,21 +1021,18 @@ function PastCard({ t }: { t: TransactionRow }) {
   const d = new Date(dateStr);
   const dayLabel = `${d.getMonth() + 1}/${String(d.getDate()).padStart(2, "0")}`;
 
-  const statusTone =
-    t.status === "completed"
-      ? "text-emerald-600"
-      : t.status === "rejected" || t.status === "expired"
-        ? "text-[#d9826b]"
-        : "text-[#3a324a8c]";
-
-  const statusText =
-    t.status === "completed"
-      ? "● 完了"
-      : t.status === "cancelled"
-        ? "キャンセル"
-        : t.status === "rejected"
-          ? "拒否"
-          : "期限切れ";
+  const statusText = pastStatusText(t);
+  const statusTone = pastStatusTone(t);
+  const subText =
+    t.status === "completed" && t.myStars !== null
+      ? `${"★".repeat(t.myStars)}${"☆".repeat(5 - t.myStars)}`
+      : t.status === "completed"
+        ? "評価未入力"
+        : t.status === "cancelled"
+          ? "取引はキャンセルされました"
+          : t.status === "rejected"
+            ? "打診は拒否されました"
+            : "期限切れで終了しました";
 
   return (
     <Link
@@ -918,43 +1041,81 @@ function PastCard({ t }: { t: TransactionRow }) {
           ? `/transactions/${t.id}`
           : `/proposals/${t.id}`
       }
-      className="block rounded-xl border border-[#3a324a14] bg-white px-3 py-2.5 transition-all active:scale-[0.99]"
+      className="block overflow-hidden rounded-[16px] border border-[#3a324a12] bg-white px-3 py-2.5 shadow-[0_6px_18px_rgba(58,50,74,0.05)] transition-all active:scale-[0.99]"
     >
-      <div className="flex items-start gap-2.5">
-        <div className="w-9 flex-shrink-0 pt-0.5 text-center text-[10px] font-bold tabular-nums text-[#3a324a8c]">
+      <div className="flex items-center gap-1.5">
+        <Avatar
+          url={t.partnerAvatarUrl}
+          fallbackName={t.partnerDisplayName || t.partnerHandle}
+          size={22}
+          variant="square"
+        />
+        <span className="min-w-0 flex-1 truncate text-[12px] font-extrabold text-[#3a324a]">
+          @{t.partnerHandle}
+        </span>
+        <span className="rounded-full bg-[#3a324a0a] px-2 py-[2px] text-[9.5px] font-extrabold tabular-nums text-[#3a324a8c]">
           {dayLabel}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-[12px] font-bold text-[#3a324a]">
-            @{t.partnerHandle}
-          </div>
-          <div className="text-[11.5px] text-[#3a324a]">
-            {t.myReceiveSummary}{" "}
-            <span className="text-[#3a324a8c]">⇄</span> {t.myGiveSummary}
-          </div>
-          <div className="mt-1 flex items-center gap-2">
-            <span className={`text-[10.5px] font-bold ${statusTone}`}>
-              {statusText}
-            </span>
-            {t.myStars !== null && t.status === "completed" && (
-              <span className="text-[10.5px] tabular-nums text-[#3a324a8c]">
-                {"★".repeat(t.myStars)}
-                <span className="text-[#3a324a14]">
-                  {"★".repeat(5 - t.myStars)}
-                </span>
-              </span>
-            )}
-          </div>
-        </div>
-        <span className="self-center text-[12px] text-[#a695d8]">›</span>
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <span
+          className={`rounded-full px-2 py-[2px] text-[10px] font-extrabold ${statusTone}`}
+        >
+          {statusText}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-right text-[10px] font-semibold text-[#3a324a66]">
+          {subText}
+        </span>
+      </div>
+
+      <TradePair receiveItems={t.myReceiveItems} giveItems={t.myGiveItems} />
+
+      <div className="mt-2 flex items-center gap-1.5 text-[10.5px] text-[#3a324a8c]">
+        <span
+          className={`inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+            t.status === "completed"
+              ? "bg-emerald-500"
+              : t.status === "cancelled"
+                ? "bg-[#3a324a4d]"
+                : "bg-[#d9826b]"
+          }`}
+        />
+        <span className="min-w-0 flex-1 truncate">
+          {t.meetupPlaceName ?? "待ち合わせ情報なし"}
+        </span>
+        <span className="rounded-full bg-[#3a324a0a] px-2.5 py-1 text-[10px] font-extrabold text-[#3a324acc]">
+          詳細
+        </span>
       </div>
     </Link>
   );
 }
 
+function pastStatusText(t: TransactionRow): string {
+  if (t.status === "completed") return "完了";
+  if (t.status === "cancelled") return "キャンセル";
+  if (t.status === "rejected") return "拒否";
+  return "期限切れ";
+}
+
+function pastStatusTone(t: TransactionRow): string {
+  if (t.status === "completed") return "bg-emerald-50 text-emerald-600";
+  if (t.status === "cancelled") return "bg-[#3a324a0a] text-[#3a324a8c]";
+  return "bg-[#d9826b14] text-[#d9826b]";
+}
+
 /* ─── empty state ─── */
 
-function EmptyState({ tab, active = true }: { tab: TabId; active?: boolean }) {
+function EmptyState({
+  tab,
+  animate = true,
+  onAnimated,
+}: {
+  tab: TabId;
+  animate?: boolean;
+  onAnimated?: () => void;
+}) {
   const msg =
     tab === "pending"
       ? "打診中の取引はありません"
@@ -964,8 +1125,9 @@ function EmptyState({ tab, active = true }: { tab: TabId; active?: boolean }) {
   return (
     <div
       className={`rounded-2xl border border-dashed border-[#3a324a14] bg-white py-10 text-center text-xs text-[#3a324a8c] ${
-        active ? "animate-transaction-panel-in" : ""
+        animate ? "animate-transaction-panel-in" : ""
       }`}
+      onAnimationEnd={animate ? onAnimated : undefined}
     >
       {msg}
     </div>
