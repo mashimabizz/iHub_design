@@ -15,7 +15,7 @@ import "leaflet/dist/leaflet.css";
 /**
  * Leaflet ベースの地図ピッカー（クライアント専用）。
  *
- * - OpenStreetMap の標準タイルを使用
+ * - OpenStreetMap 標準タイル、または light 系タイルを使用
  * - center / radiusM を props として受け取り、変更を onChange で通知
  * - マーカードラッグ・地図クリックで center 更新
  * - iHub ブランドカラーの DivIcon ピン
@@ -31,6 +31,22 @@ type Props = {
     label?: string;
   }>;
   interactive?: boolean;
+  tileStyle?: "standard" | "light";
+};
+
+const TILE_STYLES = {
+  standard: {
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    maxZoom: 19,
+  },
+  light: {
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    maxZoom: 20,
+  },
 };
 
 // iHub lavender pin（DivIcon で完全カスタム）
@@ -148,10 +164,12 @@ export default function MapPicker({
   className,
   markers,
   interactive = true,
+  tileStyle = "standard",
 }: Props) {
   const markerRef = useRef<L.Marker | null>(null);
   const displayMarkers =
     markers && markers.length > 0 ? markers : [{ center }];
+  const tile = TILE_STYLES[tileStyle];
 
   // Marker drag end handler
   const eventHandlers = useMemo(
@@ -179,9 +197,9 @@ export default function MapPicker({
         zoomControl={false}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maxZoom={19}
+          attribution={tile.attribution}
+          url={tile.url}
+          maxZoom={tile.maxZoom}
         />
         {(!markers || markers.length <= 1) && (
           <Circle

@@ -4,6 +4,55 @@
 
 ---
 
+## イテレーション154.48：MapTiler未設定時の地図フォールバックを軽量化
+
+### 背景・問題意識
+
+オーナーから、提示物の選択の待ち合わせタブで日程を選んでも、まだ OpenStreetMap 標準表示のままに見えるという指摘があった。
+
+確認したところ、ローカルの `.env.local` に `NEXT_PUBLIC_MAPTILER_API_KEY` が未設定だったため、前回追加した MapTiler 用コンポーネントが旧 `MapPicker` にフォールバックしていた。これにより、MapTiler Streets ではなく OpenStreetMap 標準タイルが表示され、地図がごちゃついて見えていた。
+
+MapTiler Streets そのものには API キーが必要だが、キー未設定時にも旧標準タイルへ戻ると見た目の改善が分かりにくい。暫定表示でも軽い見た目になるよう、フォールバックを light 系タイルへ変更する。
+
+### 変更内容
+
+#### `web/src/components/map/MapPicker.tsx`
+- 既存 `MapPicker` に `tileStyle` prop を追加した。
+- デフォルトは従来通り `standard` とし、既存画面の挙動は変えない。
+- `tileStyle="light"` の場合は CARTO の light 系タイルを使うようにした。
+
+#### `web/src/components/map/MapTilerPicker.tsx`
+- `NEXT_PUBLIC_MAPTILER_API_KEY` 未設定時のフォールバックを、旧 OpenStreetMap 標準表示ではなく `MapPicker tileStyle="light"` に変更した。
+- MapTiler API キーが設定されれば、従来通り `MapStyle.STREETS` + `Language.JAPANESE` を使う。
+
+### 影響範囲
+
+- `/propose/[partnerId]` C-0 提示物の選択フロー
+- MapTiler API キー未設定時の場所設定シート / 送信確認地図
+- 既存 `MapPicker` 呼び出しは `tileStyle` 未指定のため標準表示のまま
+
+### 確認方法
+
+- `npx eslint src/components/map/MapPicker.tsx src/components/map/MapTilerPicker.tsx 'src/app/propose/[partnerId]/ProposeFlow.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/map/MapPicker.tsx`
+- `web/src/components/map/MapTilerPicker.tsx`
+
+### セルフレビュー結果
+
+- ✅ MapTiler API キー未設定時に OpenStreetMap 標準タイルへ戻らない
+- ✅ 既存画面の `MapPicker` はデフォルト挙動維持
+- ✅ MapTiler API キー設定後は `MapStyle.STREETS` + 日本語ラベル指定を使用
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.47：提示物選択フローの地図をMapTiler Streetsへ切替
 
 ### 背景・問題意識

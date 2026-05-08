@@ -277,6 +277,7 @@ export default function MapTilerPicker({
           radiusM={radiusM}
           markers={markers}
           interactive={interactive}
+          tileStyle="light"
           onCenterChange={onCenterChange}
           className="h-full w-full"
         />
