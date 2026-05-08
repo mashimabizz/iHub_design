@@ -2332,55 +2332,50 @@ function WeekMeetupCalendar({
       onSelect={(e) => e.preventDefault()}
     >
       <style>{`
-        @keyframes ihub-meetup-hint-float-a {
-          0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.38; }
-          50% { transform: translate3d(12px, -13px, 0) scale(1.08); opacity: 0.62; }
-        }
-        @keyframes ihub-meetup-hint-float-b {
-          0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.30; }
-          50% { transform: translate3d(-10px, 12px, 0) scale(1.12); opacity: 0.56; }
-        }
-        @keyframes ihub-meetup-hint-float-c {
-          0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.24; }
-          50% { transform: translate3d(7px, 9px, 0) scale(0.92); opacity: 0.48; }
+        @keyframes ihub-meetup-hint-breathe {
+          0%, 100% { transform: scale(0.985); opacity: 0.82; }
+          50% { transform: scale(1.035); opacity: 0.94; }
         }
       `}</style>
       <div
-        ref={scrollRef}
-        className="h-[calc(100dvh-250px)] min-h-0 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]"
+        className="relative h-[calc(100dvh-250px)] min-h-0"
       >
-        <div className="sticky top-0 z-20 grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a12] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.05)]">
-          <div />
-          {weekDateKeys.map((dateKey, index) => (
-            <div
-              key={dateKey}
-              className={`px-0.5 pb-2 pt-3 text-center ${
-                index === todayIndex
-                  ? "bg-[#a695d814] text-[#a695d8]"
-                  : index === 0
-                    ? "text-[#a695d8]"
-                    : "text-[#3a324acc]"
-              }`}
-            >
-              <div className="text-[10px] font-extrabold">
-                {formatDateKeyWeekday(dateKey)}
-              </div>
-              <div className="mt-1 text-[22px] font-semibold leading-none tabular-nums">
-                {formatDateKeyDayNumber(dateKey)}
-              </div>
-            </div>
-          ))}
-        </div>
         <div
-          ref={gridRef}
-          className="relative grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-t-2 border-[#24a7f2]"
-          style={{
-            height:
-              MEETUP_CALENDAR_TOP_PADDING +
-              MEETUP_TIMELINE_HEIGHT +
-              MEETUP_CALENDAR_BOTTOM_PADDING,
-          }}
+          ref={scrollRef}
+          className="h-full overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]"
         >
+          <div className="sticky top-0 z-20 grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-b border-[#3a324a12] bg-white shadow-[0_2px_8px_rgba(58,50,74,0.05)]">
+            <div />
+            {weekDateKeys.map((dateKey, index) => (
+              <div
+                key={dateKey}
+                className={`px-0.5 pb-2 pt-3 text-center ${
+                  index === todayIndex
+                    ? "bg-[#a695d814] text-[#a695d8]"
+                    : index === 0
+                      ? "text-[#a695d8]"
+                      : "text-[#3a324acc]"
+                }`}
+              >
+                <div className="text-[10px] font-extrabold">
+                  {formatDateKeyWeekday(dateKey)}
+                </div>
+                <div className="mt-1 text-[22px] font-semibold leading-none tabular-nums">
+                  {formatDateKeyDayNumber(dateKey)}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div
+            ref={gridRef}
+            className="relative grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-t-2 border-[#24a7f2]"
+            style={{
+              height:
+                MEETUP_CALENDAR_TOP_PADDING +
+                MEETUP_TIMELINE_HEIGHT +
+                MEETUP_CALENDAR_BOTTOM_PADDING,
+            }}
+          >
         <div className="relative border-r border-[#3a324a12] bg-white">
           {Array.from(
             {
@@ -2560,24 +2555,17 @@ function WeekMeetupCalendar({
             )}
           </div>
         ))}
+          </div>
+        </div>
         {showEmptyHint && (
-          <div
-            className="pointer-events-none absolute left-[64px] right-3 z-30 flex justify-center"
-            style={{ top: calendarSlotTop(11 * 4) }}
-          >
-            <div className="relative min-h-[86px] w-full max-w-[260px] overflow-hidden rounded-[22px] bg-[#0f1118]/48 px-5 py-4 text-center shadow-[0_18px_40px_rgba(15,17,24,0.22)] backdrop-blur-[10px]">
-              <span className="absolute left-5 top-4 h-9 w-9 rounded-full bg-white/18 blur-[0.2px] [animation:ihub-meetup-hint-float-a_4.8s_ease-in-out_infinite]" />
-              <span className="absolute bottom-3 right-6 h-12 w-12 rounded-full bg-[#a8d4e6]/26 [animation:ihub-meetup-hint-float-b_5.4s_ease-in-out_infinite]" />
-              <span className="absolute right-20 top-3 h-5 w-5 rounded-full bg-[#f3c5d4]/30 [animation:ihub-meetup-hint-float-c_4.2s_ease-in-out_infinite]" />
-              <div className="relative flex min-h-[54px] items-center justify-center rounded-[18px] bg-black/12 px-3">
-                <p className="text-[13px] font-extrabold leading-snug text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.24)]">
-                  長押しで時間を選択できるよ
-                </p>
-              </div>
+          <div className="pointer-events-none absolute bottom-0 left-[52px] right-0 top-[58px] z-30 flex items-center justify-center px-4">
+            <div className="w-full max-w-[248px] rounded-[22px] bg-black/58 px-5 py-4 text-center shadow-[0_18px_42px_rgba(0,0,0,0.20)] [animation:ihub-meetup-hint-breathe_2.6s_ease-in-out_infinite]">
+              <p className="text-[13px] font-extrabold leading-snug text-white">
+                長押しで時間を選択できるよ
+              </p>
             </div>
           </div>
         )}
-        </div>
       </div>
     </div>
   );
