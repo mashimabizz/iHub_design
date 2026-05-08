@@ -63,7 +63,8 @@ export async function enableLocalMode(input: {
     if (error) return { error: error.message };
   }
 
-  revalidatePath("/");
+  // iter154.68: ホーム上のモード切替はクライアント状態で即時反映する。
+  // ここで revalidatePath("/") すると、切替操作が画面再取得のように見えるため行わない。
   return undefined;
 }
 
@@ -206,7 +207,7 @@ export async function disableLocalMode(): Promise<ActionResult> {
 
   // iter136: AW status は触らない（設定保持）
 
-  revalidatePath("/");
+  // iter154.68: OFF もホーム側で即時反映するため、画面再取得は発生させない。
   return undefined;
 }
 

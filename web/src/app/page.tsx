@@ -510,7 +510,7 @@ export default async function Home({ searchParams }: Props) {
     redirect("/");
   }
 
-  if (isLocal && currentAW) {
+  if (currentAW) {
     // 他者 AW を user_id で集約
     const partnerAWs = new Map<string, AWRow[]>();
     // iter136: 現地モード OFF のユーザーの AW は無視
@@ -547,21 +547,17 @@ export default async function Home({ searchParams }: Props) {
         localMatchPartnerIds.add(m.partner.id);
       }
     }
-    if (!isNationalView) {
-      matches = matches.filter((m) => localMatchPartnerIds.has(m.partner.id));
-    }
     matches = matches.map((m) =>
       localMatchPartnerIds.has(m.partner.id) ? { ...m, localMatch: true } : m,
     );
 
     // 距離（m）を最短 AW から算出（iter67.6）
     if (
-      localMode &&
-      localMode.last_lat != null &&
-      localMode.last_lng != null
+      (localMode?.last_lat != null || currentAW.center_lat != null) &&
+      (localMode?.last_lng != null || currentAW.center_lng != null)
     ) {
-      const myLat = localMode.last_lat as number;
-      const myLng = localMode.last_lng as number;
+      const myLat = (localMode?.last_lat ?? currentAW.center_lat) as number;
+      const myLng = (localMode?.last_lng ?? currentAW.center_lng) as number;
       matches = matches.map((m) => {
         const aws = partnerAWs.get(m.partner.id) ?? [];
         let minDist = Infinity;

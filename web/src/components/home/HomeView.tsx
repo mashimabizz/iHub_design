@@ -574,6 +574,20 @@ export function HomeView({
     useState<WishShelfCandidate | null>(null);
   const [detailSlideDirection, setDetailSlideDirection] =
     useState<MatchDetailSlideDirection>("from-right");
+  const [clientViewMode, setClientViewMode] = useState<HomeModeView | null>(
+    null,
+  );
+  const [localEnabledOverride, setLocalEnabledOverride] = useState<
+    boolean | null
+  >(null);
+  const [pending, startTransition] = useTransition();
+  const [optimisticMode, setOptimisticMode] = useState<HomeModeView | null>(
+    null,
+  );
+  const [modeSwitching, setModeSwitching] = useState(false);
+  const modeSwitchTimerRef = useRef<number | null>(null);
+  // iter142: pill toggle で view 切替（DB は触らない）
+  const router = useRouter();
 
   const allCards = useMemo(() => {
     const myInvById = new Map(myInventory.map((i) => [i.id, i]));
@@ -604,9 +618,20 @@ export function HomeView({
     () => buildTagScoreByInvId(partnersInventory, myWishes, tagsByInvId),
     [partnersInventory, myWishes, tagsByInvId],
   );
+  const isLocal = localEnabledOverride ?? localMode?.enabled ?? false;
+  const actualViewMode: HomeModeView =
+    isLocal && !isNationalView ? "local" : "national";
+  const visualViewMode = optimisticMode ?? clientViewMode ?? actualViewMode;
+  const visibleCards = useMemo(
+    () =>
+      visualViewMode === "local"
+        ? allCards.filter((card) => card.localAvailable)
+        : allCards,
+    [allCards, visualViewMode],
+  );
   const wishShelves = useMemo(
-    () => buildWishShelves(allCards, tagScoreByInvId, tagLabelsByInvId),
-    [allCards, tagScoreByInvId, tagLabelsByInvId],
+    () => buildWishShelves(visibleCards, tagScoreByInvId, tagLabelsByInvId),
+    [visibleCards, tagScoreByInvId, tagLabelsByInvId],
   );
   const wishShelfSections = useMemo(
     () => splitWishShelves(wishShelves),
@@ -683,14 +708,6 @@ export function HomeView({
    * - sheet の onClose で「true のままなら disable して revert」
    */
   const [needsRevertOnClose, setNeedsRevertOnClose] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const [optimisticMode, setOptimisticMode] = useState<HomeModeView | null>(
-    null,
-  );
-  const [modeSwitching, setModeSwitching] = useState(false);
-  const modeSwitchTimerRef = useRef<number | null>(null);
-  // iter142: pill toggle で view 切替（DB は触らない）
-  const router = useRouter();
 
   // ?openLocalMode=1 で戻ってきたとき：URL パラメータを掃除しつつシート開く
   useEffect(() => {
@@ -701,10 +718,6 @@ export function HomeView({
     }
   }, [autoOpenLocalSheet]);
 
-  const isLocal = localMode?.enabled ?? false;
-  const actualViewMode: HomeModeView =
-    isLocal && !isNationalView ? "local" : "national";
-  const visualViewMode = optimisticMode ?? actualViewMode;
   const nationalModeActive = visualViewMode === "national";
   const localModeActive = visualViewMode === "local";
   const showModeSwitchOverlay = modeSwitching || pending;
@@ -712,15 +725,17 @@ export function HomeView({
     visualViewMode === "local"
       ? "今すぐ現地交換モードに切り替え中…"
       : "全国交換モードに切り替え中…";
-  const settings: LocalModeSettings = localMode ?? {
-    enabled: false,
-    awId: null,
-    radiusM: 500,
-    selectedCarryingIds: [],
-    selectedWishIds: [],
-    lastLat: null,
-    lastLng: null,
-  };
+  const settings: LocalModeSettings = localMode
+    ? { ...localMode, enabled: isLocal }
+    : {
+        enabled: isLocal,
+        awId: currentAW?.id ?? null,
+        radiusM: currentAW?.radiusM ?? 500,
+        selectedCarryingIds: [],
+        selectedWishIds: [],
+        lastLat: currentAW?.centerLat ?? null,
+        lastLng: currentAW?.centerLng ?? null,
+      };
 
   function clearModeSwitchTimer() {
     if (modeSwitchTimerRef.current && typeof window !== "undefined") {
@@ -743,6 +758,7 @@ export function HomeView({
     }
     modeSwitchTimerRef.current = window.setTimeout(() => {
       setModeSwitching(false);
+      setOptimisticMode(null);
       modeSwitchTimerRef.current = null;
     }, delayMs);
   }
@@ -751,6 +767,17 @@ export function HomeView({
     clearModeSwitchTimer();
     setOptimisticMode(null);
     setModeSwitching(false);
+  }
+
+  function replaceViewParam(nextMode: HomeModeView) {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (nextMode === "national" && isLocal) {
+      url.searchParams.set("view", "national");
+    } else {
+      url.searchParams.delete("view");
+    }
+    window.history.replaceState(window.history.state, "", url.toString());
   }
 
   useEffect(() => {
@@ -780,6 +807,9 @@ export function HomeView({
           cancelModeSwitch();
           return;
         }
+        setLocalEnabledOverride(true);
+        setClientViewMode("local");
+        replaceViewParam("local");
         hideModeSwitchOverlay();
       } catch (error) {
         cancelModeSwitch();
@@ -801,6 +831,9 @@ export function HomeView({
             cancelModeSwitch();
             return;
           }
+          setLocalEnabledOverride(true);
+          setClientViewMode("local");
+          replaceViewParam("local");
           setSheetOpen(true);
           hideModeSwitchOverlay(MODE_SWITCH_SHEET_STATUS_MS);
         } catch (error) {
@@ -822,6 +855,9 @@ export function HomeView({
               cancelModeSwitch();
               return;
             }
+            setLocalEnabledOverride(true);
+            setClientViewMode("local");
+            replaceViewParam("local");
             setSheetOpen(true);
             hideModeSwitchOverlay(MODE_SWITCH_SHEET_STATUS_MS);
           } catch (error) {
@@ -839,6 +875,9 @@ export function HomeView({
               cancelModeSwitch();
               return;
             }
+            setLocalEnabledOverride(true);
+            setClientViewMode("local");
+            replaceViewParam("local");
             setSheetOpen(true);
             hideModeSwitchOverlay(MODE_SWITCH_SHEET_STATUS_MS);
           } catch (error) {
@@ -1102,9 +1141,10 @@ export function HomeView({
           <button
             type="button"
             onClick={() => {
-              if (actualViewMode !== "national") {
+              if (visualViewMode !== "national") {
                 beginModeSwitch("national");
-                router.push("/?view=national");
+                setClientViewMode("national");
+                replaceViewParam("national");
                 hideModeSwitchOverlay();
               }
             }}
@@ -1119,10 +1159,11 @@ export function HomeView({
             type="button"
             onClick={() => {
               if (isLocal) {
-                if (isNationalView) {
+                if (visualViewMode === "national") {
                   // 全国 view を見ていた状態 → 現地 view に戻す
                   beginModeSwitch("local");
-                  router.push("/");
+                  setClientViewMode("local");
+                  replaceViewParam("local");
                   hideModeSwitchOverlay();
                 } else {
                   // 既に現地 view → sheet を開いて設定変更
@@ -1224,6 +1265,9 @@ export function HomeView({
                   cancelModeSwitch();
                   return;
                 }
+                setLocalEnabledOverride(false);
+                setClientViewMode("national");
+                replaceViewParam("local");
                 hideModeSwitchOverlay();
               } catch (error) {
                 cancelModeSwitch();
@@ -1236,6 +1280,9 @@ export function HomeView({
         onApplied={() => {
           // 適用成功 → revert フラグをクリア（モード ON で確定）
           setNeedsRevertOnClose(false);
+          setLocalEnabledOverride(true);
+          setClientViewMode("local");
+          replaceViewParam("local");
         }}
         initial={settings}
         currentAW={currentAW}
@@ -1257,13 +1304,13 @@ export function HomeView({
                   cancelModeSwitch();
                   return;
                 }
+                setLocalEnabledOverride(false);
+                setClientViewMode("national");
+                replaceViewParam("local");
                 hideModeSwitchOverlay();
               } catch (error) {
                 cancelModeSwitch();
                 throw error;
-              }
-              if (isNationalView) {
-                router.push("/");
               }
             });
           }}

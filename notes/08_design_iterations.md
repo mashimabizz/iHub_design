@@ -4,6 +4,60 @@
 
 ---
 
+## イテレーション154.68：現地モード切替を非リロード化
+
+### 背景・問題意識
+
+オーナーから、ホーム画面で現地交換モードに切り替えようとすると画面がリロードされ、全国交換モードのままになってしまうという報告があった。
+
+モード切替はユーザーが「いま探し方を変える」操作なので、画面全体が再取得されたように見えたり、押した後に元の全国表示へ戻ったように見えると体験を大きく損なう。ボタン押下時はまずホーム内で即時に表示を切り替え、DBへのON/OFF保存は裏で追いつく設計にする必要があった。
+
+### 変更内容
+
+#### `web/src/app/page.tsx`
+- 現地交換モードON中だけでなく、現在のAWがある場合は常に現地マッチ判定を付与するようにした。
+- URLの `view` に応じたサーバー側のマッチ候補フィルタをやめ、ホーム画面に必要な候補をまとめて渡すようにした。
+- 距離計算は `user_local_mode_settings.last_lat/lng` がない場合でも、現在AWの `center_lat/lng` を使えるようにした。
+
+#### `web/src/components/home/HomeView.tsx`
+- 全国交換モード/今すぐ現地交換モードの表示切替を、`router.push` ではなくクライアント状態と `history.replaceState` で処理するようにした。
+- 現地モードのON/OFF保存後、`localEnabledOverride` と `clientViewMode` で画面上のモードを即時反映するようにした。
+- ホームの候補一覧は、全候補から「全国表示なら全部」「現地表示なら `localAvailable` の候補だけ」にクライアント側で切り替えるようにした。
+- 切替中オーバーレイ終了後に `optimisticMode` をクリアし、次の操作で古い見た目が残らないようにした。
+
+#### `web/src/components/home/actions.ts`
+- `enableLocalMode` / `disableLocalMode` では `revalidatePath("/")` を呼ばず、ホームの画面再取得が起きたように見える挙動を抑えた。
+- AW設定適用や現地モード内の選択更新では、候補や場所情報を再取得する必要があるため既存の `revalidatePath("/")` を維持した。
+
+### 影響範囲
+
+- ホーム画面上部の全国交換モード/今すぐ現地交換モード切替
+- 現地交換モードON/OFF時の表示反映
+- ホームのマッチ候補一覧の全国/現地フィルタ
+
+### 確認方法
+
+- `npx eslint 'src/components/home/HomeView.tsx' 'src/components/home/actions.ts' 'src/app/page.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/page.tsx`
+- `web/src/components/home/HomeView.tsx`
+- `web/src/components/home/actions.ts`
+
+### セルフレビュー結果
+
+- ✅ モード切替の画面遷移をホーム内の状態更新へ寄せ、リロードのように見える `router.push` / ON-OFF時の `revalidatePath("/")` を避けた
+- ✅ 現地候補の判定はサーバーで常に付与し、表示フィルタだけをクライアントで切り替えるため、全国/現地の往復で候補が欠落しにくい
+- ✅ AW設定適用・選択更新の再検証は維持しており、場所や持参グッズの変更が反映される導線は残している
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.67：取引一覧全タブをチケット型へ統一
 
 ### 背景・問題意識
