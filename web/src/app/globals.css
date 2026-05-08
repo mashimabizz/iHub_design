@@ -585,7 +585,7 @@ body.wish-deleting::view-transition-new(root) {
 }
 
 /*
- * iter154.69 / iter154.71: ボトムナビ用のなめらかな画面遷移。
+ * iter154.69 / iter154.71 / iter154.72: ボトムナビ用のなめらかな画面遷移。
  * フッタータブの遷移だけに限定し、詳細画面の右スライド演出とは干渉させない。
  */
 body.ihub-bottom-nav-loading::before {
@@ -606,7 +606,7 @@ body.ihub-bottom-nav-loading::after {
   content: "";
   position: fixed;
   left: 50%;
-  bottom: calc(env(safe-area-inset-bottom) + 104px);
+  top: 50%;
   z-index: 36;
   width: 42px;
   height: 42px;
@@ -618,7 +618,7 @@ body.ihub-bottom-nav-loading::after {
   box-shadow:
     0 12px 26px rgba(58, 50, 74, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.88);
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   rotate: 0deg;
   animation:
     ihubBottomNavLoadingIn 260ms cubic-bezier(0.16, 1, 0.3, 1) both,
@@ -650,12 +650,12 @@ body.ihub-bottom-nav-route-entering main {
 @keyframes ihubBottomNavLoadingIn {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(8px) scale(0.88);
+    transform: translate(-50%, calc(-50% + 8px)) scale(0.88);
     filter: blur(1.5px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
+    transform: translate(-50%, -50%) scale(1);
     filter: blur(0);
   }
 }
