@@ -2269,6 +2269,8 @@ function WeekMeetupCalendar({
     currentTimeTop != null &&
     currentTimeTop >= MEETUP_CALENDAR_TOP_PADDING &&
     currentTimeTop <= MEETUP_CALENDAR_TOP_PADDING + MEETUP_TIMELINE_HEIGHT;
+  const showEmptyHint =
+    !preview && !candidateEdit && !candidates.some(candidateHasTime);
 
   function handleCalendarTouchStart(e: TouchEvent<HTMLDivElement>) {
     if (e.touches.length !== 1) return;
@@ -2299,6 +2301,20 @@ function WeekMeetupCalendar({
       onContextMenu={(e) => e.preventDefault()}
       onSelect={(e) => e.preventDefault()}
     >
+      <style>{`
+        @keyframes ihub-meetup-hint-float-a {
+          0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.38; }
+          50% { transform: translate3d(12px, -13px, 0) scale(1.08); opacity: 0.62; }
+        }
+        @keyframes ihub-meetup-hint-float-b {
+          0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.30; }
+          50% { transform: translate3d(-10px, 12px, 0) scale(1.12); opacity: 0.56; }
+        }
+        @keyframes ihub-meetup-hint-float-c {
+          0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.24; }
+          50% { transform: translate3d(7px, 9px, 0) scale(0.92); opacity: 0.48; }
+        }
+      `}</style>
       <div
         ref={scrollRef}
         className="h-[calc(100dvh-250px)] min-h-0 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]"
@@ -2327,7 +2343,7 @@ function WeekMeetupCalendar({
         </div>
         <div
           ref={gridRef}
-          className="grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-t-2 border-[#24a7f2]"
+          className="relative grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-t-2 border-[#24a7f2]"
           style={{
             height:
               MEETUP_CALENDAR_TOP_PADDING +
@@ -2505,6 +2521,23 @@ function WeekMeetupCalendar({
             )}
           </div>
         ))}
+        {showEmptyHint && (
+          <div
+            className="pointer-events-none absolute left-[64px] right-3 z-30 flex justify-center"
+            style={{ top: calendarSlotTop(11 * 4) }}
+          >
+            <div className="relative min-h-[86px] w-full max-w-[260px] overflow-hidden rounded-[22px] bg-[#0f1118]/48 px-5 py-4 text-center shadow-[0_18px_40px_rgba(15,17,24,0.22)] backdrop-blur-[10px]">
+              <span className="absolute left-5 top-4 h-9 w-9 rounded-full bg-white/18 blur-[0.2px] [animation:ihub-meetup-hint-float-a_4.8s_ease-in-out_infinite]" />
+              <span className="absolute bottom-3 right-6 h-12 w-12 rounded-full bg-[#a8d4e6]/26 [animation:ihub-meetup-hint-float-b_5.4s_ease-in-out_infinite]" />
+              <span className="absolute right-20 top-3 h-5 w-5 rounded-full bg-[#f3c5d4]/30 [animation:ihub-meetup-hint-float-c_4.2s_ease-in-out_infinite]" />
+              <div className="relative flex min-h-[54px] items-center justify-center rounded-[18px] bg-black/12 px-3">
+                <p className="text-[13px] font-extrabold leading-snug text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.24)]">
+                  長押しで時間を選択できるよ
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
       </div>
     </div>
