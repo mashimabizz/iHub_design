@@ -1042,23 +1042,6 @@ export function HomeView({
         <div className="flex items-center justify-between gap-3 px-5 pb-1.5 pt-4">
           <div className="flex items-center gap-2">
             <Link
-              href="/search"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white shadow-sm"
-              aria-label="検索"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 14 14"
-                fill="none"
-                stroke="#3a324a"
-                strokeWidth="1.4"
-              >
-                <circle cx="6" cy="6" r="4.5" />
-                <path d="M9.5 9.5L13 13" />
-              </svg>
-            </Link>
-            <Link
               href="/notifications"
               className="relative flex h-9 w-9 items-center justify-center rounded-full border border-[#3a324a14] bg-white shadow-sm"
               aria-label="通知"
@@ -1220,6 +1203,29 @@ export function HomeView({
           </div>
         </section>
       </div>
+
+      <Link
+        href="/search"
+        scroll={false}
+        transitionTypes={["ihub-bottom-nav"]}
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+88px)] left-[max(18px,calc((100vw-28rem)/2+18px))] z-50 flex h-[54px] w-[54px] items-center justify-center rounded-full border border-white/70 bg-white/62 text-[#3a324a] shadow-[0_16px_34px_rgba(58,50,74,0.18),inset_0_1px_0_rgba(255,255,255,0.9),inset_0_-1px_0_rgba(58,50,74,0.08)] backdrop-blur-[24px] backdrop-saturate-[180%] transition-transform active:scale-[0.94]"
+        aria-label="検索"
+      >
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="M16.5 16.5L21 21" />
+        </svg>
+      </Link>
 
       {selectedCandidate && (
         <MatchDetailModal
