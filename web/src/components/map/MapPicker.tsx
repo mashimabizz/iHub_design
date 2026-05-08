@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import {
+  AttributionControl,
   MapContainer,
   TileLayer,
   Marker,
@@ -195,7 +196,9 @@ export default function MapPicker({
         doubleClickZoom={interactive}
         scrollWheelZoom={interactive}
         zoomControl={false}
+        attributionControl={false}
       >
+        <AttributionControl position="bottomright" prefix={false} />
         <TileLayer
           attribution={tile.attribution}
           url={tile.url}

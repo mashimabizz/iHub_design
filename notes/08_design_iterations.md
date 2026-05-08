@@ -4,6 +4,46 @@
 
 ---
 
+## イテレーション154.50：Leafletの地図prefix表示を非表示化
+
+### 背景・問題意識
+
+オーナーから、地図の右端に表示される `Leaflet` のような表記を消したいという指摘があった。
+
+地図データ提供元の attribution は残す必要があるが、`Leaflet` は地図ライブラリ側の prefix 表示なので、データ attribution を維持したまま非表示にできる。
+
+### 変更内容
+
+#### `web/src/components/map/MapPicker.tsx`
+- `MapContainer` のデフォルト attribution control を無効化した。
+- `AttributionControl` を明示的に追加し、`prefix={false}` で `Leaflet` prefix だけを非表示にした。
+- OpenStreetMap / CARTO の attribution は `TileLayer` 側に残し、地図データの権利表示は維持した。
+
+### 影響範囲
+
+- Leaflet ベースの `MapPicker` を使う地図全般
+- MapTiler API キー未設定時の提示物選択フロー地図フォールバック
+
+### 確認方法
+
+- `npx eslint src/components/map/MapPicker.tsx src/components/map/MapTilerPicker.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/map/MapPicker.tsx`
+
+### セルフレビュー結果
+
+- ✅ `Leaflet` prefix のみ非表示化
+- ✅ OpenStreetMap / CARTO の attribution は維持
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.49：送信確認の待ち合わせ表示を地図中心に整理
 
 ### 背景・問題意識
