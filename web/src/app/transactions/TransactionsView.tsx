@@ -251,15 +251,26 @@ function PendingList({
   const [pendingSubTab, setPendingSubTab] =
     useState<PendingSubTab>("action");
   const actionList = useMemo(
-    () => list.filter(pendingNeedsAction),
-    [list],
+    () => sortPendingCards(list.filter(pendingNeedsAction), now),
+    [list, now],
   );
   const waitingList = useMemo(
-    () => list.filter((t) => !pendingNeedsAction(t)),
-    [list],
+    () => sortPendingCards(list.filter((t) => !pendingNeedsAction(t)), now),
+    [list, now],
   );
+
+  const displaySubTab =
+    pendingSubTab === "action" &&
+    actionList.length === 0 &&
+    waitingList.length > 0
+      ? "waiting"
+      : pendingSubTab === "waiting" &&
+          waitingList.length === 0 &&
+          actionList.length > 0
+        ? "action"
+        : pendingSubTab;
   const currentList =
-    pendingSubTab === "action" ? actionList : waitingList;
+    displaySubTab === "action" ? actionList : waitingList;
 
   return (
     <div className="mb-2">
@@ -270,7 +281,7 @@ function PendingList({
             { id: "waiting", label: "相手待ち", count: waitingList.length },
           ] as const
         ).map((item) => {
-          const selected = pendingSubTab === item.id;
+          const selected = displaySubTab === item.id;
           return (
             <button
               key={item.id}
@@ -297,7 +308,7 @@ function PendingList({
             active ? "animate-transaction-panel-in" : ""
           }`}
         >
-          {pendingSubTab === "action"
+          {displaySubTab === "action"
             ? "いま対応が必要な打診はありません"
             : "相手待ちの打診はありません"}
         </div>
@@ -309,7 +320,7 @@ function PendingList({
               className={active ? "animate-transaction-panel-in" : undefined}
               style={active ? { animationDelay: `${i * 95}ms` } : undefined}
             >
-              <PendingCard t={t} now={now} subTab={pendingSubTab} />
+              <PendingCard t={t} now={now} subTab={displaySubTab} />
             </div>
           ))}
         </div>
@@ -335,20 +346,46 @@ function PendingCard({
   const statusText = pendingStatusText(t, needsAction);
   const expiresInDays = getExpiresInDays(t, now);
   const expiryText = expiresLabel(expiresInDays);
+  const urgent = expiresInDays !== null && expiresInDays <= 1;
   const meetup = compactMeetup(t);
   const cta = needsAction ? "確認" : "詳細";
+  const updated = updatedLabel(t, now);
+  const directionText = t.direction === "received" ? "届いた" : "送った";
 
   return (
     <Link
       href={href}
-      className={`relative block overflow-hidden rounded-[16px] border bg-white px-3 py-2.5 shadow-[0_6px_18px_rgba(58,50,74,0.06)] transition-all active:scale-[0.99] ${
-        needsAction ? "border-[#d9826b33]" : "border-[#3a324a12]"
+      className={`relative block overflow-hidden rounded-[16px] border bg-white px-3 py-2.5 transition-all active:scale-[0.99] ${
+        needsAction
+          ? "border-[#d9826b3d] shadow-[0_8px_20px_rgba(217,130,107,0.11)]"
+          : "border-[#3a324a12] shadow-[0_6px_18px_rgba(58,50,74,0.06)]"
       }`}
     >
       {needsAction && (
         <span className="absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full bg-[#d9826b]" />
       )}
       <div className="flex items-center gap-1.5">
+        <Avatar
+          url={t.partnerAvatarUrl}
+          fallbackName={t.partnerDisplayName || t.partnerHandle}
+          size={22}
+          variant="square"
+        />
+        <span className="min-w-0 flex-1 truncate text-[12px] font-extrabold text-[#3a324a]">
+          @{t.partnerHandle}
+        </span>
+        <span
+          className={`rounded-full px-2 py-[2px] text-[9.5px] font-extrabold ${
+            t.direction === "received"
+              ? "bg-[#a695d814] text-[#a695d8]"
+              : "bg-[#a8d4e626] text-[#3a7c93]"
+          }`}
+        >
+          {directionText}
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex items-center gap-1.5">
         <span
           className={`rounded-full px-2 py-[2px] text-[10px] font-extrabold ${
             needsAction
@@ -361,7 +398,7 @@ function PendingCard({
         {expiryText && (
           <span
             className={`text-[10px] font-bold tabular-nums ${
-              expiresInDays !== null && expiresInDays <= 1
+              urgent
                 ? "text-[#d9826b]"
                 : "text-[#3a324a8c]"
             }`}
@@ -369,8 +406,8 @@ function PendingCard({
             {expiryText}
           </span>
         )}
-        <span className="min-w-0 flex-1 truncate text-right text-[11px] font-bold text-[#3a324acc]">
-          @{t.partnerHandle}
+        <span className="min-w-0 flex-1 truncate text-right text-[10px] font-semibold text-[#3a324a66]">
+          {updated}
         </span>
       </div>
 
@@ -383,13 +420,20 @@ function PendingCard({
       </div>
 
       <div className="mt-2 flex items-center gap-1.5 text-[10.5px] text-[#3a324a8c]">
-        <Avatar
-          url={t.partnerAvatarUrl}
-          fallbackName={t.partnerDisplayName || t.partnerHandle}
-          size={18}
-          variant="square"
+        <span
+          className={`inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+            needsAction ? "bg-[#d9826b]" : "bg-[#a8d4e6]"
+          }`}
         />
-        <span className="min-w-0 flex-1 truncate">{meetup}</span>
+        <span
+          className={`min-w-0 flex-1 truncate ${
+            meetup.includes("未設定")
+              ? "font-bold text-[#d9826b]"
+              : "text-[#3a324a8c]"
+          }`}
+        >
+          {meetup}
+        </span>
         <span
           className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
             subTab === "action"
@@ -438,7 +482,7 @@ function TradeSide({
           <span className="text-[11px] font-bold text-[#3a324a8c]">—</span>
         )}
         {extra > 0 && (
-          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[8px] bg-white text-[10px] font-extrabold text-[#3a324a8c]">
+          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] bg-white text-[10px] font-extrabold text-[#3a324a8c]">
             +{extra}
           </span>
         )}
@@ -459,7 +503,7 @@ function ItemThumb({
 }) {
   return (
     <span
-      className={`relative flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-[8px] border ${
+      className={`relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-[9px] border ${
         emphasis ? "border-[#a695d855] bg-white" : "border-white bg-white"
       }`}
     >
@@ -491,7 +535,8 @@ function ItemThumb({
 
 function pendingNeedsAction(t: TransactionRow): boolean {
   if (t.status === "sent") return t.direction === "received";
-  if (t.status === "agreement_one_side") return !t.myAgreed;
+  if (t.status === "agreement_one_side")
+    return t.partnerAgreed && !t.myAgreed;
   if (t.status === "negotiating") {
     if (t.latestMessageFrom) return t.latestMessageFrom === "partner";
     return t.direction === "received";
@@ -507,12 +552,51 @@ function pendingStatusText(
     return needsAction ? "返信が必要" : "相手の返信待ち";
   }
   if (t.status === "agreement_one_side") {
-    return needsAction ? "成立まであと一歩" : "相手の合意待ち";
+    return needsAction ? "相手は合意済み" : "あなたは合意済み";
   }
   if (t.status === "negotiating") {
-    return needsAction ? "確認が必要" : "相手待ち";
+    return needsAction ? "返信が届いています" : "相手待ち";
   }
   return needsAction ? "要対応" : "相手待ち";
+}
+
+function sortPendingCards(
+  list: TransactionRow[],
+  now: number,
+): TransactionRow[] {
+  return [...list].sort((a, b) => {
+    const rankDiff = pendingRank(a) - pendingRank(b);
+    if (rankDiff !== 0) return rankDiff;
+
+    const aExpires = a.expiresAt
+      ? new Date(a.expiresAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    const bExpires = b.expiresAt
+      ? new Date(b.expiresAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    const aUrgent = getExpiresInDays(a, now);
+    const bUrgent = getExpiresInDays(b, now);
+    if ((aUrgent ?? 99) <= 1 || (bUrgent ?? 99) <= 1) {
+      if (aExpires !== bExpires) return aExpires - bExpires;
+    }
+
+    return pendingTouchedAt(b) - pendingTouchedAt(a);
+  });
+}
+
+function pendingRank(t: TransactionRow): number {
+  if (t.status === "agreement_one_side") return t.myAgreed ? 4 : 0;
+  if (t.status === "sent") return t.direction === "received" ? 1 : 5;
+  if (t.status === "negotiating") {
+    if (t.latestMessageFrom === "partner") return 2;
+    if (t.latestMessageFrom === "me") return 6;
+    return t.direction === "received" ? 3 : 7;
+  }
+  return 8;
+}
+
+function pendingTouchedAt(t: TransactionRow): number {
+  return new Date(t.lastActionAt ?? t.createdAt).getTime();
 }
 
 function getExpiresInDays(t: TransactionRow, now: number): number | null {
@@ -541,7 +625,26 @@ function compactMeetup(t: TransactionRow): string {
       : null;
   const place = t.meetupPlaceName;
   if (time && place) return `${time}・${place}`;
-  return time ?? place ?? "待ち合わせ未設定";
+  if (time) return `${time}・場所未設定`;
+  if (place) return `時間未設定・${place}`;
+  return "待ち合わせ未設定";
+}
+
+function updatedLabel(t: TransactionRow, now: number): string {
+  return `${relativeLabel(pendingTouchedAt(t), now)}更新`;
+}
+
+function relativeLabel(target: number, now: number): string {
+  const diff = Math.max(0, now - target);
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "いま";
+  if (minutes < 60) return `${minutes}分前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}時間前`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}日前`;
+  const d = new Date(target);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 /* ─── 進行中（合意済み）：合流時刻までのカウントダウン強調 ─── */
