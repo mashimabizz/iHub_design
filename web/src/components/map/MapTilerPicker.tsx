@@ -289,7 +289,31 @@ export default function MapTilerPicker({
   }
 
   return (
-    <div className={`relative overflow-hidden ${className ?? ""}`}>
+    <div
+      className={`ihub-maptiler-picker relative overflow-hidden ${className ?? ""}`}
+    >
+      <style>{`
+        .ihub-maptiler-picker .maplibregl-ctrl-attrib,
+        .ihub-maptiler-picker .maplibregl-ctrl-attrib.maplibregl-compact {
+          margin: 0 4px 3px 0;
+          padding: 1px 4px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.66);
+          color: rgba(58, 50, 74, 0.52);
+          font-size: 7px;
+          font-weight: 600;
+          line-height: 1.15;
+          max-width: 148px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          box-shadow: 0 1px 4px rgba(58, 50, 74, 0.08);
+        }
+        .ihub-maptiler-picker .maplibregl-ctrl-attrib a {
+          color: inherit;
+          text-decoration: none;
+        }
+      `}</style>
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );

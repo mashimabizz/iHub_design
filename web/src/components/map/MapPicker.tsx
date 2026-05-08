@@ -187,7 +187,28 @@ export default function MapPicker({
   );
 
   return (
-    <div className={className}>
+    <div className={`ihub-map-picker ${className ?? ""}`}>
+      <style>{`
+        .ihub-map-picker .leaflet-control-attribution {
+          margin: 0 4px 3px 0;
+          padding: 1px 4px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.66);
+          color: rgba(58, 50, 74, 0.52);
+          font-size: 7px;
+          font-weight: 600;
+          line-height: 1.15;
+          max-width: 148px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          box-shadow: 0 1px 4px rgba(58, 50, 74, 0.08);
+        }
+        .ihub-map-picker .leaflet-control-attribution a {
+          color: inherit;
+          text-decoration: none;
+        }
+      `}</style>
       <MapContainer
         center={center}
         zoom={15}

@@ -4,6 +4,51 @@
 
 ---
 
+## イテレーション154.51：地図attribution表示を小さく調整
+
+### 背景・問題意識
+
+オーナーから、地図右下に残っている `OpenStreetMap / CARTO` 表示も消すか小さくしたいという指摘があった。
+
+地図データ提供元の attribution は完全に消すと利用条件に抵触しうるため、表示は維持したまま、UI上の存在感を大きく下げる。
+
+### 変更内容
+
+#### `web/src/components/map/MapPicker.tsx`
+- Leaflet attribution control を小さいピル状表示に調整した。
+- OpenStreetMap / CARTO 表示は残しつつ、フォントサイズ・背景・余白・色を控えめにした。
+
+#### `web/src/components/map/MapTilerPicker.tsx`
+- MapTiler / MapLibre 側の attribution 表示も同じトーンに調整した。
+- MapTiler API キー設定時と未設定 fallback のどちらでも、地図右下の表記が目立ちすぎないようにした。
+
+### 影響範囲
+
+- 提示物選択フローの場所設定地図
+- 送信確認画面の待ち合わせ地図
+- `MapPicker` / `MapTilerPicker` を使う地図表示全般
+
+### 確認方法
+
+- `npx eslint src/components/map/MapPicker.tsx src/components/map/MapTilerPicker.tsx`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/components/map/MapPicker.tsx`
+- `web/src/components/map/MapTilerPicker.tsx`
+
+### セルフレビュー結果
+
+- ✅ 地図提供元の attribution は維持
+- ✅ Leaflet / MapTiler 両方の表示サイズを調整
+- ✅ 新しい状態名・用語・DB migration は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ 対象ファイルの `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.50：Leafletの地図prefix表示を非表示化
 
 ### 背景・問題意識
