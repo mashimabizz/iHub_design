@@ -572,6 +572,17 @@ export function ProposeFlow({
     meetupCandidates[0];
   const meetupPlace = activeMeetup?.place ?? "";
   const meetupCenter = activeMeetup?.center ?? FALLBACK_CENTER;
+  const previousMeetupForActive = useMemo(() => {
+    const activeIndex = meetupCandidates.findIndex(
+      (candidate) => candidate.id === activeMeetupId,
+    );
+    if (activeIndex <= 0) return null;
+    for (let index = activeIndex - 1; index >= 0; index -= 1) {
+      const candidate = meetupCandidates[index];
+      if (candidate?.place.trim()) return candidate;
+    }
+    return null;
+  }, [activeMeetupId, meetupCandidates]);
 
   /** ユーザーが place 入力欄を直接編集している間は reverse-geocode で上書きしない */
   const placeManuallyEditedRef = useRef(false);
@@ -770,14 +781,20 @@ export function ProposeFlow({
     skipReverseRef.current = true;
   }
 
-  function copyActivePlaceToAllCandidates() {
-    if (!activeMeetup) return;
+  function usePreviousPlaceForActiveCandidate() {
+    if (!previousMeetupForActive) return;
+    skipReverseRef.current = true;
+    placeManuallyEditedRef.current = false;
     setMeetupCandidates((prev) =>
-      prev.map((candidate) => ({
-        ...candidate,
-        place: activeMeetup.place,
-        center: activeMeetup.center,
-      })),
+      prev.map((candidate) =>
+        candidate.id === activeMeetupId
+          ? {
+              ...candidate,
+              place: previousMeetupForActive.place,
+              center: previousMeetupForActive.center,
+            }
+          : candidate,
+      ),
     );
   }
 
@@ -1261,7 +1278,9 @@ export function ProposeFlow({
             onTimeRangeSelect={setActiveMeetupTimeRange}
             onMoveCandidateTimeRange={moveMeetupCandidateTimeRange}
             onDeleteCandidate={deleteMeetupCandidate}
-            onCopyPlaceToAll={copyActivePlaceToAllCandidates}
+            onUsePreviousPlace={usePreviousPlaceForActiveCandidate}
+            canUsePreviousPlace={!!previousMeetupForActive}
+            previousPlaceName={previousMeetupForActive?.place ?? ""}
             meetupPlace={meetupPlace}
             onPlaceInputChange={handlePlaceInputChange}
             meetupCenter={meetupCenter}
@@ -1633,7 +1652,9 @@ function MeetupTab({
   onTimeRangeSelect,
   onMoveCandidateTimeRange,
   onDeleteCandidate,
-  onCopyPlaceToAll,
+  onUsePreviousPlace,
+  canUsePreviousPlace,
+  previousPlaceName,
   meetupPlace,
   onPlaceInputChange,
   meetupCenter,
@@ -1654,7 +1675,9 @@ function MeetupTab({
   onTimeRangeSelect: (start: string, end: string) => void;
   onMoveCandidateTimeRange: (id: string, start: string, end: string) => void;
   onDeleteCandidate: (id: string) => void;
-  onCopyPlaceToAll: () => void;
+  onUsePreviousPlace: () => void;
+  canUsePreviousPlace: boolean;
+  previousPlaceName: string;
   meetupPlace: string;
   onPlaceInputChange: (s: string) => void;
   meetupCenter: [number, number];
@@ -1733,8 +1756,9 @@ function MeetupTab({
           setShowResults={setShowResults}
           pickPlace={pickPlace}
           useCurrentLocation={useCurrentLocation}
-          onCopyPlaceToAll={onCopyPlaceToAll}
-          canCopyPlaceToAll={meetupCandidates.length > 1}
+          onUsePreviousPlace={onUsePreviousPlace}
+          canUsePreviousPlace={canUsePreviousPlace}
+          previousPlaceName={previousPlaceName}
           onClose={() => setPlaceSheetOpen(false)}
         />
       )}
@@ -2575,8 +2599,9 @@ function PlacePickerSheet({
   setShowResults,
   pickPlace,
   useCurrentLocation,
-  onCopyPlaceToAll,
-  canCopyPlaceToAll,
+  onUsePreviousPlace,
+  canUsePreviousPlace,
+  previousPlaceName,
   onClose,
 }: {
   candidateLabel: string;
@@ -2594,18 +2619,21 @@ function PlacePickerSheet({
   setShowResults: (b: boolean) => void;
   pickPlace: (p: Place) => void;
   useCurrentLocation: () => void;
-  onCopyPlaceToAll: () => void;
-  canCopyPlaceToAll: boolean;
+  onUsePreviousPlace: () => void;
+  canUsePreviousPlace: boolean;
+  previousPlaceName: string;
   onClose: () => void;
 }) {
   const placeSet = !!meetupPlace.trim();
-  const [copyAppliedPlace, setCopyAppliedPlace] = useState<string | null>(null);
-  const copyApplied = placeSet && copyAppliedPlace === meetupPlace;
+  const [previousAppliedPlace, setPreviousAppliedPlace] = useState<
+    string | null
+  >(null);
+  const previousApplied = placeSet && previousAppliedPlace === meetupPlace;
 
-  function handleCopyPlaceToAll() {
-    if (!placeSet) return;
-    onCopyPlaceToAll();
-    setCopyAppliedPlace(meetupPlace);
+  function handleUsePreviousPlace() {
+    if (!canUsePreviousPlace) return;
+    onUsePreviousPlace();
+    setPreviousAppliedPlace(previousPlaceName);
   }
 
   return (
@@ -2640,33 +2668,18 @@ function PlacePickerSheet({
             <span className="text-[9.5px] font-bold tracking-[0.4px] text-[#3a324a8c]">
               交換できる場所
             </span>
-            <span className="flex flex-shrink-0 items-center gap-1.5">
-              {reverseFetching && (
-                <span className="text-[9.5px] text-[#a695d8]">取得中…</span>
-              )}
-              {canCopyPlaceToAll && (
-                <button
-                  type="button"
-                  onClick={handleCopyPlaceToAll}
-                  disabled={!placeSet}
-                  className={`rounded-full px-2.5 py-1 text-[9.5px] font-extrabold transition-colors active:scale-[0.97] disabled:opacity-40 ${
-                    copyApplied
-                      ? "bg-[#7a9a8a] text-white"
-                      : "border border-[#a8d4e666] bg-[#a8d4e61f] text-[#3a7c93]"
-                  }`}
-                >
-                  {copyApplied ? "適用済み" : "同じ場所を全候補に"}
-                </button>
-              )}
-            </span>
           </div>
           <input
             type="text"
             value={meetupPlace}
             onChange={(e) => onPlaceInputChange(e.target.value)}
             maxLength={120}
-            placeholder="場所未設定"
-            className="mb-2 block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-[#fbf9fc] px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] placeholder:text-[#d9826b] focus:border-[#a695d8] focus:outline-none"
+            placeholder={reverseFetching ? "取得中…" : "場所未設定"}
+            className={`mb-2 block w-full rounded-lg border-[0.5px] border-[#3a324a14] bg-[#fbf9fc] px-3 py-2.5 text-[12px] font-semibold text-[#3a324a] focus:border-[#a695d8] focus:outline-none ${
+              reverseFetching
+                ? "placeholder:text-[#a695d8]"
+                : "placeholder:text-[#d9826b]"
+            }`}
           />
 
           <div className="relative mb-2">
@@ -2704,14 +2717,27 @@ function PlacePickerSheet({
             )}
           </div>
 
-          <div className="mb-2 flex flex-wrap gap-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={useCurrentLocation}
-              className="flex items-center gap-1.5 rounded-full border border-[#a695d855] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#a695d8] active:scale-[0.97]"
+              className="flex min-w-0 items-center gap-1.5 rounded-full border border-[#a695d855] bg-white px-3 py-1.5 text-[10.5px] font-bold text-[#a695d8] shadow-sm active:scale-[0.97]"
             >
               📍 現在地を中心に
             </button>
+            {canUsePreviousPlace && (
+              <button
+                type="button"
+                onClick={handleUsePreviousPlace}
+                className={`flex-shrink-0 rounded-full px-3.5 py-2 text-[10.5px] font-extrabold shadow-[0_5px_14px_rgba(36,167,242,0.24)] transition-colors active:scale-[0.97] ${
+                  previousApplied
+                    ? "border border-[#7a9a8a] bg-[#7a9a8a] text-white"
+                    : "border border-[#1b91db] bg-[#24a7f2] text-white"
+                }`}
+              >
+                {previousApplied ? "適用済み" : "前の設定と同じに"}
+              </button>
+            )}
           </div>
 
           <div className="overflow-hidden rounded-[12px] border-[0.5px] border-[#3a324a14] bg-[#e8eef0]">
