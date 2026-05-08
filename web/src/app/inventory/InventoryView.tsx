@@ -255,19 +255,19 @@ export function InventoryView({
  */
 export function InventoryFooter() {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#a695d822] bg-white/95 backdrop-blur-xl">
+    <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-40">
       {/* CTA バー */}
-      <div className="mx-auto max-w-md px-[18px] pb-2 pt-3">
+      <div className="pointer-events-auto mx-auto max-w-md px-[18px] pb-2 pt-3">
         <Link
           href="/inventory/new"
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#a695d8,#f3c5d4)] text-[14.5px] font-bold tracking-wider text-white shadow-[0_6px_16px_rgba(166,149,216,0.4)] transition-all duration-150 active:scale-[0.97]"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-ihub-lavender to-ihub-pink text-[14.5px] font-bold tracking-wider text-white shadow-[0_6px_16px_rgba(58,50,74,0.18)] transition-all duration-150 active:scale-[0.97]"
         >
           <svg
             width="14"
             height="14"
             viewBox="0 0 14 14"
             fill="none"
-            stroke="#fff"
+            stroke="currentColor"
             strokeWidth="2"
             strokeLinecap="round"
           >
@@ -277,9 +277,8 @@ export function InventoryFooter() {
         </Link>
       </div>
 
-      {/* BottomNav（背景は共有・border のみで区切る） */}
-      <div className="border-t border-gray-200/50">
-        <div className="mx-auto flex max-w-md items-stretch px-1 pb-[env(safe-area-inset-bottom)]">
+      <div className="pointer-events-auto mx-auto max-w-md px-4 pb-[calc(env(safe-area-inset-bottom)+10px)]">
+        <div className="mx-auto w-full max-w-[400px]">
           <BottomNav inline />
         </div>
       </div>

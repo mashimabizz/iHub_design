@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+const BOTTOM_NAV_TRANSITION_KEY = "ihub-bottom-nav-transition";
+
 /**
- * ボトムナビ（モックアップ home-v2.jsx の BottomNavV2 準拠）
+ * ボトムナビ
  *
  * MVP の主要タブ: ホーム / 取引 / 在庫 / wish / プロフ
  *
@@ -25,44 +27,105 @@ export function BottomNav({ inline = false }: { inline?: boolean } = {}) {
     { href: "/profile", label: "プロフ", icon: "profile" as const },
   ];
 
-  const links = items.map((it) => {
+  const activeItemIndex = items.findIndex((it) =>
+    it.href === "/" ? pathname === "/" : pathname.startsWith(it.href),
+  );
+  const activeIndex = Math.max(0, activeItemIndex);
+
+  const links = items.map((it, index) => {
     const active =
       it.href === "/" ? pathname === "/" : pathname.startsWith(it.href);
     return (
       <Link
         key={it.href}
         href={it.href}
-        className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] transition-colors ${
-          active ? "font-bold text-[#a695d8]" : "font-medium text-gray-500"
+        scroll={false}
+        transitionTypes={["ihub-bottom-nav"]}
+        onNavigate={() => {
+          if (!active) markBottomNavNavigation();
+        }}
+        className={`relative z-10 flex h-[54px] flex-1 flex-col items-center justify-center gap-[3px] rounded-full text-[9.5px] leading-none transition-[color,transform,filter] duration-300 active:scale-[0.94] ${
+          active
+            ? "font-extrabold text-ihub-lavender drop-shadow-[0_2px_7px_rgba(58,50,74,0.18)]"
+            : "font-bold text-[#3a324a99]"
         }`}
+        aria-current={active ? "page" : undefined}
+        style={{
+          transitionDelay: active ? "50ms" : `${index * 12}ms`,
+        }}
       >
-        <NavIcon name={it.icon} active={active} />
+        <span
+          className={`flex h-[25px] w-[25px] items-center justify-center rounded-full transition-transform duration-300 ${
+            active ? "-translate-y-0.5 scale-105" : "scale-95"
+          }`}
+        >
+          <NavIcon name={it.icon} />
+        </span>
         <span>{it.label}</span>
       </Link>
     );
   });
 
+  const rail = (
+    <div className="relative h-[66px] overflow-hidden rounded-full border border-white/65 bg-white/58 p-1.5 shadow-[0_18px_45px_rgba(58,50,74,0.18),0_4px_13px_rgba(255,255,255,0.62),inset_0_1px_0_rgba(255,255,255,0.86),inset_0_-1px_0_rgba(58,50,74,0.08)] backdrop-blur-[26px] backdrop-saturate-[190%]">
+      <div className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(135deg,rgba(255,255,255,0.78),rgba(255,255,255,0.22)_42%,rgba(255,255,255,0.52))]" />
+      <div className="pointer-events-none absolute inset-x-4 top-1 h-px bg-white/80" />
+      <div
+        className={`pointer-events-none absolute inset-y-1.5 left-1.5 rounded-full bg-white/64 shadow-[0_10px_26px_rgba(58,50,74,0.16),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(58,50,74,0.05)] backdrop-blur-[18px] transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.2,1,0.22,1)] motion-reduce:transition-none ${
+          activeItemIndex >= 0 ? "opacity-100" : "opacity-0"
+        }`}
+        style={{
+          width: `calc((100% - 12px) / ${items.length})`,
+          transform: `translate3d(${activeIndex * 100}%, 0, 0)`,
+        }}
+      />
+      <div className="relative flex h-full items-center">{links}</div>
+    </div>
+  );
+
   if (inline) {
-    return <>{links}</>;
+    return rail;
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#3a324a14] bg-white">
-      <div className="mx-auto flex max-w-md items-stretch px-1 pb-[env(safe-area-inset-bottom)]">
-        {links}
+    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 pb-[calc(env(safe-area-inset-bottom)+10px)]">
+      <div className="pointer-events-auto mx-auto max-w-md px-4">
+        <div className="mx-auto w-full max-w-[400px]">{rail}</div>
       </div>
     </nav>
   );
 }
 
+function markBottomNavNavigation() {
+  if (typeof window === "undefined") return;
+  window.document.body.classList.add("ihub-bottom-nav-transitioning");
+  try {
+    window.sessionStorage.setItem(BOTTOM_NAV_TRANSITION_KEY, "1");
+  } catch {
+    // sessionStorage が使えない環境でもナビゲーション自体は続行する。
+  }
+  window.setTimeout(() => {
+    window.document.body.classList.remove("ihub-bottom-nav-transitioning");
+  }, 900);
+}
+
+export function consumeBottomNavTransitionFlag() {
+  if (typeof window === "undefined") return false;
+  try {
+    const shouldAnimate =
+      window.sessionStorage.getItem(BOTTOM_NAV_TRANSITION_KEY) === "1";
+    window.sessionStorage.removeItem(BOTTOM_NAV_TRANSITION_KEY);
+    return shouldAnimate;
+  } catch {
+    return false;
+  }
+}
+
 function NavIcon({
   name,
-  active,
 }: {
   name: "home" | "inventory" | "transactions" | "wish" | "profile";
-  active: boolean;
 }) {
-  const stroke = active ? "#a695d8" : "#6b6478";
   switch (name) {
     case "transactions":
       return (
@@ -71,7 +134,7 @@ function NavIcon({
           height="22"
           viewBox="0 0 24 24"
           fill="none"
-          stroke={stroke}
+          stroke="currentColor"
           strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -88,7 +151,7 @@ function NavIcon({
           height="22"
           viewBox="0 0 24 24"
           fill="none"
-          stroke={stroke}
+          stroke="currentColor"
           strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -103,7 +166,7 @@ function NavIcon({
           height="22"
           viewBox="0 0 24 24"
           fill="none"
-          stroke={stroke}
+          stroke="currentColor"
           strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -119,7 +182,7 @@ function NavIcon({
           height="22"
           viewBox="0 0 24 24"
           fill="none"
-          stroke={stroke}
+          stroke="currentColor"
           strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -134,7 +197,7 @@ function NavIcon({
           height="22"
           viewBox="0 0 24 24"
           fill="none"
-          stroke={stroke}
+          stroke="currentColor"
           strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"

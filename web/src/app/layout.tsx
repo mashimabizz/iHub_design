@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Noto_Sans_JP, Inter_Tight } from "next/font/google";
+import { BottomNavTransitionBridge } from "@/components/home/BottomNavTransitionBridge";
 import "./globals.css";
 
 const notoSansJP = Noto_Sans_JP({
@@ -30,7 +31,10 @@ export default function RootLayout({
       lang="ja"
       className={`${notoSansJP.variable} ${interTight.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+      <body className="min-h-full flex flex-col font-sans">
+        <BottomNavTransitionBridge />
+        {children}
+      </body>
     </html>
   );
 }

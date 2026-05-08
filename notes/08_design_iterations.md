@@ -4,6 +4,69 @@
 
 ---
 
+## イテレーション154.69：ボトムナビをガラスフッター化
+
+### 背景・問題意識
+
+オーナーから、フッターの「ホーム」などのナビゲーションを、添付画像のような最新版iOS風のガラスUIにできないかという相談があった。
+
+共通フッターは毎日触る導線なので、単なる白い固定バーではなく、画面上にふわっと浮くガラスカプセルとして見せることで、アプリ全体の質感を引き上げる必要があった。また、タブ切替時にアクティブ状態が瞬時に切り替わるだけだと硬いため、選択ハイライトと画面遷移の両方をなめらかにする方針にした。
+
+### 変更内容
+
+#### `web/src/components/home/BottomNav.tsx`
+- 白い固定バー型のボトムナビを、浮いたガラスカプセル型へ変更した。
+- アクティブ項目の背景を、項目幅に合わせたガラスのハイライトが横にスライドする設計にした。
+- アイコンは `currentColor` に揃え、アクティブ時の色替えをテキストカラーと一体で制御するようにした。
+- フッタータブのSPA遷移時だけ `sessionStorage` にフラグを立て、通常の詳細遷移や戻る操作には影響しないようにした。
+
+#### `web/src/components/home/BottomNavTransitionBridge.tsx`
+- ルート変更後にフッター遷移フラグを消費し、次ページの `main` を軽くフェード/リフトインさせるクライアントブリッジを追加した。
+
+#### `web/src/app/layout.tsx`
+- `BottomNavTransitionBridge` をルートレイアウトに追加し、全ページで共通フッター遷移を受け取れるようにした。
+
+#### `web/src/app/globals.css`
+- ボトムナビ遷移専用の View Transition / fallback animation を追加した。
+- `body.ihub-bottom-nav-transitioning` / `body.ihub-bottom-nav-route-entering` の時だけ効くようにして、既存の削除アニメーションや詳細画面の右スライド演出と干渉しないようにした。
+
+#### `web/src/app/inventory/InventoryView.tsx`
+- 在庫画面の専用フッターも新しいガラス型 `BottomNav` を使うようにし、CTAとの一体白バーをやめた。
+- CTAのブランドカラー指定を Tailwind の `from-ihub-lavender` / `to-ihub-pink` に寄せた。
+
+### 影響範囲
+
+- 共通ボトムナビが表示される主要画面
+- 在庫画面のCTA付きフッター
+- ボトムナビ経由のホーム/在庫/wish/取引/プロフ遷移
+
+### 確認方法
+
+- `npx eslint 'src/components/home/BottomNav.tsx' 'src/components/home/BottomNavTransitionBridge.tsx' 'src/app/layout.tsx' 'src/app/inventory/InventoryView.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+- `npm run dev` → `http://localhost:3000` のHTTP応答確認
+
+### 関連ファイル
+
+- `web/src/components/home/BottomNav.tsx`
+- `web/src/components/home/BottomNavTransitionBridge.tsx`
+- `web/src/app/layout.tsx`
+- `web/src/app/globals.css`
+- `web/src/app/inventory/InventoryView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 共通 `BottomNav` を一箇所で更新し、ホーム/取引/wish/プロフなどの主要画面に同じ質感が波及するようにした
+- ✅ アクティブハイライトは `transform` で移動させ、レイアウトシフトせずふわっと切り替わる
+- ✅ ボトムナビ遷移だけをフラグで判定し、既存の詳細画面スライドや削除時 View Transition とは分離した
+- ✅ 今回追加したブランド色指定は Tailwind theme の `ihub-*` を使用し、CTAの既存直書きも一部是正した
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.68：現地モード切替を非リロード化
 
 ### 背景・問題意識
