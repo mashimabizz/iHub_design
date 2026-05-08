@@ -2464,9 +2464,15 @@ function WeekMeetupCalendar({
                   }`}
                   style={{ top: block.top, height: block.height, touchAction: "none" }}
                 >
-                  <span className="block min-w-0 truncate font-bold">
-                    {placeMissing ? "場所を設定" : candidate.place}
-                  </span>
+                  {placeMissing ? (
+                    <span className="pointer-events-none flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full bg-[#fb923c] text-[11px] font-black leading-none text-white shadow-[0_2px_7px_rgba(251,146,60,0.34)]">
+                      !
+                    </span>
+                  ) : (
+                    <span className="block min-w-0 truncate font-bold">
+                      {candidate.place}
+                    </span>
+                  )}
                   <button
                     type="button"
                     aria-label={`候補${index + 1}を削除`}
