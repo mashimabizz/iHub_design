@@ -4,6 +4,56 @@
 
 ---
 
+## イテレーション154.74：相手待ち打診の遷移先を修正
+
+### 背景・問題意識
+
+オーナーから、打診一覧の「打診中 > 相手待ち」にあるパネルを押すと、まだ 404 になるという報告があった。
+
+前回 iter154.73 では `/proposals/[id]` の取得耐性を上げたが、相手待ちのうち「自分が送った未応答打診」は受信者が承諾・拒否するための `/proposals/[id]` に飛ぶべきではない。送信者にとっては「返事待ちの詳細」を見る導線なので、取引詳細側で開けるようにする必要があった。
+
+### 変更内容
+
+#### `web/src/app/transactions/TransactionsView.tsx`
+- 打診中カードのリンク先を整理し、`sent` かつ `received` の未応答打診だけ `/proposals/[id]` へ残した。
+- `sent` かつ `sent` の相手待ち打診、`negotiating`、`agreement_one_side` は `/transactions/[id]` へ遷移するようにした。
+
+#### `web/src/app/transactions/[id]/page.tsx`
+- `/transactions/[id]` で、送信者本人の `sent` 打診を「相手待ち詳細」として表示できるようにした。
+- 受信者の `sent` 打診は、今まで通り応答用の `/proposals/[id]` へ redirect するように残した。
+
+#### `web/src/app/transactions/[id]/ChatView.tsx`
+- 送信者本人が `sent` 打診を開いた場合は、合意ボタンを押せない「相手の返信待ち」表示にした。
+- 同ファイルの既存 `Date.now()` レンダー呼び出しを、初期 render 時刻の state 経由にして ESLint の purity ルールに合わせた。
+
+### 影響範囲
+
+- 取引一覧の「打診中 > 相手待ち」カード
+- 送信者本人が開く未応答打診の詳細表示
+- 受信者が開く未応答打診の承諾・拒否導線
+
+### 確認方法
+
+- `npx eslint 'src/app/transactions/TransactionsView.tsx' 'src/app/transactions/[id]/page.tsx' 'src/app/transactions/[id]/ChatView.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/transactions/TransactionsView.tsx`
+- `web/src/app/transactions/[id]/page.tsx`
+- `web/src/app/transactions/[id]/ChatView.tsx`
+
+### セルフレビュー結果
+
+- ✅ 相手待ちの送信済み打診だけ、受信者向け詳細ではなく送信者向け詳細へ開くようにした
+- ✅ 受信者側の未応答打診は、承諾・拒否・反対提案ができる `/proposals/[id]` のまま維持した
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.73：打診中カード詳細の404を抑制
 
 ### 背景・問題意識

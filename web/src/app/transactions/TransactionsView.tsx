@@ -377,9 +377,9 @@ function PendingCard({
   subTab: PendingSubTab;
 }) {
   const href =
-    t.status === "negotiating" || t.status === "agreement_one_side"
-      ? `/transactions/${t.id}`
-      : `/proposals/${t.id}`;
+    t.status === "sent" && t.direction === "received"
+      ? `/proposals/${t.id}`
+      : `/transactions/${t.id}`;
   const needsAction = pendingNeedsAction(t);
   const statusText = pendingStatusText(t, needsAction);
   const expiresInDays = getExpiresInDays(t, now);

@@ -105,13 +105,16 @@ export default async function TransactionChatPage({
   if (!proposalRow) notFound();
   const p = proposalRow as ProposalRaw;
   if (p.sender_id !== user.id && p.receiver_id !== user.id) notFound();
+  const isMeSender = p.sender_id === user.id;
 
-  // 合意済 or ネゴ中 / 完了済 でチャット可（draft/expired/cancelled は不可）
-  if (
-    !["agreed", "negotiating", "agreement_one_side", "completed"].includes(
+  // 合意済 or ネゴ中 / 完了済 はチャット可。
+  // sent は送信者の「相手待ち」詳細としてだけ許可し、受信者は応答用の打診詳細へ回す。
+  const canOpenTransactionDetail =
+    ["agreed", "negotiating", "agreement_one_side", "completed"].includes(
       p.status,
-    )
-  ) {
+    ) ||
+    (p.status === "sent" && isMeSender);
+  if (!canOpenTransactionDetail) {
     redirect(`/proposals/${id}`);
   }
 
@@ -130,7 +133,6 @@ export default async function TransactionChatPage({
     }
   }
 
-  const isMeSender = p.sender_id === user.id;
   const partnerId = isMeSender ? p.receiver_id : p.sender_id;
 
   // 相手 user（iter122: avatar_url も取得）

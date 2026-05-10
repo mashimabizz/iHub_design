@@ -127,6 +127,7 @@ export function ChatView({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingOutfit, setUploadingOutfit] = useState(false);
+  const [renderNowMs] = useState(() => Date.now());
   const listRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const outfitInputRef = useRef<HTMLInputElement>(null);
@@ -341,6 +342,7 @@ export function ChatView({
                 extensionCount={proposal.extensionCount}
                 onExtend={handleExtend}
                 pending={pending}
+                nowMs={renderNowMs}
               />
               <AgreementBar
                 proposal={proposal}
@@ -886,14 +888,16 @@ function ExpireBanner({
   extensionCount,
   onExtend,
   pending,
+  nowMs,
 }: {
   expiresAt: string | null;
   extensionCount: number;
   onExtend: () => void;
   pending: boolean;
+  nowMs: number;
 }) {
   if (!expiresAt) return null;
-  const remainMs = new Date(expiresAt).getTime() - Date.now();
+  const remainMs = new Date(expiresAt).getTime() - nowMs;
   const remainDays = Math.ceil(remainMs / (1000 * 60 * 60 * 24));
   // 残 3 日以下のみ表示
   if (remainDays > 3) return null;
@@ -968,14 +972,18 @@ function AgreementBar({
 }) {
   const myAgreed = proposal.myAgreed;
   const partnerAgreed = proposal.partnerAgreed;
+  const isInitialSenderWaiting =
+    proposal.status === "sent" && !proposal.iAmReceiver;
   const canReject = proposal.iAmReceiver;
 
   // ステータス文
-  const statusText = myAgreed
-    ? `あなた合意済 · @${proposal.partner.handle} の合意待ち`
-    : partnerAgreed
-      ? `@${proposal.partner.handle} 合意済 · あなたの確認をお願いします`
-      : "両者の合意で取引フェーズへ進めます";
+  const statusText = isInitialSenderWaiting
+    ? `@${proposal.partner.handle} の返信待ちです`
+    : myAgreed
+      ? `あなた合意済 · @${proposal.partner.handle} の合意待ち`
+      : partnerAgreed
+        ? `@${proposal.partner.handle} 合意済 · あなたの確認をお願いします`
+        : "両者の合意で取引フェーズへ進めます";
 
   return (
     <div className="mt-1.5 overflow-hidden rounded-[12px] border border-[#a695d855] bg-[linear-gradient(180deg,rgba(166,149,216,0.10),rgba(168,212,230,0.06))]">
@@ -1006,10 +1014,12 @@ function AgreementBar({
         <button
           type="button"
           onClick={onAccept}
-          disabled={pending || myAgreed}
+          disabled={pending || myAgreed || isInitialSenderWaiting}
           className="flex-1 rounded-[10px] bg-[linear-gradient(135deg,#a695d8,#a8d4e6)] px-3 py-1.5 text-[12px] font-bold tracking-[0.3px] text-white shadow-[0_2px_6px_rgba(166,149,216,0.31)] active:scale-[0.98] disabled:opacity-50"
         >
-          {myAgreed
+          {isInitialSenderWaiting
+            ? "相手の返信待ち"
+            : myAgreed
             ? "合意済（相手の合意待ち）"
             : partnerAgreed
               ? "✓ この内容で合意して取引へ進む →"
