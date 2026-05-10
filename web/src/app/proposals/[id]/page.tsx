@@ -116,16 +116,21 @@ function parseMeetupCandidates(p: ProposalRaw): MeetupCandidateDetail[] {
   return [];
 }
 
-function isMeetupCandidatesSchemaCacheError(error: {
+function getMissingProposalColumn(error: {
   code?: string;
   message?: string;
-} | null) {
+} | null): string | null {
   const message = error?.message ?? "";
-  return (
-    error?.code === "PGRST204" ||
-    (message.includes("meetup_candidates") &&
-      message.includes("schema cache"))
+  if (
+    error?.code !== "PGRST204" &&
+    !message.includes("schema cache")
+  ) {
+    return null;
+  }
+  const match = message.match(
+    /Could not find the '([^']+)' column of 'proposals'/,
   );
+  return match?.[1] ?? null;
 }
 
 export default async function ProposalDetailPage({
@@ -143,42 +148,63 @@ export default async function ProposalDetailPage({
   // iter78-E: 期限切れを自動的に expired に
   await autoExpireProposals(supabase, user.id);
 
-  const proposalSelectWithCandidates = `id, sender_id, receiver_id, match_type,
-       sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
-       message, message_tone, status, agreed_by_sender, agreed_by_receiver,
-       rejected_template,
-       meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
-       meetup_candidates,
-       expose_calendar, cash_offer, cash_amount, listing_id,
-       expires_at, last_action_at, created_at, extension_count`;
-  const proposalSelectFallback = `id, sender_id, receiver_id, match_type,
-       sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
-       message, message_tone, status, agreed_by_sender, agreed_by_receiver,
-       rejected_template,
-       meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
-       expose_calendar, cash_offer, cash_amount, listing_id,
-       expires_at, last_action_at, created_at, extension_count`;
-
-  let { data: row, error: rowError } = await supabase
-    .from("proposals")
-    .select(proposalSelectWithCandidates)
-    .eq("id", id)
-    .maybeSingle();
-  if (isMeetupCandidatesSchemaCacheError(rowError)) {
-    const retry = await supabase
+  const proposalFields = [
+    "id",
+    "sender_id",
+    "receiver_id",
+    "match_type",
+    "sender_have_ids",
+    "sender_have_qtys",
+    "receiver_have_ids",
+    "receiver_have_qtys",
+    "message",
+    "message_tone",
+    "status",
+    "agreed_by_sender",
+    "agreed_by_receiver",
+    "rejected_template",
+    "meetup_start_at",
+    "meetup_end_at",
+    "meetup_place_name",
+    "meetup_lat",
+    "meetup_lng",
+    "meetup_candidates",
+    "expose_calendar",
+    "cash_offer",
+    "cash_amount",
+    "listing_id",
+    "expires_at",
+    "last_action_at",
+    "created_at",
+    "extension_count",
+  ];
+  const selectableFields = [...proposalFields];
+  let row: Record<string, unknown> | null = null;
+  let rowError: { code?: string; message?: string } | null = null;
+  for (let attempt = 0; attempt < proposalFields.length; attempt += 1) {
+    const result = await supabase
       .from("proposals")
-      .select(proposalSelectFallback)
+      .select(selectableFields.join(", "))
       .eq("id", id)
       .maybeSingle();
-    row = retry.data ? { ...retry.data, meetup_candidates: [] } : retry.data;
-    rowError = retry.error;
+    row = (result.data as Record<string, unknown> | null) ?? null;
+    rowError = result.error;
+    const missingColumn = getMissingProposalColumn(rowError);
+    if (missingColumn && selectableFields.includes(missingColumn)) {
+      selectableFields.splice(selectableFields.indexOf(missingColumn), 1);
+      continue;
+    }
+    break;
   }
 
   if (!row) notFound();
   const p = {
+    meetup_candidates: [],
+    rejected_template: null,
+    extension_count: 0,
+    meetup_lat: null,
+    meetup_lng: null,
     ...row,
-    meetup_candidates:
-      "meetup_candidates" in row ? row.meetup_candidates : [],
   } as ProposalRaw;
 
   // 自分が sender or receiver のみアクセス可

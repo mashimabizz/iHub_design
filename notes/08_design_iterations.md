@@ -4,6 +4,46 @@
 
 ---
 
+## イテレーション154.73：打診中カード詳細の404を抑制
+
+### 背景・問題意識
+
+オーナーから、取引一覧の打診中カードをクリックすると 404 になるという報告があった。
+
+取引一覧には対象の打診が表示されているため、打診自体は取得できている。一方で打診詳細 `/proposals/[id]` は、詳細表示用に追加カラムをまとめて select しており、DB の schema cache や一部環境のカラム反映差分で select 全体が失敗すると `row=null` と同じ扱いになり 404 へ落ちる可能性があった。ユーザーにとっては「一覧にあるのに詳細だけ存在しない」見え方になるため、詳細ページ側をカラム差分に強くする必要があった。
+
+### 変更内容
+
+#### `web/src/app/proposals/[id]/page.tsx`
+- `meetup_candidates` 専用だった schema cache エラー判定を、`proposals` の不足カラム名を抽出する汎用処理へ変更した。
+- 打診詳細の select をフィールド配列から組み立て、不足カラムが schema cache エラーになった場合はそのカラムだけ外して再試行するようにした。
+- `meetup_candidates` / `rejected_template` / `extension_count` / `meetup_lat` / `meetup_lng` は、取得できない場合でも安全なデフォルト値を入れるようにした。
+
+### 影響範囲
+
+- `/transactions` の打診中カードから開く `/proposals/[id]`
+- 打診詳細画面の初期データ取得
+
+### 確認方法
+
+- `npx eslint 'src/app/proposals/[id]/page.tsx' 'src/app/transactions/TransactionsView.tsx'`
+- `npx tsc --noEmit`
+- `git diff --check`
+- `npm run build`
+
+### 関連ファイル
+
+- `web/src/app/proposals/[id]/page.tsx`
+
+### セルフレビュー結果
+
+- ✅ 取引一覧カードの見た目やリンク先の情報設計は変えず、詳細ページ側の取得耐性だけを上げた
+- ✅ 一覧で取得できている proposal が、詳細ページの追加カラム差分だけで 404 になりにくい
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `eslint` / `tsc --noEmit` / `git diff --check` / `npm run build` 通過
+
+---
+
 ## イテレーション154.72：フッター遷移インジケータを中央配置
 
 ### 背景・問題意識
