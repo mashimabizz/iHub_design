@@ -41,7 +41,7 @@ export default function TabLayout() {
   }
 
   if ((!configured && !previewMode) || (configured && !session)) {
-    return <Redirect href="/login" />;
+    return <Redirect href="/welcome" />;
   }
 
   return (

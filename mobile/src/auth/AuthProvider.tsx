@@ -7,8 +7,14 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
+import * as Linking from "expo-linking";
 import type { Session, User } from "@supabase/supabase-js";
 import { hasSupabaseConfig, supabase } from "../lib/supabase";
+
+type SignUpProfile = {
+  handle?: string;
+  displayName?: string;
+};
 
 type AuthContextValue = {
   configured: boolean;
@@ -19,7 +25,11 @@ type AuthContextValue = {
   enterPreview: () => void;
   exitPreview: () => void;
   signIn: (email: string, password: string) => Promise<string | null>;
-  signUp: (email: string, password: string) => Promise<string | null>;
+  signUp: (
+    email: string,
+    password: string,
+    profile?: SignUpProfile,
+  ) => Promise<string | null>;
   signOut: () => Promise<string | null>;
 };
 
@@ -67,15 +77,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return error?.message ?? null;
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
-    if (!supabase) return "Supabaseの環境変数が未設定です";
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    if (!error) setPreviewMode(false);
-    return error?.message ?? null;
-  }, []);
+  const signUp = useCallback(
+    async (email: string, password: string, profile?: SignUpProfile) => {
+      if (!supabase) return "Supabaseの環境変数が未設定です";
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: Linking.createURL("/auth/email-confirmed"),
+          data: {
+            handle: profile?.handle,
+            display_name: profile?.displayName ?? profile?.handle,
+          },
+        },
+      });
+      if (!error) setPreviewMode(false);
+      return error?.message ?? null;
+    },
+    [],
+  );
 
   const signOut = useCallback(async () => {
     setPreviewMode(false);

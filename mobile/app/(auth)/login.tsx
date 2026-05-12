@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { router } from "expo-router";
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
-import { FoundationCard } from "../../src/components/FoundationCard";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { IHubLogo } from "../../src/components/IHubLogo";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { Screen } from "../../src/components/Screen";
@@ -10,29 +16,28 @@ import { useAuth } from "../../src/auth/AuthProvider";
 import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 
 export default function LoginScreen() {
-  const { configured, enterPreview, signIn, signUp } = useAuth();
+  const { configured, enterPreview, signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signIn" | "signUp">("signIn");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function submit() {
     setMessage(null);
-    setPending(true);
     const trimmedEmail = email.trim();
-    const error =
-      mode === "signIn"
-        ? await signIn(trimmedEmail, password)
-        : await signUp(trimmedEmail, password);
-    setPending(false);
-    if (error) {
-      setMessage(error);
+    if (!trimmedEmail || !password) {
+      setMessage("メールアドレスとパスワードを入力してください");
       return;
     }
-    if (mode === "signUp") {
-      setMessage("確認メールを送信しました。メール認証後にログインできます。");
+
+    setPending(true);
+    const error = await signIn(trimmedEmail, password);
+    setPending(false);
+    if (error) {
+      setMessage(normalizeAuthError(error));
+      return;
     }
+    router.replace("/");
   }
 
   return (
@@ -41,37 +46,16 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.keyboard}
       >
+        <AuthHeader title="ログイン" backTo="/welcome" />
+
         <View style={styles.brand}>
-          <IHubLogo />
-          <View>
-            <Text style={styles.brandTitle}>iHub</Text>
-            <Text style={styles.brandSub}>iOS native preview</Text>
-          </View>
+          <IHubLogo size={60} />
+          <Text style={styles.welcome}>おかえりなさい</Text>
         </View>
 
-        <FoundationCard
-          eyebrow="AUTH"
-          title={configured ? "ログイン" : "Supabase設定待ち"}
-          body={
-            configured
-              ? "michilionのメールアドレスとパスワードでログインすると、取引チャットを実データで確認できます。"
-              : "mobile/.env.local に Supabase の公開URLとpublishable keyを入れるとログイン検証に進めます。"
-          }
-        >
-          {configured ? (
+        {configured ? (
+          <>
             <View style={styles.form}>
-              <View style={styles.segment}>
-                <SegmentButton
-                  active={mode === "signIn"}
-                  label="ログイン"
-                  onPress={() => setMode("signIn")}
-                />
-                <SegmentButton
-                  active={mode === "signUp"}
-                  label="新規登録"
-                  onPress={() => setMode("signUp")}
-                />
-              </View>
               <TextField
                 label="メールアドレス"
                 value={email}
@@ -79,7 +63,7 @@ export default function LoginScreen() {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 textContentType="emailAddress"
-                placeholder="you@example.com"
+                placeholder="example@email.com"
               />
               <TextField
                 label="パスワード"
@@ -87,117 +71,200 @@ export default function LoginScreen() {
                 onChangeText={setPassword}
                 secureTextEntry
                 textContentType="password"
-                placeholder="8文字以上"
+                placeholder="パスワードを入力"
               />
+              <Pressable onPress={() => setMessage("パスワード再設定は次の接続対象です")}>
+                <Text style={styles.forgot}>パスワードを忘れた方</Text>
+              </Pressable>
               {message ? <Text style={styles.message}>{message}</Text> : null}
               <PrimaryButton
                 loading={pending}
-                disabled={!email.trim() || password.length < 6}
+                disabled={!email.trim() || !password}
                 onPress={submit}
               >
-                {mode === "signIn" ? "ログインする" : "登録する"}
+                ログイン
               </PrimaryButton>
             </View>
-          ) : (
-            <View style={styles.envBox}>
-              <Text style={styles.envLine}>EXPO_PUBLIC_SUPABASE_URL</Text>
-              <Text style={styles.envLine}>
-                EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-              </Text>
-              <PrimaryButton
-                variant="secondary"
-                onPress={() => {
-                  enterPreview();
-                  router.replace("/");
-                }}
-              >
-                画面だけプレビューする
-              </PrimaryButton>
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>または</Text>
+              <View style={styles.dividerLine} />
             </View>
-          )}
-        </FoundationCard>
+            <PrimaryButton variant="secondary" disabled>
+              Googleでログイン
+            </PrimaryButton>
+
+            <View style={styles.signupRow}>
+              <Text style={styles.signupText}>アカウントをお持ちでない方は </Text>
+              <Pressable onPress={() => router.push("/signup")}>
+                <Text style={styles.signupLink}>新規登録</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <View style={styles.envBox}>
+            <Text style={styles.envTitle}>Supabase設定待ち</Text>
+            <Text style={styles.envText}>
+              mobile/.env.local に Supabase の公開URLと publishable key を入れるとログインできます。
+            </Text>
+            <PrimaryButton
+              variant="secondary"
+              onPress={() => {
+                enterPreview();
+                router.replace("/");
+              }}
+            >
+              画面だけプレビューする
+            </PrimaryButton>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </Screen>
   );
 }
 
-function SegmentButton({
-  active,
-  label,
-  onPress,
-}: {
-  active: boolean;
-  label: string;
-  onPress: () => void;
-}) {
+function AuthHeader({ title, backTo }: { title: string; backTo: string }) {
   return (
-    <Text onPress={onPress} style={[styles.segmentButton, active && styles.segmentActive]}>
-      {label}
-    </Text>
+    <View style={styles.header}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="戻る"
+        onPress={() => router.replace(backTo)}
+        style={styles.backButton}
+      >
+        <Text style={styles.backText}>‹</Text>
+      </Pressable>
+      <Text style={styles.headerTitle}>{title}</Text>
+      <View style={styles.headerSpacer} />
+    </View>
   );
+}
+
+function normalizeAuthError(error: string) {
+  if (error.includes("Invalid login credentials")) {
+    return "メールアドレスまたはパスワードが正しくありません";
+  }
+  if (error.includes("Email not confirmed")) {
+    return "メール認証が完了していません。受信メールを確認してください";
+  }
+  return error;
 }
 
 const styles = StyleSheet.create({
   screen: {
     flexGrow: 1,
-    justifyContent: "center",
   },
   keyboard: {
-    gap: 18,
+    gap: 24,
   },
-  brand: {
-    flexDirection: "row",
+  header: {
     alignItems: "center",
-    gap: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
-  brandTitle: {
+  backButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  backText: {
     color: ihubColors.ink,
-    fontSize: 26,
+    fontSize: 30,
+    fontWeight: "800",
+    lineHeight: 32,
+  },
+  headerTitle: {
+    color: ihubColors.ink,
+    fontSize: 18,
     fontWeight: "900",
   },
-  brandSub: {
+  headerSpacer: {
+    width: 42,
+  },
+  brand: {
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  welcome: {
     color: ihubColors.mutedInk,
     fontSize: 12,
     fontWeight: "800",
+    marginTop: 14,
   },
   form: {
-    gap: 13,
+    gap: 14,
   },
-  segment: {
-    flexDirection: "row",
-    borderRadius: ihubRadii.md,
-    backgroundColor: "rgba(166,149,216,0.12)",
-    padding: 4,
-  },
-  segmentButton: {
-    flex: 1,
-    borderRadius: ihubRadii.sm,
-    color: ihubColors.mutedInk,
-    overflow: "hidden",
-    paddingVertical: 9,
-    textAlign: "center",
+  forgot: {
+    color: ihubColors.lavender,
     fontSize: 12,
     fontWeight: "900",
-  },
-  segmentActive: {
-    backgroundColor: "#fff",
-    color: ihubColors.lavender,
+    textAlign: "right",
   },
   message: {
+    backgroundColor: "rgba(217,130,107,0.10)",
+    borderColor: "rgba(217,130,107,0.22)",
+    borderRadius: ihubRadii.md,
+    borderWidth: 1,
     color: ihubColors.warn,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     lineHeight: 18,
+    padding: 12,
+  },
+  divider: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    marginTop: -4,
+  },
+  dividerLine: {
+    backgroundColor: "rgba(58,50,74,0.12)",
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  signupRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+  },
+  signupText: {
+    color: ihubColors.mutedInk,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  signupLink: {
+    color: ihubColors.lavender,
+    fontSize: 13,
+    fontWeight: "900",
   },
   envBox: {
-    borderRadius: ihubRadii.md,
-    backgroundColor: "rgba(58,50,74,0.06)",
-    padding: 12,
-    gap: 10,
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.xl,
+    borderWidth: 1,
+    gap: 12,
+    padding: 18,
   },
-  envLine: {
+  envTitle: {
     color: ihubColors.ink,
-    fontSize: 11,
+    fontSize: 18,
     fontWeight: "900",
+  },
+  envText: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 19,
   },
 });

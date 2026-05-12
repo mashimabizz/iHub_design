@@ -1,21 +1,18 @@
 import { StyleSheet, Text, View } from "react-native";
-import { ihubColors, ihubRadii } from "../theme/tokens";
+import { ihubColors } from "../theme/tokens";
 
-export function IHubLogo() {
+export function IHubLogo({ size = 38 }: { size?: number }) {
   return (
-    <View style={styles.mark}>
-      <Text style={styles.text}>iH</Text>
+    <View style={[styles.mark, { width: size, height: size, borderRadius: size * 0.37 }]}>
+      <Text style={[styles.text, { fontSize: size * 0.42 }]}>iH</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   mark: {
-    width: 38,
-    height: 38,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: ihubRadii.md,
     backgroundColor: ihubColors.lavender,
   },
   text: {

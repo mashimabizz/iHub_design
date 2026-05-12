@@ -4,6 +4,96 @@
 
 ---
 
+## イテレーション155.16：iOS認証とオンボーディングをWeb版構成へ拡張
+
+### 背景・問題意識
+
+iOS Preview から実アカウントへ移る導線だけでは不十分で、Web版と同じ「Welcome → ログイン/新規登録 → メール認証 → プロフィール設定」の構成がiOS側に無かった。michilion の既存アカウントでログインし、今後の新規登録もWeb版と同じ流れで検証できるように、認証入口とオンボーディングをネイティブ画面として追加した。
+
+### 変更内容
+
+#### `mobile/app/(auth)/welcome.tsx`
+- Web版の未ログイン Welcome と同じ構成で、ロゴ、キャッチコピー、新規登録、ログイン導線を追加した。
+- Supabase未設定時のみ preview 起動導線を残した。
+
+#### `mobile/app/(auth)/login.tsx`
+- 既存の簡易セグメント式フォームを廃止し、Web版と同じログイン専用画面へ差し替えた。
+- メールアドレス/パスワードで Supabase Auth にログインし、成功後ホームへ戻るようにした。
+- 新規登録、Googleログイン枠、パスワード忘れ導線をWeb版の構成に合わせて配置した。
+
+#### `mobile/app/(auth)/signup.tsx`
+- Web版の新規登録と同じく、ハンドル名、メールアドレス、パスワード、確認、利用規約同意を持つ画面を追加した。
+- パスワード強度バー、ハンドル形式チェック、ハンドル重複チェックを追加した。
+- Supabase Auth signup 時に handle / display_name を metadata として渡すようにした。
+
+#### `mobile/app/(auth)/verify-email.tsx`
+- 確認メール送信後の案内画面を追加した。
+- メール再送、メール変更、認証済みログイン導線を追加した。
+
+#### `mobile/app/auth/email-confirmed.tsx`
+- メール認証完了画面を追加し、`code` 付き deep link の session 交換を行うようにした。
+- ログイン済みならプロフィール設定へ、未ログインならログインへ進めるようにした。
+
+#### `mobile/app/onboarding/*`
+- Web版と同じ4ステップ構成で、性別、推し、メンバー、活動エリア、完了画面を追加した。
+- `users.gender` / `users.primary_area` / `users.account_status` と `user_oshi` を更新するようにした。
+- 推し選択は `genres_master` / `groups_master` / pending `oshi_requests` を読み、ジャンルフィルタ・検索・複数選択に対応した。
+- メンバー選択は `characters_master` と既存 `user_oshi` を読み、箱推し/個別メンバーを保存するようにした。
+
+#### `mobile/src/auth/AuthProvider.tsx`
+- `signUp` が handle / displayName を受け取り、Supabase Auth metadata と email redirect を設定できるようにした。
+
+#### `mobile/app/(tabs)/_layout.tsx`
+- 未ログイン時の遷移先を `/login` から `/welcome` に変更した。
+
+#### `mobile/src/components/IHubLogo.tsx`
+- Web版の画面構成に合わせやすいよう、任意サイズ指定に対応した。
+
+### 影響範囲
+
+- iOS版未ログイン体験
+- iOS版ログイン/新規登録
+- iOS版メール認証後導線
+- iOS版オンボーディング
+- iOS版Supabase Auth signup metadata
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `git diff --check`
+- 未ログイン状態でアプリを開き、Welcome → ログインへ進めることを確認
+- michilion のメールアドレス/パスワードでログインし、ホームへ戻ることを確認
+- Welcome → 新規登録 → verify-email まで進めることを確認
+- 認証後に onboarding 4ステップへ進めることを確認
+
+### 関連ファイル
+
+- `mobile/app/(auth)/welcome.tsx`
+- `mobile/app/(auth)/login.tsx`
+- `mobile/app/(auth)/signup.tsx`
+- `mobile/app/(auth)/verify-email.tsx`
+- `mobile/app/auth/email-confirmed.tsx`
+- `mobile/app/onboarding/gender.tsx`
+- `mobile/app/onboarding/oshi.tsx`
+- `mobile/app/onboarding/members.tsx`
+- `mobile/app/onboarding/area.tsx`
+- `mobile/app/onboarding/done.tsx`
+- `mobile/src/auth/AuthProvider.tsx`
+- `mobile/app/(tabs)/_layout.tsx`
+- `mobile/src/components/IHubLogo.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版の認証・オンボーディング構成を確認してから実装した
+- ✅ `打診` / `取引チャット` 等の既存用語は変更していない
+- ✅ 既存の `users` / `user_oshi` / master tables を使用し、DBスキーマ変更はない
+- ✅ 新しい状態名は追加していないため `notes/09_state_machines.md` は更新不要
+- ✅ 新用語は追加していないため `notes/10_glossary.md` は更新不要
+- ✅ `npm run typecheck`（`mobile/`）通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.15：iOS Previewから実ログインへ抜ける導線
 
 ### 背景・問題意識
