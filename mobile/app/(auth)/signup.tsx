@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { AppleAuthButton } from "../../src/components/AppleAuthButton";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { Screen } from "../../src/components/Screen";
 import { TextField } from "../../src/components/TextField";
@@ -178,6 +179,12 @@ export default function SignUpScreen() {
           <PrimaryButton loading={pending} disabled={!canSubmit} onPress={submit}>
             次へ
           </PrimaryButton>
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>または</Text>
+            <View style={styles.dividerLine} />
+          </View>
+          <AppleAuthButton disabled={!terms} mode="signUp" onError={setError} />
           <View style={styles.loginRow}>
             <Text style={styles.loginText}>すでにアカウントをお持ちの方は </Text>
             <Pressable onPress={() => router.replace("/login")}>
@@ -351,6 +358,22 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 18,
     padding: 12,
+  },
+  divider: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    marginVertical: 2,
+  },
+  dividerLine: {
+    backgroundColor: "rgba(58,50,74,0.12)",
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "700",
   },
   loginRow: {
     alignItems: "center",

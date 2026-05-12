@@ -16,6 +16,7 @@
     "ios": {
       "bundleIdentifier": "tokyo.ihub.app",
       "supportsTablet": false,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "グッズや服装写真を撮影するためにカメラを使用します。",
         "NSLocationWhenInUseUsageDescription": "交換できる場所の設定と現地交換候補の表示に位置情報を使用します。",
@@ -36,6 +37,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
       "expo-secure-store",
       "expo-notifications"
     ],

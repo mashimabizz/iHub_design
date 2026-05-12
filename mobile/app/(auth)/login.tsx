@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { IHubLogo } from "../../src/components/IHubLogo";
+import { AppleAuthButton } from "../../src/components/AppleAuthButton";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { Screen } from "../../src/components/Screen";
 import { TextField } from "../../src/components/TextField";
@@ -94,9 +95,7 @@ export default function LoginScreen() {
               <Text style={styles.dividerText}>または</Text>
               <View style={styles.dividerLine} />
             </View>
-            <PrimaryButton variant="secondary" disabled>
-              Googleでログイン
-            </PrimaryButton>
+            <AppleAuthButton mode="signIn" onError={setMessage} />
 
             <View style={styles.signupRow}>
               <Text style={styles.signupText}>アカウントをお持ちでない方は </Text>

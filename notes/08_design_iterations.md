@@ -4,6 +4,71 @@
 
 ---
 
+## イテレーション155.21：iOS Apple ID認証導線追加
+
+### 背景・問題意識
+
+iOS版の新規登録/ログインで、Web版アカウントのメール認証だけでなく Apple ID 経由でも入れるようにしたい。実機レビュー時にメール入力だけでは手間が残るため、iOSネイティブの Sign in with Apple を Supabase Auth に接続する。
+
+### 変更内容
+
+#### `mobile/src/auth/AuthProvider.tsx`
+- Supabase Auth の `signInWithIdToken` を使う `signInWithAppleIdToken` を追加した。
+- Apple ID認証後も通常ログインと同じく session を更新し、Preview mode を解除するようにした。
+
+#### `mobile/src/components/AppleAuthButton.tsx`
+- `expo-apple-authentication` の公式 Apple ボタンを共通コンポーネント化した。
+- iOSで利用可能かを確認し、Apple の `identityToken` を Supabase へ渡す流れを実装した。
+- キャンセル時はエラーを出さず、認証設定や token の問題は日本語メッセージへ変換するようにした。
+
+#### `mobile/app/(auth)/login.tsx`
+- ログイン画面の「または」以下を Apple IDログインに差し替えた。
+
+#### `mobile/app/(auth)/signup.tsx`
+- 新規登録画面に Apple IDで登録する導線を追加した。
+- Apple ID登録でも利用規約/プライバシーポリシーへの同意がない場合は進めないようにした。
+
+#### `mobile/app.json`
+- iOS の `usesAppleSignIn` と `expo-apple-authentication` plugin を追加し、EAS iOS build で Sign in with Apple entitlement を付与できるようにした。
+
+#### `mobile/package.json` / `mobile/package-lock.json`
+- Expo SDK 54 対応版の `expo-apple-authentication@~8.0.8` を追加した。
+
+### 影響範囲
+
+- iOS版ログイン
+- iOS版新規登録
+- Supabase Auth 接続
+- iOS development build / EAS build 設定
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- 新規登録画面で利用規約に同意後、Apple IDボタンから認証を開始できることを確認
+- ログイン画面でApple IDボタンから認証を開始できることを確認
+- Supabase側の Apple provider が未設定の場合、日本語エラーが表示されることを確認
+
+### 関連ファイル
+
+- `mobile/src/auth/AuthProvider.tsx`
+- `mobile/src/components/AppleAuthButton.tsx`
+- `mobile/app/(auth)/login.tsx`
+- `mobile/app/(auth)/signup.tsx`
+- `mobile/app.json`
+- `mobile/package.json`
+- `mobile/package-lock.json`
+
+### セルフレビュー結果
+
+- ✅ Apple公式ボタンを使用し、独自描画のAppleロゴは追加していない
+- ✅ ログイン/新規登録どちらも同じ共通コンポーネントを利用
+- ✅ 既存の session 管理・Preview解除フローに統合
+- ✅ DBスキーマ・状態名の変更はないため `notes/05_data_model.md` / `notes/09_state_machines.md` は更新不要
+- ✅ 新しい業務用語は追加していないため `notes/10_glossary.md` は更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+
+---
+
 ## イテレーション155.20：iOSホーム/関係図/待ち合わせ入力の微修正
 
 ### 背景・問題意識

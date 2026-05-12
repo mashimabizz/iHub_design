@@ -25,6 +25,7 @@ type AuthContextValue = {
   enterPreview: () => void;
   exitPreview: () => void;
   signIn: (email: string, password: string) => Promise<string | null>;
+  signInWithAppleIdToken: (identityToken: string) => Promise<string | null>;
   signUp: (
     email: string,
     password: string,
@@ -80,6 +81,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return error?.message ?? null;
   }, []);
 
+  const signInWithAppleIdToken = useCallback(async (identityToken: string) => {
+    if (!supabase) return "Supabaseの環境変数が未設定です";
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: "apple",
+      token: identityToken,
+    });
+    if (!error) {
+      setSession(data.session);
+      setPreviewMode(false);
+    }
+    return error?.message ?? null;
+  }, []);
+
   const signUp = useCallback(
     async (email: string, password: string, profile?: SignUpProfile) => {
       if (!supabase) return "Supabaseの環境変数が未設定です";
@@ -118,10 +132,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       enterPreview: () => setPreviewMode(true),
       exitPreview: () => setPreviewMode(false),
       signIn,
+      signInWithAppleIdToken,
       signUp,
       signOut,
     }),
-    [loading, previewMode, session, signIn, signOut, signUp],
+    [loading, previewMode, session, signIn, signInWithAppleIdToken, signOut, signUp],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
