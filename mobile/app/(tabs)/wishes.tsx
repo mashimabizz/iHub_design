@@ -10,7 +10,6 @@ import {
 import {
   BottomOptionSheet,
   ColumnSwitcher,
-  FilterChips,
   FloatingAddButton,
   GoodsGrid,
   SectionTabs,
@@ -134,6 +133,25 @@ export default function WishesScreen() {
     swiping: boolean;
   } | null>(null);
 
+  function toggleListingStatus(id: string) {
+    setListings((current) =>
+      current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              status: item.status === "ACTIVE" ? "PAUSED" : "ACTIVE",
+            }
+          : item,
+      ),
+    );
+    setSelectedListing(null);
+  }
+
+  function deleteListing(id: string) {
+    setListings((current) => current.filter((item) => item.id !== id));
+    setSelectedListing(null);
+  }
+
   const tabs = useMemo(
     () => [
       {
@@ -150,6 +168,17 @@ export default function WishesScreen() {
       },
     ],
     [listings.length, wishes.length],
+  );
+  const wishGridItems = useMemo(
+    () =>
+      wishes.map((wish) => ({
+        ...wish,
+        badge:
+          wish.linkedListings === 0
+            ? "未紐付け"
+            : `募集 ${wish.linkedListings}`,
+      })),
+    [wishes],
   );
 
   const wishActions = selectedWish
@@ -169,25 +198,8 @@ export default function WishesScreen() {
     ? buildListingActions({
         item: selectedListing,
         onClose: () => setSelectedListing(null),
-        onToggle: () => {
-          setListings((current) =>
-            current.map((item) =>
-              item.id === selectedListing.id
-                ? {
-                    ...item,
-                    status: item.status === "ACTIVE" ? "PAUSED" : "ACTIVE",
-                  }
-                : item,
-            ),
-          );
-          setSelectedListing(null);
-        },
-        onDelete: () => {
-          setListings((current) =>
-            current.filter((item) => item.id !== selectedListing.id),
-          );
-          setSelectedListing(null);
-        },
+        onToggle: () => toggleListingStatus(selectedListing.id),
+        onDelete: () => deleteListing(selectedListing.id),
       })
     : [];
 
@@ -196,27 +208,22 @@ export default function WishesScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.kicker}>WISH</Text>
-          <Text style={styles.title}>Wish</Text>
+          <Text style={styles.title}>ウィッシュ</Text>
         </View>
         {tab === "wish" ? (
           <ColumnSwitcher value={columns} onChange={setColumns} />
         ) : null}
       </View>
 
-      <SectionTabs value={tab} tabs={tabs} onChange={setTab} />
-
-      {tab === "wish" ? (
-        <View style={styles.filters}>
-          <FilterChips
-            chips={[
-              { id: "all", label: "すべて", active: true },
-              { id: "top", label: "最優先" },
-              { id: "linked", label: "個別募集あり" },
-              { id: "free", label: "未紐付け" },
-            ]}
-          />
-        </View>
-      ) : null}
+      <SectionTabs
+        value={tab}
+        tabs={tabs}
+        onChange={(next) => {
+          setTab(next);
+          setSelectedWish(null);
+          setSelectedListing(null);
+        }}
+      />
 
       <View
         style={styles.contentHost}
@@ -231,7 +238,7 @@ export default function WishesScreen() {
         >
           {tab === "wish" ? (
             <GoodsGrid
-              items={wishes}
+              items={wishGridItems}
               columns={columns}
               emptyLabel="まだ Wish がありません"
               onPressItem={(gridItem) => {
@@ -240,15 +247,12 @@ export default function WishesScreen() {
               }}
             />
           ) : (
-            <View style={styles.listingList}>
-              {listings.map((listing) => (
-                <ListingCard
-                  key={listing.id}
-                  listing={listing}
-                  onPress={() => setSelectedListing(listing)}
-                />
-              ))}
-            </View>
+            <ListingsPanel
+              listings={listings}
+              onSelect={setSelectedListing}
+              onToggle={toggleListingStatus}
+              onDelete={deleteListing}
+            />
           )}
         </ScrollView>
       </View>
@@ -292,21 +296,17 @@ export default function WishesScreen() {
       <BottomOptionSheet
         visible={!!selectedWish}
         title={selectedWish?.title ?? ""}
-        subtitle={
-          selectedWish
-            ? `${selectedWish.priority} / 個別募集 ${selectedWish.linkedListings}件`
-            : undefined
-        }
+        subtitle={selectedWish?.subtitle}
         actions={wishActions}
         onClose={() => setSelectedWish(null)}
       />
 
       <BottomOptionSheet
         visible={!!selectedListing}
-        title={selectedListing?.id.replace("listing-", "#") ?? ""}
+        title="個別募集"
         subtitle={
           selectedListing
-            ? `${selectedListing.status} / ${selectedListing.logic}`
+            ? `${selectedListing.status === "ACTIVE" ? "ACTIVE" : "一時停止"} / ${selectedListing.logic}`
             : undefined
         }
         actions={listingActions}
@@ -369,21 +369,196 @@ export default function WishesScreen() {
   }
 }
 
-function ListingCard({
+function ListingsPanel({
+  listings,
+  onSelect,
+  onToggle,
+  onDelete,
+}: {
+  listings: ListingItem[];
+  onSelect: (listing: ListingItem) => void;
+  onToggle: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (listings.length === 0) {
+    return (
+      <View style={styles.listingEmpty}>
+        <Text style={styles.listingEmptyText}>まだ個別募集がありません</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.listingsHost}>
+      <ListingDeck
+        listings={listings}
+        onSelect={onSelect}
+        onToggle={onToggle}
+        onDelete={onDelete}
+      />
+      <View style={styles.listingList}>
+        {listings.map((listing) => (
+          <ListingCard
+            key={listing.id}
+            listing={listing}
+            onPress={() => onSelect(listing)}
+            onToggle={() => onToggle(listing.id)}
+            onDelete={() => onDelete(listing.id)}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ListingDeck({
+  listings,
+  onSelect,
+  onToggle,
+  onDelete,
+}: {
+  listings: ListingItem[];
+  onSelect: (listing: ListingItem) => void;
+  onToggle: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <View style={styles.deckSection}>
+      <View style={styles.deckHeader}>
+        <Text style={styles.deckTitle}>募集デッキ</Text>
+        <Text style={styles.deckCount}>{listings.length}件</Text>
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        snapToAlignment="center"
+        decelerationRate="fast"
+        contentContainerStyle={styles.deckScroller}
+      >
+        {listings.map((listing) => (
+          <ListingDeckCard
+            key={listing.id}
+            listing={listing}
+            onPress={() => onSelect(listing)}
+            onToggle={() => onToggle(listing.id)}
+            onDelete={() => onDelete(listing.id)}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+function ListingDeckCard({
   listing,
   onPress,
+  onToggle,
+  onDelete,
 }: {
   listing: ListingItem;
   onPress: () => void;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.deckCard}>
+      <View style={styles.deckCardGlowPink} />
+      <View style={styles.deckCardGlowSky} />
+      <View style={styles.deckTop}>
+        <StatusBadge status={listing.status} />
+        <Text numberOfLines={1} style={styles.deckMeta}>
+          {listing.logic}
+        </Text>
+        <View style={styles.listingActions}>
+          <MiniIcon label="E" onPress={onPress} />
+          <MiniIcon
+            label={listing.status === "ACTIVE" ? "II" : "ON"}
+            onPress={onToggle}
+          />
+          <MiniIcon label="D" danger onPress={onDelete} />
+        </View>
+      </View>
+
+      <View style={styles.deckBody}>
+        <DeckSide label="譲る" values={listing.give} hue={listing.hue} />
+        <View style={styles.deckCord}>
+          <View style={styles.deckCordLine} />
+          <View style={styles.deckKnot}>
+            <Text style={styles.deckKnotText}>∿</Text>
+          </View>
+        </View>
+        <DeckSide label="求める" values={listing.want} hue="#f3c5d4" />
+      </View>
+    </Pressable>
+  );
+}
+
+function StatusBadge({ status }: { status: ListingItem["status"] }) {
+  const active = status === "ACTIVE";
+  return (
+    <View style={[styles.statusBadge, active ? styles.statusBadgeActive : null]}>
+      <Text style={[styles.statusBadgeText, active ? styles.statusBadgeTextActive : null]}>
+        {active ? "ACTIVE" : "一時停止"}
+      </Text>
+    </View>
+  );
+}
+
+function DeckSide({
+  label,
+  values,
+  hue,
+}: {
+  label: string;
+  values: string[];
+  hue: string;
+}) {
+  const visible = values.slice(0, 3);
+  return (
+    <View style={styles.deckSide}>
+      <Text style={styles.deckSideLabel}>{label}</Text>
+      <View style={styles.deckBubbles}>
+        {visible.map((value, index) => (
+          <View
+            key={`${value}-${index}`}
+            style={[
+              styles.deckBubble,
+              {
+                backgroundColor: hue,
+                marginTop: index === 1 ? -8 : index === 2 ? 6 : 0,
+              },
+            ]}
+          >
+            <Text numberOfLines={1} style={styles.deckBubbleText}>
+              {value[0] ?? "?"}
+            </Text>
+          </View>
+        ))}
+        {values.length > visible.length ? (
+          <View style={styles.deckMore}>
+            <Text style={styles.deckMoreText}>+{values.length - visible.length}</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function ListingCard({
+  listing,
+  onPress,
+  onToggle,
+  onDelete,
+}: {
+  listing: ListingItem;
+  onPress: () => void;
+  onToggle: () => void;
+  onDelete: () => void;
 }) {
   return (
     <Pressable onPress={onPress} style={styles.listingCard}>
       <View style={styles.listingTop}>
-        <View style={styles.listingNumber}>
-          <Text style={styles.listingNumberText}>
-            {listing.status === "ACTIVE" ? "ON" : "II"}
-          </Text>
-        </View>
+        <StatusBadge status={listing.status} />
         <View style={styles.listingTopText}>
           <Text style={styles.listingTitle}>
             {listing.status === "ACTIVE" ? "ACTIVE" : "PAUSED"}
@@ -391,28 +566,55 @@ function ListingCard({
           <Text style={styles.listingSub}>{listing.logic}</Text>
         </View>
         <View style={styles.listingActions}>
-          <MiniIcon label="E" />
-          <MiniIcon label="P" />
-          <MiniIcon label="D" danger />
+          <MiniIcon label="E" onPress={onPress} />
+          <MiniIcon
+            label={listing.status === "ACTIVE" ? "II" : "ON"}
+            onPress={onToggle}
+          />
+          <MiniIcon label="D" danger onPress={onDelete} />
         </View>
       </View>
 
       <View style={styles.tradeLine}>
-        <TradeSide label="譲" values={listing.give} hue={listing.hue} />
+        <TradeSide
+          label="譲"
+          values={listing.give}
+          hue={listing.hue}
+          logic={listing.logic}
+        />
         <View style={styles.tradeConnector}>
           <View style={styles.tradeConnectorDot} />
           <View style={styles.tradeConnectorLine} />
           <View style={styles.tradeConnectorDot} />
         </View>
-        <TradeSide label="求" values={listing.want} hue="#f3c5d4" right />
+        <TradeSide
+          label="求"
+          values={listing.want}
+          hue="#f3c5d4"
+          logic={listing.logic}
+          right
+        />
       </View>
     </Pressable>
   );
 }
 
-function MiniIcon({ label, danger }: { label: string; danger?: boolean }) {
+function MiniIcon({
+  label,
+  danger,
+  onPress,
+}: {
+  label: string;
+  danger?: boolean;
+  onPress: () => void;
+}) {
   return (
-    <View
+    <Pressable
+      accessibilityRole="button"
+      onPress={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
       style={[
         styles.miniIcon,
         danger ? styles.miniIconDanger : styles.miniIconDefault,
@@ -426,7 +628,7 @@ function MiniIcon({ label, danger }: { label: string; danger?: boolean }) {
       >
         {label}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -434,13 +636,16 @@ function TradeSide({
   label,
   values,
   hue,
+  logic,
   right,
 }: {
   label: string;
   values: string[];
   hue: string;
+  logic: ListingItem["logic"];
   right?: boolean;
 }) {
+  const multi = values.length > 1;
   return (
     <View style={styles.tradeSide}>
       <Text style={[styles.tradeSideLabel, right ? styles.tradeSideRight : null]}>
@@ -448,18 +653,35 @@ function TradeSide({
       </Text>
       <View
         style={[
-          styles.tradeItems,
-          right ? styles.tradeItemsRight : styles.tradeItemsLeft,
+          multi ? styles.tradeOptionFrame : styles.tradeSingleFrame,
+          right ? styles.tradeOptionRight : null,
         ]}
       >
-        {values.slice(0, 3).map((value, index) => (
-          <View
-            key={`${value}-${index}`}
-            style={[styles.tradeMiniItem, { backgroundColor: hue }]}
-          >
-            <Text style={styles.tradeMiniText}>{value[0] ?? "?"}</Text>
+        {multi ? (
+          <View style={[styles.logicTag, right ? styles.logicTagRight : null]}>
+            <Text style={styles.logicTagText}>{logic}</Text>
           </View>
-        ))}
+        ) : null}
+        <View
+          style={[
+            styles.tradeItems,
+            right ? styles.tradeItemsRight : styles.tradeItemsLeft,
+          ]}
+        >
+          {values.slice(0, 3).map((value, index) => (
+            <View
+              key={`${value}-${index}`}
+              style={[styles.tradeMiniItem, { backgroundColor: hue }]}
+            >
+              <Text style={styles.tradeMiniText}>{value[0] ?? "?"}</Text>
+            </View>
+          ))}
+          {values.length > 3 ? (
+            <View style={styles.tradeOverflow}>
+              <Text style={styles.tradeOverflowText}>+{values.length - 3}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -482,7 +704,7 @@ function buildWishActions({
     },
     {
       id: "listing",
-      label: item.linkedListings > 0 ? "個別募集を見る" : "個別募集を作る",
+      label: item.linkedListings > 0 ? "+ 個別募集を追加" : "個別募集を作る",
       onPress: onClose,
     },
     {
@@ -570,6 +792,196 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 24,
   },
+  listingsHost: {
+    gap: 14,
+  },
+  listingEmpty: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.lg,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingVertical: 38,
+  },
+  listingEmptyText: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  deckSection: {
+    marginHorizontal: -18,
+  },
+  deckHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+  },
+  deckTitle: {
+    color: ihubColors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  deckCount: {
+    backgroundColor: "rgba(58,50,74,0.04)",
+    borderRadius: ihubRadii.pill,
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  deckScroller: {
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  deckCard: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(166,149,216,0.34)",
+    borderRadius: 22,
+    borderWidth: 1,
+    minHeight: 246,
+    overflow: "hidden",
+    padding: 13,
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.13,
+    shadowRadius: 26,
+    width: 306,
+  },
+  deckCardGlowPink: {
+    backgroundColor: "rgba(243,197,212,0.34)",
+    borderRadius: 999,
+    height: 136,
+    position: "absolute",
+    right: -52,
+    top: -36,
+    width: 136,
+  },
+  deckCardGlowSky: {
+    backgroundColor: "rgba(168,212,230,0.28)",
+    borderRadius: 999,
+    bottom: -42,
+    height: 142,
+    left: -46,
+    position: "absolute",
+    width: 142,
+  },
+  deckTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  deckMeta: {
+    color: ihubColors.mutedInk,
+    flex: 1,
+    fontSize: 10.5,
+    fontWeight: "900",
+  },
+  deckBody: {
+    alignItems: "center",
+    flexDirection: "row",
+    flex: 1,
+    justifyContent: "space-between",
+    marginTop: 14,
+  },
+  deckSide: {
+    alignItems: "center",
+    flex: 1,
+    gap: 8,
+  },
+  deckSideLabel: {
+    backgroundColor: "rgba(255,255,255,0.78)",
+    borderRadius: ihubRadii.pill,
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  deckBubbles: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    minHeight: 118,
+    width: "100%",
+  },
+  deckBubble: {
+    alignItems: "center",
+    borderColor: "rgba(255,255,255,0.92)",
+    borderRadius: 18,
+    borderWidth: 2,
+    height: 96,
+    justifyContent: "center",
+    marginHorizontal: -18,
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    width: 72,
+  },
+  deckBubbleText: {
+    color: ihubColors.surface,
+    fontSize: 25,
+    fontWeight: "900",
+    textShadowColor: "rgba(58,50,74,0.22)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  deckMore: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.76)",
+    borderRadius: ihubRadii.pill,
+    bottom: 8,
+    height: 28,
+    justifyContent: "center",
+    position: "absolute",
+    right: 12,
+    width: 40,
+  },
+  deckMoreText: {
+    color: ihubColors.surface,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  deckCord: {
+    alignItems: "center",
+    height: 92,
+    justifyContent: "center",
+    width: 48,
+  },
+  deckCordLine: {
+    backgroundColor: "rgba(166,149,216,0.34)",
+    height: 2,
+    position: "absolute",
+    width: 62,
+  },
+  deckKnot: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(166,149,216,0.44)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: "center",
+    shadowColor: ihubColors.lavender,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    width: 32,
+  },
+  deckKnotText: {
+    color: ihubColors.lavender,
+    fontSize: 20,
+    fontWeight: "900",
+    lineHeight: 22,
+  },
   listingList: {
     gap: 12,
   },
@@ -589,19 +1001,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 9,
   },
-  listingNumber: {
-    alignItems: "center",
-    backgroundColor: "rgba(166,149,216,0.14)",
-    borderRadius: 13,
-    height: 36,
-    justifyContent: "center",
-    width: 42,
-  },
-  listingNumberText: {
-    color: ihubColors.lavender,
-    fontSize: 11,
-    fontWeight: "900",
-  },
   listingTopText: {
     flex: 1,
   },
@@ -619,6 +1018,26 @@ const styles = StyleSheet.create({
   listingActions: {
     flexDirection: "row",
     gap: 5,
+  },
+  statusBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.pill,
+    justifyContent: "center",
+    minWidth: 52,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  statusBadgeActive: {
+    backgroundColor: ihubColors.ok,
+  },
+  statusBadgeText: {
+    color: ihubColors.mutedInk,
+    fontSize: 9.5,
+    fontWeight: "900",
+  },
+  statusBadgeTextActive: {
+    color: ihubColors.surface,
   },
   miniIcon: {
     alignItems: "center",
@@ -665,6 +1084,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 5,
   },
+  tradeSingleFrame: {
+    minHeight: 42,
+  },
+  tradeOptionFrame: {
+    borderColor: "rgba(166,149,216,0.20)",
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 58,
+    paddingHorizontal: 6,
+    paddingBottom: 6,
+    paddingTop: 15,
+  },
+  tradeOptionRight: {
+    borderColor: "rgba(243,197,212,0.34)",
+  },
   tradeItemsLeft: {
     justifyContent: "flex-start",
   },
@@ -674,13 +1108,45 @@ const styles = StyleSheet.create({
   tradeMiniItem: {
     alignItems: "center",
     borderRadius: 8,
-    height: 42,
+    height: 46,
     justifyContent: "center",
-    width: 32,
+    width: 36,
   },
   tradeMiniText: {
     color: ihubColors.surface,
     fontSize: 16,
+    fontWeight: "900",
+  },
+  tradeOverflow: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.08)",
+    borderRadius: 8,
+    height: 46,
+    justifyContent: "center",
+    width: 36,
+  },
+  tradeOverflowText: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  logicTag: {
+    backgroundColor: ihubColors.lavender,
+    borderRadius: ihubRadii.pill,
+    left: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    position: "absolute",
+    top: -8,
+    zIndex: 1,
+  },
+  logicTagRight: {
+    left: undefined,
+    right: 6,
+  },
+  logicTagText: {
+    color: ihubColors.surface,
+    fontSize: 9,
     fontWeight: "900",
   },
   tradeConnector: {

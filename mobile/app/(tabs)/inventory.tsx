@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,7 +10,6 @@ import {
 import {
   BottomOptionSheet,
   ColumnSwitcher,
-  FilterChips,
   FloatingAddButton,
   GoodsGrid,
   type ColumnCount,
@@ -18,7 +18,7 @@ import {
   SectionTabs,
 } from "../../src/components/GoodsGrid";
 import { Screen } from "../../src/components/Screen";
-import { ihubColors } from "../../src/theme/tokens";
+import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 
 type InventoryStatus = "active" | "keep" | "traded";
 
@@ -129,6 +129,8 @@ export default function InventoryScreen() {
   const [status, setStatus] = useState<InventoryStatus>("active");
   const [columns, setColumns] = useState<ColumnCount>(3);
   const [selected, setSelected] = useState<InventoryItem | null>(null);
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [activeType, setActiveType] = useState<string | null>(null);
   const tabSwipeRef = useRef<{
     startX: number;
     startY: number;
@@ -136,29 +138,41 @@ export default function InventoryScreen() {
     swiping: boolean;
   } | null>(null);
 
+  const groupOptions = useMemo(() => {
+    const values = new Set<string>();
+    for (const item of items) values.add(item.group);
+    return Array.from(values).sort((a, b) => a.localeCompare(b, "ja"));
+  }, [items]);
+  const typeOptions = useMemo(() => {
+    const values = new Set<string>();
+    for (const item of items) values.add(item.type);
+    return Array.from(values).sort((a, b) => a.localeCompare(b, "ja"));
+  }, [items]);
+  const filteredItems = useMemo(
+    () =>
+      items.filter((item) => {
+        if (activeGroup && item.group !== activeGroup) return false;
+        if (activeType && item.type !== activeType) return false;
+        return true;
+      }),
+    [activeGroup, activeType, items],
+  );
   const visibleItems = useMemo(
-    () => items.filter((item) => item.status === status),
-    [items, status],
+    () => filteredItems.filter((item) => item.status === status),
+    [filteredItems, status],
   );
   const counts = useMemo(
     () => ({
-      active: items.filter((item) => item.status === "active").length,
-      keep: items.filter((item) => item.status === "keep").length,
-      traded: items.filter((item) => item.status === "traded").length,
+      active: filteredItems.filter((item) => item.status === "active").length,
+      keep: filteredItems.filter((item) => item.status === "keep").length,
+      traded: filteredItems.filter((item) => item.status === "traded").length,
     }),
-    [items],
+    [filteredItems],
   );
   const tabs = STATUS_TABS.map((tab) => ({
     ...tab,
     count: counts[tab.id],
   }));
-  const chips = [
-    { id: "all", label: "すべて", active: true },
-    { id: "tcg", label: "トレカ" },
-    { id: "acrylic", label: "アクスタ" },
-    { id: "badge", label: "缶バッジ" },
-  ];
-
   const selectedActions = selected
     ? buildActions({
         item: selected,
@@ -206,7 +220,24 @@ export default function InventoryScreen() {
       />
 
       <View style={styles.filters}>
-        <FilterChips chips={chips} />
+        <FilterRow
+          label="推し"
+          options={groupOptions}
+          active={activeGroup}
+          onChange={(next) => {
+            setActiveGroup(next);
+            setSelected(null);
+          }}
+        />
+        <FilterRow
+          label="種別"
+          options={typeOptions}
+          active={activeType}
+          onChange={(next) => {
+            setActiveType(next);
+            setSelected(null);
+          }}
+        />
       </View>
 
       <View
@@ -258,6 +289,8 @@ export default function InventoryScreen() {
             ...current,
           ]);
           setStatus("active");
+          setActiveGroup(null);
+          setActiveType(null);
         }}
       />
 
@@ -328,6 +361,71 @@ export default function InventoryScreen() {
   function handleSwipeCancel() {
     tabSwipeRef.current = null;
   }
+}
+
+function FilterRow({
+  label,
+  options,
+  active,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  active: string | null;
+  onChange: (next: string | null) => void;
+}) {
+  if (options.length === 0) return null;
+
+  return (
+    <View style={styles.filterRow}>
+      <Text style={styles.filterLabel}>{label}</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterChips}
+      >
+        <FilterChip
+          label="すべて"
+          active={active === null}
+          onPress={() => onChange(null)}
+        />
+        {options.map((option) => (
+          <FilterChip
+            key={option}
+            label={option}
+            active={active === option}
+            onPress={() => onChange(option)}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.filterChip, active ? styles.filterChipActive : null]}
+    >
+      <Text
+        numberOfLines={1}
+        style={[styles.filterChipText, active ? styles.filterChipTextActive : null]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
 }
 
 function buildActions({
@@ -404,6 +502,44 @@ const styles = StyleSheet.create({
   filters: {
     marginHorizontal: -18,
     paddingLeft: 18,
+  },
+  filterRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 6,
+  },
+  filterLabel: {
+    color: ihubColors.mutedInk,
+    fontSize: 9.5,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+    textAlign: "right",
+    width: 30,
+  },
+  filterChips: {
+    gap: 6,
+    paddingRight: 18,
+  },
+  filterChip: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  filterChipActive: {
+    backgroundColor: ihubColors.lavender,
+    borderColor: ihubColors.lavender,
+  },
+  filterChipText: {
+    color: ihubColors.ink,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  filterChipTextActive: {
+    color: ihubColors.surface,
   },
   contentHost: {
     flex: 1,
