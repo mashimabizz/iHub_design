@@ -4,6 +4,76 @@
 
 ---
 
+## イテレーション155.24：iOS法的ページと評価一覧を追加
+
+### 背景・問題意識
+
+WebAppとの差分を再スキャンしたところ、iOS版には利用規約・プライバシーポリシー・特商法表記の法的ページと、プロフィールから遷移する評価一覧が不足していた。法的ページは登録/審査/サポート導線として重要で、評価一覧はプロフ上の評価サマリをタップした後の実画面が必要なため、プレビュー止まりを解消した。
+
+### 変更内容
+
+#### `mobile/src/components/LegalDocument.tsx`
+- 法的ページ共通のヘッダー、情報ボックス、記事、データ行、フッター表示を追加した。
+
+#### `mobile/app/legal/terms.tsx`
+- Web版 `/legal/terms` に合わせて、利用規約ページを追加した。
+
+#### `mobile/app/legal/privacy.tsx`
+- Web版 `/legal/privacy` に合わせて、プライバシーポリシーページを追加した。
+
+#### `mobile/app/legal/notice.tsx`
+- Web版 `/legal/notice` に合わせて、特定商取引法に基づく表記ページを追加した。
+- `notes/17_legal_alignment.md` の方針通り、代表者名・所在地・電話番号は非公表（請求があれば回答）として表示した。
+
+#### `mobile/app/help.tsx`
+- ヘルプ下部に、利用規約・プライバシーポリシー・特商法表記への導線を追加した。
+
+#### `mobile/app/user-evaluations.tsx`
+- Web版 `/users/[id]/evaluations` に合わせて、評価一覧画面を追加した。
+- 平均評価、星別ヒストグラム、コメント付き評価一覧を表示するようにした。
+
+#### `mobile/app/(tabs)/profile.tsx` / `mobile/app/user-profile.tsx`
+- 自分/相手プロフィールの評価サマリから、評価一覧へ遷移するようにした。
+
+### 影響範囲
+
+- iOS版ヘルプ
+- iOS版法的ページ
+- iOS版プロフィール
+- iOS版相手プロフィール
+- iOS版評価一覧
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- ヘルプ下部から3つの法的ページへ遷移
+- プロフィールの評価サマリから評価一覧へ遷移
+- 相手プロフィールの評価サマリから評価一覧へ遷移
+
+### 関連ファイル
+
+- `mobile/src/components/LegalDocument.tsx`
+- `mobile/app/legal/terms.tsx`
+- `mobile/app/legal/privacy.tsx`
+- `mobile/app/legal/notice.tsx`
+- `mobile/app/help.tsx`
+- `mobile/app/user-evaluations.tsx`
+- `mobile/app/(tabs)/profile.tsx`
+- `mobile/app/user-profile.tsx`
+
+### セルフレビュー結果
+
+- ✅ `notes/17_legal_alignment.md` を確認し、代表者情報は非公表方針で実装
+- ✅ Web版の法的ページ3種に対応するiOS画面を追加
+- ✅ 評価一覧を実画面化し、自分/相手プロフィールの評価サマリから接続
+- ✅ 状態遷移変更はないため `notes/09_state_machines.md` は更新不要
+- ✅ 新用語追加はないため `notes/10_glossary.md` は更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.23：iOS取引C-3をWeb版へ接続
 
 ### 背景・問題意識

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { RouteHeader } from "../src/components/RouteHeader";
 import { Screen } from "../src/components/Screen";
@@ -81,6 +82,15 @@ export default function HelpScreen() {
           </View>
         </View>
       ))}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>規約・ポリシー</Text>
+        <View style={styles.sectionCard}>
+          <LinkRow title="利用規約" icon="document-text-outline" href="/legal/terms" />
+          <LinkRow title="プライバシーポリシー" icon="lock-closed-outline" href="/legal/privacy" />
+          <LinkRow title="特定商取引法に基づく表記" icon="receipt-outline" href="/legal/notice" />
+        </View>
+      </View>
     </Screen>
   );
 }
@@ -105,6 +115,24 @@ function FaqRow({ answer, question }: { answer: string; question: string }) {
         />
       </View>
       {open ? <Text style={styles.answer}>{answer}</Text> : null}
+    </Pressable>
+  );
+}
+
+function LinkRow({
+  href,
+  icon,
+  title,
+}: {
+  href: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+}) {
+  return (
+    <Pressable accessibilityRole="button" onPress={() => router.push(href)} style={styles.linkRow}>
+      <Ionicons name={icon} size={17} color={ihubColors.lavender} />
+      <Text style={styles.linkTitle}>{title}</Text>
+      <Ionicons name="chevron-forward" size={14} color={ihubColors.mutedInk} />
     </Pressable>
   );
 }
@@ -202,5 +230,20 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     paddingLeft: 31,
     paddingTop: 8,
+  },
+  linkRow: {
+    alignItems: "center",
+    borderBottomColor: "rgba(58,50,74,0.05)",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  linkTitle: {
+    color: ihubColors.ink,
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: "900",
   },
 });

@@ -13,6 +13,7 @@ type ProfileSheet = {
 };
 
 type ProfileData = {
+  userId: string;
   handle: string;
   displayName: string;
   primaryArea: string | null;
@@ -159,13 +160,8 @@ export default function ProfileScreen() {
             accessibilityLabel="評価一覧を見る"
             onPress={() =>
               router.push({
-                pathname: "/preview-detail",
-                params: {
-                  kind: "profile",
-                  badge: "PROFILE",
-                  title: "評価一覧",
-                  subtitle: "成立した取引の評価を確認します。",
-                },
+                pathname: "/user-evaluations",
+                params: { id: profile.userId },
               })
             }
             style={styles.ratingPanel}
@@ -287,6 +283,7 @@ async function fetchProfileData(
     stars.length > 0 ? stars.reduce((sum, star) => sum + star, 0) / stars.length : null;
 
   return {
+    userId,
     handle: profileRow?.handle ?? makeHandle(email),
     displayName: profileRow?.display_name ?? (email ? "michi" : "ゲスト"),
     primaryArea: profileRow?.primary_area ?? null,
@@ -300,6 +297,7 @@ async function fetchProfileData(
 
 function fallbackProfile(email?: string, previewMode = false): ProfileData {
   return {
+    userId: "preview-user-1",
     handle: makeHandle(email),
     displayName: previewMode ? "ハナ" : email ? "michi" : "ゲスト",
     primaryArea: previewMode ? "東京都" : null,

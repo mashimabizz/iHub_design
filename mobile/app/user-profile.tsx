@@ -129,7 +129,19 @@ export default function UserProfileScreen() {
               </Text>
             </View>
             <View style={styles.statsRow}>
-              <Stat label="評価" value={profile.ratingAvg == null ? "—" : `★${profile.ratingAvg.toFixed(1)}`} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="評価一覧を見る"
+                onPress={() =>
+                  router.push({
+                    pathname: "/user-evaluations",
+                    params: { id: profile.id },
+                  })
+                }
+                style={styles.statButton}
+              >
+                <Stat label="評価" value={profile.ratingAvg == null ? "—" : `★${profile.ratingAvg.toFixed(1)}`} />
+              </Pressable>
               <Stat label="件数" value={`${profile.ratingCount}`} />
               <Stat label="取引" value={`${profile.tradeCount}`} />
             </View>
@@ -333,6 +345,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     marginTop: 16,
+  },
+  statButton: {
+    flex: 1,
   },
   stat: {
     alignItems: "center",
