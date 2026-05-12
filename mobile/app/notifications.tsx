@@ -288,6 +288,13 @@ function routeFromLinkPath(path: string | null) {
     if (path.endsWith("/rate")) {
       return { pathname: "/transaction-rate", params: { id: transaction[1] } } as const;
     }
+    if (path.includes("/cancel-or-late")) {
+      const kind = path.includes("kind=late") ? "late" : "cancel";
+      return {
+        pathname: "/transaction-cancel-or-late",
+        params: { id: transaction[1], kind },
+      } as const;
+    }
     return { pathname: "/transaction-detail", params: { id: transaction[1] } } as const;
   }
   const user = path.match(/^\/users\/([^/]+)/);

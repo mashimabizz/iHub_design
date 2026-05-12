@@ -840,6 +840,7 @@ function CompletionPanel({ detail }: { detail: TransactionDetail }) {
         >
           撮影する
         </PrimaryButton>
+        <TradeSupportActions proposalId={detail.id} />
       </View>
     );
   }
@@ -876,6 +877,40 @@ function CompletionPanel({ detail }: { detail: TransactionDetail }) {
           <Text style={styles.evidencePrimaryText}>確認へ</Text>
         </Pressable>
       </View>
+      <TradeSupportActions proposalId={detail.id} />
+    </View>
+  );
+}
+
+function TradeSupportActions({ proposalId }: { proposalId: string }) {
+  return (
+    <View style={styles.tradeSupportActions}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() =>
+          router.push({
+            pathname: "/transaction-cancel-or-late",
+            params: { id: proposalId, kind: "late" },
+          })
+        }
+        style={styles.tradeSupportButton}
+      >
+        <Text style={styles.tradeSupportText}>遅刻を連絡</Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() =>
+          router.push({
+            pathname: "/transaction-cancel-or-late",
+            params: { id: proposalId, kind: "cancel" },
+          })
+        }
+        style={[styles.tradeSupportButton, styles.tradeSupportWarn]}
+      >
+        <Text style={[styles.tradeSupportText, styles.tradeSupportWarnText]}>
+          キャンセル相談
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -1513,6 +1548,29 @@ const styles = StyleSheet.create({
     color: ihubColors.surface,
     fontSize: 12,
     fontWeight: "900",
+  },
+  tradeSupportActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  tradeSupportButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(168,212,230,0.16)",
+    borderRadius: ihubRadii.md,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 42,
+  },
+  tradeSupportWarn: {
+    backgroundColor: "rgba(217,130,107,0.1)",
+  },
+  tradeSupportText: {
+    color: "#3a7c93",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  tradeSupportWarnText: {
+    color: ihubColors.warn,
   },
   rejectButton: {
     alignItems: "center",

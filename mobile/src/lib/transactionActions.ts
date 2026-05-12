@@ -288,6 +288,113 @@ export async function submitEvaluation(input: {
   return { redirectTo: "/transactions" };
 }
 
+export async function requestTradeCancel(input: {
+  proposalId: string;
+  userId: string;
+  reason: string;
+  note?: string;
+}): Promise<ActionResult> {
+  if (!supabase) return { error: "Supabaseが未設定です" };
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select("status, sender_id, receiver_id")
+    .eq("id", input.proposalId)
+    .maybeSingle();
+  const proposal = prop as Pick<
+    ProposalCompletionRow,
+    "status" | "sender_id" | "receiver_id"
+  > | null;
+  if (!proposal) return { error: "取引が見つかりません" };
+  if (proposal.sender_id !== input.userId && proposal.receiver_id !== input.userId) {
+    return { error: "参加者ではありません" };
+  }
+  if (proposal.status !== "agreed") {
+    return { error: "合意済の取引のみキャンセル要請できます" };
+  }
+
+  const { error } = await supabase.from("messages").insert({
+    proposal_id: input.proposalId,
+    sender_id: input.userId,
+    message_type: "system",
+    body: `🚫 取引キャンセルが要請されました\n理由：${input.reason}${input.note ? `\n${input.note}` : ""}`,
+    meta: {
+      action: "cancel_requested",
+      requested_by: input.userId,
+      reason: input.reason,
+      note: input.note ?? null,
+    },
+  });
+  if (error) return { error: error.message };
+
+  const counterpartId = proposal.sender_id === input.userId
+    ? proposal.receiver_id
+    : proposal.sender_id;
+  const { data: me } = await supabase
+    .from("users")
+    .select("handle")
+    .eq("id", input.userId)
+    .maybeSingle();
+  const handle = (me as { handle?: string | null } | null)?.handle ?? "?";
+  await supabase.from("notifications").insert({
+    user_id: counterpartId,
+    kind: "cancel_requested",
+    title: `@${handle} がキャンセルを要請しました`,
+    body: `理由：${input.reason}`,
+    link_path: `/transactions/${input.proposalId}`,
+    proposal_id: input.proposalId,
+  });
+  return {};
+}
+
+export async function notifyLate(input: {
+  proposalId: string;
+  userId: string;
+  lateMinutes: 10 | 20 | 30 | 60 | 90;
+  reason: string;
+  note?: string;
+}): Promise<ActionResult> {
+  if (!supabase) return { error: "Supabaseが未設定です" };
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select("status, sender_id, receiver_id")
+    .eq("id", input.proposalId)
+    .maybeSingle();
+  const proposal = prop as Pick<
+    ProposalCompletionRow,
+    "status" | "sender_id" | "receiver_id"
+  > | null;
+  if (!proposal) return { error: "取引が見つかりません" };
+  if (proposal.sender_id !== input.userId && proposal.receiver_id !== input.userId) {
+    return { error: "参加者ではありません" };
+  }
+  if (proposal.status !== "agreed") {
+    return { error: "合意済の取引のみ遅刻通知できます" };
+  }
+
+  const label = lateLabel(input.lateMinutes);
+  const { error } = await supabase.from("messages").insert({
+    proposal_id: input.proposalId,
+    sender_id: input.userId,
+    message_type: "system",
+    body: `⏰ ${label}遅れる旨が通知されました\n理由：${input.reason}${input.note ? `\n${input.note}` : ""}`,
+    meta: {
+      action: "late_notice",
+      notified_by: input.userId,
+      late_minutes: input.lateMinutes,
+      reason: input.reason,
+      note: input.note ?? null,
+    },
+  });
+  if (error) return { error: error.message };
+  return {};
+}
+
+function lateLabel(minutes: 10 | 20 | 30 | 60 | 90) {
+  if (minutes === 60) return "1時間";
+  if (minutes === 90) return "1時間以上";
+  return `${minutes}分`;
+}
+
 async function applyInventoryCompletionSideEffects(
   proposal: ProposalCompletionRow,
   userId: string,

@@ -4,6 +4,61 @@
 
 ---
 
+## イテレーション155.25：iOS遅刻通知/キャンセル相談を追加
+
+### 背景・問題意識
+
+WebAppの取引チャットには、合意済み取引で「遅刻を連絡」「取引キャンセルを相談」する導線がある。iOS版では合意後に向かう/到着/証跡撮影はあっても、遅刻やキャンセルの避難導線が不足していたため、当日の取引体験がWeb版より弱くなっていた。
+
+### 変更内容
+
+#### `mobile/app/transaction-cancel-or-late.tsx`
+- Web版 `/transactions/[id]/cancel-or-late` に合わせて、遅刻通知/キャンセル相談画面を追加した。
+- 遅刻時は 10分/20分/30分/1時間/1時間以上の選択、理由、任意メモを送信できるようにした。
+- キャンセル時は理由、任意メモ、確認アラートを経て、取引チャットへsystem messageを投稿するようにした。
+
+#### `mobile/src/lib/transactionActions.ts`
+- `notifyLate` と `requestTradeCancel` を追加した。
+- Web版同様、`messages.meta.action='late_notice'` / `cancel_requested` として記録し、キャンセル要請は相手への通知も作成するようにした。
+
+#### `mobile/app/transaction-detail.tsx`
+- 合意済み取引のC-3パネル内に「遅刻を連絡」「キャンセル相談」を追加した。
+
+#### `mobile/app/notifications.tsx`
+- `/transactions/:id/cancel-or-late?kind=...` のlink_pathをiOS画面へマップした。
+
+### 影響範囲
+
+- iOS版取引詳細
+- iOS版遅刻通知
+- iOS版キャンセル相談
+- iOS版通知リンク解決
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- 合意済み取引の取引詳細から「遅刻を連絡」「キャンセル相談」へ遷移
+- 送信後に取引詳細へ戻り、取引チャットへsystem messageが追加されることを確認
+
+### 関連ファイル
+
+- `mobile/app/transaction-cancel-or-late.tsx`
+- `mobile/src/lib/transactionActions.ts`
+- `mobile/app/transaction-detail.tsx`
+- `mobile/app/notifications.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版の遅刻通知/キャンセル相談に対応するiOS実画面を追加
+- ✅ 取引詳細から当日の避難導線へ到達できるようにした
+- ✅ 状態遷移は既存 `agreed` 取引上の通知/相談追加であり、`notes/09_state_machines.md` 更新は不要
+- ✅ 新用語追加はないため `notes/10_glossary.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.24：iOS法的ページと評価一覧を追加
 
 ### 背景・問題意識
