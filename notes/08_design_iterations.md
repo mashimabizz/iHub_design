@@ -4,6 +4,87 @@
 
 ---
 
+## イテレーション155.23：iOS取引C-3をWeb版へ接続
+
+### 背景・問題意識
+
+WebAppでは合意後の取引体験が「取引チャット → 証跡撮影 → 双方承認 → 評価 → 必要なら申告」までC-3として通っている。一方iOS版は取引詳細/チャット中心で、合流後の証跡撮影・承認・評価が実画面として不足していたため、取引体験の最重要部分がWeb版と乖離していた。
+
+### 変更内容
+
+#### `mobile/app/transaction-capture.tsx`
+- Web版 `/transactions/[id]/capture` に合わせて、証跡撮影画面を追加した。
+- `expo-image-picker` でカメラ/ライブラリから写真を追加し、`chat-photos` Storage と `proposal_evidence_photos` に保存するようにした。
+- 証跡完了時に `messages.meta.action='open_approve'` のsystem messageを投稿し、取引詳細へ戻すようにした。
+
+#### `mobile/app/transaction-approve.tsx`
+- Web版 `/transactions/[id]/approve` に合わせて、証跡写真、交換物サマリ、両者承認状態、承認CTAを追加した。
+- 承認時に自分側の在庫減算、受け取り在庫の自分キープ追加、wish数量減算、個別募集の譲条件縮退、両者承認時の完了遷移を実行するようにした。
+
+#### `mobile/app/transaction-rate.tsx`
+- Web版 `/transactions/[id]/rate` に合わせて、完了後の評価画面を追加した。
+- 5段階評価、任意コメント、既評価時の表示を実装した。
+
+#### `mobile/app/dispute-new.tsx`
+- Web版 `/disputes/new` の入口に合わせて、相違申告フォームを追加した。
+- カテゴリ選択、事実メモ、C-3証跡写真の自動添付、`disputes` 作成、取引チャットへのsystem message投稿を実装した。
+
+#### `mobile/src/lib/transactionActions.ts`
+- iOS版クライアントから使う取引C-3共通処理を追加した。
+- 証跡アップロード、証跡行追加/削除、証跡完了通知、完了承認、評価送信をWeb版のserver actionに沿って実装した。
+
+#### `mobile/app/transaction-detail.tsx`
+- 合意済み取引に「合流したら証跡を撮影」「証跡を確認して承認」「完了後に評価」のCTAを追加した。
+- `open_approve` system messageをタップ可能にし、承認画面へ遷移できるようにした。
+
+#### `mobile/app/notifications.tsx`
+- `/transactions/:id/capture` / `/approve` / `/rate` のlink_pathをiOS画面へマップした。
+
+#### `mobile/package.json` / `mobile/package-lock.json` / `mobile/app.json`
+- 証跡撮影のため `expo-image-picker` を追加し、Expo pluginに登録した。
+
+### 影響範囲
+
+- iOS版取引詳細
+- iOS版取引証跡撮影
+- iOS版取引完了承認
+- iOS版評価
+- iOS版相違申告入口
+- iOS版通知からの取引C-3遷移
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- 合意済み取引の取引詳細で「撮影する」から証跡撮影画面へ遷移
+- 証跡追加後、完了CTAで取引詳細に戻り、system messageから承認画面へ遷移
+- 承認後、両者承認なら評価画面へ遷移
+- 承認画面の「相違あり」から申告フォームへ遷移
+
+### 関連ファイル
+
+- `mobile/app/transaction-detail.tsx`
+- `mobile/app/transaction-capture.tsx`
+- `mobile/app/transaction-approve.tsx`
+- `mobile/app/transaction-rate.tsx`
+- `mobile/app/dispute-new.tsx`
+- `mobile/app/notifications.tsx`
+- `mobile/src/lib/transactionActions.ts`
+- `mobile/package.json`
+- `mobile/package-lock.json`
+- `mobile/app.json`
+
+### セルフレビュー結果
+
+- ✅ Web版C-3の主要状態（証跡撮影、証跡確認、双方承認、評価）に対応するiOS実画面を追加
+- ✅ 完了承認時の在庫減算/受け取り在庫追加/wish減算/個別募集整理をWeb版の処理に合わせた
+- ✅ 取引チャットのsystem messageから承認画面へ進む導線を追加
+- ✅ `notes/09_state_machines.md` は既存C-3状態にiOS実装を追従しただけなので更新不要
+- ✅ `notes/10_glossary.md` は新用語なし
+- ⚠️ `expo-image-picker` 追加のため、既存のdevelopment buildでカメラ機能を使うにはネイティブ再ビルドが必要
+- ✅ `npm --prefix mobile run typecheck` 通過
+
+---
+
 ## イテレーション155.22：iOS検索/通知/予定導線を本体化
 
 ### 背景・問題意識

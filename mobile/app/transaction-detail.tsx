@@ -42,6 +42,10 @@ type ProposalRow = {
   meetup_lat: number | null;
   meetup_lng: number | null;
   meetup_candidates: unknown;
+  evidence_photo_url: string | null;
+  evidence_taken_at: string | null;
+  approved_by_sender: boolean | null;
+  approved_by_receiver: boolean | null;
   message: string | null;
   created_at: string;
   last_action_at: string | null;
@@ -90,6 +94,10 @@ type TransactionDetail = {
   isReceiver: boolean;
   myAgreed: boolean;
   partnerAgreed: boolean;
+  myCompletionApproved: boolean;
+  partnerCompletionApproved: boolean;
+  hasEvidence: boolean;
+  evidenceTakenAt: string | null;
   partner: UserRow;
   receive: DetailItem[];
   give: DetailItem[];
@@ -406,6 +414,7 @@ export default function TransactionDetailScreen() {
                       key={message.id}
                       message={message}
                       mine={message.senderId === user?.id}
+                      proposalId={detail.id}
                     />
                   ))
                 )}
@@ -436,6 +445,10 @@ export default function TransactionDetailScreen() {
                 </View>
               ) : null}
             </View>
+          ) : null}
+
+          {detail.status === "agreed" || detail.status === "completed" ? (
+            <CompletionPanel detail={detail} />
           ) : null}
 
           <View style={styles.actions}>
@@ -493,8 +506,12 @@ async function fetchTransactionDetail(
     "meetup_place_name",
     "meetup_lat",
     "meetup_lng",
-    "meetup_candidates",
-    "message",
+      "meetup_candidates",
+      "evidence_photo_url",
+      "evidence_taken_at",
+      "approved_by_sender",
+      "approved_by_receiver",
+      "message",
     "created_at",
     "last_action_at",
     "expires_at",
@@ -507,6 +524,10 @@ async function fetchTransactionDetail(
       meetup_candidates: [],
       meetup_lat: null,
       meetup_lng: null,
+      evidence_photo_url: null,
+      evidence_taken_at: null,
+      approved_by_sender: false,
+      approved_by_receiver: false,
       ...data,
     } as ProposalRow,
     userId,
@@ -600,6 +621,14 @@ async function buildDetail(
     partnerAgreed: isSender
       ? !!proposal.agreed_by_receiver
       : !!proposal.agreed_by_sender,
+    myCompletionApproved: isSender
+      ? !!proposal.approved_by_sender
+      : !!proposal.approved_by_receiver,
+    partnerCompletionApproved: isSender
+      ? !!proposal.approved_by_receiver
+      : !!proposal.approved_by_sender,
+    hasEvidence: !!proposal.evidence_photo_url,
+    evidenceTakenAt: proposal.evidence_taken_at,
     partner:
       (partnerData as UserRow | null) ?? {
         id: partnerId,
@@ -729,18 +758,28 @@ function TradeColumn({
 function ChatBubble({
   message,
   mine,
+  proposalId,
 }: {
   message: ChatMessage;
   mine: boolean;
+  proposalId: string;
 }) {
   const system = message.type === "system" || message.type === "arrival_status";
   const text = messageText(message);
+  const openApprove = message.meta?.action === "open_approve";
 
   if (system) {
     return (
-      <View style={styles.systemMessage}>
+      <Pressable
+        disabled={!openApprove}
+        onPress={() =>
+          router.push({ pathname: "/transaction-approve", params: { id: proposalId } })
+        }
+        style={[styles.systemMessage, openApprove ? styles.systemMessageAction : null]}
+      >
         <Text style={styles.systemMessageText}>{text}</Text>
-      </View>
+        {openApprove ? <Text style={styles.systemMessageArrow}>確認へ →</Text> : null}
+      </Pressable>
     );
   }
 
@@ -756,6 +795,86 @@ function ChatBubble({
         <Text style={[styles.chatTime, mine ? styles.chatTimeMine : null]}>
           {shortTime(message.createdAt)}
         </Text>
+      </View>
+    </View>
+  );
+}
+
+function CompletionPanel({ detail }: { detail: TransactionDetail }) {
+  if (detail.status === "completed") {
+    return (
+      <View style={styles.completionPanel}>
+        <View style={styles.completionIcon}>
+          <Text style={styles.completionIconText}>✓</Text>
+        </View>
+        <View style={styles.completionCopy}>
+          <Text style={styles.completionTitle}>取引完了</Text>
+          <Text style={styles.completionSub}>評価を送って、交換体験を記録できます。</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            router.push({ pathname: "/transaction-rate", params: { id: detail.id } })
+          }
+          style={styles.completionButton}
+        >
+          <Text style={styles.completionButtonText}>評価</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (!detail.hasEvidence) {
+    return (
+      <View style={styles.evidenceCard}>
+        <View>
+          <Text style={styles.evidenceTitle}>合流したら証跡を撮影</Text>
+          <Text style={styles.evidenceSub}>
+            両者の交換物を1枚に収めると、完了承認へ進めます。
+          </Text>
+        </View>
+        <PrimaryButton
+          onPress={() =>
+            router.push({ pathname: "/transaction-capture", params: { id: detail.id } })
+          }
+        >
+          撮影する
+        </PrimaryButton>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.evidenceCard}>
+      <View>
+        <Text style={styles.evidenceTitle}>取引証跡が届いています</Text>
+        <Text style={styles.evidenceSub}>
+          {detail.myCompletionApproved
+            ? detail.partnerCompletionApproved
+              ? "両者承認済みです"
+              : "あなたは承認済み。相手の承認待ちです。"
+            : "内容を確認して、問題なければ承認してください。"}
+        </Text>
+      </View>
+      <View style={styles.evidenceActions}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            router.push({ pathname: "/transaction-capture", params: { id: detail.id } })
+          }
+          style={styles.evidenceSecondary}
+        >
+          <Text style={styles.evidenceSecondaryText}>追加撮影</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            router.push({ pathname: "/transaction-approve", params: { id: detail.id } })
+          }
+          style={styles.evidencePrimary}
+        >
+          <Text style={styles.evidencePrimaryText}>確認へ</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -1165,10 +1284,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
+  systemMessageAction: {
+    backgroundColor: "rgba(166,149,216,0.14)",
+    borderColor: "rgba(166,149,216,0.22)",
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
   systemMessageText: {
     color: ihubColors.mutedInk,
     fontSize: 10.5,
     fontWeight: "800",
+    textAlign: "center",
+  },
+  systemMessageArrow: {
+    color: ihubColors.lavender,
+    fontSize: 10,
+    fontWeight: "900",
+    marginTop: 2,
     textAlign: "center",
   },
   chatBubbleRow: {
@@ -1278,6 +1410,109 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: 10,
+  },
+  evidenceCard: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(166,149,216,0.18)",
+    borderRadius: ihubRadii.xl,
+    borderWidth: 1,
+    gap: 12,
+    padding: 15,
+    ...ihubShadow,
+  },
+  evidenceTitle: {
+    color: ihubColors.ink,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  evidenceSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 11.5,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  evidenceActions: {
+    flexDirection: "row",
+    gap: 9,
+  },
+  evidenceSecondary: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.05)",
+    borderRadius: ihubRadii.md,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 46,
+  },
+  evidenceSecondaryText: {
+    color: ihubColors.ink,
+    fontSize: 12.5,
+    fontWeight: "900",
+  },
+  evidencePrimary: {
+    alignItems: "center",
+    backgroundColor: ihubColors.lavender,
+    borderRadius: ihubRadii.md,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 46,
+  },
+  evidencePrimaryText: {
+    color: ihubColors.surface,
+    fontSize: 12.5,
+    fontWeight: "900",
+  },
+  completionPanel: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(34,197,94,0.18)",
+    borderRadius: ihubRadii.xl,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    padding: 15,
+    ...ihubShadow,
+  },
+  completionIcon: {
+    alignItems: "center",
+    backgroundColor: ihubColors.ok,
+    borderRadius: ihubRadii.pill,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  completionIconText: {
+    color: ihubColors.surface,
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  completionCopy: {
+    flex: 1,
+  },
+  completionTitle: {
+    color: ihubColors.ink,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  completionSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  completionButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.lavender,
+    borderRadius: ihubRadii.pill,
+    height: 42,
+    justifyContent: "center",
+    paddingHorizontal: 15,
+  },
+  completionButtonText: {
+    color: ihubColors.surface,
+    fontSize: 12,
+    fontWeight: "900",
   },
   rejectButton: {
     alignItems: "center",

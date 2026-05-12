@@ -279,6 +279,15 @@ function routeFromLinkPath(path: string | null) {
   }
   const transaction = path.match(/^\/transactions\/([^/]+)/);
   if (transaction) {
+    if (path.endsWith("/capture")) {
+      return { pathname: "/transaction-capture", params: { id: transaction[1] } } as const;
+    }
+    if (path.endsWith("/approve")) {
+      return { pathname: "/transaction-approve", params: { id: transaction[1] } } as const;
+    }
+    if (path.endsWith("/rate")) {
+      return { pathname: "/transaction-rate", params: { id: transaction[1] } } as const;
+    }
     return { pathname: "/transaction-detail", params: { id: transaction[1] } } as const;
   }
   const user = path.match(/^\/users\/([^/]+)/);
