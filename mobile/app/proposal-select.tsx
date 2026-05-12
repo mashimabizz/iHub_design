@@ -789,6 +789,7 @@ function MeetupPane({
       >
         <View
           ref={calendarGridRef}
+          collapsable={false}
           onLayout={measureCalendarFrame}
           style={[styles.calendarGrid, { height: contentHeight }]}
         >
@@ -826,6 +827,7 @@ function MeetupPane({
               {HOURS.map((hour) => (
                 <View
                   key={`${day.id}-${hour}`}
+                  pointerEvents="none"
                   style={[
                     styles.calendarCell,
                     {
@@ -935,7 +937,7 @@ function MeetupPane({
           ) : null}
 
           {candidates.length === 0 && !preview ? (
-            <View style={styles.calendarHint}>
+            <View pointerEvents="none" style={styles.calendarHint}>
               <Text style={styles.calendarHintText}>
                 長押しで時間を選択できるよ
               </Text>
