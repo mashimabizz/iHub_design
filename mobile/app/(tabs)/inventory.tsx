@@ -11,7 +11,6 @@ import {
 import {
   BottomOptionSheet,
   ColumnSwitcher,
-  FloatingAddButton,
   GoodsGrid,
   type ColumnCount,
   type GoodsGridItem,
@@ -209,11 +208,12 @@ export default function InventoryScreen() {
   return (
     <Screen scroll={false} contentStyle={styles.screenContent}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.kicker}>INVENTORY</Text>
-          <Text style={styles.title}>マイ在庫</Text>
+        <Text style={styles.title}>マイ在庫</Text>
+        <View style={styles.headerActions}>
+          <ColumnSwitcher value={columns} onChange={setColumns} />
+          <HeaderIconButton label="フィルタ" glyph="≡" />
+          <HeaderIconButton label="検索" glyph="⌕" />
         </View>
-        <ColumnSwitcher value={columns} onChange={setColumns} />
       </View>
 
       <SectionTabs
@@ -260,6 +260,12 @@ export default function InventoryScreen() {
           <GoodsGrid
             items={visibleItems}
             columns={columns}
+            addTileLabel={status === "active" ? "追加" : undefined}
+            onPressAddTile={
+              status === "active"
+                ? () => openInventoryEditor(null, "create")
+                : undefined
+            }
             emptyLabel={
               status === "active"
                 ? "譲る候補のグッズはまだありません"
@@ -279,11 +285,6 @@ export default function InventoryScreen() {
           />
         </ScrollView>
       </View>
-
-      <FloatingAddButton
-        label="グッズを追加"
-        onPress={() => openInventoryEditor(null, "create")}
-      />
 
       <BottomOptionSheet
         visible={!!selected}
@@ -352,6 +353,18 @@ export default function InventoryScreen() {
   function handleSwipeCancel() {
     tabSwipeRef.current = null;
   }
+}
+
+function HeaderIconButton({ label, glyph }: { label: string; glyph: string }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={styles.headerIconButton}
+    >
+      <Text style={styles.headerIconText}>{glyph}</Text>
+    </Pressable>
+  );
 }
 
 function openInventoryEditor(
@@ -493,26 +506,47 @@ function buildActions({
 
 const styles = StyleSheet.create({
   screenContent: {
-    gap: 14,
+    gap: 12,
     paddingHorizontal: 18,
   },
   header: {
     alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 16,
+    borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-  },
-  kicker: {
-    color: ihubColors.lavender,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 0.6,
+    marginHorizontal: -2,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   title: {
     color: ihubColors.ink,
-    fontSize: 25,
+    fontSize: 19,
     fontWeight: "900",
     letterSpacing: 0,
-    lineHeight: 30,
+    lineHeight: 24,
+  },
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  headerIconButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 10,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  headerIconText: {
+    color: ihubColors.ink,
+    fontSize: 12,
+    fontWeight: "900",
   },
   filters: {
     marginHorizontal: -18,

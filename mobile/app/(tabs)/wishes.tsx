@@ -222,13 +222,12 @@ export default function WishesScreen() {
   return (
     <Screen scroll={false} contentStyle={styles.screenContent}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.kicker}>WISH</Text>
-          <Text style={styles.title}>ウィッシュ</Text>
+        <Text style={styles.title}>ウィッシュ</Text>
+        <View style={styles.headerActions}>
+          {tab === "wish" ? (
+            <ColumnSwitcher value={columns} onChange={setColumns} />
+          ) : null}
         </View>
-        {tab === "wish" ? (
-          <ColumnSwitcher value={columns} onChange={setColumns} />
-        ) : null}
       </View>
 
       <SectionTabs
@@ -815,26 +814,34 @@ function buildListingActions({
 
 const styles = StyleSheet.create({
   screenContent: {
-    gap: 14,
+    gap: 12,
     paddingHorizontal: 18,
   },
   header: {
     alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 16,
+    borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-  },
-  kicker: {
-    color: ihubColors.lavender,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 0.6,
+    marginHorizontal: -2,
+    minHeight: 56,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   title: {
     color: ihubColors.ink,
-    fontSize: 25,
+    fontSize: 19,
     fontWeight: "900",
     letterSpacing: 0,
-    lineHeight: 30,
+    lineHeight: 24,
+  },
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    minWidth: 92,
+    justifyContent: "flex-end",
   },
   filters: {
     marginHorizontal: -18,

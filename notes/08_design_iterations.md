@@ -4,6 +4,69 @@
 
 ---
 
+## イテレーション155.09：iOS在庫とWishをWeb画面構成へ追加整合
+
+### 背景・問題意識
+
+iOS版の在庫/Wish周りは導線が増えたものの、Webアプリ画面そのものと比べると、在庫一覧の先頭追加カード、白いヘッダー、フォームのセクション構造などがまだ揃っていなかった。オーナーから「Webアプリ画面通りに実装できていない部分があると思うので、実装して」と指摘があったため、Web版 `InventoryView` / `WishView` / 追加編集フォームの画面構成にさらに寄せた。
+
+### 変更内容
+
+#### `mobile/src/components/GoodsGrid.tsx`
+- Web版 `AddCard` に近い、グリッド先頭に置ける点線枠の追加タイルを `GoodsGrid` に追加した。
+- 追加タイルがある場合でも既存カードのスタガー表示が崩れないよう、表示遅延を調整した。
+
+#### `mobile/app/(tabs)/inventory.tsx`
+- ヘッダーを白いパネル型に変更し、Web版に近い `マイ在庫` + 列数切替 + フィルタ/検索アイコンの構成にした。
+- `譲る候補` タブのグリッド先頭に追加カードを表示するようにし、ローカル浮遊ボタンよりWeb版の在庫画面構成に寄せた。
+- 在庫追加導線は、先頭追加カードから `goods-editor` の登録画面へ進むようにした。
+
+#### `mobile/app/(tabs)/wishes.tsx`
+- ヘッダーをWeb版に近い白いパネル型へ変更し、`ウィッシュ` + Wishタブ時のみ列数切替の構成にした。
+
+#### `mobile/app/goods-editor.tsx`
+- Web版の追加/編集フォームに合わせ、`写真` / `推し` / `グッズ` / `タグ` / `メモ` のセクション構造に変更した。
+- 写真カードはセクション内に配置し、編集可否や追加予定などの補助表示を右上に出すようにした。
+
+#### `mobile/app/listing-editor.tsx`
+- 個別募集フォームを `譲る条件` / `求める条件` / `メモ` のセクション構造に変更した。
+- `求める条件` では `1pick` / `すべて` の選択状態をセクションの文脈で見せるようにした。
+
+### 影響範囲
+
+- iOS版マイ在庫一覧
+- iOS版Wish一覧
+- iOS版在庫/Wish追加編集画面
+- iOS版個別募集追加編集画面
+- iOS版共通グッズグリッド
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+- iOSアプリでマイ在庫を開き、ヘッダーが白パネル化し、譲る候補の先頭に追加カードが出ることを確認
+- iOSアプリでWishを開き、白パネル型ヘッダーと列数切替がWeb版の構成に近いことを確認
+- iOSアプリで在庫/Wish/個別募集の追加・編集画面を開き、セクション単位でフォームが並ぶことを確認
+
+### 関連ファイル
+
+- `mobile/src/components/GoodsGrid.tsx`
+- `mobile/app/(tabs)/inventory.tsx`
+- `mobile/app/(tabs)/wishes.tsx`
+- `mobile/app/goods-editor.tsx`
+- `mobile/app/listing-editor.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版の在庫/Wish一覧と追加編集フォームの構成を再確認してから修正した
+- ✅ 在庫一覧はWeb版の先頭追加カード構成へ寄せた
+- ✅ 追加/編集画面はWeb版のセクション構造へ寄せた
+- ✅ 新しい正式用語・状態名・DBカラムは追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション155.08：iOS在庫・Wishの追加編集導線を実体化
 
 ### 背景・問題意識

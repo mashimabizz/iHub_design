@@ -121,18 +121,23 @@ export function GoodsGrid({
   columns,
   onPressItem,
   emptyLabel,
+  addTileLabel,
+  onPressAddTile,
 }: {
   items: GoodsGridItem[];
   columns: ColumnCount;
   onPressItem: (item: GoodsGridItem) => void;
   emptyLabel: string;
+  addTileLabel?: string;
+  onPressAddTile?: () => void;
 }) {
   const { width } = useWindowDimensions();
   const screenPadding = 36;
   const gap = columns === 3 ? 10 : columns === 4 ? 8 : 6;
   const tileWidth = (width - screenPadding - gap * (columns - 1)) / columns;
+  const showAddTile = !!onPressAddTile;
 
-  if (items.length === 0) {
+  if (items.length === 0 && !showAddTile) {
     return (
       <View style={styles.emptyBox}>
         <Text style={styles.emptyText}>{emptyLabel}</Text>
@@ -142,16 +147,74 @@ export function GoodsGrid({
 
   return (
     <View style={[styles.grid, { gap }]}>
+      {showAddTile ? (
+        <AnimatedAddTile
+          width={tileWidth}
+          label={addTileLabel ?? "追加"}
+          onPress={onPressAddTile}
+        />
+      ) : null}
       {items.map((item, index) => (
         <AnimatedGoodsTile
           key={item.id}
           item={item}
           width={tileWidth}
-          delayMs={index * 35}
+          delayMs={(showAddTile ? index + 1 : index) * 35}
           onPress={() => onPressItem(item)}
         />
       ))}
     </View>
+  );
+}
+
+function AnimatedAddTile({
+  width,
+  label,
+  onPress,
+}: {
+  width: number;
+  label: string;
+  onPress: () => void;
+}) {
+  const appear = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.spring(appear, {
+      toValue: 1,
+      damping: 18,
+      stiffness: 160,
+      mass: 0.72,
+      useNativeDriver: true,
+    }).start();
+  }, [appear]);
+
+  const translateY = appear.interpolate({
+    inputRange: [0, 1],
+    outputRange: [14, 0],
+  });
+  const scale = appear.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.96, 1],
+  });
+
+  return (
+    <Animated.View
+      style={{
+        opacity: appear,
+        transform: [{ translateY }, { scale }],
+        width,
+      }}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        onPress={onPress}
+        style={[styles.addTile, { height: width * 1.34 }]}
+      >
+        <Text style={styles.addTilePlus}>＋</Text>
+        <Text style={styles.addTileText}>{label}</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -455,6 +518,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     paddingBottom: 18,
+  },
+  addTile: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(166,149,216,0.54)",
+    borderRadius: 13,
+    borderStyle: "dashed",
+    borderWidth: 1.5,
+    justifyContent: "center",
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 3, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 9,
+  },
+  addTilePlus: {
+    color: ihubColors.lavender,
+    fontSize: 27,
+    fontWeight: "800",
+    lineHeight: 31,
+  },
+  addTileText: {
+    color: ihubColors.lavender,
+    fontSize: 10,
+    fontWeight: "900",
+    marginTop: 2,
   },
   emptyBox: {
     alignItems: "center",

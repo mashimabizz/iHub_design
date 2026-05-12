@@ -84,7 +84,7 @@ export default function ListingEditorScreen() {
       </View>
 
       <View style={styles.form}>
-        <View style={styles.field}>
+        <Section label="譲る条件" right={giveItems.length > 0 ? `${giveItems.length}点` : undefined}>
           <Text style={styles.label}>譲る候補</Text>
           <TextInput
             value={give}
@@ -95,9 +95,9 @@ export default function ListingEditorScreen() {
             style={styles.textArea}
             textAlignVertical="top"
           />
-        </View>
+        </Section>
 
-        <View style={styles.field}>
+        <Section label="求める条件" right={logic}>
           <View style={styles.fieldHeader}>
             <Text style={styles.label}>求めるもの</Text>
             <Segmented
@@ -119,9 +119,9 @@ export default function ListingEditorScreen() {
             style={styles.textArea}
             textAlignVertical="top"
           />
-        </View>
+        </Section>
 
-        <View style={styles.field}>
+        <Section label="メモ">
           <Text style={styles.label}>メモ</Text>
           <TextInput
             value={note}
@@ -132,7 +132,7 @@ export default function ListingEditorScreen() {
             style={styles.noteArea}
             textAlignVertical="top"
           />
-        </View>
+        </Section>
       </View>
 
       <View style={styles.actions}>
@@ -146,6 +146,26 @@ export default function ListingEditorScreen() {
         </PrimaryButton>
       </View>
     </Screen>
+  );
+}
+
+function Section({
+  label,
+  right,
+  children,
+}: {
+  label: string;
+  right?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>{label}</Text>
+        {right ? <Text style={styles.sectionRight}>{right}</Text> : null}
+      </View>
+      <View style={styles.sectionBody}>{children}</View>
+    </View>
   );
 }
 
@@ -359,6 +379,34 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 14,
+  },
+  section: {
+    gap: 7,
+  },
+  sectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 2,
+  },
+  sectionLabel: {
+    color: ihubColors.lavender,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  sectionRight: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  sectionBody: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.lg,
+    borderWidth: 1,
+    gap: 8,
+    padding: 13,
   },
   field: {
     gap: 7,

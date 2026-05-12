@@ -99,54 +99,63 @@ export default function GoodsEditorScreen() {
         </View>
       ) : null}
 
-      <View style={styles.previewCard}>
-        <View style={[styles.previewImage, { backgroundColor: hue }]}>
-          <View style={styles.previewShine} />
-          <Text style={styles.previewGlyph}>{glyph.slice(0, 2)}</Text>
-          <View style={styles.previewTop}>
-            <View style={styles.previewTitlePlate}>
-              <Text numberOfLines={1} style={styles.previewTitleText}>
-                {title || initialTitle}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.previewBadge,
-                badge === "未紐付け" ? styles.previewBadgeWarn : null,
-              ]}
-            >
-              <Text numberOfLines={1} style={styles.previewBadgeText}>
-                {badge}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.previewBottom}>
-            <Text numberOfLines={1} style={styles.previewBottomText}>
-              {[group || "グループ", goodsType || "種別"].join(" / ")}
-            </Text>
-            {quantity > 1 ? (
-              <View style={styles.quantityPill}>
-                <Text style={styles.quantityPillText}>×{quantity}</Text>
+      <Section
+        label="写真"
+        right={readonly ? "詳細のみ" : mode === "create" ? "追加予定" : "差し替え可"}
+      >
+        <View style={styles.previewCard}>
+          <View style={[styles.previewImage, { backgroundColor: hue }]}>
+            <View style={styles.previewShine} />
+            <Text style={styles.previewGlyph}>{glyph.slice(0, 2)}</Text>
+            <View style={styles.previewTop}>
+              <View style={styles.previewTitlePlate}>
+                <Text numberOfLines={1} style={styles.previewTitleText}>
+                  {title || initialTitle}
+                </Text>
               </View>
-            ) : null}
+              <View
+                style={[
+                  styles.previewBadge,
+                  badge === "未紐付け" ? styles.previewBadgeWarn : null,
+                ]}
+              >
+                <Text numberOfLines={1} style={styles.previewBadgeText}>
+                  {badge}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.previewBottom}>
+              <Text numberOfLines={1} style={styles.previewBottomText}>
+                {[group || "グループ", goodsType || "種別"].join(" / ")}
+              </Text>
+              {quantity > 1 ? (
+                <View style={styles.quantityPill}>
+                  <Text style={styles.quantityPillText}>×{quantity}</Text>
+                </View>
+              ) : null}
+            </View>
           </View>
         </View>
-      </View>
+      </Section>
 
       <View style={readonly ? styles.formReadonly : styles.form}>
+        <Section label="推し">
+          <TextField
+            label="グループ・作品"
+            value={group}
+            editable={!readonly}
+            onChangeText={setGroup}
+            placeholder="例: LUMENA"
+          />
+        </Section>
+
+        <Section label="グッズ">
         <TextField
           label="タイトル"
           value={title}
           editable={!readonly}
           onChangeText={setTitle}
           placeholder={isWish ? "例: スア ラキドロ" : "例: スア 春ver."}
-        />
-        <TextField
-          label="グループ・作品"
-          value={group}
-          editable={!readonly}
-          onChangeText={setGroup}
-          placeholder="例: LUMENA"
         />
         <TextField
           label="グッズ種別"
@@ -176,9 +185,9 @@ export default function GoodsEditorScreen() {
             </Pressable>
           </View>
         </View>
+        </Section>
 
-        <View style={styles.fieldBlock}>
-          <Text style={styles.fieldLabel}>タグ</Text>
+        <Section label="タグ">
           <View style={styles.tagWrap}>
             {TAG_OPTIONS.map((tag) => {
               const active = tags.includes(tag);
@@ -201,10 +210,9 @@ export default function GoodsEditorScreen() {
               );
             })}
           </View>
-        </View>
+        </Section>
 
-        <View style={styles.fieldBlock}>
-          <Text style={styles.fieldLabel}>メモ</Text>
+        <Section label="メモ">
           <TextInput
             value={note}
             editable={!readonly}
@@ -215,7 +223,7 @@ export default function GoodsEditorScreen() {
             style={styles.noteInput}
             textAlignVertical="top"
           />
-        </View>
+        </Section>
       </View>
 
       <View style={styles.actions}>
@@ -235,6 +243,26 @@ export default function GoodsEditorScreen() {
         )}
       </View>
     </Screen>
+  );
+}
+
+function Section({
+  label,
+  right,
+  children,
+}: {
+  label: string;
+  right?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>{label}</Text>
+        {right ? <Text style={styles.sectionRight}>{right}</Text> : null}
+      </View>
+      <View style={styles.sectionBody}>{children}</View>
+    </View>
   );
 }
 
@@ -410,6 +438,34 @@ const styles = StyleSheet.create({
   },
   fieldBlock: {
     gap: 7,
+  },
+  section: {
+    gap: 7,
+  },
+  sectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 2,
+  },
+  sectionLabel: {
+    color: ihubColors.lavender,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  sectionRight: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  sectionBody: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.lg,
+    borderWidth: 1,
+    gap: 13,
+    padding: 13,
   },
   fieldLabel: {
     color: ihubColors.ink,
