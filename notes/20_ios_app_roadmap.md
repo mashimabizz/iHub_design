@@ -81,3 +81,7 @@ notes/               # 設計判断
 - 生成された最新Expo環境は Node.js `>=20.19.4` を要求する。ローカルは `v20.11.1` だったため、実機開発やEAS前にNode更新が必要。
 - Expo Go だけではPush通知や一部ネイティブ挙動の検証に限界があるため、早めに development build を作る。
 - Webの Server Actions に入っている重要ロジックは、iOSから直接呼べない。共通化またはRPC/API化を優先する。
+
+## 8. 画面レビュー
+
+レビュー手順は [`notes/21_ios_review_guide.md`](21_ios_review_guide.md) に集約する。

@@ -3,10 +3,13 @@ import { FoundationCard } from "../../src/components/FoundationCard";
 import { IHubLogo } from "../../src/components/IHubLogo";
 import { Screen } from "../../src/components/Screen";
 import { StatusPill } from "../../src/components/StatusPill";
+import { useAuth } from "../../src/auth/AuthProvider";
 import { hasSupabaseConfig } from "../../src/lib/supabase";
 import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 
 export default function HomeScreen() {
+  const { previewMode, user } = useAuth();
+
   return (
     <Screen>
       <View style={styles.header}>
@@ -16,7 +19,15 @@ export default function HomeScreen() {
           <Text style={styles.subtitle}>ネイティブ版の土台</Text>
         </View>
         <StatusPill
-          label={hasSupabaseConfig ? "Supabase接続可" : "環境変数待ち"}
+          label={
+            hasSupabaseConfig && user
+              ? "ログイン中"
+              : previewMode
+                ? "プレビュー中"
+              : hasSupabaseConfig
+                ? "Supabase接続可"
+                : "環境変数待ち"
+          }
           tone={hasSupabaseConfig ? "ok" : "pink"}
         />
       </View>
@@ -31,6 +42,11 @@ export default function HomeScreen() {
           <StatusPill label="Supabase" tone="sky" />
           <StatusPill label="Apple Maps準備" tone="pink" />
         </View>
+        {previewMode ? (
+          <Text style={styles.userLine}>Supabase未接続の画面プレビューです。</Text>
+        ) : user?.email ? (
+          <Text style={styles.userLine}>ログイン: {user.email}</Text>
+        ) : null}
       </FoundationCard>
 
       <View style={styles.grid}>
@@ -82,6 +98,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 7,
+  },
+  userLine: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 10,
   },
   grid: {
     flexDirection: "row",

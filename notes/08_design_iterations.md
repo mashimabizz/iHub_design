@@ -4,6 +4,70 @@
 
 ---
 
+## イテレーション154.76：iOS認証骨格とレビュー手順を追加
+
+### 背景・問題意識
+
+オーナーから、iOSアプリ版の画面をレビューできる段階になったら開き方も案内してほしい、そのうえで次に進めてほしいという依頼があった。
+
+iOS版は今後Web版と同じSupabase基盤に接続するため、画面量産前にログイン状態、Supabase未設定時の案内、ログイン済みタブ表示の骨格を先に作る必要がある。また、オーナーが都度レビューしやすいように、Expo Go / iOS Simulator での開き方をドキュメント化しておくことにした。
+
+### 変更内容
+
+#### `mobile/src/auth/`
+- `AuthProvider` を追加し、Supabase Auth の session / user / signIn / signUp / signOut をアプリ全体で参照できるようにした。
+- `RouteGuard` を追加し、未ログイン時は `/login`、ログイン済み時はタブ画面へ寄せる導線を作った。
+
+#### `mobile/app/(auth)/`
+- ログイン画面を追加した。
+- Supabase環境変数が未設定の場合は、設定待ちの案内を表示するようにした。
+- Supabase環境変数が未設定でも「画面だけプレビューする」からタブ画面を確認できるようにした。
+- 環境変数が設定されている場合は、ログイン/新規登録フォームを表示するようにした。
+
+#### `mobile/app/(tabs)/`
+- ホーム画面でログイン状態とユーザーemailを表示するようにした。
+- プロフィール画面にログイン状態とログアウトボタンを追加した。
+
+#### `mobile/src/components/`
+- `PrimaryButton` と `TextField` を追加し、iOS版のフォーム/CTAの最小共通部品を用意した。
+
+#### `notes/21_ios_review_guide.md`
+- iOS画面レビュー手順を新規作成した。
+- Expo Go / iOS Simulator / Supabase環境変数の扱いを整理した。
+
+#### `README.md` / `notes/20_ios_app_roadmap.md`
+- iOSレビュー手順への導線を追加した。
+
+### 影響範囲
+
+- iOSアプリ版のログイン前後導線
+- iOS画面レビュー手順
+- 今後のSupabase連携PoC
+
+### 確認方法
+
+- `npm run typecheck`
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+
+### 関連ファイル
+
+- `mobile/src/auth/AuthProvider.tsx`
+- `mobile/src/auth/RouteGuard.tsx`
+- `mobile/app/(auth)/login.tsx`
+- `mobile/app/(tabs)/index.tsx`
+- `mobile/app/(tabs)/profile.tsx`
+- `notes/21_ios_review_guide.md`
+
+### セルフレビュー結果
+
+- ✅ Web側の既存実装には触れず、iOS側の認証骨格だけを追加した
+- ✅ Supabase未設定でもレビュー画面が崩れず、設定待ちとして見える
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション154.75：iOSアプリ基盤を追加
 
 ### 背景・問題意識
