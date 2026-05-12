@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { router } from "expo-router";
 import {
   Animated,
   Pressable,
@@ -8,9 +9,7 @@ import {
   View,
 } from "react-native";
 import {
-  BottomOptionSheet,
   SectionTabs,
-  type SheetAction,
 } from "../../src/components/GoodsGrid";
 import { Screen } from "../../src/components/Screen";
 import { ihubColors, ihubRadii } from "../../src/theme/tokens";
@@ -169,7 +168,6 @@ const TOP_TABS = [
 export default function TransactionsScreen() {
   const [tab, setTab] = useState<TopTab>("pending");
   const [pendingSub, setPendingSub] = useState<PendingSubTab>("action");
-  const [selected, setSelected] = useState<Transaction | null>(null);
 
   const grouped = useMemo(() => {
     const pending = TRANSACTIONS.filter((tx) =>
@@ -200,27 +198,6 @@ export default function TransactionsScreen() {
     count: counts[item.id],
   }));
 
-  const selectedActions: SheetAction[] = selected
-    ? [
-        {
-          id: "open",
-          label:
-            selected.status === "agreed"
-              ? "取引チャットを開く"
-              : selected.needsAction
-                ? "確認する"
-                : "詳細を見る",
-          onPress: () => setSelected(null),
-        },
-        {
-          id: "close",
-          label: "閉じる",
-          tone: "muted",
-          onPress: () => setSelected(null),
-        },
-      ]
-    : [];
-
   return (
     <Screen scroll={false} contentStyle={styles.screenContent}>
       <View style={styles.header}>
@@ -231,10 +208,7 @@ export default function TransactionsScreen() {
       <SectionTabs
         value={tab}
         tabs={topTabs}
-        onChange={(next) => {
-          setTab(next);
-          setSelected(null);
-        }}
+        onChange={setTab}
       />
 
       {tab === "pending" ? (
@@ -272,21 +246,25 @@ export default function TransactionsScreen() {
               key={tx.id}
               tx={tx}
               index={index}
-              onPress={() => setSelected(tx)}
+              onPress={() => openTransactionDetail(tx)}
             />
           ))
         )}
       </ScrollView>
-
-      <BottomOptionSheet
-        visible={!!selected}
-        title={selected ? `@${selected.partner}` : ""}
-        subtitle={selected?.note}
-        actions={selectedActions}
-        onClose={() => setSelected(null)}
-      />
     </Screen>
   );
+}
+
+function openTransactionDetail(tx: Transaction) {
+  router.push({
+    pathname: "/preview-detail",
+    params: {
+      kind: "transaction",
+      badge: tx.needsAction ? "要対応" : "相手待ち",
+      title: `@${tx.partner}`,
+      subtitle: `${statusLabel(tx)} / ${tx.time} / ${tx.place}`,
+    },
+  });
 }
 
 function AnimatedTransactionCard({

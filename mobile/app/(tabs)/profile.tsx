@@ -1,10 +1,6 @@
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomOptionSheet,
-  type SheetAction,
-} from "../../src/components/GoodsGrid";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { Screen } from "../../src/components/Screen";
 import { StatusPill } from "../../src/components/StatusPill";
@@ -44,120 +40,104 @@ const SUPPORT_ROWS: ProfileSheet[] = [
 
 export default function ProfileScreen() {
   const { previewMode, user, signOut, exitPreview } = useAuth();
-  const [sheet, setSheet] = useState<ProfileSheet | null>(null);
   const handle = makeHandle(user?.email);
   const displayName = previewMode ? "ハナ" : user?.email ? "michi" : "ゲスト";
 
-  const sheetActions = useMemo<SheetAction[]>(
-    () => [
-      {
-        id: "open",
-        label: "画面を開く（準備中）",
-        onPress: () => setSheet(null),
-      },
-      {
-        id: "close",
-        label: "閉じる",
-        tone: "muted",
-        onPress: () => setSheet(null),
-      },
-    ],
-    [],
-  );
-
   return (
-    <>
-      <Screen contentStyle={styles.screen}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>プロフ</Text>
-            <Text style={styles.subtitle}>交換の安心感を整える場所</Text>
-          </View>
-          <StatusPill
-            label={previewMode ? "プレビュー中" : user?.email ? "ログイン中" : "未ログイン"}
-            tone={previewMode ? "pink" : "lavender"}
-          />
+    <Screen contentStyle={styles.screen}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>プロフ</Text>
+          <Text style={styles.subtitle}>交換の安心感を整える場所</Text>
         </View>
+        <StatusPill
+          label={previewMode ? "プレビュー中" : user?.email ? "ログイン中" : "未ログイン"}
+          tone={previewMode ? "pink" : "lavender"}
+        />
+      </View>
 
-        <View style={styles.hero}>
-          <View style={styles.heroGlowPink} />
-          <View style={styles.heroGlowSky} />
-          <View style={styles.heroTop}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>iH</Text>
-            </View>
-            <View style={styles.heroIdentity}>
-              <Text numberOfLines={1} style={styles.handle}>
-                @{handle}
-              </Text>
-              <Text numberOfLines={1} style={styles.name}>
-                {displayName}・東京都
-              </Text>
-            </View>
+      <View style={styles.hero}>
+        <View style={styles.heroGlowPink} />
+        <View style={styles.heroGlowSky} />
+        <View style={styles.heroTop}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>iH</Text>
           </View>
-
-          <View style={styles.heroStats}>
-            <StatCard label="成立" value="18" />
-            <StatCard label="評価" value="4.9" />
-            <StatCard label="現地" value="ON" />
+          <View style={styles.heroIdentity}>
+            <Text numberOfLines={1} style={styles.handle}>
+              @{handle}
+            </Text>
+            <Text numberOfLines={1} style={styles.name}>
+              {displayName}・東京都
+            </Text>
           </View>
         </View>
 
-        <ProfileSection title="アイデンティティ">
-          {IDENTITY_ROWS.map((row) => (
-            <ProfileRow key={row.title} {...row} onPress={() => setSheet(row)} />
-          ))}
-        </ProfileSection>
+        <View style={styles.heroStats}>
+          <StatCard label="成立" value="18" />
+          <StatCard label="評価" value="4.9" />
+          <StatCard label="現地" value="ON" />
+        </View>
+      </View>
 
-        <ProfileSection title="推し">
-          <View style={styles.oshiCard}>
-            <View style={styles.oshiBubble}>
-              <Text style={styles.oshiBubbleText}>L</Text>
-            </View>
-            <View style={styles.oshiBubbleAlt}>
-              <Text style={styles.oshiBubbleText}>N</Text>
-            </View>
-            <View style={styles.oshiCopy}>
-              <Text numberOfLines={1} style={styles.oshiTitle}>
-                LUMENA・スア / aespa・ニンニン
-              </Text>
-              <Text numberOfLines={1} style={styles.oshiMeta}>
-                2グループ・5メンバー
-              </Text>
-            </View>
+      <ProfileSection title="アイデンティティ">
+        {IDENTITY_ROWS.map((row) => (
+          <ProfileRow key={row.title} {...row} onPress={() => openProfileDetail(row)} />
+        ))}
+      </ProfileSection>
+
+      <ProfileSection title="推し">
+        <View style={styles.oshiCard}>
+          <View style={styles.oshiBubble}>
+            <Text style={styles.oshiBubbleText}>L</Text>
           </View>
-        </ProfileSection>
+          <View style={styles.oshiBubbleAlt}>
+            <Text style={styles.oshiBubbleText}>N</Text>
+          </View>
+          <View style={styles.oshiCopy}>
+            <Text numberOfLines={1} style={styles.oshiTitle}>
+              LUMENA・スア / aespa・ニンニン
+            </Text>
+            <Text numberOfLines={1} style={styles.oshiMeta}>
+              2グループ・5メンバー
+            </Text>
+          </View>
+        </View>
+      </ProfileSection>
 
-        <ProfileSection title="通知・サポート">
-          {SUPPORT_ROWS.map((row) => (
-            <ProfileRow key={row.title} {...row} onPress={() => setSheet(row)} />
-          ))}
-        </ProfileSection>
+      <ProfileSection title="通知・サポート">
+        {SUPPORT_ROWS.map((row) => (
+          <ProfileRow key={row.title} {...row} onPress={() => openProfileDetail(row)} />
+        ))}
+      </ProfileSection>
 
-        {user?.email ? <Text style={styles.email}>{user.email}</Text> : null}
-        <PrimaryButton
-          variant="secondary"
-          onPress={() => {
-            if (previewMode) {
-              exitPreview();
-              return;
-            }
-            void signOut();
-          }}
-        >
-          {previewMode ? "プレビューを終了" : "ログアウト"}
-        </PrimaryButton>
-      </Screen>
-
-      <BottomOptionSheet
-        visible={Boolean(sheet)}
-        title={sheet?.title ?? ""}
-        subtitle={sheet?.subtitle}
-        actions={sheetActions}
-        onClose={() => setSheet(null)}
-      />
-    </>
+      {user?.email ? <Text style={styles.email}>{user.email}</Text> : null}
+      <PrimaryButton
+        variant="secondary"
+        onPress={() => {
+          if (previewMode) {
+            exitPreview();
+            return;
+          }
+          void signOut();
+        }}
+      >
+        {previewMode ? "プレビューを終了" : "ログアウト"}
+      </PrimaryButton>
+    </Screen>
   );
+}
+
+function openProfileDetail(row: ProfileSheet) {
+  router.push({
+    pathname: "/preview-detail",
+    params: {
+      kind: "profile",
+      badge: "PROFILE",
+      title: row.title,
+      subtitle: row.subtitle,
+    },
+  });
 }
 
 function makeHandle(email?: string) {

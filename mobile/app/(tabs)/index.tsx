@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { router } from "expo-router";
 import {
   Animated,
   Easing,
@@ -288,6 +289,7 @@ export default function HomeScreen() {
             sectionIndex={sectionIndex}
             tileWidth={tileWidth}
             localMode={localMode}
+            onCandidatePress={openMatchDetail}
           />
         ))}
       </View>
@@ -486,11 +488,17 @@ function ShelfSectionView({
   sectionIndex,
   tileWidth,
   localMode,
+  onCandidatePress,
 }: {
   section: ShelfSection;
   sectionIndex: number;
   tileWidth: number;
   localMode: boolean;
+  onCandidatePress: (
+    section: ShelfSection,
+    row: ShelfRow,
+    candidate: Candidate,
+  ) => void;
 }) {
   return (
     <View style={styles.shelfSection}>
@@ -503,6 +511,8 @@ function ShelfSectionView({
           sectionIndex={sectionIndex}
           tileWidth={tileWidth}
           localMode={localMode}
+          section={section}
+          onCandidatePress={onCandidatePress}
         />
       ))}
     </View>
@@ -515,12 +525,20 @@ function ShelfRowView({
   sectionIndex,
   tileWidth,
   localMode,
+  section,
+  onCandidatePress,
 }: {
   row: ShelfRow;
   rowIndex: number;
   sectionIndex: number;
   tileWidth: number;
   localMode: boolean;
+  section: ShelfSection;
+  onCandidatePress: (
+    section: ShelfSection,
+    row: ShelfRow,
+    candidate: Candidate,
+  ) => void;
 }) {
   const baseDelay = sectionIndex * 190 + rowIndex * 95;
 
@@ -549,6 +567,7 @@ function ShelfRowView({
             delayMs={baseDelay + index * 82}
             width={tileWidth}
             localMode={localMode}
+            onPress={() => onCandidatePress(section, row, candidate)}
           />
         ))}
       </ScrollView>
@@ -561,11 +580,13 @@ function AnimatedCandidateTile({
   delayMs,
   width,
   localMode,
+  onPress,
 }: {
   candidate: Candidate;
   delayMs: number;
   width: number;
   localMode: boolean;
+  onPress: () => void;
 }) {
   const appear = useRef(new Animated.Value(0)).current;
 
@@ -597,6 +618,7 @@ function AnimatedCandidateTile({
         candidate={candidate}
         width={width}
         localMode={localMode}
+        onPress={onPress}
       />
     </Animated.View>
   );
@@ -606,10 +628,12 @@ function CandidateTile({
   candidate,
   width,
   localMode,
+  onPress,
 }: {
   candidate: Candidate;
   width: number;
   localMode: boolean;
+  onPress: () => void;
 }) {
   const showLocal = localMode && candidate.local;
   const frameStyle = useMemo(
@@ -619,6 +643,7 @@ function CandidateTile({
 
   return (
     <Pressable
+      onPress={onPress}
       style={[
         styles.tileHitArea,
         showLocal ? styles.tileHitAreaLocal : null,
@@ -656,6 +681,22 @@ function CandidateTile({
       </View>
     </Pressable>
   );
+}
+
+function openMatchDetail(
+  section: ShelfSection,
+  row: ShelfRow,
+  candidate: Candidate,
+) {
+  router.push({
+    pathname: "/preview-detail",
+    params: {
+      kind: "match",
+      badge: section.title,
+      title: candidate.label,
+      subtitle: `${row.character} × ${row.goodsType} / ${candidate.tag ?? "候補"}`,
+    },
+  });
 }
 
 function LocalAura() {
