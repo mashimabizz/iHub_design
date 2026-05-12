@@ -3,9 +3,8 @@ import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { Screen } from "../../src/components/Screen";
-import { StatusPill } from "../../src/components/StatusPill";
 import { useAuth } from "../../src/auth/AuthProvider";
-import { ihubColors, ihubRadii, ihubShadow } from "../../src/theme/tokens";
+import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 
 type ProfileSheet = {
   title: string;
@@ -48,12 +47,7 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>プロフ</Text>
-          <Text style={styles.subtitle}>交換の安心感を整える場所</Text>
         </View>
-        <StatusPill
-          label={previewMode ? "プレビュー中" : user?.email ? "ログイン中" : "未ログイン"}
-          tone={previewMode ? "pink" : "lavender"}
-        />
       </View>
 
       <View style={styles.hero}>
@@ -68,15 +62,29 @@ export default function ProfileScreen() {
               @{handle}
             </Text>
             <Text numberOfLines={1} style={styles.name}>
-              {displayName}・東京都
+              {displayName} ・ 東京都 ・ 取引 18 回
             </Text>
           </View>
-        </View>
-
-        <View style={styles.heroStats}>
-          <StatCard label="成立" value="18" />
-          <StatCard label="評価" value="4.9" />
-          <StatCard label="現地" value="ON" />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="評価一覧を見る"
+            onPress={() =>
+              router.push({
+                pathname: "/preview-detail",
+                params: {
+                  kind: "profile",
+                  badge: "PROFILE",
+                  title: "評価一覧",
+                  subtitle: "成立した取引の評価を確認します。",
+                },
+              })
+            }
+            style={styles.ratingPanel}
+          >
+            <Text style={styles.ratingValue}>★4.9</Text>
+            <Text style={styles.ratingCount}>12 件</Text>
+            <Text style={styles.ratingLink}>詳細 ›</Text>
+          </Pressable>
         </View>
       </View>
 
@@ -191,15 +199,6 @@ function ProfileRow({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.statCard}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: {
     gap: 16,
@@ -211,42 +210,38 @@ const styles = StyleSheet.create({
   },
   title: {
     color: ihubColors.ink,
-    fontSize: 29,
+    fontSize: 19,
     fontWeight: "900",
     letterSpacing: 0,
-  },
-  subtitle: {
-    color: ihubColors.mutedInk,
-    fontSize: 12,
-    fontWeight: "800",
-    marginTop: 2,
+    lineHeight: 24,
   },
   hero: {
-    backgroundColor: ihubColors.surface,
-    borderColor: "rgba(166,149,216,0.20)",
-    borderRadius: ihubRadii.xl,
-    borderWidth: 1,
+    backgroundColor: ihubColors.lavender,
+    borderRadius: 16,
     overflow: "hidden",
-    padding: 16,
-    ...ihubShadow,
+    padding: 20,
+    shadowColor: ihubColors.lavender,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
   },
   heroGlowPink: {
-    backgroundColor: "rgba(243,197,212,0.52)",
+    backgroundColor: "rgba(243,197,212,0.34)",
     borderRadius: 999,
-    height: 120,
+    height: 132,
     position: "absolute",
-    right: -38,
-    top: -42,
-    width: 120,
+    right: -34,
+    top: -48,
+    width: 132,
   },
   heroGlowSky: {
-    backgroundColor: "rgba(168,212,230,0.42)",
+    backgroundColor: "rgba(168,212,230,0.62)",
     borderRadius: 999,
-    bottom: -48,
-    height: 132,
-    left: -42,
+    bottom: -58,
+    height: 154,
+    left: -46,
     position: "absolute",
-    width: 132,
+    width: 154,
   },
   heroTop: {
     alignItems: "center",
@@ -255,13 +250,13 @@ const styles = StyleSheet.create({
   },
   avatar: {
     alignItems: "center",
-    backgroundColor: ihubColors.lavender,
-    borderColor: "rgba(255,255,255,0.86)",
-    borderRadius: 25,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(255,255,255,0.30)",
+    borderRadius: 16,
     borderWidth: 2,
-    height: 58,
+    height: 56,
     justifyContent: "center",
-    width: 58,
+    width: 56,
   },
   avatarText: {
     color: ihubColors.surface,
@@ -272,39 +267,42 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   handle: {
-    color: ihubColors.ink,
-    fontSize: 21,
+    color: ihubColors.surface,
+    fontSize: 16,
     fontWeight: "900",
   },
   name: {
-    color: ihubColors.mutedInk,
-    fontSize: 12.5,
+    color: "rgba(255,255,255,0.90)",
+    fontSize: 11,
     fontWeight: "800",
     marginTop: 3,
   },
-  heroStats: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 15,
-  },
-  statCard: {
+  ratingPanel: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.74)",
-    borderColor: "rgba(58,50,74,0.08)",
-    borderRadius: 16,
-    borderWidth: 1,
-    flex: 1,
-    paddingVertical: 10,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 12,
+    flexShrink: 0,
+    justifyContent: "center",
+    minWidth: 58,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
-  statValue: {
-    color: ihubColors.ink,
-    fontSize: 17,
+  ratingValue: {
+    color: ihubColors.surface,
+    fontSize: 15,
     fontWeight: "900",
+    lineHeight: 16,
   },
-  statLabel: {
-    color: ihubColors.mutedInk,
-    fontSize: 10,
-    fontWeight: "900",
+  ratingCount: {
+    color: "rgba(255,255,255,0.90)",
+    fontSize: 9.5,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  ratingLink: {
+    color: "rgba(255,255,255,0.78)",
+    fontSize: 8.5,
+    fontWeight: "800",
     marginTop: 2,
   },
   section: {
