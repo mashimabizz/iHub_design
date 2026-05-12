@@ -4,6 +4,43 @@
 
 ---
 
+## イテレーション155.02：iOS送信確認の候補地図カードをWeb版へ寄せる
+
+### 背景・問題意識
+
+Web版の送信確認では、交換できる候補が「待ち合わせ候補」ヘッダーと件数バッジ、地図、候補リストのまとまりとして見える。iOS版は地図とリストだけが表示され、送信確認で何件の候補を送るのかが一目で分かりにくかった。
+
+### 変更内容
+
+#### `mobile/app/proposal-confirm.tsx`
+- `MeetupMapCard` の上部に `待ち合わせ候補` ヘッダーと候補件数バッジを追加した。
+- Web版 `MeetupPlanPreview` と同じ「ヘッダー → 地図 → 候補リスト」の情報順に寄せた。
+
+### 影響範囲
+
+- iOS版送信確認
+- iOS版交換できる候補の地図カード
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+- iOSアプリで提示物選択 → 待ち合わせ候補設定 → 送信確認を開き、候補地図カード上部に候補件数が表示されることを確認
+
+### 関連ファイル
+
+- `mobile/app/proposal-confirm.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版の候補地図カードと同じ情報順へ寄せた
+- ✅ カレンダー表示は追加せず、ユーザー指示通り送信確認は地図中心のまま維持した
+- ✅ 新しい正式用語・状態名・DBカラムは追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション155.01：iOS打診フローで相手ハンドルを引き継ぐ
 
 ### 背景・問題意識

@@ -278,6 +278,13 @@ function MeetupMapCard({ candidates }: { candidates: MeetupCandidate[] }) {
   const center = getMapCenter(candidates);
   return (
     <View style={styles.meetupCard}>
+      <View style={styles.meetupCardHeader}>
+        <Text style={styles.meetupCardTitle}>待ち合わせ候補</Text>
+        <View style={styles.meetupCardCount}>
+          <Text style={styles.meetupCardCountText}>{candidates.length}件</Text>
+        </View>
+      </View>
+
       <View style={styles.mapPanel}>
         <NativeMapPreview
           center={center}
@@ -535,6 +542,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
     ...ihubShadow,
+  },
+  meetupCardHeader: {
+    alignItems: "center",
+    backgroundColor: "#fbf9fc",
+    borderBottomColor: "rgba(58,50,74,0.07)",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  meetupCardTitle: {
+    color: ihubColors.ink,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  meetupCardCount: {
+    backgroundColor: "rgba(166,149,216,0.08)",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  meetupCardCountText: {
+    color: ihubColors.lavender,
+    fontSize: 9.5,
+    fontWeight: "900",
   },
   mapPanel: {
     backgroundColor: "#edf3f4",
