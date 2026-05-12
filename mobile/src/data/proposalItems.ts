@@ -234,6 +234,7 @@ function resolveItem(
       subtitle: `${context.row.character} / ${context.row.goodsType}`,
       glyph: context.candidate.member,
       hue: context.candidate.hue,
+      photoUrl: context.candidate.photoUrl,
     };
   }
 

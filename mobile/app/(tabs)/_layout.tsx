@@ -188,7 +188,11 @@ const styles = StyleSheet.create({
   tabBarRoot: {
     alignItems: "center",
     backgroundColor: "transparent",
+    bottom: 0,
+    left: 0,
     paddingTop: 8,
+    position: "absolute",
+    right: 0,
   },
   tabBarGlass: {
     alignItems: "center",

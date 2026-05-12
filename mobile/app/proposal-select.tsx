@@ -786,9 +786,18 @@ function MeetupPane({
   function handleDayTouchEnd(e: GestureResponderEvent) {
     e.stopPropagation();
     const draft = dragDraftRef.current;
+    const press = touchPressRef.current;
     clearTouchPress();
     if (!draft) {
       setDragDraft(null);
+      if (press?.mode === "pending") {
+        const startSlot = press.startSlot;
+        onAddCandidate(
+          press.dayIndex,
+          startSlot,
+          Math.min(SLOT_COUNT, startSlot + 2),
+        );
+      }
       return;
     }
     const releaseSlot = slotFromLocationY(e.nativeEvent.locationY);
@@ -999,7 +1008,7 @@ function MeetupPane({
           {candidates.length === 0 && !preview ? (
             <View pointerEvents="none" style={styles.calendarHint}>
               <Text style={styles.calendarHintText}>
-                長押しで時間を選択できるよ
+                タップで30分、長押しで時間を伸ばせるよ
               </Text>
             </View>
           ) : null}

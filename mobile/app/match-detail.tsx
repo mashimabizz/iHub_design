@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
+  Image,
   Modal,
   PanResponder,
   Pressable,
@@ -18,6 +19,13 @@ import {
   getAdjacentCandidateContexts,
   type CandidateContext,
 } from "../src/data/homeMatches";
+import {
+  buildProposalCatalogOverrides,
+  buildProposalThumbs,
+  type ProposalInventoryRow,
+  type ProposalThumbItem,
+} from "../src/data/proposalItems";
+import { supabase } from "../src/lib/supabase";
 import { ihubColors, ihubRadii } from "../src/theme/tokens";
 
 type Priority = "both" | "oneSide" | "wish";
@@ -30,6 +38,7 @@ type MiniItem = {
   label: string;
   glyph: string;
   color: string;
+  photoUrl?: string | null;
 };
 
 type ListingHave = {
@@ -110,6 +119,7 @@ export default function MatchDetailScreen() {
     partnerId?: string | string[];
     partnerHandle?: string | string[];
     partnerDisplayName?: string | string[];
+    photoUrl?: string | string[];
     gives?: string | string[];
     receives?: string | string[];
     listings?: string | string[];
@@ -126,6 +136,7 @@ export default function MatchDetailScreen() {
   const title = activeCandidate?.label || one(params.title) || BASE_ITEMS.selected.label;
   const member = activeCandidate?.member || one(params.member) || title.slice(0, 1);
   const color = activeCandidate?.hue || one(params.hue) || BASE_ITEMS.selected.color;
+  const photoUrl = activeCandidate?.photoUrl ?? one(params.photoUrl) ?? null;
   const priority = activeCandidate?.priority || parsePriority(one(params.priority));
   const tag = activeCandidate?.tag ?? one(params.tag);
   const routePartnerId = one(params.partnerId);
@@ -133,6 +144,7 @@ export default function MatchDetailScreen() {
     one(params.partnerHandle) || activeCandidate?.partnerHandle || PARTNER_HANDLE;
   const routeGiveIds = parseRouteIds(one(params.gives));
   const routeReceiveIds = parseRouteIds(one(params.receives));
+  const routeItemIdsKey = [...routeGiveIds, ...routeReceiveIds].join(",");
   const routeListingIds = parseRouteIds(one(params.listings));
   const routeMatchType = normalizeMatchType(one(params.matchType));
   const hasRouteProposal =
@@ -143,14 +155,34 @@ export default function MatchDetailScreen() {
     label: title,
     glyph: member,
     color,
+    photoUrl,
   };
   const adjacentContexts = useMemo(
     () => getAdjacentCandidateContexts(activeCandidate?.id ?? routeCandidateId),
     [activeCandidate?.id, routeCandidateId],
   );
+  const [catalogOverrides, setCatalogOverrides] = useState<
+    ReturnType<typeof buildProposalCatalogOverrides>
+  >(() => new Map());
   const data = useMemo(
-    () => buildDetailData(highlightedItem, listingKind),
-    [highlightedItem.id, highlightedItem.label, highlightedItem.glyph, highlightedItem.color, listingKind],
+    () =>
+      buildDetailData(
+        highlightedItem,
+        listingKind,
+        routeGiveIds,
+        routeReceiveIds,
+        catalogOverrides,
+      ),
+    [
+      catalogOverrides,
+      highlightedItem.id,
+      highlightedItem.label,
+      highlightedItem.glyph,
+      highlightedItem.color,
+      highlightedItem.photoUrl,
+      listingKind,
+      routeItemIdsKey,
+    ],
   );
   const [selection, setSelection] = useState<Selection>(() =>
     initialSelection([...data.myListings, ...data.partnerListings], highlightedItem.id),
@@ -182,6 +214,30 @@ export default function MatchDetailScreen() {
     setHaveSelection(initialHaveSelection(listings, highlightedItem.id));
     setPopupTarget(null);
   }, [data, highlightedItem.id]);
+
+  useEffect(() => {
+    if (!supabase || routeItemIdsKey.length === 0) {
+      setCatalogOverrides(new Map());
+      return;
+    }
+    const ids = Array.from(new Set([...routeGiveIds, ...routeReceiveIds]));
+    let active = true;
+    supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, photo_urls, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      )
+      .in("id", ids)
+      .then(({ data: rows }) => {
+        if (!active) return;
+        setCatalogOverrides(
+          buildProposalCatalogOverrides((rows as ProposalInventoryRow[] | null) ?? []),
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [routeItemIdsKey]);
 
   const panResponder = useMemo(
     () =>
@@ -563,6 +619,7 @@ function SwipePreview({
     label: title,
     glyph: candidate.member,
     color: candidate.hue,
+    photoUrl: candidate.photoUrl ?? null,
   };
   const listingKind = inferListingKind(candidate.priority, candidate.tag);
   const data = useMemo(
@@ -684,6 +741,7 @@ function SwipeSettledCover({
     label: candidate.label,
     glyph: candidate.member,
     color: candidate.hue,
+    photoUrl: candidate.photoUrl ?? null,
   };
   const listingKind = inferListingKind(candidate.priority, candidate.tag);
   const data = useMemo(
@@ -1478,10 +1536,16 @@ function ItemPhoto({
         highlighted ? styles.itemPhotoHighlighted : null,
       ]}
     >
-      <View style={styles.itemPhotoShine} />
-      <Text style={[styles.itemPhotoGlyph, { fontSize: Math.max(14, size * 0.34) }]}>
-        {item.glyph}
-      </Text>
+      {item.photoUrl ? (
+        <Image source={{ uri: item.photoUrl }} style={styles.itemPhotoImage} />
+      ) : (
+        <>
+          <View style={styles.itemPhotoShine} />
+          <Text style={[styles.itemPhotoGlyph, { fontSize: Math.max(14, size * 0.34) }]}>
+            {item.glyph}
+          </Text>
+        </>
+      )}
       {qty > 1 ? (
         <View style={styles.qtyBadge}>
           <Text style={styles.qtyBadgeText}>×{qty}</Text>
@@ -1550,16 +1614,33 @@ function UnavailableWishRow({
   );
 }
 
-function buildDetailData(highlightedItem: MiniItem, listingKind: ListingKind) {
+function buildDetailData(
+  highlightedItem: MiniItem,
+  listingKind: ListingKind,
+  routeGiveIds: string[] = [],
+  routeReceiveIds: string[] = [],
+  catalogOverrides?: ReturnType<typeof buildProposalCatalogOverrides>,
+) {
   const selected = highlightedItem;
+  const routeGives = buildRouteMiniItems(routeGiveIds, "give", catalogOverrides);
+  const routeReceives = buildRouteMiniItems(
+    routeReceiveIds,
+    "receive",
+    catalogOverrides,
+  );
+  const myHaveItems =
+    routeGives.length > 0 ? routeGives : [BASE_ITEMS.myHave, BASE_ITEMS.myHave2];
+  const partnerHaveItems =
+    routeReceives.length > 0 ? routeReceives : [selected, BASE_ITEMS.partnerHave];
   const myListing: ListingInfo = {
     listingId: "my-listing-1",
     haveLogic: "or",
     isMyListing: true,
     haves: [
-      { item: BASE_ITEMS.myHave, qty: 1, matched: true },
-      { item: BASE_ITEMS.myHave2, qty: 1, matched: true },
-      { item: BASE_ITEMS.myHaveBad, qty: 1, matched: false },
+      ...myHaveItems.map((item) => ({ item, qty: 1, matched: true })),
+      ...(routeGives.length > 0
+        ? []
+        : [{ item: BASE_ITEMS.myHaveBad, qty: 1, matched: false }]),
     ],
     options: [
       {
@@ -1572,10 +1653,13 @@ function buildDetailData(highlightedItem: MiniItem, listingKind: ListingKind) {
           {
             item: { ...selected, id: "wish-mine-1" },
             qty: 1,
-            candidates: [
-              { item: selected, qty: 1 },
-              { item: BASE_ITEMS.selectedAlt, qty: 1 },
-            ],
+            candidates:
+              routeReceives.length > 0
+                ? routeReceives.map((item) => ({ item, qty: 1 }))
+                : [
+                    { item: selected, qty: 1 },
+                    { item: BASE_ITEMS.selectedAlt, qty: 1 },
+                  ],
           },
           {
             item: BASE_ITEMS.wishMine2,
@@ -1604,10 +1688,7 @@ function buildDetailData(highlightedItem: MiniItem, listingKind: ListingKind) {
     listingId: "partner-listing-1",
     haveLogic: "and",
     isMyListing: false,
-    haves: [
-      { item: selected, qty: 1, matched: true },
-      { item: BASE_ITEMS.partnerHave, qty: 1, matched: true },
-    ],
+    haves: partnerHaveItems.map((item) => ({ item, qty: 1, matched: true })),
     options: [
       {
         id: "partner-opt-1",
@@ -1619,10 +1700,7 @@ function buildDetailData(highlightedItem: MiniItem, listingKind: ListingKind) {
           {
             item: BASE_ITEMS.wishPartner,
             qty: 1,
-            candidates: [
-              { item: BASE_ITEMS.myHave, qty: 1 },
-              { item: BASE_ITEMS.myHave2, qty: 1 },
-            ],
+            candidates: myHaveItems.map((item) => ({ item, qty: 1 })),
           },
         ],
       },
@@ -1645,9 +1723,32 @@ function buildDetailData(highlightedItem: MiniItem, listingKind: ListingKind) {
     partnerListings:
       listingKind === "both" || listingKind === "partner" ? [partnerListing] : [],
     simpleReceives:
-      listingKind === "simple" ? [selected, BASE_ITEMS.partnerHave] : [],
+      listingKind === "simple"
+        ? routeReceives.length > 0
+          ? routeReceives
+          : [selected, BASE_ITEMS.partnerHave]
+        : [],
     simpleGives:
-      listingKind === "simple" ? [BASE_ITEMS.myHave, BASE_ITEMS.myHave2] : [],
+      listingKind === "simple" ? myHaveItems : [],
+  };
+}
+
+function buildRouteMiniItems(
+  ids: string[],
+  side: "give" | "receive",
+  catalogOverrides?: ReturnType<typeof buildProposalCatalogOverrides>,
+): MiniItem[] {
+  if (ids.length === 0) return [];
+  return buildProposalThumbs(ids, side, catalogOverrides).map(thumbToMiniItem);
+}
+
+function thumbToMiniItem(item: ProposalThumbItem): MiniItem {
+  return {
+    id: item.id,
+    label: item.label,
+    glyph: item.glyph,
+    color: item.color,
+    photoUrl: item.photoUrl,
   };
 }
 
@@ -2431,6 +2532,10 @@ const styles = StyleSheet.create({
     shadowColor: ihubColors.pink,
     shadowOpacity: 0.5,
     shadowRadius: 10,
+  },
+  itemPhotoImage: {
+    height: "100%",
+    width: "100%",
   },
   itemPhotoShine: {
     backgroundColor: "rgba(255,255,255,0.24)",

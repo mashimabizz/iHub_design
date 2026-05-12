@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
   Animated,
@@ -11,9 +12,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { IHubLogo } from "../../src/components/IHubLogo";
 import { Screen } from "../../src/components/Screen";
-import { StatusPill } from "../../src/components/StatusPill";
 import { useAuth } from "../../src/auth/AuthProvider";
 import { hasSupabaseConfig, supabase } from "../../src/lib/supabase";
 import {
@@ -40,14 +39,6 @@ export default function HomeScreen() {
   const placeLabel = localMode
     ? truncateLocation(placeName || "場所未設定")
     : "現地交換OFF";
-
-  const statusLabel = hasSupabaseConfig && user
-    ? "ログイン中"
-    : previewMode
-      ? "プレビュー中"
-      : hasSupabaseConfig
-        ? "Supabase接続可"
-        : "環境変数待ち";
 
   useEffect(() => {
     if (!hasSupabaseConfig || !user) {
@@ -96,69 +87,64 @@ export default function HomeScreen() {
   }
 
   return (
-    <Screen contentStyle={styles.screenContent}>
-      <View style={styles.topBar}>
-        <View style={styles.topLeft}>
-          <CircleButton label="⌕" accessibilityLabel="検索" />
-          <CircleButton
-            label={unreadCount > 0 ? String(Math.min(unreadCount, 9)) : "!"}
-            accessibilityLabel="通知"
-          />
-        </View>
-        <View style={styles.topRight}>
-          <Pressable style={styles.placeButton}>
-            <Text numberOfLines={1} style={styles.placeText}>
-              {placeLabel}
-            </Text>
-          </Pressable>
-          <TinyLocalToggle
-            value={localMode}
-            onChange={() => handleLocalModeChange(!localMode)}
-          />
-        </View>
-      </View>
-
-      <View style={styles.identityRow}>
-        <IHubLogo />
-        <View style={styles.identityText}>
-          <Text style={styles.kicker}>推し活グッズ交換</Text>
-          <Text style={styles.title}>iHub</Text>
-        </View>
-        <StatusPill
-          label={statusLabel}
-          tone={hasSupabaseConfig ? "ok" : previewMode ? "pink" : "lavender"}
-        />
-      </View>
-
-      <ModeSwitch
-        localMode={localMode}
-        width={width}
-        onChange={handleLocalModeChange}
-      />
-
-      <View style={styles.sections}>
-        {homeError ? <Text style={styles.inlineError}>{homeError}</Text> : null}
-        {homeLoading ? <Text style={styles.loadingText}>マッチを読み込み中…</Text> : null}
-        {sections.length > 0 ? (
-          sections.map((section, sectionIndex) => (
-            <ShelfSectionView
-              key={section.id}
-              section={section}
-              sectionIndex={sectionIndex}
-              tileWidth={tileWidth}
-              localMode={localMode}
-              onCandidatePress={openMatchDetail}
+    <Screen scroll={false} contentStyle={styles.screenContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={styles.homeScroll}
+        contentContainerStyle={styles.homeScrollContent}
+      >
+        <View style={styles.topBar}>
+          <View style={styles.topLeft}>
+            <CircleIconButton
+              icon="notifications-outline"
+              accessibilityLabel="通知"
+              badge={unreadCount > 0 ? String(Math.min(unreadCount, 9)) : undefined}
             />
-          ))
-        ) : (
-          <View style={styles.emptyMatches}>
-            <Text style={styles.emptyMatchesTitle}>まだ候補がありません</Text>
-            <Text style={styles.emptyMatchesText}>
-              Wish と譲る候補が増えると、ここに交換候補が並びます。
-            </Text>
           </View>
-        )}
-      </View>
+          <View style={styles.topRight}>
+            <Pressable style={styles.placeButton}>
+              <Text numberOfLines={1} style={styles.placeText}>
+                {placeLabel}
+              </Text>
+            </Pressable>
+            <TinyLocalToggle
+              value={localMode}
+              onChange={() => handleLocalModeChange(!localMode)}
+            />
+          </View>
+        </View>
+
+        <ModeSwitch
+          localMode={localMode}
+          width={width}
+          onChange={handleLocalModeChange}
+        />
+
+        <View style={styles.sections}>
+          {homeError ? <Text style={styles.inlineError}>{homeError}</Text> : null}
+          {homeLoading ? <Text style={styles.loadingText}>マッチを読み込み中…</Text> : null}
+          {sections.length > 0 ? (
+            sections.map((section, sectionIndex) => (
+              <ShelfSectionView
+                key={section.id}
+                section={section}
+                sectionIndex={sectionIndex}
+                tileWidth={tileWidth}
+                localMode={localMode}
+                onCandidatePress={openMatchDetail}
+              />
+            ))
+          ) : (
+            <View style={styles.emptyMatches}>
+              <Text style={styles.emptyMatchesTitle}>まだ候補がありません</Text>
+              <Text style={styles.emptyMatchesText}>
+                Wish と譲る候補が増えると、ここに交換候補が並びます。
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+      <FloatingSearchButton />
     </Screen>
   );
 }
@@ -335,16 +321,31 @@ function ModeSwitch({
   );
 }
 
-function CircleButton({
-  label,
+function CircleIconButton({
+  icon,
   accessibilityLabel,
+  badge,
 }: {
-  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
   accessibilityLabel: string;
+  badge?: string;
 }) {
   return (
     <Pressable accessibilityLabel={accessibilityLabel} style={styles.circleButton}>
-      <Text style={styles.circleButtonText}>{label}</Text>
+      <Ionicons name={icon} size={20} color={ihubColors.ink} />
+      {badge ? (
+        <View style={styles.notificationBadge}>
+          <Text style={styles.notificationBadgeText}>{badge}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function FloatingSearchButton() {
+  return (
+    <Pressable accessibilityLabel="検索" style={styles.floatingSearchButton}>
+      <Ionicons name="search" size={24} color={ihubColors.ink} />
     </Pressable>
   );
 }
@@ -645,6 +646,15 @@ function getPriorityFrameStyle(priority: CandidatePriority) {
 
 const styles = StyleSheet.create({
   screenContent: {
+    flex: 1,
+    paddingHorizontal: 18,
+  },
+  homeScroll: {
+    flex: 1,
+    marginHorizontal: -18,
+  },
+  homeScrollContent: {
+    paddingBottom: 24,
     paddingHorizontal: 18,
   },
   topBar: {
@@ -676,11 +686,43 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     width: 40,
   },
-  circleButtonText: {
-    color: ihubColors.ink,
-    fontSize: 18,
+  notificationBadge: {
+    alignItems: "center",
+    backgroundColor: ihubColors.pink,
+    borderColor: ihubColors.surface,
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 17,
+    justifyContent: "center",
+    minWidth: 17,
+    paddingHorizontal: 4,
+    position: "absolute",
+    right: -2,
+    top: -2,
+  },
+  notificationBadgeText: {
+    color: ihubColors.surface,
+    fontSize: 9,
     fontWeight: "900",
-    lineHeight: 20,
+    lineHeight: 11,
+  },
+  floatingSearchButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.90)",
+    borderColor: "rgba(255,255,255,0.86)",
+    borderRadius: 999,
+    borderWidth: 1,
+    bottom: 104,
+    height: 54,
+    justifyContent: "center",
+    left: 18,
+    position: "absolute",
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.14,
+    shadowRadius: 22,
+    width: 54,
+    zIndex: 20,
   },
   placeButton: {
     backgroundColor: "rgba(255,255,255,0.86)",
