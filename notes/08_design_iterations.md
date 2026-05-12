@@ -4,6 +4,50 @@
 
 ---
 
+## イテレーション154.82：iOS下部タブをガラス調カスタムバーへ刷新
+
+### 背景・問題意識
+
+iOS版ホームの操作感改善に続き、全画面で常に目に入る下部タブもExpo標準の表示からiOSアプリらしい質感へ寄せる必要があった。
+
+Web版では下部フッターの見た目・切り替え感を重視してきたため、iOS版でも今後の各画面レビュー前に、共通ナビゲーションの土台を先に整える。
+
+### 変更内容
+
+#### `mobile/app/(tabs)/_layout.tsx`
+- Expo Routerの標準tabBar表示をやめ、`LiquidTabBar` を追加した。
+- 白い半透明のガラス調 pill を下部タブとして表示するようにした。
+- 選択中の背景 indicator を `Animated.spring` でぬるっと移動させるようにした。
+- 各タブの glyph / label を `TAB_CONFIG` に集約した。
+- safe area inset を見て、iPhone下部に自然な余白が出るようにした。
+- キーボード表示時はtabBarを隠す設定を維持した。
+
+### 影響範囲
+
+- iOS版の全タブ画面
+- ホーム / 在庫 / Wish / 取引 / プロフの下部ナビゲーション
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+- Expo Goで各タブを切り替え、indicatorの移動とsafe area余白を確認
+
+### 関連ファイル
+
+- `mobile/app/(tabs)/_layout.tsx`
+
+### セルフレビュー結果
+
+- ✅ Expo標準のタブ表示から、iOS向けのガラス調カスタムタブへ置き換えた
+- ✅ タブ切替時の選択背景はspringで移動し、即時ジャンプしない
+- ✅ 画面個別ロジックやDBスキーマには触れていない
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション154.81：iOSホームのモード切替と横スクロール慣性を改善
 
 ### 背景・問題意識
