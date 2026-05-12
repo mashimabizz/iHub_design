@@ -143,9 +143,22 @@ export default function MatchDetailScreen() {
     initialHaveSelection([...data.myListings, ...data.partnerListings], highlightedItem.id),
   );
   const [popupTarget, setPopupTarget] = useState<PopupTarget | null>(null);
+  const [swapCoverContext, setSwapCoverContext] =
+    useState<CandidateContext | null>(null);
   const dragX = useRef(new Animated.Value(0)).current;
   const swipeLockRef = useRef(false);
+  const swapFrameIdsRef = useRef<number[]>([]);
   const [isSwipeSettling, setIsSwipeSettling] = useState(false);
+
+  useEffect(
+    () => () => {
+      for (const id of swapFrameIdsRef.current) {
+        cancelAnimationFrame(id);
+      }
+      swapFrameIdsRef.current = [];
+    },
+    [],
+  );
 
   useEffect(() => {
     const listings = [...data.myListings, ...data.partnerListings];
@@ -232,12 +245,33 @@ export default function MatchDetailScreen() {
       duration: SWIPE_SETTLE_MS,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
-    }).start(() => {
-      setActiveContext(nextContext);
-      dragX.setValue(0);
-      swipeLockRef.current = false;
-      setIsSwipeSettling(false);
+    }).start(({ finished }) => {
+      if (!finished) {
+        swipeLockRef.current = false;
+        setIsSwipeSettling(false);
+        return;
+      }
+      setSwapCoverContext(nextContext);
+      scheduleSwapFrame(() => {
+        setActiveContext(nextContext);
+        dragX.setValue(0);
+        scheduleSwapFrame(() => {
+          setSwapCoverContext(null);
+          swipeLockRef.current = false;
+          setIsSwipeSettling(false);
+        });
+      });
     });
+  }
+
+  function scheduleSwapFrame(callback: () => void) {
+    const frameId = requestAnimationFrame(() => {
+      swapFrameIdsRef.current = swapFrameIdsRef.current.filter(
+        (id) => id !== frameId,
+      );
+      callback();
+    });
+    swapFrameIdsRef.current.push(frameId);
   }
 
   const aggregated = aggregateSelection({
@@ -447,6 +481,10 @@ export default function MatchDetailScreen() {
           onClose={() => setPopupTarget(null)}
         />
       ) : null}
+
+      {swapCoverContext ? (
+        <SwipeSettledCover context={swapCoverContext} width={width} />
+      ) : null}
     </View>
   );
 
@@ -523,6 +561,124 @@ function SwipePreview({
         },
       ]}
     >
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 18) + 8 }]}>
+        <View style={styles.closeButton}>
+          <Text style={styles.closeText}>×</Text>
+        </View>
+        <View style={styles.headerCopy}>
+          <Text style={styles.headerTitle}>関係図</Text>
+          <Text numberOfLines={1} style={styles.headerSubtitle}>
+            @{PARTNER_HANDLE} とのマッチ詳細
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView
+        scrollEnabled={false}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.content, styles.previewContent]}
+      >
+        {data.myListings.length > 0 ? (
+          <SectionGroup
+            title="あなたの個別募集"
+            subtitle="あなたが出している条件で、相手の在庫がヒット"
+            accentColor={ihubColors.lavender}
+          >
+            {data.myListings.map((listing, index) => (
+              <ListingTree
+                key={listing.listingId}
+                listing={listing}
+                index={index}
+                viewpoint="mine"
+                highlightedItemId={highlightedItem.id}
+                selection={previewSelection}
+                haveSelection={previewHaveSelection}
+                onToggleCandidate={() => undefined}
+                onToggleHave={() => undefined}
+                onOpenPopup={() => undefined}
+              />
+            ))}
+          </SectionGroup>
+        ) : null}
+
+        {data.partnerListings.length > 0 ? (
+          <SectionGroup
+            title={`@${PARTNER_HANDLE} の個別募集`}
+            subtitle="相手が出している条件で、あなたの在庫がヒット"
+            accentColor={ihubColors.pink}
+          >
+            {data.partnerListings.map((listing, index) => (
+              <ListingTree
+                key={listing.listingId}
+                listing={listing}
+                index={index}
+                viewpoint="partner"
+                highlightedItemId={highlightedItem.id}
+                selection={previewSelection}
+                haveSelection={previewHaveSelection}
+                onToggleCandidate={() => undefined}
+                onToggleHave={() => undefined}
+                onOpenPopup={() => undefined}
+              />
+            ))}
+          </SectionGroup>
+        ) : null}
+
+        {!hasListingRelation && hasSimpleRelation ? (
+          <SimpleRelationPanel
+            receivesItems={data.simpleReceives}
+            givesItems={data.simpleGives}
+            highlightedItemId={highlightedItem.id}
+          />
+        ) : null}
+      </ScrollView>
+    </View>
+  );
+}
+
+function SwipeSettledCover({
+  context,
+  width,
+}: {
+  context: CandidateContext;
+  width: number;
+}) {
+  const insets = useSafeAreaInsets();
+  const { candidate } = context;
+  const highlightedItem: MiniItem = {
+    id: candidate.id,
+    label: candidate.label,
+    glyph: candidate.member,
+    color: candidate.hue,
+  };
+  const listingKind = inferListingKind(candidate.priority, candidate.tag);
+  const data = useMemo(
+    () => buildDetailData(highlightedItem, listingKind),
+    [
+      highlightedItem.id,
+      highlightedItem.label,
+      highlightedItem.glyph,
+      highlightedItem.color,
+      listingKind,
+    ],
+  );
+  const previewListings = [...data.myListings, ...data.partnerListings];
+  const previewSelection = useMemo(
+    () => initialSelection(previewListings, highlightedItem.id),
+    [highlightedItem.id, previewListings],
+  );
+  const previewHaveSelection = useMemo(
+    () => initialHaveSelection(previewListings, highlightedItem.id),
+    [highlightedItem.id, previewListings],
+  );
+  const hasListingRelation =
+    data.myListings.length > 0 || data.partnerListings.length > 0;
+  const hasSimpleRelation =
+    !hasListingRelation &&
+    (data.simpleReceives.length > 0 || data.simpleGives.length > 0);
+
+  return (
+    <View pointerEvents="none" style={[styles.swapCover, { width }]}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 18) + 8 }]}>
         <View style={styles.closeButton}>
           <Text style={styles.closeText}>×</Text>
@@ -1611,6 +1767,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     position: "absolute",
     top: 0,
+  },
+  swapCover: {
+    backgroundColor: ihubColors.background,
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    top: 0,
+    zIndex: 10,
   },
   previewContent: {
     paddingBottom: 28,
