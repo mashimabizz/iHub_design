@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import type { LocationGeocodedAddress } from "expo-location";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -21,10 +22,13 @@ import {
   type MapCoordinate,
 } from "../src/components/NativeMapPreview";
 import {
+  buildProposalCatalogOverrides,
   buildProposalChoices,
   parseProposalIdList,
   type ProposalChoiceItem,
+  type ProposalInventoryRow,
 } from "../src/data/proposalItems";
+import { supabase } from "../src/lib/supabase";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
 type ProposalTab = "give" | "receive" | "meetup";
@@ -122,14 +126,18 @@ export default function ProposalSelectScreen() {
     receives?: string | string[];
     listings?: string | string[];
     candidateId?: string | string[];
+    partnerId?: string | string[];
     partnerHandle?: string | string[];
+    matchType?: string | string[];
   }>();
   const initialTab = parseTab(one(params.tab));
   const givesParam = one(params.gives);
   const receivesParam = one(params.receives);
   const listingsParam = one(params.listings);
   const candidateIdParam = one(params.candidateId);
+  const partnerIdParam = one(params.partnerId);
   const partnerHandleParam = one(params.partnerHandle);
+  const matchTypeParam = one(params.matchType);
   const initialGiveIds = useMemo(
     () => parseProposalIdList(givesParam),
     [givesParam],
@@ -138,13 +146,16 @@ export default function ProposalSelectScreen() {
     () => parseProposalIdList(receivesParam),
     [receivesParam],
   );
+  const [catalogOverrides, setCatalogOverrides] = useState<
+    ReturnType<typeof buildProposalCatalogOverrides>
+  >(() => new Map());
   const giveChoices = useMemo(
-    () => buildProposalChoices(initialGiveIds, "give"),
-    [initialGiveIds],
+    () => buildProposalChoices(initialGiveIds, "give", catalogOverrides),
+    [catalogOverrides, initialGiveIds],
   );
   const receiveChoices = useMemo(
-    () => buildProposalChoices(initialReceiveIds, "receive"),
-    [initialReceiveIds],
+    () => buildProposalChoices(initialReceiveIds, "receive", catalogOverrides),
+    [catalogOverrides, initialReceiveIds],
   );
   const [tab, setTab] = useState<ProposalTab>(initialTab);
   const [giveSelectedIds, setGiveSelectedIds] = useState<string[]>(() =>
@@ -184,6 +195,33 @@ export default function ProposalSelectScreen() {
       ensureChoiceSelection(current, receiveChoices),
     );
   }, [receiveChoices]);
+
+  useEffect(() => {
+    if (!supabase) return;
+    const ids = Array.from(new Set([...initialGiveIds, ...initialReceiveIds]));
+    if (ids.length === 0) {
+      setCatalogOverrides(new Map());
+      return;
+    }
+
+    let active = true;
+    supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, photo_urls, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      )
+      .in("id", ids)
+      .then(({ data }) => {
+        if (!active) return;
+        setCatalogOverrides(
+          buildProposalCatalogOverrides((data as ProposalInventoryRow[] | null) ?? []),
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [initialGiveIds, initialReceiveIds]);
 
   const tabs = useMemo(
     () => [
@@ -307,7 +345,9 @@ export default function ProposalSelectScreen() {
               receives: receiveSelectedIds.join(","),
               ...(listingsParam ? { listings: listingsParam } : {}),
               ...(candidateIdParam ? { candidateId: candidateIdParam } : {}),
+              ...(partnerIdParam ? { partnerId: partnerIdParam } : {}),
               ...(partnerHandleParam ? { partnerHandle: partnerHandleParam } : {}),
+              ...(matchTypeParam ? { matchType: matchTypeParam } : {}),
               meetups: JSON.stringify(
                 meetupCandidates
                   .filter((candidate) => candidate.place.trim())
@@ -315,6 +355,8 @@ export default function ProposalSelectScreen() {
                     id: candidate.id,
                     label: `候補${index + 1}`,
                     time: `${DAYS[candidate.dayIndex]?.month ?? ""}${DAYS[candidate.dayIndex]?.date ?? ""}日 ${formatSlot(candidate.startSlot)} - ${formatSlot(candidate.endSlot)}`,
+                    startAt: slotToIso(candidate.dayIndex, candidate.startSlot),
+                    endAt: slotToIso(candidate.dayIndex, candidate.endSlot),
                     place: candidate.place,
                     latitude: candidate.coordinate.latitude,
                     longitude: candidate.coordinate.longitude,
@@ -413,8 +455,14 @@ function ChoicePane({
             style={[styles.choiceCard, selected ? styles.choiceCardSelected : null]}
           >
             <View style={[styles.choiceImage, { backgroundColor: item.hue }]}>
-              <View style={styles.choiceShine} />
-              <Text style={styles.choiceGlyph}>{item.glyph}</Text>
+              {item.photoUrl ? (
+                <Image source={{ uri: item.photoUrl }} style={styles.choicePhoto} />
+              ) : (
+                <>
+                  <View style={styles.choiceShine} />
+                  <Text style={styles.choiceGlyph}>{item.glyph}</Text>
+                </>
+              )}
             </View>
             <View style={styles.choiceCopy}>
               <Text numberOfLines={1} style={styles.choiceTitle}>
@@ -1252,6 +1300,12 @@ function formatSlot(slot: number) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function slotToIso(dayIndex: number, slot: number) {
+  const day = DAYS[dayIndex];
+  const date = day?.id ?? dateKey(new Date());
+  return new Date(`${date}T${formatSlot(slot)}:00+09:00`).toISOString();
+}
+
 function formatCandidateRange(candidate: MeetupCandidate) {
   const day = DAYS[candidate.dayIndex];
   return `${day?.month ?? ""}${day?.date ?? ""}日 ${formatSlot(candidate.startSlot)} - ${formatSlot(candidate.endSlot)}`;
@@ -1415,6 +1469,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
     width: 66,
+  },
+  choicePhoto: {
+    height: "100%",
+    width: "100%",
   },
   choiceShine: {
     backgroundColor: "rgba(255,255,255,0.25)",

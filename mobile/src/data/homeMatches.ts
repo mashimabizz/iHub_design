@@ -6,9 +6,18 @@ export type Candidate = {
   member: string;
   type: string;
   hue: string;
+  photoUrl?: string | null;
   tag?: string;
   local: boolean;
   priority: CandidatePriority;
+  partnerId?: string;
+  partnerHandle?: string;
+  partnerDisplayName?: string;
+  avatarUrl?: string | null;
+  giveIds?: string[];
+  receiveIds?: string[];
+  listingIds?: string[];
+  matchType?: "complete" | "they_want_you" | "you_want_them";
 };
 
 export type ShelfRow = {
@@ -254,8 +263,17 @@ export function buildMatchDetailParams(row: ShelfRow, candidate: Candidate) {
     subtitle: `${row.character} × ${row.goodsType} / ${candidate.tag ?? "候補"}`,
     member: candidate.member,
     hue: candidate.hue,
+    photoUrl: candidate.photoUrl ?? "",
     priority: candidate.priority,
     local: candidate.local ? "true" : "false",
     tag: candidate.tag ?? "",
+    partnerId: candidate.partnerId ?? "",
+    partnerHandle: candidate.partnerHandle ?? "",
+    partnerDisplayName: candidate.partnerDisplayName ?? "",
+    avatarUrl: candidate.avatarUrl ?? "",
+    gives: candidate.giveIds?.join(",") ?? "",
+    receives: candidate.receiveIds?.join(",") ?? "",
+    listings: candidate.listingIds?.join(",") ?? "",
+    matchType: candidate.matchType ?? "",
   };
 }

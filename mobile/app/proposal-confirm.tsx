@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,16 +18,21 @@ import {
   type MapCoordinate,
 } from "../src/components/NativeMapPreview";
 import {
+  buildProposalCatalogOverrides,
   buildProposalThumbs,
   parseProposalIdList,
+  type ProposalInventoryRow,
   type ProposalThumbItem,
 } from "../src/data/proposalItems";
+import { supabase } from "../src/lib/supabase";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
 type MeetupCandidate = {
   id: string;
   label: string;
   time: string;
+  startAt?: string;
+  endAt?: string;
   place: string;
   coordinate: MapCoordinate;
 };
@@ -59,27 +65,74 @@ export default function ProposalConfirmScreen() {
     meetups?: string | string[];
     gives?: string | string[];
     receives?: string | string[];
+    listings?: string | string[];
+    partnerId?: string | string[];
     partnerHandle?: string | string[];
+    matchType?: string | string[];
   }>();
   const meetupsParam = one(params.meetups);
   const givesParam = one(params.gives);
   const receivesParam = one(params.receives);
+  const listingsParam = one(params.listings);
+  const partnerId = one(params.partnerId);
   const partnerHandle = one(params.partnerHandle) ?? PARTNER_HANDLE;
+  const matchType = normalizeProposalMatchType(one(params.matchType));
+  const giveIds = useMemo(() => parseProposalIdList(givesParam), [givesParam]);
+  const receiveIds = useMemo(
+    () => parseProposalIdList(receivesParam),
+    [receivesParam],
+  );
+  const listingIds = useMemo(
+    () => parseProposalIdList(listingsParam),
+    [listingsParam],
+  );
+  const [catalogOverrides, setCatalogOverrides] = useState<
+    ReturnType<typeof buildProposalCatalogOverrides>
+  >(() => new Map());
   const meetupCandidates = useMemo(
     () => parseMeetups(meetupsParam),
     [meetupsParam],
   );
   const myItems = useMemo(
-    () => buildProposalThumbs(parseProposalIdList(givesParam), "give"),
-    [givesParam],
+    () => buildProposalThumbs(giveIds, "give", catalogOverrides),
+    [catalogOverrides, giveIds],
   );
   const theirItems = useMemo(
-    () => buildProposalThumbs(parseProposalIdList(receivesParam), "receive"),
-    [receivesParam],
+    () => buildProposalThumbs(receiveIds, "receive", catalogOverrides),
+    [catalogOverrides, receiveIds],
   );
   const [message, setMessage] = useState("");
   const [shareSchedule, setShareSchedule] = useState(true);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!supabase) return;
+    const ids = Array.from(new Set([...giveIds, ...receiveIds]));
+    if (ids.length === 0) {
+      setCatalogOverrides(new Map());
+      return;
+    }
+
+    let active = true;
+    supabase
+      .from("goods_inventory")
+      .select(
+        "id, title, photo_urls, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      )
+      .in("id", ids)
+      .then(({ data }) => {
+        if (!active) return;
+        setCatalogOverrides(
+          buildProposalCatalogOverrides((data as ProposalInventoryRow[] | null) ?? []),
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [giveIds, receiveIds]);
 
   if (submitted) {
     return <ProposalCompleteScreen partnerHandle={partnerHandle} />;
@@ -159,11 +212,94 @@ export default function ProposalConfirmScreen() {
         </Pressable>
       </ScrollView>
 
-      <PrimaryButton onPress={() => setSubmitted(true)}>
+      {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
+      <PrimaryButton loading={submitting} onPress={handleSubmit}>
         この内容で打診を送信
       </PrimaryButton>
     </Screen>
   );
+
+  async function handleSubmit() {
+    setSubmitError(null);
+    if (!partnerId || !supabase) {
+      setSubmitted(true);
+      return;
+    }
+    const primary = meetupCandidates[0];
+    const sendableMeetups = meetupCandidates
+      .filter((candidate) => candidate.startAt && candidate.endAt && candidate.place)
+      .slice(0, 3);
+    if (!primary || sendableMeetups.length === 0) {
+      setSubmitError("交換できる時間と場所を設定してください");
+      return;
+    }
+    if (giveIds.length === 0 || receiveIds.length === 0) {
+      setSubmitError("提示するグッズを確認してください");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setSubmitError("ログイン状態を確認してください");
+        return;
+      }
+
+      const now = new Date();
+      const expires = new Date(now.getTime() + 7 * 24 * 60 * 60_000);
+      const meetupPayloads = sendableMeetups.map((candidate) => ({
+        startAt: candidate.startAt!,
+        endAt: candidate.endAt!,
+        placeName: candidate.place,
+        lat: candidate.coordinate.latitude,
+        lng: candidate.coordinate.longitude,
+        mode: "scheduled",
+      }));
+      const insertFields: Record<string, unknown> = {
+        sender_id: user.id,
+        receiver_id: partnerId,
+        match_type: matchType,
+        sender_have_ids: giveIds,
+        sender_have_qtys: giveIds.map(() => 1),
+        receiver_have_ids: receiveIds,
+        receiver_have_qtys: receiveIds.map(() => 1),
+        message: message.trim(),
+        message_tone: "standard",
+        status: "sent",
+        agreed_by_sender: true,
+        agreed_by_receiver: false,
+        last_action_at: now.toISOString(),
+        expires_at: expires.toISOString(),
+        meetup_start_at: meetupPayloads[0].startAt,
+        meetup_end_at: meetupPayloads[0].endAt,
+        meetup_place_name: meetupPayloads[0].placeName,
+        meetup_lat: meetupPayloads[0].lat,
+        meetup_lng: meetupPayloads[0].lng,
+        meetup_candidates: meetupPayloads,
+        expose_calendar: shareSchedule,
+        listing_id: listingIds.length === 1 ? listingIds[0] : null,
+        cash_offer: false,
+        cash_amount: null,
+      };
+
+      let { error } = await supabase.from("proposals").insert(insertFields);
+      if (isMeetupCandidatesSchemaCacheError(error)) {
+        delete insertFields.meetup_candidates;
+        const retry = await supabase.from("proposals").insert(insertFields);
+        error = retry.error;
+      }
+      if (error) {
+        setSubmitError(error.message);
+        return;
+      }
+      setSubmitted(true);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 }
 
 const PARTNER_HANDLE = "michilion";
@@ -257,8 +393,14 @@ function SidePanel({
       <View style={[styles.thumbRow, alignRight ? styles.thumbRowRight : null]}>
         {items.map((item) => (
           <View key={item.id} style={[styles.thumb, { backgroundColor: item.color }]}>
-            <View style={styles.thumbShine} />
-            <Text style={styles.thumbGlyph}>{item.glyph}</Text>
+            {item.photoUrl ? (
+              <Image source={{ uri: item.photoUrl }} style={styles.thumbPhoto} />
+            ) : (
+              <>
+                <View style={styles.thumbShine} />
+                <Text style={styles.thumbGlyph}>{item.glyph}</Text>
+              </>
+            )}
           </View>
         ))}
       </View>
@@ -340,6 +482,8 @@ function parseMeetups(raw?: string): MeetupCandidate[] {
           id: String(item?.id ?? `candidate-${index + 1}`),
           label: String(item?.label ?? `候補${index + 1}`),
           time: String(item?.time ?? ""),
+          startAt: typeof item?.startAt === "string" ? item.startAt : undefined,
+          endAt: typeof item?.endAt === "string" ? item.endAt : undefined,
           place: String(item?.place ?? ""),
           coordinate: { latitude, longitude },
         };
@@ -349,6 +493,25 @@ function parseMeetups(raw?: string): MeetupCandidate[] {
   } catch {
     return MEETUP_CANDIDATES;
   }
+}
+
+function normalizeProposalMatchType(value?: string) {
+  if (
+    value === "complete" ||
+    value === "they_want_you" ||
+    value === "you_want_them"
+  ) {
+    return value;
+  }
+  return "complete";
+}
+
+function isMeetupCandidatesSchemaCacheError(error: { code?: string; message?: string } | null) {
+  const message = error?.message ?? "";
+  return (
+    error?.code === "PGRST204" ||
+    (message.includes("meetup_candidates") && message.includes("schema cache"))
+  );
 }
 
 function getMapCenter(candidates: MeetupCandidate[]): MapCoordinate {
@@ -502,6 +665,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     position: "relative",
     width: 44,
+  },
+  thumbPhoto: {
+    height: "100%",
+    width: "100%",
   },
   thumbShine: {
     backgroundColor: "rgba(255,255,255,0.24)",
@@ -690,6 +857,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     minHeight: 110,
     padding: 12,
+  },
+  submitError: {
+    color: ihubColors.warn,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    paddingHorizontal: 4,
   },
   scheduleCard: {
     alignItems: "center",

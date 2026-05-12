@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -18,7 +18,9 @@ import {
   type GoodsGridItem,
   type SheetAction,
 } from "../../src/components/GoodsGrid";
+import { useAuth } from "../../src/auth/AuthProvider";
 import { Screen } from "../../src/components/Screen";
+import { supabase } from "../../src/lib/supabase";
 import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 
 type WishItem = GoodsGridItem & {
@@ -33,6 +35,46 @@ type ListingItem = {
   want: string[];
   logic: "すべて" | "1pick";
   hue: string;
+};
+
+type WishRow = {
+  id: string;
+  title: string;
+  priority: number | null;
+  hue: number | string | null;
+  photo_urls: string[] | null;
+  group: { name: string | null } | { name: string | null }[] | null;
+  character: { name: string | null } | { name: string | null }[] | null;
+  goods_type: { name: string | null } | { name: string | null }[] | null;
+};
+
+type ListingRow = {
+  id: string;
+  have_ids: string[] | null;
+  have_logic: "and" | "or" | null;
+  status: "active" | "paused" | "matched" | "closed";
+};
+
+type OptionRow = {
+  listing_id: string;
+  wish_ids: string[] | null;
+  logic: "and" | "or" | null;
+  is_cash_offer: boolean;
+  cash_amount: number | null;
+};
+
+type InventoryLookupRow = {
+  id: string;
+  title: string;
+  hue: number | string | null;
+  group: { name: string | null } | { name: string | null }[] | null;
+  character: { name: string | null } | { name: string | null }[] | null;
+  goods_type: { name: string | null } | { name: string | null }[] | null;
+};
+
+type WishData = {
+  wishes: WishItem[];
+  listings: ListingItem[];
 };
 
 type Tab = "wish" | "listings";
@@ -119,6 +161,7 @@ const INITIAL_LISTINGS: ListingItem[] = [
 ];
 
 export default function WishesScreen() {
+  const { user, previewMode } = useAuth();
   const [tab, setTab] = useState<Tab>("wish");
   const [columns, setColumns] = useState<ColumnCount>(3);
   const [wishes, setWishes] = useState<WishItem[]>(INITIAL_WISHES);
@@ -127,6 +170,8 @@ export default function WishesScreen() {
   const [selectedListing, setSelectedListing] = useState<ListingItem | null>(
     null,
   );
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const tabSwipeRef = useRef<{
     startX: number;
     startY: number;
@@ -134,7 +179,41 @@ export default function WishesScreen() {
     swiping: boolean;
   } | null>(null);
 
+  useEffect(() => {
+    if (!supabase || !user || previewMode) {
+      setWishes(INITIAL_WISHES);
+      setListings(INITIAL_LISTINGS);
+      setLoadError(null);
+      return;
+    }
+
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
+    fetchWishData(user.id)
+      .then((data) => {
+        if (!active) return;
+        setWishes(data.wishes);
+        setListings(data.listings);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setWishes(INITIAL_WISHES);
+        setListings(INITIAL_LISTINGS);
+        setLoadError(error instanceof Error ? error.message : "読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [previewMode, user]);
+
   function toggleListingStatus(id: string) {
+    const current = listings.find((item) => item.id === id);
+    const nextStatus = current?.status === "ACTIVE" ? "paused" : "active";
     setListings((current) =>
       current.map((item) =>
         item.id === id
@@ -146,11 +225,31 @@ export default function WishesScreen() {
       ),
     );
     setSelectedListing(null);
+    if (supabase && user && !previewMode) {
+      supabase
+        .from("listings")
+        .update({ status: nextStatus })
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .then(({ error }) => {
+          if (error) setLoadError(error.message);
+        });
+    }
   }
 
   function deleteListing(id: string) {
     setListings((current) => current.filter((item) => item.id !== id));
     setSelectedListing(null);
+    if (supabase && user && !previewMode) {
+      supabase
+        .from("listings")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .then(({ error }) => {
+          if (error) setLoadError(error.message);
+        });
+    }
   }
 
   const tabs = useMemo(
@@ -197,10 +296,21 @@ export default function WishesScreen() {
           openListingEditor(null, "create", wish);
         },
         onDelete: () => {
+          const wishId = selectedWish.id;
           setWishes((current) =>
-            current.filter((item) => item.id !== selectedWish.id),
+            current.filter((item) => item.id !== wishId),
           );
           setSelectedWish(null);
+          if (supabase && user && !previewMode) {
+            supabase
+              .from("goods_inventory")
+              .delete()
+              .eq("id", wishId)
+              .eq("user_id", user.id)
+              .then(({ error }) => {
+                if (error) setLoadError(error.message);
+              });
+          }
         },
       })
     : [];
@@ -239,6 +349,9 @@ export default function WishesScreen() {
           setSelectedListing(null);
         }}
       />
+
+      {loading ? <Text style={styles.inlineNotice}>Wishを読み込み中…</Text> : null}
+      {loadError ? <Text style={styles.inlineError}>{loadError}</Text> : null}
 
       <View
         style={styles.contentHost}
@@ -359,6 +472,176 @@ export default function WishesScreen() {
   function handleSwipeCancel() {
     tabSwipeRef.current = null;
   }
+}
+
+async function fetchWishData(userId: string): Promise<WishData> {
+  if (!supabase) {
+    return { wishes: INITIAL_WISHES, listings: INITIAL_LISTINGS };
+  }
+  const [{ data: wishRowsRaw, error: wishError }, { data: listingRowsRaw, error: listingError }] =
+    await Promise.all([
+      supabase
+        .from("goods_inventory")
+        .select(
+          "id, title, priority, hue, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+        )
+        .eq("user_id", userId)
+        .eq("kind", "wanted")
+        .neq("status", "archived")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("listings")
+        .select("id, have_ids, have_logic, status")
+        .eq("user_id", userId)
+        .neq("status", "closed")
+        .order("created_at", { ascending: false }),
+    ]);
+  if (wishError) throw wishError;
+  if (listingError) throw listingError;
+
+  const wishRows = (wishRowsRaw as WishRow[] | null) ?? [];
+  const listingRows = (listingRowsRaw as ListingRow[] | null) ?? [];
+  const listingIds = listingRows.map((listing) => listing.id);
+  const { data: optionRowsRaw, error: optionError } =
+    listingIds.length > 0
+      ? await supabase
+          .from("listing_wish_options")
+          .select("listing_id, wish_ids, logic, is_cash_offer, cash_amount")
+          .in("listing_id", listingIds)
+          .order("position", { ascending: true })
+      : { data: [], error: null };
+  if (optionError) throw optionError;
+  const optionRows = (optionRowsRaw as OptionRow[] | null) ?? [];
+  const optionsByListing = new Map<string, OptionRow[]>();
+  for (const option of optionRows) {
+    const options = optionsByListing.get(option.listing_id) ?? [];
+    options.push(option);
+    optionsByListing.set(option.listing_id, options);
+  }
+
+  const wishIdsInListings = new Map<string, number>();
+  for (const option of optionRows) {
+    for (const wishId of option.wish_ids ?? []) {
+      wishIdsInListings.set(wishId, (wishIdsInListings.get(wishId) ?? 0) + 1);
+    }
+  }
+
+  const allItemIds = Array.from(
+    new Set([
+      ...wishRows.map((wish) => wish.id),
+      ...listingRows.flatMap((listing) => listing.have_ids ?? []),
+      ...optionRows.flatMap((option) => option.wish_ids ?? []),
+    ]),
+  );
+  const { data: inventoryRowsRaw, error: inventoryError } =
+    allItemIds.length > 0
+      ? await supabase
+          .from("goods_inventory")
+          .select(
+            "id, title, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+          )
+          .in("id", allItemIds)
+      : { data: [], error: null };
+  if (inventoryError) throw inventoryError;
+  const inventoryById = new Map(
+    ((inventoryRowsRaw as InventoryLookupRow[] | null) ?? []).map((item) => [
+      item.id,
+      item,
+    ]),
+  );
+
+  return {
+    wishes: wishRows.map((wish) =>
+      toWishItem(wish, wishIdsInListings.get(wish.id) ?? 0),
+    ),
+    listings: listingRows.map((listing) =>
+      toListingItem(listing, optionsByListing.get(listing.id) ?? [], inventoryById),
+    ),
+  };
+}
+
+function toWishItem(row: WishRow, linkedListings: number): WishItem {
+  const groupName = pickName(row.group) ?? "未設定";
+  const characterName = pickName(row.character) ?? groupName;
+  const goodsType = pickName(row.goods_type) ?? "グッズ";
+  const priority = priorityLabel(row.priority);
+  return {
+    id: row.id,
+    title: row.title || `${characterName} ${goodsType}`,
+    subtitle: `${groupName} / ${goodsType}`,
+    glyph: characterName.slice(0, 1),
+    hue: normalizeHue(row.hue, characterName),
+    badge: linkedListings > 0 ? `募集 ${linkedListings}` : "未紐付け",
+    priority,
+    linkedListings,
+    photoUrl: row.photo_urls?.[0] ?? null,
+  };
+}
+
+function toListingItem(
+  row: ListingRow,
+  options: OptionRow[],
+  inventoryById: Map<string, InventoryLookupRow>,
+): ListingItem {
+  const giveLabels = (row.have_ids ?? []).map((id) =>
+    itemLabel(inventoryById.get(id)),
+  );
+  const wantLabels = options.flatMap((option) => {
+    if (option.is_cash_offer) {
+      return [`定価 ${option.cash_amount ?? ""}円`];
+    }
+    return (option.wish_ids ?? []).map((id) => itemLabel(inventoryById.get(id)));
+  });
+  const seed = giveLabels[0] ?? wantLabels[0] ?? "募集";
+  return {
+    id: row.id,
+    status: row.status === "active" ? "ACTIVE" : "PAUSED",
+    give: giveLabels.length > 0 ? giveLabels : ["譲る候補"],
+    want: wantLabels.length > 0 ? wantLabels : ["求めるもの"],
+    logic: row.have_logic === "and" ? "すべて" : "1pick",
+    hue: normalizeHue(inventoryById.get(row.have_ids?.[0] ?? "")?.hue, seed),
+  };
+}
+
+function itemLabel(row?: InventoryLookupRow) {
+  if (!row) return "グッズ";
+  return pickName(row.character) ?? pickName(row.group) ?? row.title;
+}
+
+function priorityLabel(priority: number | null): WishItem["priority"] {
+  if (priority != null && priority <= 1) return "最優先";
+  if (priority != null && priority >= 4) return "ゆる募";
+  return "優先";
+}
+
+function pickName(
+  value:
+    | { name: string | null }
+    | { name: string | null }[]
+    | null
+    | undefined,
+) {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0]?.name ?? null : value.name;
+}
+
+function normalizeHue(value: number | string | null | undefined, seed: string) {
+  if (typeof value === "number") return `hsl(${value}, 62%, 78%)`;
+  if (typeof value === "string" && value.trim()) {
+    return value.startsWith("#") || value.startsWith("hsl")
+      ? value
+      : `hsl(${Number(value) || nameToHue(seed)}, 62%, 78%)`;
+  }
+  return `hsl(${nameToHue(seed)}, 62%, 78%)`;
+}
+
+function nameToHue(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
 }
 
 function openWishEditor(
@@ -842,6 +1125,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     minWidth: 92,
     justifyContent: "flex-end",
+  },
+  inlineNotice: {
+    color: ihubColors.mutedInk,
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  inlineError: {
+    color: ihubColors.warn,
+    fontSize: 11.5,
+    fontWeight: "800",
+    lineHeight: 17,
   },
   filters: {
     marginHorizontal: -18,

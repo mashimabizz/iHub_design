@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -17,7 +17,9 @@ import {
   type SheetAction,
   SectionTabs,
 } from "../../src/components/GoodsGrid";
+import { useAuth } from "../../src/auth/AuthProvider";
 import { Screen } from "../../src/components/Screen";
+import { supabase } from "../../src/lib/supabase";
 import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 
 type InventoryStatus = "active" | "keep" | "traded";
@@ -26,6 +28,23 @@ type InventoryItem = GoodsGridItem & {
   status: InventoryStatus;
   group: string;
   type: string;
+  quantity?: number;
+};
+
+type InventoryRow = {
+  id: string;
+  title: string;
+  quantity: number;
+  status: "active" | "keep" | "traded" | "reserved" | "archived";
+  hue: number | string | null;
+  photo_urls: string[] | null;
+  group: { name: string | null } | { name: string | null }[] | null;
+  character: { name: string | null } | { name: string | null }[] | null;
+  character_request:
+    | { requested_name: string | null; status: string | null }
+    | { requested_name: string | null; status: string | null }[]
+    | null;
+  goods_type: { name: string | null } | { name: string | null }[] | null;
 };
 
 const INITIAL_ITEMS: InventoryItem[] = [
@@ -125,18 +144,49 @@ const STATUS_TABS: {
 const STATUS_ORDER: InventoryStatus[] = ["active", "keep", "traded"];
 
 export default function InventoryScreen() {
+  const { user, previewMode } = useAuth();
   const [items, setItems] = useState<InventoryItem[]>(INITIAL_ITEMS);
   const [status, setStatus] = useState<InventoryStatus>("active");
   const [columns, setColumns] = useState<ColumnCount>(3);
   const [selected, setSelected] = useState<InventoryItem | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const tabSwipeRef = useRef<{
     startX: number;
     startY: number;
     tracking: boolean;
     swiping: boolean;
   } | null>(null);
+
+  useEffect(() => {
+    if (!supabase || !user || previewMode) {
+      setItems(INITIAL_ITEMS);
+      setLoadError(null);
+      return;
+    }
+
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
+    fetchInventoryItems(user.id)
+      .then((next) => {
+        if (active) setItems(next);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setItems(INITIAL_ITEMS);
+        setLoadError(error instanceof Error ? error.message : "読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [previewMode, user]);
 
   const groupOptions = useMemo(() => {
     const values = new Set<string>();
@@ -183,9 +233,10 @@ export default function InventoryScreen() {
           openInventoryEditor(item, "edit");
         },
         onMove: (nextStatus) => {
+          const itemId = selected.id;
           setItems((current) =>
             current.map((item) =>
-              item.id === selected.id
+              item.id === itemId
                 ? {
                     ...item,
                     status: nextStatus,
@@ -195,12 +246,33 @@ export default function InventoryScreen() {
             ),
           );
           setSelected(null);
+          if (supabase && user && !previewMode) {
+            supabase
+              .from("goods_inventory")
+              .update({ status: nextStatus })
+              .eq("id", itemId)
+              .eq("user_id", user.id)
+              .then(({ error }) => {
+                if (error) setLoadError(error.message);
+              });
+          }
         },
         onDelete: () => {
+          const itemId = selected.id;
           setItems((current) =>
-            current.filter((item) => item.id !== selected.id),
+            current.filter((item) => item.id !== itemId),
           );
           setSelected(null);
+          if (supabase && user && !previewMode) {
+            supabase
+              .from("goods_inventory")
+              .delete()
+              .eq("id", itemId)
+              .eq("user_id", user.id)
+              .then(({ error }) => {
+                if (error) setLoadError(error.message);
+              });
+          }
         },
       })
     : [];
@@ -224,6 +296,9 @@ export default function InventoryScreen() {
           setSelected(null);
         }}
       />
+
+      {loading ? <Text style={styles.inlineNotice}>在庫を読み込み中…</Text> : null}
+      {loadError ? <Text style={styles.inlineError}>{loadError}</Text> : null}
 
       <View style={styles.filters}>
         <FilterRow
@@ -353,6 +428,100 @@ export default function InventoryScreen() {
   function handleSwipeCancel() {
     tabSwipeRef.current = null;
   }
+}
+
+async function fetchInventoryItems(userId: string): Promise<InventoryItem[]> {
+  if (!supabase) return INITIAL_ITEMS;
+  const { data, error } = await supabase
+    .from("goods_inventory")
+    .select(
+      "id, title, quantity, status, hue, photo_urls, group:groups_master(name), character:characters_master(name), character_request:character_requests(requested_name, status), goods_type:goods_types_master(name)",
+    )
+    .eq("user_id", userId)
+    .eq("kind", "for_trade")
+    .neq("status", "archived")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return ((data as InventoryRow[] | null) ?? []).map(toInventoryItem);
+}
+
+function toInventoryItem(row: InventoryRow): InventoryItem {
+  const groupName = pickName(row.group) ?? "未設定";
+  const characterName =
+    pickName(row.character) ??
+    pickRequestName(row.character_request) ??
+    groupName;
+  const goodsType = pickName(row.goods_type) ?? "グッズ";
+  const status = normalizeInventoryStatus(row.status);
+  return {
+    id: row.id,
+    title: row.title || `${characterName} ${goodsType}`,
+    subtitle: `${groupName} / ${goodsType}`,
+    glyph: characterName.slice(0, 1),
+    hue: normalizeHue(row.hue, characterName),
+    badge:
+      status === "traded"
+        ? "譲渡済"
+        : status === "keep"
+          ? "キープ"
+          : row.quantity > 1
+            ? `残 ${row.quantity}`
+            : "譲る候補",
+    note: row.quantity > 1 ? `交換可能数 ${row.quantity}` : undefined,
+    status,
+    group: groupName,
+    type: goodsType,
+    quantity: row.quantity,
+    photoUrl: row.photo_urls?.[0] ?? null,
+  };
+}
+
+function normalizeInventoryStatus(status: InventoryRow["status"]): InventoryStatus {
+  if (status === "traded") return "traded";
+  if (status === "active") return "active";
+  return "keep";
+}
+
+function pickName(
+  value:
+    | { name: string | null }
+    | { name: string | null }[]
+    | null
+    | undefined,
+) {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0]?.name ?? null : value.name;
+}
+
+function pickRequestName(
+  value:
+    | { requested_name: string | null; status: string | null }
+    | { requested_name: string | null; status: string | null }[]
+    | null
+    | undefined,
+) {
+  if (!value) return null;
+  const request = Array.isArray(value) ? value[0] : value;
+  return request?.requested_name ?? null;
+}
+
+function normalizeHue(value: number | string | null | undefined, seed: string) {
+  if (typeof value === "number") return `hsl(${value}, 62%, 78%)`;
+  if (typeof value === "string" && value.trim()) {
+    return value.startsWith("#") || value.startsWith("hsl")
+      ? value
+      : `hsl(${Number(value) || nameToHue(seed)}, 62%, 78%)`;
+  }
+  return `hsl(${nameToHue(seed)}, 62%, 78%)`;
+}
+
+function nameToHue(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
 }
 
 function HeaderIconButton({ label, glyph }: { label: string; glyph: string }) {
@@ -547,6 +716,17 @@ const styles = StyleSheet.create({
     color: ihubColors.ink,
     fontSize: 12,
     fontWeight: "900",
+  },
+  inlineNotice: {
+    color: ihubColors.mutedInk,
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  inlineError: {
+    color: ihubColors.warn,
+    fontSize: 11.5,
+    fontWeight: "800",
+    lineHeight: 17,
   },
   filters: {
     marginHorizontal: -18,

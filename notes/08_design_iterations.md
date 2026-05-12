@@ -4,6 +4,108 @@
 
 ---
 
+## イテレーション155.10：iOS主要画面を実データ接続へ前進
+
+### 背景・問題意識
+
+iOS版はWeb版の画面構成に近づいてきたが、ホーム・関係図・提示物選択・打診送信・取引一覧・在庫/Wish がまだ静的データ中心で、Webアプリと同じ市場データを見ている感覚が弱かった。オーナーから「Webアプリ画面通りに実装できていない部分があると思うので、実装してください」「チャットを止めずに進めてもらっていい」と指示があったため、まず主要フローをSupabaseの実データに接続した。
+
+### 変更内容
+
+#### `mobile/src/data/homeSupabase.ts`
+- ホーム用のマッチ候補を `goods_inventory` / `listings` / `listing_wish_options` / `activity_windows` / `user_local_mode_settings` から生成するデータレイヤーを追加した。
+- 「マッチしてるよ！」と「交換できるかも」を、個別募集マッチと通常の譲×Wish候補で分けて返すようにした。
+- 候補カードから後続画面へ渡すため、相手ID・在庫ID・個別募集ID・写真URL・現地交換可否を保持するようにした。
+
+#### `mobile/app/(tabs)/index.tsx`
+- ホームのマッチ行をSupabase由来の候補へ切り替えた。
+- 現地交換モードの場所表示、通知未読数、モード切替更新を実データに接続した。
+- 候補カードに実画像がある場合は画像を表示するようにした。
+
+#### `mobile/app/match-detail.tsx`
+- ホームで選んだ候補の相手ID・譲/受け取り在庫ID・個別募集IDを関係図/提示物選択へ引き継ぐようにした。
+- 静的候補だけでなく、実データ候補から入っても後続の打診作成に必要なIDが落ちないようにした。
+
+#### `mobile/src/data/proposalItems.ts`
+- 提示物選択と送信確認で、静的カタログだけでなく `goods_inventory` の実在庫を表示できる override を追加した。
+- 実画像URL、グッズ名、グループ、種別、色を共通変換できるようにした。
+
+#### `mobile/app/proposal-select.tsx`
+- 関係図経由で受け取った在庫IDをSupabaseから取得し、実画像付きの提示物選択として表示するようにした。
+- 待ち合わせ候補の日時をISO形式で送信確認へ渡すようにした。
+
+#### `mobile/app/proposal-confirm.tsx`
+- 送信確認の提示物サムネイルを実在庫画像に対応させた。
+- 打診送信時に `proposals` へ実レコードを保存する処理を追加した。
+- `meetup_candidates` カラムがスキーマキャッシュ未更新の場合は、既存の `meetup_*` 列だけで再送する fallback を入れた。
+
+#### `mobile/app/(tabs)/transactions.tsx`
+- 取引一覧を `proposals` から読み込み、打診中/進行中/完了に分類するようにした。
+- パネルの受け取る/私が出す/場所/時間/要対応判定を、ログインユーザー視点で組み立てるようにした。
+- パネルタップ時はプレビューではなく実打診詳細へ遷移するようにした。
+
+#### `mobile/app/transaction-detail.tsx`
+- iOS版の取引/打診詳細画面を追加した。
+- 相手情報、受け取るもの、私が出すもの、待ち合わせ候補、メッセージをSupabaseから表示する。
+- 基本応答として、合意・条件相談・見送りを `proposals` と `messages` に反映できるようにした。
+
+#### `mobile/app/(tabs)/inventory.tsx`
+- マイ在庫を `goods_inventory(kind='for_trade')` から読み込み、画像・数量・ステータス・フィルタを実データ化した。
+- 自分キープ/譲る候補への移動と削除をSupabaseへ反映するようにした。
+
+#### `mobile/app/(tabs)/wishes.tsx`
+- Wishを `goods_inventory(kind='wanted')` から読み込み、画像と個別募集紐付け件数を表示するようにした。
+- 個別募集一覧を `listings` と `listing_wish_options` から組み立てるようにした。
+- 個別募集の一時停止/再開・削除、Wish削除をSupabaseへ反映するようにした。
+
+#### `mobile/src/components/GoodsGrid.tsx`
+- グッズカードが `photoUrl` を持つ場合、文字グリフではなく実画像を表示するようにした。
+
+### 影響範囲
+
+- iOS版ホーム
+- iOS版マッチ詳細/関係図導線
+- iOS版提示物選択・送信確認・打診作成
+- iOS版取引一覧・取引詳細
+- iOS版マイ在庫/Wish/個別募集一覧
+- iOS版共通グッズグリッド
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `git diff --check`
+- iOSアプリでログイン後、ホームに実データ由来のマッチ候補と画像が出ることを確認
+- ホームの候補カードから提示物選択へ進み、選択した在庫IDと画像が送信確認まで残ることを確認
+- 打診送信後、取引一覧に `proposals` 由来のパネルが出ることを確認
+- 取引一覧のパネルを押して、取引詳細画面が404/プレビューではなく実データで開くことを確認
+- マイ在庫/Wishで登録済み画像と件数が表示されることを確認
+
+### 関連ファイル
+
+- `mobile/src/data/homeSupabase.ts`
+- `mobile/src/data/homeMatches.ts`
+- `mobile/src/data/proposalItems.ts`
+- `mobile/src/components/GoodsGrid.tsx`
+- `mobile/app/(tabs)/index.tsx`
+- `mobile/app/(tabs)/inventory.tsx`
+- `mobile/app/(tabs)/transactions.tsx`
+- `mobile/app/(tabs)/wishes.tsx`
+- `mobile/app/match-detail.tsx`
+- `mobile/app/proposal-select.tsx`
+- `mobile/app/proposal-confirm.tsx`
+- `mobile/app/transaction-detail.tsx`
+
+### セルフレビュー結果
+
+- ✅ `打診` / `取引` / `個別募集` / `Wish` / `現地交換モード` は既存用語に沿っている
+- ✅ `proposals.status` は既存の `sent` / `negotiating` / `agreement_one_side` / `agreed` / `completed` / `rejected` / `expired` / `cancelled` の範囲で扱っている
+- ✅ DBは既存テーブル・既存カラムを利用しており、新規スキーマ変更はないため `notes/05_data_model.md` は更新不要
+- ✅ 新状態・新用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` は更新不要
+- ✅ `npm run typecheck`（`mobile/`）通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.09：iOS在庫とWishをWeb画面構成へ追加整合
 
 ### 背景・問題意識

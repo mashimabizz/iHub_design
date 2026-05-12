@@ -12,6 +12,8 @@ import {
   SectionTabs,
 } from "../../src/components/GoodsGrid";
 import { Screen } from "../../src/components/Screen";
+import { useAuth } from "../../src/auth/AuthProvider";
+import { supabase } from "../../src/lib/supabase";
 import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 
 type TopTab = "pending" | "ongoing" | "past";
@@ -167,24 +169,57 @@ const TOP_TABS = [
 ];
 
 export default function TransactionsScreen() {
+  const { user, previewMode } = useAuth();
   const [tab, setTab] = useState<TopTab>("pending");
   const [pendingSub, setPendingSub] = useState<PendingSubTab>("action");
   const [pastFilter, setPastFilter] = useState<PastFilter>("all");
+  const [transactions, setTransactions] = useState<Transaction[]>(TRANSACTIONS);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [animatedTabs, setAnimatedTabs] = useState<Set<TopTab>>(
     () => new Set(),
   );
 
+  useEffect(() => {
+    if (!supabase || !user || previewMode) {
+      setTransactions(TRANSACTIONS);
+      setLoadError(null);
+      return;
+    }
+
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
+    fetchTransactions(user.id)
+      .then((rows) => {
+        if (!active) return;
+        setTransactions(rows.length > 0 ? rows : []);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setTransactions(TRANSACTIONS);
+        setLoadError(error instanceof Error ? error.message : "読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [previewMode, user]);
+
   const grouped = useMemo(() => {
-    const pending = TRANSACTIONS.filter((tx) =>
+    const pending = transactions.filter((tx) =>
       ["sent", "negotiating", "agreement_one_side"].includes(tx.status),
     );
-    const ongoing = TRANSACTIONS.filter((tx) => tx.status === "agreed");
-    const past = TRANSACTIONS.filter((tx) =>
+    const ongoing = transactions.filter((tx) => tx.status === "agreed");
+    const past = transactions.filter((tx) =>
       ["completed", "cancelled", "expired"].includes(tx.status),
     );
 
     return { pending, ongoing, past };
-  }, []);
+  }, [transactions]);
   const counts = {
     pending: grouped.pending.length,
     ongoing: grouped.ongoing.length,
@@ -233,6 +268,9 @@ export default function TransactionsScreen() {
         <Text style={styles.kicker}>TRANSACTIONS</Text>
         <Text style={styles.title}>取引</Text>
       </View>
+
+      {loading ? <Text style={styles.inlineNotice}>取引を読み込み中…</Text> : null}
+      {loadError ? <Text style={styles.inlineError}>{loadError}</Text> : null}
 
       <SectionTabs
         value={tab}
@@ -307,14 +345,227 @@ export default function TransactionsScreen() {
 
 function openTransactionDetail(tx: Transaction) {
   router.push({
-    pathname: "/preview-detail",
+    pathname: "/transaction-detail",
     params: {
-      kind: "transaction",
-      badge: tx.needsAction ? "要対応" : "相手待ち",
-      title: `@${tx.partner}`,
-      subtitle: `${statusLabel(tx)} / ${tx.time} / ${tx.place}`,
+      id: tx.id,
     },
   });
+}
+
+type ProposalRow = {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  status: string;
+  sender_have_ids: string[] | null;
+  sender_have_qtys: number[] | null;
+  receiver_have_ids: string[] | null;
+  receiver_have_qtys: number[] | null;
+  agreed_by_sender: boolean | null;
+  agreed_by_receiver: boolean | null;
+  meetup_start_at: string | null;
+  meetup_end_at: string | null;
+  meetup_place_name: string | null;
+  created_at: string;
+  last_action_at: string | null;
+  completed_at: string | null;
+  message: string | null;
+};
+
+type UserRow = {
+  id: string;
+  handle: string | null;
+  display_name: string | null;
+};
+
+type InventoryRow = {
+  id: string;
+  title: string;
+  hue?: number | string | null;
+  group: { name: string | null } | { name: string | null }[] | null;
+  character: { name: string | null } | { name: string | null }[] | null;
+  goods_type: { name: string | null } | { name: string | null }[] | null;
+};
+
+async function fetchTransactions(userId: string): Promise<Transaction[]> {
+  if (!supabase) return TRANSACTIONS;
+  const { data, error } = await supabase
+    .from("proposals")
+    .select(
+      `id, sender_id, receiver_id, status,
+       sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
+       agreed_by_sender, agreed_by_receiver,
+       meetup_start_at, meetup_end_at, meetup_place_name,
+       created_at, last_action_at, completed_at, message`,
+    )
+    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+    .neq("status", "draft")
+    .order("last_action_at", { ascending: false });
+  if (error) throw error;
+
+  const proposals = (data as ProposalRow[] | null) ?? [];
+  if (proposals.length === 0) return [];
+
+  const partnerIds = Array.from(
+    new Set(
+      proposals.map((row) =>
+        row.sender_id === userId ? row.receiver_id : row.sender_id,
+      ),
+    ),
+  );
+  const itemIds = Array.from(
+    new Set(
+      proposals.flatMap((row) => [
+        ...(row.sender_have_ids ?? []),
+        ...(row.receiver_have_ids ?? []),
+      ]),
+    ),
+  );
+
+  const [{ data: users }, { data: inventory }] = await Promise.all([
+    partnerIds.length > 0
+      ? supabase.from("users").select("id, handle, display_name").in("id", partnerIds)
+      : Promise.resolve({ data: [] }),
+    itemIds.length > 0
+      ? supabase
+          .from("goods_inventory")
+          .select(
+            "id, title, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+          )
+          .in("id", itemIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const usersById = new Map(
+    ((users as UserRow[] | null) ?? []).map((user) => [user.id, user]),
+  );
+  const inventoryById = new Map(
+    ((inventory as InventoryRow[] | null) ?? []).map((item) => [item.id, item]),
+  );
+
+  return proposals.map((row): Transaction => {
+    const isSender = row.sender_id === userId;
+    const partner = usersById.get(isSender ? row.receiver_id : row.sender_id);
+    const giveIds = isSender ? row.sender_have_ids ?? [] : row.receiver_have_ids ?? [];
+    const receiveIds = isSender
+      ? row.receiver_have_ids ?? []
+      : row.sender_have_ids ?? [];
+    return {
+      id: row.id,
+      partner: partner?.handle ?? partner?.display_name ?? "unknown",
+      direction: isSender ? "sent" : "received",
+      status: normalizeTransactionStatus(row.status),
+      needsAction: needsActionFor(row, userId),
+      receive: receiveIds.map((id) => toTradeItem(id, inventoryById.get(id))),
+      give: giveIds.map((id) => toTradeItem(id, inventoryById.get(id))),
+      place: row.meetup_place_name ?? "場所確認中",
+      time: formatProposalTime(row.meetup_start_at, row.meetup_end_at),
+      updated: formatRelative(row.last_action_at ?? row.created_at),
+      note: noteFor(row, userId),
+    };
+  });
+}
+
+function toTradeItem(id: string, row?: InventoryRow): TradeItem {
+  const label =
+    pickName(row?.character) ?? pickName(row?.group) ?? row?.title ?? "グッズ";
+  return {
+    id,
+    glyph: label.slice(0, 1),
+    hue: normalizeHue(row?.hue, label),
+    label,
+  };
+}
+
+function needsActionFor(row: ProposalRow, userId: string) {
+  const isSender = row.sender_id === userId;
+  if (row.status === "sent") return !isSender;
+  if (row.status === "negotiating") return true;
+  if (row.status === "agreement_one_side") {
+    return isSender ? !row.agreed_by_sender : !row.agreed_by_receiver;
+  }
+  return false;
+}
+
+function noteFor(row: ProposalRow, userId: string) {
+  if (row.status === "sent") {
+    return row.sender_id === userId
+      ? "相手の返信待ちです"
+      : "新しい打診が届いています";
+  }
+  if (row.status === "negotiating") return "条件調整中です";
+  if (row.status === "agreement_one_side") return "合意待ちです";
+  if (row.status === "agreed") return "取引予定です";
+  if (row.status === "completed") return "取引完了";
+  if (row.status === "expired") return "期限切れ";
+  return "キャンセル済み";
+}
+
+function normalizeTransactionStatus(status: string): TransactionStatus {
+  if (
+    status === "sent" ||
+    status === "negotiating" ||
+    status === "agreement_one_side" ||
+    status === "agreed" ||
+    status === "completed" ||
+    status === "cancelled" ||
+    status === "expired"
+  ) {
+    return status;
+  }
+  return "cancelled";
+}
+
+function formatProposalTime(startAt: string | null, endAt: string | null) {
+  if (!startAt) return "候補確認中";
+  const start = new Date(startAt);
+  const end = endAt ? new Date(endAt) : null;
+  const date = `${start.getMonth() + 1}/${start.getDate()}`;
+  const startTime = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
+  const endTime = end
+    ? ` - ${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`
+    : "";
+  return `${date} ${startTime}${endTime}`;
+}
+
+function formatRelative(value: string) {
+  const diff = Date.now() - new Date(value).getTime();
+  const minutes = Math.max(0, Math.floor(diff / 60000));
+  if (minutes < 1) return "たった今";
+  if (minutes < 60) return `${minutes}分前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}時間前`;
+  return `${Math.floor(hours / 24)}日前`;
+}
+
+function pickName(
+  value:
+    | { name: string | null }
+    | { name: string | null }[]
+    | null
+    | undefined,
+) {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0]?.name ?? null : value.name;
+}
+
+function normalizeHue(value: number | string | null | undefined, seed: string) {
+  if (typeof value === "number") return `hsl(${value}, 62%, 78%)`;
+  if (typeof value === "string" && value.trim()) {
+    return value.startsWith("#") || value.startsWith("hsl")
+      ? value
+      : `hsl(${Number(value) || nameToHue(seed)}, 62%, 78%)`;
+  }
+  return `hsl(${nameToHue(seed)}, 62%, 78%)`;
+}
+
+function nameToHue(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
 }
 
 function AnimatedTransactionCard({
@@ -590,6 +841,17 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 0,
     lineHeight: 30,
+  },
+  inlineNotice: {
+    color: ihubColors.mutedInk,
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  inlineError: {
+    color: ihubColors.warn,
+    fontSize: 11.5,
+    fontWeight: "800",
+    lineHeight: 17,
   },
   listContent: {
     gap: 10,

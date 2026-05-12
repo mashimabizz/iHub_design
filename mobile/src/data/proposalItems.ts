@@ -8,6 +8,7 @@ export type ProposalChoiceItem = {
   subtitle: string;
   glyph: string;
   hue: string;
+  photoUrl?: string | null;
   hint: string;
 };
 
@@ -16,6 +17,7 @@ export type ProposalThumbItem = {
   label: string;
   glyph: string;
   color: string;
+  photoUrl?: string | null;
 };
 
 type CatalogItem = {
@@ -23,6 +25,19 @@ type CatalogItem = {
   subtitle: string;
   glyph: string;
   hue: string;
+  photoUrl?: string | null;
+};
+
+type ProposalCatalogOverrides = Map<string, CatalogItem>;
+
+export type ProposalInventoryRow = {
+  id: string;
+  title: string;
+  photo_urls: string[] | null;
+  hue?: number | string | null;
+  group: { name: string | null } | { name: string | null }[] | null;
+  character: { name: string | null } | { name: string | null }[] | null;
+  goods_type: { name: string | null } | { name: string | null }[] | null;
 };
 
 const GIVE_HINT = "相手がほしいものかも？";
@@ -132,30 +147,56 @@ export function parseProposalIdList(value?: string | string[]): string[] {
 export function buildProposalChoices(
   ids: string[],
   side: ProposalSide,
+  overrides?: ProposalCatalogOverrides,
 ): ProposalChoiceItem[] {
   const orderedIds = uniqueIds([...ids, ...BASE_IDS[side]]);
-  return orderedIds.map((id) => toProposalChoice(id, side));
+  return orderedIds.map((id) => toProposalChoice(id, side, overrides));
 }
 
 export function buildProposalThumbs(
   ids: string[],
   side: ProposalSide,
+  overrides?: ProposalCatalogOverrides,
 ): ProposalThumbItem[] {
   const orderedIds = ids.length > 0 ? uniqueIds(ids) : BASE_IDS[side];
-  return orderedIds.map((id) => toProposalThumb(id, side));
+  return orderedIds.map((id) => toProposalThumb(id, side, overrides));
+}
+
+export function buildProposalCatalogOverrides(rows: ProposalInventoryRow[]) {
+  return new Map(
+    rows.map((row) => {
+      const character = pickName(row.character);
+      const group = pickName(row.group);
+      const goodsType = pickName(row.goods_type);
+      const title = row.title || [character, group, goodsType].filter(Boolean).join(" ");
+      const label = character ?? group ?? title;
+      return [
+        row.id,
+        {
+          title,
+          subtitle: [group, goodsType].filter(Boolean).join(" / ") || "グッズ",
+          glyph: (label || "?").slice(0, 1),
+          hue: normalizeHue(row.hue, label || title),
+          photoUrl: row.photo_urls?.[0] ?? null,
+        },
+      ] as const;
+    }),
+  );
 }
 
 function toProposalChoice(
   id: string,
   side: ProposalSide,
+  overrides?: ProposalCatalogOverrides,
 ): ProposalChoiceItem {
-  const item = resolveItem(id, side);
+  const item = resolveItem(id, side, overrides);
   return {
     id,
     title: item.title,
     subtitle: item.subtitle,
     glyph: item.glyph,
     hue: item.hue,
+    photoUrl: item.photoUrl,
     hint: side === "give" ? GIVE_HINT : RECEIVE_HINT,
   };
 }
@@ -163,17 +204,26 @@ function toProposalChoice(
 function toProposalThumb(
   id: string,
   side: ProposalSide,
+  overrides?: ProposalCatalogOverrides,
 ): ProposalThumbItem {
-  const item = resolveItem(id, side);
+  const item = resolveItem(id, side, overrides);
   return {
     id,
     label: item.title,
     glyph: item.glyph,
     color: item.hue,
+    photoUrl: item.photoUrl,
   };
 }
 
-function resolveItem(id: string, side: ProposalSide): CatalogItem {
+function resolveItem(
+  id: string,
+  side: ProposalSide,
+  overrides?: ProposalCatalogOverrides,
+): CatalogItem {
+  const override = overrides?.get(id);
+  if (override) return override;
+
   const catalogItem = ITEM_CATALOG[id];
   if (catalogItem) return catalogItem;
 
@@ -198,4 +248,30 @@ function resolveItem(id: string, side: ProposalSide): CatalogItem {
 
 function uniqueIds(ids: string[]): string[] {
   return Array.from(new Set(ids.filter(Boolean)));
+}
+
+function pickName(
+  value: { name: string | null } | { name: string | null }[] | null,
+) {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0]?.name ?? null : value.name;
+}
+
+function normalizeHue(value: number | string | null | undefined, seed: string) {
+  if (typeof value === "number") return `hsl(${value}, 62%, 78%)`;
+  if (typeof value === "string" && value.trim()) {
+    return value.startsWith("#") || value.startsWith("hsl")
+      ? value
+      : `hsl(${Number(value) || nameToHue(seed)}, 62%, 78%)`;
+  }
+  return `hsl(${nameToHue(seed)}, 62%, 78%)`;
+}
+
+function nameToHue(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
 }

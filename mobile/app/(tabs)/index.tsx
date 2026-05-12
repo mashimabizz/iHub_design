@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import {
   Animated,
   Easing,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,7 +15,7 @@ import { IHubLogo } from "../../src/components/IHubLogo";
 import { Screen } from "../../src/components/Screen";
 import { StatusPill } from "../../src/components/StatusPill";
 import { useAuth } from "../../src/auth/AuthProvider";
-import { hasSupabaseConfig } from "../../src/lib/supabase";
+import { hasSupabaseConfig, supabase } from "../../src/lib/supabase";
 import {
   MATCH_SECTIONS,
   buildMatchDetailParams,
@@ -23,15 +24,21 @@ import {
   type ShelfRow,
   type ShelfSection,
 } from "../../src/data/homeMatches";
+import { fetchHomeSupabaseSections } from "../../src/data/homeSupabase";
 import { ihubColors, ihubRadii, ihubShadow } from "../../src/theme/tokens";
 
 export default function HomeScreen() {
   const { previewMode, user } = useAuth();
   const [localMode, setLocalMode] = useState(true);
+  const [sections, setSections] = useState<ShelfSection[]>(MATCH_SECTIONS);
+  const [placeName, setPlaceName] = useState("守口市地区 豊秀町一丁目");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [homeLoading, setHomeLoading] = useState(false);
+  const [homeError, setHomeError] = useState<string | null>(null);
   const { width } = useWindowDimensions();
   const tileWidth = Math.max(128, Math.min(148, (width - 54) / 2.55));
   const placeLabel = localMode
-    ? truncateLocation("守口市地区 豊秀町一丁目")
+    ? truncateLocation(placeName || "場所未設定")
     : "現地交換OFF";
 
   const statusLabel = hasSupabaseConfig && user
@@ -42,12 +49,61 @@ export default function HomeScreen() {
         ? "Supabase接続可"
         : "環境変数待ち";
 
+  useEffect(() => {
+    if (!hasSupabaseConfig || !user) {
+      setSections(MATCH_SECTIONS);
+      setPlaceName("守口市地区 豊秀町一丁目");
+      setUnreadCount(0);
+      setHomeError(null);
+      return;
+    }
+
+    let active = true;
+    setHomeLoading(true);
+    setHomeError(null);
+    fetchHomeSupabaseSections(user.id)
+      .then((result) => {
+        if (!active) return;
+        setSections(result.sections.length > 0 ? result.sections : []);
+        setLocalMode(result.localModeEnabled);
+        setPlaceName(result.placeLabel ?? "場所未設定");
+        setUnreadCount(result.unreadNotificationCount);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setSections(MATCH_SECTIONS);
+        setHomeError(error instanceof Error ? error.message : "読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (active) setHomeLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  function handleLocalModeChange(next: boolean) {
+    setLocalMode(next);
+    if (!supabase || !user) return;
+    supabase
+      .from("user_local_mode_settings")
+      .update({ enabled: next })
+      .eq("user_id", user.id)
+      .then(({ error }) => {
+        if (error) setHomeError(error.message);
+      });
+  }
+
   return (
     <Screen contentStyle={styles.screenContent}>
       <View style={styles.topBar}>
         <View style={styles.topLeft}>
           <CircleButton label="⌕" accessibilityLabel="検索" />
-          <CircleButton label="!" accessibilityLabel="通知" />
+          <CircleButton
+            label={unreadCount > 0 ? String(Math.min(unreadCount, 9)) : "!"}
+            accessibilityLabel="通知"
+          />
         </View>
         <View style={styles.topRight}>
           <Pressable style={styles.placeButton}>
@@ -57,7 +113,7 @@ export default function HomeScreen() {
           </Pressable>
           <TinyLocalToggle
             value={localMode}
-            onChange={() => setLocalMode((current) => !current)}
+            onChange={() => handleLocalModeChange(!localMode)}
           />
         </View>
       </View>
@@ -77,20 +133,31 @@ export default function HomeScreen() {
       <ModeSwitch
         localMode={localMode}
         width={width}
-        onChange={setLocalMode}
+        onChange={handleLocalModeChange}
       />
 
       <View style={styles.sections}>
-        {MATCH_SECTIONS.map((section, sectionIndex) => (
-          <ShelfSectionView
-            key={section.id}
-            section={section}
-            sectionIndex={sectionIndex}
-            tileWidth={tileWidth}
-            localMode={localMode}
-            onCandidatePress={openMatchDetail}
-          />
-        ))}
+        {homeError ? <Text style={styles.inlineError}>{homeError}</Text> : null}
+        {homeLoading ? <Text style={styles.loadingText}>マッチを読み込み中…</Text> : null}
+        {sections.length > 0 ? (
+          sections.map((section, sectionIndex) => (
+            <ShelfSectionView
+              key={section.id}
+              section={section}
+              sectionIndex={sectionIndex}
+              tileWidth={tileWidth}
+              localMode={localMode}
+              onCandidatePress={openMatchDetail}
+            />
+          ))
+        ) : (
+          <View style={styles.emptyMatches}>
+            <Text style={styles.emptyMatchesTitle}>まだ候補がありません</Text>
+            <Text style={styles.emptyMatchesText}>
+              Wish と譲る候補が増えると、ここに交換候補が並びます。
+            </Text>
+          </View>
+        )}
       </View>
     </Screen>
   );
@@ -448,8 +515,14 @@ function CandidateTile({
             },
           ]}
         >
-          <View style={styles.fakeImageGlow} />
-          <Text style={styles.fakeImageLetter}>{candidate.member}</Text>
+          {candidate.photoUrl ? (
+            <Image source={{ uri: candidate.photoUrl }} style={styles.realImage} />
+          ) : (
+            <>
+              <View style={styles.fakeImageGlow} />
+              <Text style={styles.fakeImageLetter}>{candidate.member}</Text>
+            </>
+          )}
           <Text numberOfLines={1} style={styles.fakeImageCaption}>
             {candidate.type}
           </Text>
@@ -732,6 +805,38 @@ const styles = StyleSheet.create({
     gap: 20,
     marginTop: 16,
   },
+  inlineError: {
+    color: ihubColors.warn,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16,
+  },
+  loadingText: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+  emptyMatches: {
+    backgroundColor: "rgba(255,255,255,0.86)",
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 22,
+  },
+  emptyMatchesTitle: {
+    color: ihubColors.ink,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  emptyMatchesText: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 6,
+  },
   shelfSection: {
     gap: 10,
   },
@@ -783,6 +888,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
+  },
+  realImage: {
+    height: "100%",
+    width: "100%",
   },
   fakeImageGlow: {
     backgroundColor: "rgba(255,255,255,0.22)",

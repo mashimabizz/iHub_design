@@ -107,6 +107,13 @@ export default function MatchDetailScreen() {
     priority?: Priority | Priority[];
     local?: string | string[];
     tag?: string | string[];
+    partnerId?: string | string[];
+    partnerHandle?: string | string[];
+    partnerDisplayName?: string | string[];
+    gives?: string | string[];
+    receives?: string | string[];
+    listings?: string | string[];
+    matchType?: string | string[];
   }>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -121,6 +128,15 @@ export default function MatchDetailScreen() {
   const color = activeCandidate?.hue || one(params.hue) || BASE_ITEMS.selected.color;
   const priority = activeCandidate?.priority || parsePriority(one(params.priority));
   const tag = activeCandidate?.tag ?? one(params.tag);
+  const routePartnerId = one(params.partnerId);
+  const partnerHandle =
+    one(params.partnerHandle) || activeCandidate?.partnerHandle || PARTNER_HANDLE;
+  const routeGiveIds = parseRouteIds(one(params.gives));
+  const routeReceiveIds = parseRouteIds(one(params.receives));
+  const routeListingIds = parseRouteIds(one(params.listings));
+  const routeMatchType = normalizeMatchType(one(params.matchType));
+  const hasRouteProposal =
+    routeGiveIds.length > 0 || routeReceiveIds.length > 0 || routeListingIds.length > 0;
   const listingKind = inferListingKind(priority, tag);
   const highlightedItem: MiniItem = {
     id: activeCandidate?.id ?? "selected",
@@ -283,27 +299,43 @@ export default function MatchDetailScreen() {
   const proposalParams = {
     tab: "meetup",
     candidateId: highlightedItem.id,
-    partnerHandle: PARTNER_HANDLE,
-    gives: aggregated.giveIds.join(","),
-    receives: aggregated.receiveIds.join(","),
-    listings: aggregated.referencedListingIds.join(","),
+    ...(routePartnerId ? { partnerId: routePartnerId } : {}),
+    partnerHandle,
+    matchType: routeMatchType,
+    gives: (routeGiveIds.length > 0 ? routeGiveIds : aggregated.giveIds).join(","),
+    receives: (routeReceiveIds.length > 0
+      ? routeReceiveIds
+      : aggregated.receiveIds
+    ).join(","),
+    listings: (routeListingIds.length > 0
+      ? routeListingIds
+      : aggregated.referencedListingIds
+    ).join(","),
   };
   const simpleProposalParams = {
     tab: "meetup",
     candidateId: highlightedItem.id,
-    partnerHandle: PARTNER_HANDLE,
-    gives: data.simpleGives.map((item) => item.id).join(","),
-    receives: data.simpleReceives.map((item) => item.id).join(","),
+    ...(routePartnerId ? { partnerId: routePartnerId } : {}),
+    partnerHandle,
+    matchType: routeMatchType,
+    gives: (routeGiveIds.length > 0
+      ? routeGiveIds
+      : data.simpleGives.map((item) => item.id)
+    ).join(","),
+    receives: (routeReceiveIds.length > 0
+      ? routeReceiveIds
+      : data.simpleReceives.map((item) => item.id)
+    ).join(","),
   };
   const totalSelected = Object.values(selection).reduce(
     (sum, ids) => sum + ids.length,
     0,
   );
   const hasListingRelation =
-    data.myListings.length > 0 || data.partnerListings.length > 0;
+    routeListingIds.length > 0 || data.myListings.length > 0 || data.partnerListings.length > 0;
   const hasSimpleRelation =
     !hasListingRelation &&
-    (data.simpleReceives.length > 0 || data.simpleGives.length > 0);
+    (hasRouteProposal || data.simpleReceives.length > 0 || data.simpleGives.length > 0);
 
   return (
     <View style={styles.root}>
@@ -344,7 +376,7 @@ export default function MatchDetailScreen() {
             <View style={styles.headerCopy}>
               <Text style={styles.headerTitle}>関係図</Text>
               <Text numberOfLines={1} style={styles.headerSubtitle}>
-                @{PARTNER_HANDLE} とのマッチ詳細
+                @{partnerHandle} とのマッチ詳細
               </Text>
             </View>
           </View>
@@ -385,7 +417,7 @@ export default function MatchDetailScreen() {
 
             {data.partnerListings.length > 0 ? (
               <SectionGroup
-                title={`@${PARTNER_HANDLE} の個別募集`}
+                title={`@${partnerHandle} の個別募集`}
                 subtitle="相手が出している条件で、あなたの在庫がヒット"
                 accentColor={ihubColors.pink}
               >
@@ -1728,6 +1760,25 @@ function parsePriority(value?: string): Priority {
 
 function one(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function parseRouteIds(value?: string) {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+function normalizeMatchType(value?: string) {
+  if (
+    value === "complete" ||
+    value === "they_want_you" ||
+    value === "you_want_them"
+  ) {
+    return value;
+  }
+  return "complete";
 }
 
 function exchangeLabel(type: ExchangeType) {

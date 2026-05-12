@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   Animated,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -22,6 +23,7 @@ export type GoodsGridItem = {
   hue: string;
   badge?: string;
   note?: string;
+  photoUrl?: string | null;
 };
 
 export type SheetAction = {
@@ -264,10 +266,18 @@ function AnimatedGoodsTile({
     >
       <Pressable onPress={onPress} style={styles.tilePressable}>
         <View style={[styles.tileImage, { height: width * 1.34 }]}>
-          <View style={[styles.tileImageFill, { backgroundColor: item.hue }]}>
-            <View style={styles.tileShine} />
-            <Text style={styles.tileGlyph}>{item.glyph}</Text>
-          </View>
+          {item.photoUrl ? (
+            <Image
+              source={{ uri: item.photoUrl }}
+              resizeMode="cover"
+              style={styles.tilePhoto}
+            />
+          ) : (
+            <View style={[styles.tileImageFill, { backgroundColor: item.hue }]}>
+              <View style={styles.tileShine} />
+              <Text style={styles.tileGlyph}>{item.glyph}</Text>
+            </View>
+          )}
           <View style={styles.tileTopRow}>
             <View style={styles.tileTitlePlate}>
               <Text numberOfLines={1} style={styles.tileTitlePlateText}>
@@ -578,6 +588,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
+  },
+  tilePhoto: {
+    height: "100%",
+    width: "100%",
   },
   tileShine: {
     backgroundColor: "rgba(255,255,255,0.26)",
