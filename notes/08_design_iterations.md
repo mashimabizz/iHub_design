@@ -4,6 +4,48 @@
 
 ---
 
+## イテレーション154.78：iOS起動時のRoot Layout遷移エラーを修正
+
+### 背景・問題意識
+
+オーナーがExpo GoでiOS版を起動したところ、`Attempted to navigate before mounting the Root Layout component` というRender Errorが表示された。
+
+原因は、`RouteGuard` がRoot Layoutのナビゲーター準備前に `router.replace("/login")` を実行していたこと。Expo RouterではRoot Layoutの初回renderでStack/Slotなどのnavigatorが先に描画されている必要があるため、リダイレクトはroot navigation stateが準備できるまで待たせる必要があった。
+
+### 変更内容
+
+#### `mobile/src/auth/RouteGuard.tsx`
+- `useRootNavigationState()` を使い、root navigation state の `key` ができるまでリダイレクトしないようにした。
+
+#### `mobile/app/_layout.tsx`
+- `<Stack />` を先に描画し、その後に `<RouteGuard />` を置く順序へ変更した。
+
+### 影響範囲
+
+- iOS版のExpo Go起動
+- 未ログイン時の `/login` リダイレクト
+- プレビュー導線の初回表示
+
+### 確認方法
+
+- `npm run typecheck`
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+
+### 関連ファイル
+
+- `mobile/src/auth/RouteGuard.tsx`
+- `mobile/app/_layout.tsx`
+
+### セルフレビュー結果
+
+- ✅ Root Layoutがnavigatorを先にrenderする構造にした
+- ✅ リダイレクトはroot navigation state準備後にのみ実行するようにした
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション154.77：iOS Metroのmonorepo監視エラーを修正
 
 ### 背景・問題意識

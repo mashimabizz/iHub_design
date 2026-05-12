@@ -9,7 +9,6 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <RouteGuard />
         <StatusBar style="dark" />
         <Stack
           screenOptions={{
@@ -18,6 +17,7 @@ export default function RootLayout() {
             contentStyle: { backgroundColor: ihubColors.background },
           }}
         />
+        <RouteGuard />
       </AuthProvider>
     </SafeAreaProvider>
   );
