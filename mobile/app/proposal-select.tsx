@@ -1,10 +1,23 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { PrimaryButton } from "../src/components/PrimaryButton";
 import { Screen } from "../src/components/Screen";
 import { StatusPill } from "../src/components/StatusPill";
 import { SectionTabs } from "../src/components/GoodsGrid";
+import {
+  NativeMapPreview,
+  type MapCoordinate,
+} from "../src/components/NativeMapPreview";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
 type ProposalTab = "give" | "receive" | "meetup";
@@ -16,6 +29,15 @@ type ChoiceItem = {
   glyph: string;
   hue: string;
   hint: string;
+};
+
+type MeetupCandidate = {
+  id: string;
+  dayIndex: number;
+  startHour: number;
+  endHour: number;
+  place: string;
+  coordinate: MapCoordinate;
 };
 
 const GIVE_CHOICES: ChoiceItem[] = [
@@ -57,14 +79,33 @@ const RECEIVE_CHOICES: ChoiceItem[] = [
 ];
 
 const DAYS = [
-  { id: "fri", day: "金", date: "17" },
-  { id: "sat", day: "土", date: "18" },
-  { id: "sun", day: "日", date: "19" },
-  { id: "mon", day: "月", date: "20" },
-  { id: "tue", day: "火", date: "21" },
+  { id: "fri", day: "金", date: "17", month: "5月" },
+  { id: "sat", day: "土", date: "18", month: "5月" },
+  { id: "sun", day: "日", date: "19", month: "5月" },
+  { id: "mon", day: "月", date: "20", month: "5月" },
+  { id: "tue", day: "火", date: "21", month: "5月" },
 ];
 
-const HOURS = ["10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"];
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+const HOUR_HEIGHT = 62;
+const TIME_LABEL_WIDTH = 52;
+const FALLBACK_COORDINATE = {
+  latitude: 35.5075,
+  longitude: 139.6174,
+};
+const PRESET_PLACES = [
+  {
+    label: "横浜アリーナ 北口",
+    coordinate: FALLBACK_COORDINATE,
+  },
+  {
+    label: "新横浜駅 中央改札",
+    coordinate: {
+      latitude: 35.5079,
+      longitude: 139.6179,
+    },
+  },
+];
 
 export default function ProposalSelectScreen() {
   const params = useLocalSearchParams<{ tab?: ProposalTab | ProposalTab[] }>();
@@ -72,7 +113,12 @@ export default function ProposalSelectScreen() {
   const [tab, setTab] = useState<ProposalTab>(initialTab);
   const [giveSelected, setGiveSelected] = useState("give-1");
   const [receiveSelected, setReceiveSelected] = useState("receive-1");
-  const [activeCandidate, setActiveCandidate] = useState("17-14");
+  const [meetupCandidates, setMeetupCandidates] = useState<MeetupCandidate[]>([]);
+  const [activeMeetupId, setActiveMeetupId] = useState<string | null>(null);
+  const [placeSheetId, setPlaceSheetId] = useState<string | null>(null);
+  const meetupReady =
+    meetupCandidates.length > 0 &&
+    meetupCandidates.every((candidate) => candidate.place.trim().length > 0);
 
   const tabs = useMemo(
     () => [
@@ -121,8 +167,43 @@ export default function ProposalSelectScreen() {
 
       {tab === "meetup" ? (
         <MeetupPane
-          activeCandidate={activeCandidate}
-          onChange={setActiveCandidate}
+          candidates={meetupCandidates}
+          activeCandidateId={activeMeetupId}
+          placeSheetId={placeSheetId}
+          onSelectCandidate={setActiveMeetupId}
+          onClosePlaceSheet={() => setPlaceSheetId(null)}
+          onOpenPlaceSheet={(id) => {
+            setActiveMeetupId(id);
+            setPlaceSheetId(id);
+          }}
+          onAddCandidate={(dayIndex, hour) => {
+            const id = `candidate-${Date.now()}`;
+            const candidate: MeetupCandidate = {
+              id,
+              dayIndex,
+              startHour: hour,
+              endHour: Math.min(hour + 1, 24),
+              place: "",
+              coordinate: FALLBACK_COORDINATE,
+            };
+            setMeetupCandidates((current) => [...current.slice(0, 2), candidate]);
+            setActiveMeetupId(id);
+            setPlaceSheetId(id);
+          }}
+          onDeleteCandidate={(id) => {
+            setMeetupCandidates((current) =>
+              current.filter((candidate) => candidate.id !== id),
+            );
+            setActiveMeetupId((current) => (current === id ? null : current));
+            setPlaceSheetId((current) => (current === id ? null : current));
+          }}
+          onUpdateCandidate={(id, patch) => {
+            setMeetupCandidates((current) =>
+              current.map((candidate) =>
+                candidate.id === id ? { ...candidate, ...patch } : candidate,
+              ),
+            );
+          }}
         />
       ) : null}
 
@@ -134,10 +215,29 @@ export default function ProposalSelectScreen() {
           }
           router.push({
             pathname: "/proposal-confirm",
+            params: {
+              meetups: JSON.stringify(
+                meetupCandidates
+                  .filter((candidate) => candidate.place.trim())
+                  .map((candidate, index) => ({
+                    id: candidate.id,
+                    label: `候補${index + 1}`,
+                    time: `${DAYS[candidate.dayIndex]?.month ?? ""}${DAYS[candidate.dayIndex]?.date ?? ""}日 ${formatHour(candidate.startHour)} - ${formatHour(candidate.endHour)}`,
+                    place: candidate.place,
+                    latitude: candidate.coordinate.latitude,
+                    longitude: candidate.coordinate.longitude,
+                  })),
+              ),
+            },
           });
         }}
+        disabled={tab === "meetup" && !meetupReady}
       >
-        {tab === "meetup" ? "送信確認へ進む" : "待ち合わせへ進む"}
+        {tab === "meetup"
+          ? meetupReady
+            ? "送信確認へ進む"
+            : "交換できる時間と場所を設定してください"
+          : "待ち合わせへ進む"}
       </PrimaryButton>
     </Screen>
   );
@@ -195,15 +295,54 @@ function ChoicePane({
 }
 
 function MeetupPane({
-  activeCandidate,
-  onChange,
+  candidates,
+  activeCandidateId,
+  placeSheetId,
+  onSelectCandidate,
+  onOpenPlaceSheet,
+  onClosePlaceSheet,
+  onAddCandidate,
+  onDeleteCandidate,
+  onUpdateCandidate,
 }: {
-  activeCandidate: string;
-  onChange: (id: string) => void;
+  candidates: MeetupCandidate[];
+  activeCandidateId: string | null;
+  placeSheetId: string | null;
+  onSelectCandidate: (id: string | null) => void;
+  onOpenPlaceSheet: (id: string) => void;
+  onClosePlaceSheet: () => void;
+  onAddCandidate: (dayIndex: number, hour: number) => void;
+  onDeleteCandidate: (id: string) => void;
+  onUpdateCandidate: (id: string, patch: Partial<MeetupCandidate>) => void;
 }) {
+  const { width } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
+  const calendarWidth = width - 36;
+  const dayWidth = (calendarWidth - TIME_LABEL_WIDTH) / DAYS.length;
+  const contentHeight = HOURS.length * HOUR_HEIGHT + 28;
+  const activeCandidate =
+    candidates.find((candidate) => candidate.id === placeSheetId) ?? null;
+  const previousCandidate = activeCandidate
+    ? candidates
+        .filter((candidate) => candidate.id !== activeCandidate.id)
+        .reverse()
+        .find((candidate) => candidate.place.trim()) ?? null
+    : null;
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, 10 * HOUR_HEIGHT - 10),
+        animated: false,
+      });
+    }, 60);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <View style={styles.meetupRoot}>
       <View style={styles.days}>
+        <View style={styles.dayTimeSpacer} />
         {DAYS.map((day) => (
           <View key={day.id} style={styles.dayCell}>
             <Text style={styles.dayName}>{day.day}</Text>
@@ -213,37 +352,264 @@ function MeetupPane({
       </View>
 
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.calendarContent}
+        contentContainerStyle={[
+          styles.calendarContent,
+          { height: contentHeight },
+        ]}
       >
-        {HOURS.map((hour, hourIndex) => (
-          <View key={hour} style={styles.hourRow}>
-            <Text style={styles.hourLabel}>{hour}</Text>
-            <View style={styles.hourSlots}>
-              {DAYS.map((day, dayIndex) => {
-                const id = `${day.date}-${10 + hourIndex}`;
-                const active = activeCandidate === id;
-                const suggested = (dayIndex === 0 && hourIndex === 4) || active;
-                return (
-                  <Pressable
-                    key={id}
-                    onPress={() => onChange(id)}
+        <View style={[styles.calendarGrid, { height: contentHeight }]}>
+          <View style={[styles.timeAxis, { width: TIME_LABEL_WIDTH }]}>
+            {HOURS.map((hour) => (
+              <Text
+                key={hour}
+                style={[
+                  styles.hourLabel,
+                  {
+                    top: hour * HOUR_HEIGHT - 7,
+                  },
+                ]}
+              >
+                {formatHour(hour)}
+              </Text>
+            ))}
+          </View>
+
+          {DAYS.map((day, dayIndex) => (
+            <View
+              key={day.id}
+              style={[
+                styles.dayColumn,
+                {
+                  left: TIME_LABEL_WIDTH + dayIndex * dayWidth,
+                  width: dayWidth,
+                },
+              ]}
+            >
+              {HOURS.map((hour) => (
+                <Pressable
+                  key={`${day.id}-${hour}`}
+                  delayLongPress={260}
+                  onLongPress={() => onAddCandidate(dayIndex, hour)}
+                  style={[
+                    styles.calendarCell,
+                    {
+                      top: hour * HOUR_HEIGHT,
+                      height: HOUR_HEIGHT,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+          ))}
+
+          {candidates.map((candidate, index) => {
+            const active = candidate.id === activeCandidateId;
+            const placeMissing = !candidate.place.trim();
+            return (
+              <Pressable
+                key={candidate.id}
+                onPress={() => onOpenPlaceSheet(candidate.id)}
+                style={[
+                  styles.candidateBlock,
+                  active ? styles.candidateBlockActive : null,
+                  placeMissing ? styles.candidateBlockMissing : null,
+                  {
+                    left: TIME_LABEL_WIDTH + candidate.dayIndex * dayWidth + 4,
+                    top: candidate.startHour * HOUR_HEIGHT + 3,
+                    width: dayWidth - 8,
+                    height:
+                      Math.max(1, candidate.endHour - candidate.startHour) *
+                        HOUR_HEIGHT -
+                      6,
+                  },
+                ]}
+              >
+                {placeMissing ? (
+                  <View style={styles.candidateAlert}>
+                    <Text style={styles.candidateAlertText}>!</Text>
+                  </View>
+                ) : (
+                  <Text numberOfLines={2} style={styles.candidatePlace}>
+                    {candidate.place}
+                  </Text>
+                )}
+                <Pressable
+                  accessibilityLabel={`候補${index + 1}を削除`}
+                  onPress={() => onDeleteCandidate(candidate.id)}
+                  style={[
+                    styles.candidateDelete,
+                    placeMissing ? styles.candidateDeleteMissing : null,
+                  ]}
+                >
+                  <Text
                     style={[
-                      styles.timeCell,
-                      suggested ? styles.timeCellSuggested : null,
-                      active ? styles.timeCellActive : null,
+                      styles.candidateDeleteText,
+                      placeMissing ? styles.candidateDeleteTextMissing : null,
                     ]}
                   >
-                    {active ? <Text style={styles.timeCellText}>横浜</Text> : null}
-                  </Pressable>
-                );
-              })}
+                    ×
+                  </Text>
+                </Pressable>
+              </Pressable>
+            );
+          })}
+
+          {candidates.length === 0 ? (
+            <View style={styles.calendarHint}>
+              <Text style={styles.calendarHintText}>
+                長押しで時間を選択できるよ
+              </Text>
             </View>
-          </View>
-        ))}
+          ) : null}
+        </View>
       </ScrollView>
+
+      <PlaceSheet
+        candidate={activeCandidate}
+        previousCandidate={previousCandidate}
+        onClose={onClosePlaceSheet}
+        onUpdate={(patch) => {
+          if (!activeCandidate) return;
+          onUpdateCandidate(activeCandidate.id, patch);
+        }}
+      />
     </View>
   );
+}
+
+function PlaceSheet({
+  candidate,
+  previousCandidate,
+  onClose,
+  onUpdate,
+}: {
+  candidate: MeetupCandidate | null;
+  previousCandidate: MeetupCandidate | null;
+  onClose: () => void;
+  onUpdate: (patch: Partial<MeetupCandidate>) => void;
+}) {
+  const [placeDraft, setPlaceDraft] = useState("");
+  const [coordinateDraft, setCoordinateDraft] =
+    useState<MapCoordinate>(FALLBACK_COORDINATE);
+
+  useEffect(() => {
+    if (!candidate) return;
+    setPlaceDraft(candidate.place);
+    setCoordinateDraft(candidate.coordinate);
+  }, [candidate]);
+
+  if (!candidate) return null;
+
+  function applyPreset(index: number) {
+    const preset = PRESET_PLACES[index] ?? PRESET_PLACES[0];
+    setPlaceDraft(preset.label);
+    setCoordinateDraft(preset.coordinate);
+  }
+
+  function confirm() {
+    onUpdate({
+      place: placeDraft.trim() || PRESET_PLACES[0].label,
+      coordinate: coordinateDraft,
+    });
+    onClose();
+  }
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.placeBackdrop} onPress={onClose}>
+        <Pressable style={styles.placeSheet}>
+          <View style={styles.placeHandle} />
+          <View style={styles.placeHeader}>
+            <View>
+              <Text style={styles.placeKicker}>
+                {formatCandidateRange(candidate)}
+              </Text>
+              <Text style={styles.placeTitle}>交換できる場所</Text>
+            </View>
+            <Pressable onPress={onClose} style={styles.placeClose}>
+              <Text style={styles.placeCloseText}>×</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.placeActions}>
+            <Pressable onPress={() => applyPreset(0)} style={styles.placeAction}>
+              <Text style={styles.placeActionText}>現在地を中心に</Text>
+            </Pressable>
+            <Pressable
+              disabled={!previousCandidate}
+              onPress={() => {
+                if (!previousCandidate) return;
+                setPlaceDraft(previousCandidate.place);
+                setCoordinateDraft(previousCandidate.coordinate);
+              }}
+              style={[
+                styles.placeAction,
+                styles.placeActionStrong,
+                !previousCandidate ? styles.placeActionDisabled : null,
+              ]}
+            >
+              <Text style={styles.placeActionStrongText}>前の設定と同じに</Text>
+            </Pressable>
+          </View>
+
+          <TextInput
+            value={placeDraft}
+            onChangeText={setPlaceDraft}
+            placeholder="取得中"
+            placeholderTextColor="rgba(58,50,74,0.34)"
+            style={styles.placeInput}
+          />
+
+          <View style={styles.placeMapWrap}>
+            <NativeMapPreview
+              center={coordinateDraft}
+              markers={[
+                {
+                  id: "selected",
+                  coordinate: coordinateDraft,
+                  label: "!",
+                  title: placeDraft || "交換できる場所",
+                },
+              ]}
+              interactive
+              height={210}
+              onPress={(coordinate) => {
+                setCoordinateDraft(coordinate);
+                if (!placeDraft.trim()) setPlaceDraft(PRESET_PLACES[0].label);
+              }}
+            />
+          </View>
+
+          <View style={styles.placePresetRow}>
+            {PRESET_PLACES.map((preset, index) => (
+              <Pressable
+                key={preset.label}
+                onPress={() => applyPreset(index)}
+                style={styles.placePreset}
+              >
+                <Text numberOfLines={1} style={styles.placePresetText}>
+                  {preset.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <PrimaryButton onPress={confirm}>この場所にする</PrimaryButton>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function formatHour(hour: number) {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+function formatCandidateRange(candidate: MeetupCandidate) {
+  const day = DAYS[candidate.dayIndex];
+  return `${day?.month ?? ""}${day?.date ?? ""}日 ${formatHour(candidate.startHour)} - ${formatHour(candidate.endHour)}`;
 }
 
 function one(value?: string | string[]) {
@@ -391,9 +757,8 @@ const styles = StyleSheet.create({
   },
   meetupRoot: {
     backgroundColor: ihubColors.surface,
-    borderColor: "rgba(58,50,74,0.08)",
-    borderRadius: ihubRadii.xl,
-    borderWidth: 1,
+    borderTopColor: "rgba(58,50,74,0.08)",
+    borderTopWidth: 1,
     flex: 1,
     overflow: "hidden",
   },
@@ -402,10 +767,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     flexDirection: "row",
   },
+  dayTimeSpacer: {
+    width: TIME_LABEL_WIDTH,
+  },
   dayCell: {
     alignItems: "center",
     flex: 1,
-    paddingVertical: 10,
+    paddingBottom: 9,
+    paddingTop: 7,
   },
   dayName: {
     color: ihubColors.mutedInk,
@@ -414,51 +783,244 @@ const styles = StyleSheet.create({
   },
   dayDate: {
     color: ihubColors.ink,
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "900",
     marginTop: 2,
   },
   calendarContent: {
-    paddingBottom: 22,
+    paddingBottom: 36,
   },
-  hourRow: {
-    flexDirection: "row",
-    minHeight: 58,
+  calendarGrid: {
+    position: "relative",
+  },
+  timeAxis: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    top: 0,
   },
   hourLabel: {
     color: ihubColors.mutedInk,
     fontSize: 11,
     fontWeight: "800",
-    paddingTop: 7,
+    position: "absolute",
     textAlign: "center",
-    width: 46,
+    width: TIME_LABEL_WIDTH,
   },
-  hourSlots: {
-    borderLeftColor: "rgba(58,50,74,0.08)",
+  dayColumn: {
+    borderLeftColor: "rgba(58,50,74,0.07)",
     borderLeftWidth: 1,
-    flex: 1,
-    flexDirection: "row",
+    bottom: 0,
+    position: "absolute",
+    top: 0,
   },
-  timeCell: {
+  calendarCell: {
     borderBottomColor: "rgba(58,50,74,0.055)",
     borderBottomWidth: 1,
-    borderRightColor: "rgba(58,50,74,0.055)",
-    borderRightWidth: 1,
-    flex: 1,
+    position: "absolute",
+    width: "100%",
+  },
+  candidateBlock: {
+    alignItems: "center",
+    backgroundColor: "rgba(75,151,224,0.22)",
+    borderColor: "rgba(75,151,224,0.54)",
+    borderRadius: 13,
+    borderWidth: 1,
     justifyContent: "center",
-    minHeight: 58,
-    paddingHorizontal: 3,
+    overflow: "hidden",
+    position: "absolute",
+    shadowColor: "#4b97e0",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
   },
-  timeCellSuggested: {
-    backgroundColor: "rgba(168,212,230,0.18)",
+  candidateBlockActive: {
+    borderColor: "rgba(166,149,216,0.88)",
+    shadowColor: ihubColors.lavender,
+    shadowOpacity: 0.2,
   },
-  timeCellActive: {
-    backgroundColor: "rgba(83,147,227,0.18)",
-    borderColor: "rgba(83,147,227,0.46)",
+  candidateBlockMissing: {
+    backgroundColor: "rgba(75,151,224,0.12)",
+    borderColor: "rgba(230,149,67,0.58)",
+    borderStyle: "dashed",
   },
-  timeCellText: {
+  candidateAlert: {
+    alignItems: "center",
+    backgroundColor: "#f29d4b",
+    borderRadius: 999,
+    height: 25,
+    justifyContent: "center",
+    width: 25,
+  },
+  candidateAlertText: {
+    color: ihubColors.surface,
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  candidatePlace: {
+    color: "#256aa8",
+    fontSize: 10.5,
+    fontWeight: "900",
+    lineHeight: 14,
+    paddingHorizontal: 5,
+    textAlign: "center",
+  },
+  candidateDelete: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.82)",
+    borderRadius: 999,
+    height: 20,
+    justifyContent: "center",
+    position: "absolute",
+    right: 4,
+    top: 4,
+    width: 20,
+  },
+  candidateDeleteMissing: {
+    backgroundColor: "rgba(242,157,75,0.16)",
+  },
+  candidateDeleteText: {
+    color: "#256aa8",
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 15,
+  },
+  candidateDeleteTextMissing: {
+    color: "#d98232",
+  },
+  calendarHint: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: "rgba(24,22,32,0.42)",
+    borderRadius: 999,
+    justifyContent: "center",
+    left: "50%",
+    marginLeft: -110,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    position: "absolute",
+    top: 260,
+    width: 220,
+  },
+  calendarHintText: {
+    color: ihubColors.surface,
+    fontSize: 13,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  placeBackdrop: {
+    backgroundColor: "rgba(18,16,26,0.34)",
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  placeSheet: {
+    backgroundColor: ihubColors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    gap: 12,
+    paddingBottom: 24,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+  },
+  placeHandle: {
+    alignSelf: "center",
+    backgroundColor: "rgba(58,50,74,0.18)",
+    borderRadius: 999,
+    height: 4,
+    width: 42,
+  },
+  placeHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  placeKicker: {
+    color: ihubColors.lavender,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  placeTitle: {
+    color: ihubColors.ink,
+    fontSize: 21,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  placeClose: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: 999,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  placeCloseText: {
+    color: ihubColors.mutedInk,
+    fontSize: 21,
+    fontWeight: "900",
+    lineHeight: 22,
+  },
+  placeActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  placeAction: {
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: ihubRadii.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  placeActionText: {
+    color: ihubColors.ink,
+    fontSize: 11.5,
+    fontWeight: "900",
+  },
+  placeActionStrong: {
+    backgroundColor: "rgba(166,149,216,0.14)",
+    borderColor: "rgba(166,149,216,0.28)",
+    borderWidth: 1,
+    marginLeft: "auto",
+  },
+  placeActionStrongText: {
+    color: ihubColors.lavender,
+    fontSize: 11.5,
+    fontWeight: "900",
+  },
+  placeActionDisabled: {
+    opacity: 0.45,
+  },
+  placeInput: {
+    backgroundColor: "rgba(58,50,74,0.045)",
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 14,
+    borderWidth: 1,
+    color: ihubColors.ink,
+    fontSize: 14,
+    fontWeight: "800",
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  placeMapWrap: {
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  placePresetRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  placePreset: {
+    backgroundColor: "rgba(168,212,230,0.16)",
+    borderRadius: ihubRadii.pill,
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  placePresetText: {
     color: "#3478c7",
-    fontSize: 9.5,
+    fontSize: 11,
     fontWeight: "900",
     textAlign: "center",
   },

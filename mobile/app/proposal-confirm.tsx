@@ -1,5 +1,5 @@
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -12,6 +12,10 @@ import {
 import { PrimaryButton } from "../src/components/PrimaryButton";
 import { Screen } from "../src/components/Screen";
 import { StatusPill } from "../src/components/StatusPill";
+import {
+  NativeMapPreview,
+  type MapCoordinate,
+} from "../src/components/NativeMapPreview";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
 type ThumbItem = {
@@ -26,8 +30,7 @@ type MeetupCandidate = {
   label: string;
   time: string;
   place: string;
-  x: number;
-  y: number;
+  coordinate: MapCoordinate;
 };
 
 const THEIR_ITEMS: ThumbItem[] = [
@@ -44,22 +47,32 @@ const MEETUP_CANDIDATES: MeetupCandidate[] = [
   {
     id: "candidate-1",
     label: "候補1",
-    time: "5/17 14:00 - 15:00",
+    time: "5月17日 14:00 - 15:00",
     place: "横浜アリーナ 北口",
-    x: 62,
-    y: 42,
+    coordinate: {
+      latitude: 35.5075,
+      longitude: 139.6174,
+    },
   },
   {
     id: "candidate-2",
     label: "候補2",
-    time: "5/18 16:30 - 17:30",
+    time: "5月18日 16:00 - 17:00",
     place: "新横浜駅 中央改札",
-    x: 38,
-    y: 66,
+    coordinate: {
+      latitude: 35.5079,
+      longitude: 139.6179,
+    },
   },
 ];
 
 export default function ProposalConfirmScreen() {
+  const params = useLocalSearchParams<{ meetups?: string | string[] }>();
+  const meetupsParam = one(params.meetups);
+  const meetupCandidates = useMemo(
+    () => parseMeetups(meetupsParam),
+    [meetupsParam],
+  );
   const [message, setMessage] = useState("");
   const [shareSchedule, setShareSchedule] = useState(true);
   const [submitted, setSubmitted] = useState(false);
@@ -102,7 +115,7 @@ export default function ProposalConfirmScreen() {
         </Section>
 
         <Section title="交換できる候補">
-          <MeetupMapCard />
+          <MeetupMapCard candidates={meetupCandidates} />
         </Section>
 
         <Section title="メッセージ（任意）" right={`${message.length} / 400`}>
@@ -111,7 +124,6 @@ export default function ProposalConfirmScreen() {
             onChangeText={setMessage}
             maxLength={400}
             multiline
-            placeholder="メッセージ"
             placeholderTextColor="rgba(58,50,74,0.32)"
             style={styles.messageInput}
             textAlignVertical="top"
@@ -252,33 +264,25 @@ function ArrowDot({ color, direction }: { color: string; direction: "left" | "ri
   );
 }
 
-function MeetupMapCard() {
+function MeetupMapCard({ candidates }: { candidates: MeetupCandidate[] }) {
+  const center = getMapCenter(candidates);
   return (
     <View style={styles.meetupCard}>
       <View style={styles.mapPanel}>
-        <View style={styles.mapRoadOne} />
-        <View style={styles.mapRoadTwo} />
-        <View style={styles.mapRoadThree} />
-        <View style={styles.mapAreaOne} />
-        <View style={styles.mapAreaTwo} />
-        {MEETUP_CANDIDATES.map((candidate, index) => (
-          <View
-            key={candidate.id}
-            style={[
-              styles.mapPin,
-              {
-                left: `${candidate.x}%`,
-                top: `${candidate.y}%`,
-              },
-            ]}
-          >
-            <Text style={styles.mapPinText}>{index + 1}</Text>
-          </View>
-        ))}
+        <NativeMapPreview
+          center={center}
+          height={204}
+          markers={candidates.map((candidate, index) => ({
+            id: candidate.id,
+            coordinate: candidate.coordinate,
+            label: String(index + 1),
+            title: candidate.place,
+          }))}
+        />
       </View>
 
       <View style={styles.meetupList}>
-        {MEETUP_CANDIDATES.map((candidate, index) => (
+        {candidates.map((candidate, index) => (
           <View key={candidate.id} style={styles.meetupRow}>
             <View style={styles.meetupNumber}>
               <Text style={styles.meetupNumberText}>{index + 1}</Text>
@@ -296,6 +300,53 @@ function MeetupMapCard() {
       </View>
     </View>
   );
+}
+
+function one(value?: string | string[]) {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function parseMeetups(raw?: string): MeetupCandidate[] {
+  if (!raw) return MEETUP_CANDIDATES;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return MEETUP_CANDIDATES;
+    const candidates = parsed
+      .map((item, index): MeetupCandidate | null => {
+        const latitude = Number(item?.latitude);
+        const longitude = Number(item?.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          return null;
+        }
+        return {
+          id: String(item?.id ?? `candidate-${index + 1}`),
+          label: String(item?.label ?? `候補${index + 1}`),
+          time: String(item?.time ?? ""),
+          place: String(item?.place ?? ""),
+          coordinate: { latitude, longitude },
+        };
+      })
+      .filter(Boolean) as MeetupCandidate[];
+    return candidates.length > 0 ? candidates : MEETUP_CANDIDATES;
+  } catch {
+    return MEETUP_CANDIDATES;
+  }
+}
+
+function getMapCenter(candidates: MeetupCandidate[]): MapCoordinate {
+  if (candidates.length === 0) return MEETUP_CANDIDATES[0].coordinate;
+  const total = candidates.reduce(
+    (acc, candidate) => ({
+      latitude: acc.latitude + candidate.coordinate.latitude,
+      longitude: acc.longitude + candidate.coordinate.longitude,
+    }),
+    { latitude: 0, longitude: 0 },
+  );
+  return {
+    latitude: total.latitude / candidates.length,
+    longitude: total.longitude / candidates.length,
+  };
 }
 
 const styles = StyleSheet.create({

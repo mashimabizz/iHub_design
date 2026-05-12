@@ -149,6 +149,7 @@ export default function MatchDetailScreen() {
   );
   const [popupTarget, setPopupTarget] = useState<PopupTarget | null>(null);
   const dragX = useRef(new Animated.Value(0)).current;
+  const swipeLockRef = useRef(false);
   const [isSwipeSettling, setIsSwipeSettling] = useState(false);
 
   useEffect(() => {
@@ -162,7 +163,7 @@ export default function MatchDetailScreen() {
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gesture) => {
-          if (popupTarget || isSwipeSettling) return false;
+          if (popupTarget || isSwipeSettling || swipeLockRef.current) return false;
           const absX = Math.abs(gesture.dx);
           const absY = Math.abs(gesture.dy);
           if (absX < 8 || absX <= absY * 1.08) return false;
@@ -228,6 +229,8 @@ export default function MatchDetailScreen() {
     nextContext: CandidateContext,
     direction: "next" | "previous",
   ) {
+    if (swipeLockRef.current) return;
+    swipeLockRef.current = true;
     setIsSwipeSettling(true);
     Animated.timing(dragX, {
       toValue: direction === "next" ? -width : width,
@@ -236,13 +239,9 @@ export default function MatchDetailScreen() {
       useNativeDriver: true,
     }).start(() => {
       setActiveContext(nextContext);
-      dragX.setValue(direction === "next" ? width : -width);
-      Animated.timing(dragX, {
-        toValue: 0,
-        duration: SWIPE_SETTLE_MS,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(() => setIsSwipeSettling(false));
+      dragX.setValue(0);
+      swipeLockRef.current = false;
+      setIsSwipeSettling(false);
     });
   }
 
