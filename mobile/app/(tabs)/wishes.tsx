@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { useMemo, useRef, useState } from "react";
 import {
   Pressable,
@@ -185,6 +186,16 @@ export default function WishesScreen() {
     ? buildWishActions({
         item: selectedWish,
         onClose: () => setSelectedWish(null),
+        onEdit: () => {
+          const wish = selectedWish;
+          setSelectedWish(null);
+          openWishEditor(wish, "edit");
+        },
+        onListing: () => {
+          const wish = selectedWish;
+          setSelectedWish(null);
+          openListingEditor(null, "create", wish);
+        },
         onDelete: () => {
           setWishes((current) =>
             current.filter((item) => item.id !== selectedWish.id),
@@ -198,6 +209,11 @@ export default function WishesScreen() {
     ? buildListingActions({
         item: selectedListing,
         onClose: () => setSelectedListing(null),
+        onEdit: () => {
+          const listing = selectedListing;
+          setSelectedListing(null);
+          openListingEditor(listing, "edit");
+        },
         onToggle: () => toggleListingStatus(selectedListing.id),
         onDelete: () => deleteListing(selectedListing.id),
       })
@@ -250,6 +266,7 @@ export default function WishesScreen() {
             <ListingsPanel
               listings={listings}
               onSelect={setSelectedListing}
+              onEdit={(listing) => openListingEditor(listing, "edit")}
               onToggle={toggleListingStatus}
               onDelete={deleteListing}
             />
@@ -261,35 +278,11 @@ export default function WishesScreen() {
         label={tab === "wish" ? "Wishを追加" : "個別募集を追加"}
         onPress={() => {
           if (tab === "wish") {
-            const index = wishes.length + 1;
-            setWishes((current) => [
-              {
-                id: `wish-preview-${index}`,
-                title: `追加Wish ${index}`,
-                subtitle: "プレビュー / トレカ",
-                glyph: `${index}`,
-                hue: "#cbbcf4",
-                badge: "NEW",
-                priority: "ゆる募",
-                linkedListings: 0,
-              },
-              ...current,
-            ]);
+            openWishEditor(null, "create");
             return;
           }
 
-          const index = listings.length + 1;
-          setListings((current) => [
-            {
-              id: `listing-preview-${index}`,
-              status: "ACTIVE",
-              give: [`譲グッズ ${index}`],
-              want: [`求グッズ ${index}`],
-              logic: "1pick",
-              hue: "#cbbcf4",
-            },
-            ...current,
-          ]);
+          openListingEditor(null, "create");
         }}
       />
 
@@ -369,14 +362,60 @@ export default function WishesScreen() {
   }
 }
 
+function openWishEditor(
+  wish: WishItem | null,
+  mode: "create" | "edit",
+) {
+  router.push({
+    pathname: "/goods-editor",
+    params: {
+      kind: "wish",
+      mode,
+      title: wish?.title ?? "",
+      subtitle: wish?.subtitle ?? "",
+      group: wish?.subtitle.split(" / ")[0] ?? "",
+      goodsType: wish?.subtitle.split(" / ")[1] ?? "",
+      note: wish?.priority ?? "",
+      glyph: wish?.glyph ?? "",
+      hue: wish?.hue ?? "#f3c5d4",
+      badge:
+        wish == null
+          ? "NEW"
+          : wish.linkedListings === 0
+            ? "未紐付け"
+            : `募集 ${wish.linkedListings}`,
+      quantity: "1",
+    },
+  });
+}
+
+function openListingEditor(
+  listing: ListingItem | null,
+  mode: "create" | "edit",
+  wish?: WishItem | null,
+) {
+  router.push({
+    pathname: "/listing-editor",
+    params: {
+      mode,
+      status: listing?.status ?? "ACTIVE",
+      logic: listing?.logic ?? "1pick",
+      give: listing?.give.join("、") ?? "",
+      want: listing?.want.join("、") ?? wish?.title ?? "",
+    },
+  });
+}
+
 function ListingsPanel({
   listings,
   onSelect,
+  onEdit,
   onToggle,
   onDelete,
 }: {
   listings: ListingItem[];
   onSelect: (listing: ListingItem) => void;
+  onEdit: (listing: ListingItem) => void;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -393,6 +432,7 @@ function ListingsPanel({
       <ListingDeck
         listings={listings}
         onSelect={onSelect}
+        onEdit={onEdit}
         onToggle={onToggle}
         onDelete={onDelete}
       />
@@ -402,6 +442,7 @@ function ListingsPanel({
             key={listing.id}
             listing={listing}
             onPress={() => onSelect(listing)}
+            onEdit={() => onEdit(listing)}
             onToggle={() => onToggle(listing.id)}
             onDelete={() => onDelete(listing.id)}
           />
@@ -414,11 +455,13 @@ function ListingsPanel({
 function ListingDeck({
   listings,
   onSelect,
+  onEdit,
   onToggle,
   onDelete,
 }: {
   listings: ListingItem[];
   onSelect: (listing: ListingItem) => void;
+  onEdit: (listing: ListingItem) => void;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -440,6 +483,7 @@ function ListingDeck({
             key={listing.id}
             listing={listing}
             onPress={() => onSelect(listing)}
+            onEdit={() => onEdit(listing)}
             onToggle={() => onToggle(listing.id)}
             onDelete={() => onDelete(listing.id)}
           />
@@ -452,11 +496,13 @@ function ListingDeck({
 function ListingDeckCard({
   listing,
   onPress,
+  onEdit,
   onToggle,
   onDelete,
 }: {
   listing: ListingItem;
   onPress: () => void;
+  onEdit: () => void;
   onToggle: () => void;
   onDelete: () => void;
 }) {
@@ -470,7 +516,7 @@ function ListingDeckCard({
           {listing.logic}
         </Text>
         <View style={styles.listingActions}>
-          <MiniIcon label="E" onPress={onPress} />
+          <MiniIcon label="E" onPress={onEdit} />
           <MiniIcon
             label={listing.status === "ACTIVE" ? "II" : "ON"}
             onPress={onToggle}
@@ -547,11 +593,13 @@ function DeckSide({
 function ListingCard({
   listing,
   onPress,
+  onEdit,
   onToggle,
   onDelete,
 }: {
   listing: ListingItem;
   onPress: () => void;
+  onEdit: () => void;
   onToggle: () => void;
   onDelete: () => void;
 }) {
@@ -566,7 +614,7 @@ function ListingCard({
           <Text style={styles.listingSub}>{listing.logic}</Text>
         </View>
         <View style={styles.listingActions}>
-          <MiniIcon label="E" onPress={onPress} />
+          <MiniIcon label="E" onPress={onEdit} />
           <MiniIcon
             label={listing.status === "ACTIVE" ? "II" : "ON"}
             onPress={onToggle}
@@ -690,22 +738,26 @@ function TradeSide({
 function buildWishActions({
   item,
   onClose,
+  onEdit,
+  onListing,
   onDelete,
 }: {
   item: WishItem;
   onClose: () => void;
+  onEdit: () => void;
+  onListing: () => void;
   onDelete: () => void;
 }): SheetAction[] {
   return [
     {
       id: "edit",
       label: "編集する",
-      onPress: onClose,
+      onPress: onEdit,
     },
     {
       id: "listing",
       label: item.linkedListings > 0 ? "+ 個別募集を追加" : "個別募集を作る",
-      onPress: onClose,
+      onPress: onListing,
     },
     {
       id: "delete",
@@ -725,11 +777,13 @@ function buildWishActions({
 function buildListingActions({
   item,
   onClose,
+  onEdit,
   onToggle,
   onDelete,
 }: {
   item: ListingItem;
   onClose: () => void;
+  onEdit: () => void;
   onToggle: () => void;
   onDelete: () => void;
 }): SheetAction[] {
@@ -737,7 +791,7 @@ function buildListingActions({
     {
       id: "edit",
       label: "編集する",
-      onPress: onClose,
+      onPress: onEdit,
     },
     {
       id: "toggle",

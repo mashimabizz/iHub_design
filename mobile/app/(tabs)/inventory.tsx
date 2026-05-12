@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { useMemo, useRef, useState } from "react";
 import {
   Pressable,
@@ -177,6 +178,11 @@ export default function InventoryScreen() {
     ? buildActions({
         item: selected,
         onClose: () => setSelected(null),
+        onEdit: () => {
+          const item = selected;
+          setSelected(null);
+          openInventoryEditor(item, "edit");
+        },
         onMove: (nextStatus) => {
           setItems((current) =>
             current.map((item) =>
@@ -263,7 +269,12 @@ export default function InventoryScreen() {
             }
             onPressItem={(gridItem) => {
               const item = items.find((current) => current.id === gridItem.id);
-              if (item) setSelected(item);
+              if (!item) return;
+              if (item.status === "traded") {
+                openInventoryEditor(item, "readonly");
+                return;
+              }
+              setSelected(item);
             }}
           />
         </ScrollView>
@@ -271,27 +282,7 @@ export default function InventoryScreen() {
 
       <FloatingAddButton
         label="グッズを追加"
-        onPress={() => {
-          // Supabase連携前のプレビューなので、仮カードを手元に追加する。
-          const index = items.length + 1;
-          setItems((current) => [
-            {
-              id: `inv-preview-${index}`,
-              title: `追加グッズ ${index}`,
-              subtitle: "プレビュー / トレカ",
-              glyph: `${index}`,
-              hue: "#cbbcf4",
-              badge: "NEW",
-              status: "active",
-              group: "preview",
-              type: "トレカ",
-            },
-            ...current,
-          ]);
-          setStatus("active");
-          setActiveGroup(null);
-          setActiveType(null);
-        }}
+        onPress={() => openInventoryEditor(null, "create")}
       />
 
       <BottomOptionSheet
@@ -363,6 +354,28 @@ export default function InventoryScreen() {
   }
 }
 
+function openInventoryEditor(
+  item: InventoryItem | null,
+  mode: "create" | "edit" | "readonly",
+) {
+  router.push({
+    pathname: "/goods-editor",
+    params: {
+      kind: "inventory",
+      mode,
+      title: item?.title ?? "",
+      subtitle: item?.subtitle ?? "",
+      group: item?.group ?? "",
+      goodsType: item?.type ?? "",
+      note: item?.note ?? "",
+      glyph: item?.glyph ?? "",
+      hue: item?.hue ?? "#cbbcf4",
+      badge: item?.badge ?? (mode === "create" ? "NEW" : "譲る候補"),
+      quantity: item?.badge?.match(/\d+/)?.[0] ?? "1",
+    },
+  });
+}
+
 function FilterRow({
   label,
   options,
@@ -431,11 +444,13 @@ function FilterChip({
 function buildActions({
   item,
   onClose,
+  onEdit,
   onMove,
   onDelete,
 }: {
   item: InventoryItem;
   onClose: () => void;
+  onEdit: () => void;
   onMove: (status: InventoryStatus) => void;
   onDelete: () => void;
 }): SheetAction[] {
@@ -454,7 +469,7 @@ function buildActions({
     {
       id: "edit",
       label: "編集する",
-      onPress: onClose,
+      onPress: onEdit,
     },
     {
       id: "move",
