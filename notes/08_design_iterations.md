@@ -4,6 +4,64 @@
 
 ---
 
+## イテレーション154.91：iOS関係図の横スワイプ遷移を追加
+
+### 背景・問題意識
+
+Apple Developer Program の登録反映待ちで実機 Development Build が一時停止している間も、iOS版の実装を進めることにした。
+
+直近の指摘では、ホームのマッチングパネルをタップした後の画面について「WEB版と見た目も機能も再現すること」が重視されている。Web版 `MatchDetailModal` には、関係図画面間をiPhoneのホーム画面のように横スワイプで移動する体験があるため、iOS版にも同じ方向性の操作を入れる。
+
+### 変更内容
+
+#### `mobile/src/data/homeMatches.ts`
+- ホームのマッチ候補データを `mobile/app/(tabs)/index.tsx` から分離した。
+- `MATCH_SECTIONS`、候補型、候補のフラット化、前後候補取得、マッチ詳細遷移パラメータ生成を共通化した。
+
+#### `mobile/app/(tabs)/index.tsx`
+- ホーム画面は共通データ `MATCH_SECTIONS` を参照するように変更した。
+- マッチカード押下時に `candidateId` を含めて `match-detail` へ遷移するようにした。
+
+#### `mobile/app/match-detail.tsx`
+- `candidateId` から現在のマッチ候補を特定し、左右の隣接候補を取得するようにした。
+- `PanResponder` と `Animated.Value` を使い、関係図画面を指の横移動に追従させるようにした。
+- 一定距離または速度を超えたスワイプで、前後のマッチ詳細へ切り替えるようにした。
+- スワイプ中に左右の隣接画面プレビューを表示し、ページが横に続いている感覚を出した。
+- 候補切り替え時には選択状態・OR譲の選択・wishポップアップを現在候補に合わせてリセットするようにした。
+
+#### `mobile/app.json`
+- EAS初回設定で付与された `extra.eas.projectId` を反映した。
+- iOSの暗号利用確認に対応する `ITSAppUsesNonExemptEncryption: false` を反映した。
+
+### 影響範囲
+
+- iOS版ホームのマッチカード押下後
+- iOS版関係図画面
+- Development Build / EAS Build 設定
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+- iOSアプリでホームのマッチカードを押し、関係図画面を左右にスワイプして隣の候補へ移動できることを確認
+
+### 関連ファイル
+
+- `mobile/src/data/homeMatches.ts`
+- `mobile/app/(tabs)/index.tsx`
+- `mobile/app/match-detail.tsx`
+- `mobile/app.json`
+
+### セルフレビュー結果
+
+- ✅ ホームと関係図で同じ候補順を参照するようにし、隣接マッチへの移動がデータ的にずれないようにした
+- ✅ Web版の横スワイプ関係図に近い、指追従・隣接プレビュー・スワイプ確定後のページ切替をiOS版へ追加した
+- ✅ 新しい正式用語・状態名・DBカラムは追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション154.90：iOS Development Build設定を追加
 
 ### 背景・問題意識

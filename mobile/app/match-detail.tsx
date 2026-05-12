@@ -1,14 +1,23 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   Modal,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  findCandidateContext,
+  getAdjacentCandidateContexts,
+  type CandidateContext,
+} from "../src/data/homeMatches";
 import { ihubColors, ihubRadii } from "../src/theme/tokens";
 
 type Priority = "both" | "oneSide" | "wish";
@@ -69,6 +78,11 @@ type HaveSelection = Record<string, string[]>;
 
 const PARTNER_HANDLE = "michilion";
 const MY_AVATAR = "私";
+const SWIPE_DISTANCE_MIN = 72;
+const SWIPE_DISTANCE_MAX = 118;
+const SWIPE_FAST_DISTANCE = 42;
+const SWIPE_SETTLE_MS = 220;
+const SWIPE_RESISTANCE = 0.22;
 
 const BASE_ITEMS = {
   selected: { id: "selected", label: "スア ラキドロ", glyph: "S", color: "#cbbcf4" },
@@ -85,6 +99,7 @@ const BASE_ITEMS = {
 
 export default function MatchDetailScreen() {
   const params = useLocalSearchParams<{
+    candidateId?: string | string[];
     title?: string | string[];
     subtitle?: string | string[];
     member?: string | string[];
@@ -94,19 +109,34 @@ export default function MatchDetailScreen() {
     tag?: string | string[];
   }>();
   const insets = useSafeAreaInsets();
-  const title = one(params.title) || BASE_ITEMS.selected.label;
-  const subtitle = one(params.subtitle) || "マッチ詳細";
-  const member = one(params.member) || title.slice(0, 1);
-  const color = one(params.hue) || BASE_ITEMS.selected.color;
-  const priority = parsePriority(one(params.priority));
-  const listingKind = inferListingKind(priority, one(params.tag));
-  const local = one(params.local) === "true";
+  const { width } = useWindowDimensions();
+  const routeCandidateId = one(params.candidateId);
+  const [activeContext, setActiveContext] = useState<CandidateContext | null>(() =>
+    findCandidateContext(routeCandidateId),
+  );
+  const activeCandidate = activeContext?.candidate;
+  const activeRow = activeContext?.row;
+  const title = activeCandidate?.label || one(params.title) || BASE_ITEMS.selected.label;
+  const subtitle =
+    activeCandidate && activeRow
+      ? `${activeRow.character} × ${activeRow.goodsType} / ${activeCandidate.tag ?? "候補"}`
+      : one(params.subtitle) || "マッチ詳細";
+  const member = activeCandidate?.member || one(params.member) || title.slice(0, 1);
+  const color = activeCandidate?.hue || one(params.hue) || BASE_ITEMS.selected.color;
+  const priority = activeCandidate?.priority || parsePriority(one(params.priority));
+  const tag = activeCandidate?.tag ?? one(params.tag);
+  const listingKind = inferListingKind(priority, tag);
+  const local = activeCandidate?.local ?? one(params.local) === "true";
   const highlightedItem: MiniItem = {
-    id: "selected",
+    id: activeCandidate?.id ?? "selected",
     label: title,
     glyph: member,
     color,
   };
+  const adjacentContexts = useMemo(
+    () => getAdjacentCandidateContexts(activeCandidate?.id ?? routeCandidateId),
+    [activeCandidate?.id, routeCandidateId],
+  );
   const data = useMemo(
     () => buildDetailData(highlightedItem, listingKind),
     [highlightedItem.id, highlightedItem.label, highlightedItem.glyph, highlightedItem.color, listingKind],
@@ -118,6 +148,104 @@ export default function MatchDetailScreen() {
     initialHaveSelection([...data.myListings, ...data.partnerListings], highlightedItem.id),
   );
   const [popupTarget, setPopupTarget] = useState<PopupTarget | null>(null);
+  const dragX = useRef(new Animated.Value(0)).current;
+  const [isSwipeSettling, setIsSwipeSettling] = useState(false);
+
+  useEffect(() => {
+    const listings = [...data.myListings, ...data.partnerListings];
+    setSelection(initialSelection(listings, highlightedItem.id));
+    setHaveSelection(initialHaveSelection(listings, highlightedItem.id));
+    setPopupTarget(null);
+  }, [data, highlightedItem.id]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => {
+          if (popupTarget || isSwipeSettling) return false;
+          const absX = Math.abs(gesture.dx);
+          const absY = Math.abs(gesture.dy);
+          if (absX < 8 || absX <= absY * 1.08) return false;
+          return gesture.dx < 0
+            ? !!adjacentContexts.next
+            : !!adjacentContexts.previous;
+        },
+        onPanResponderGrant: () => {
+          dragX.stopAnimation();
+        },
+        onPanResponderMove: (_, gesture) => {
+          const canMove =
+            gesture.dx < 0
+              ? !!adjacentContexts.next
+              : !!adjacentContexts.previous;
+          const rawOffset = canMove ? gesture.dx : gesture.dx * SWIPE_RESISTANCE;
+          const nextOffset = Math.max(-width, Math.min(width, rawOffset));
+          dragX.setValue(nextOffset);
+        },
+        onPanResponderRelease: (_, gesture) => {
+          const wantsNext = gesture.dx < 0;
+          const target = wantsNext
+            ? adjacentContexts.next
+            : adjacentContexts.previous;
+          const threshold = Math.min(
+            SWIPE_DISTANCE_MAX,
+            Math.max(SWIPE_DISTANCE_MIN, width * 0.24),
+          );
+          const farEnough = Math.abs(gesture.dx) >= threshold;
+          const fastEnough =
+            Math.abs(gesture.dx) >= SWIPE_FAST_DISTANCE &&
+            Math.abs(gesture.vx) >= 0.55;
+
+          if (target && (farEnough || fastEnough)) {
+            commitSwipe(target, wantsNext ? "next" : "previous");
+            return;
+          }
+          settleSwipeBack();
+        },
+        onPanResponderTerminate: settleSwipeBack,
+      }),
+    [
+      adjacentContexts.next,
+      adjacentContexts.previous,
+      dragX,
+      isSwipeSettling,
+      popupTarget,
+      width,
+    ],
+  );
+
+  function settleSwipeBack() {
+    Animated.spring(dragX, {
+      toValue: 0,
+      damping: 18,
+      stiffness: 170,
+      mass: 0.72,
+      useNativeDriver: true,
+    }).start();
+  }
+
+  function commitSwipe(
+    nextContext: CandidateContext,
+    direction: "next" | "previous",
+  ) {
+    setIsSwipeSettling(true);
+    Animated.timing(dragX, {
+      toValue: direction === "next" ? -width : width,
+      duration: SWIPE_SETTLE_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      setActiveContext(nextContext);
+      dragX.setValue(direction === "next" ? width : -width);
+      Animated.timing(dragX, {
+        toValue: 0,
+        duration: SWIPE_SETTLE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => setIsSwipeSettling(false));
+    });
+  }
+
   const aggregated = aggregateSelection({
     myListings: data.myListings,
     partnerListings: data.partnerListings,
@@ -136,164 +264,191 @@ export default function MatchDetailScreen() {
 
   return (
     <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 18) + 8 }]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="閉じる"
-          onPress={() => router.back()}
-          style={styles.closeButton}
-        >
-          <Text style={styles.closeText}>×</Text>
-        </Pressable>
-        <View style={styles.headerCopy}>
-          <Text style={styles.headerTitle}>関係図</Text>
-          <Text numberOfLines={1} style={styles.headerSubtitle}>
-            @{PARTNER_HANDLE} とのマッチ詳細
-          </Text>
-        </View>
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.content,
+      <Animated.View
+        style={[
+          styles.swipeRail,
           {
-            paddingBottom:
-              Math.max(insets.bottom, 12) +
-              (totalSelected > 0 || hasSimpleRelation ? 96 : 24),
+            transform: [{ translateX: dragX }],
           },
         ]}
+        {...panResponder.panHandlers}
       >
-        <View style={styles.contextCard}>
-          <View style={[styles.contextThumb, priorityFrame(priority)]}>
-            <ItemPhoto item={highlightedItem} qty={1} size={58} variant="candidate" highlighted />
+        {adjacentContexts.previous ? (
+          <SwipePreview
+            context={adjacentContexts.previous}
+            side="previous"
+            width={width}
+          />
+        ) : null}
+        {adjacentContexts.next ? (
+          <SwipePreview
+            context={adjacentContexts.next}
+            side="next"
+            width={width}
+          />
+        ) : null}
+
+        <View style={[styles.swipePage, { width }]}>
+          <View style={[styles.header, { paddingTop: Math.max(insets.top, 18) + 8 }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="閉じる"
+              onPress={() => router.back()}
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeText}>×</Text>
+            </Pressable>
+            <View style={styles.headerCopy}>
+              <Text style={styles.headerTitle}>関係図</Text>
+              <Text numberOfLines={1} style={styles.headerSubtitle}>
+                @{PARTNER_HANDLE} とのマッチ詳細
+              </Text>
+            </View>
           </View>
-          <View style={styles.contextText}>
-            <Text numberOfLines={1} style={styles.contextTitle}>
-              {title}
-            </Text>
-            <Text numberOfLines={1} style={styles.contextSubtitle}>
-              {subtitle}
-            </Text>
-          </View>
-          {local ? (
-            <View style={styles.livePill}>
-              <Text style={styles.livePillText}>LIVE</Text>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.content,
+              {
+                paddingBottom:
+                  Math.max(insets.bottom, 12) +
+                  (totalSelected > 0 || hasSimpleRelation ? 96 : 24),
+              },
+            ]}
+          >
+            <View style={styles.contextCard}>
+              <View style={[styles.contextThumb, priorityFrame(priority)]}>
+                <ItemPhoto item={highlightedItem} qty={1} size={58} variant="candidate" highlighted />
+              </View>
+              <View style={styles.contextText}>
+                <Text numberOfLines={1} style={styles.contextTitle}>
+                  {title}
+                </Text>
+                <Text numberOfLines={1} style={styles.contextSubtitle}>
+                  {subtitle}
+                </Text>
+              </View>
+              {local ? (
+                <View style={styles.livePill}>
+                  <Text style={styles.livePillText}>LIVE</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {data.myListings.length > 0 ? (
+              <SectionGroup
+                title="あなたの個別募集"
+                subtitle="あなたが出している条件で、相手の在庫がヒット"
+                accentColor={ihubColors.lavender}
+              >
+                {data.myListings.map((listing, index) => (
+                  <ListingTree
+                    key={listing.listingId}
+                    listing={listing}
+                    index={index}
+                    viewpoint="mine"
+                    highlightedItemId={highlightedItem.id}
+                    selection={selection}
+                    haveSelection={haveSelection}
+                    onToggleCandidate={toggleCandidate}
+                    onToggleHave={toggleHave}
+                    onOpenPopup={setPopupTarget}
+                  />
+                ))}
+              </SectionGroup>
+            ) : null}
+
+            {data.partnerListings.length > 0 ? (
+              <SectionGroup
+                title={`@${PARTNER_HANDLE} の個別募集`}
+                subtitle="相手が出している条件で、あなたの在庫がヒット"
+                accentColor={ihubColors.pink}
+              >
+                {data.partnerListings.map((listing, index) => (
+                  <ListingTree
+                    key={listing.listingId}
+                    listing={listing}
+                    index={index}
+                    viewpoint="partner"
+                    highlightedItemId={highlightedItem.id}
+                    selection={selection}
+                    haveSelection={haveSelection}
+                    onToggleCandidate={toggleCandidate}
+                    onToggleHave={toggleHave}
+                    onOpenPopup={setPopupTarget}
+                  />
+                ))}
+              </SectionGroup>
+            ) : null}
+
+            {!hasListingRelation ? (
+              hasSimpleRelation ? (
+                <SimpleRelationPanel
+                  receivesItems={data.simpleReceives}
+                  givesItems={data.simpleGives}
+                  highlightedItemId={highlightedItem.id}
+                />
+              ) : (
+                <View style={styles.emptyRelation}>
+                  <Text style={styles.emptyRelationText}>個別募集経由のマッチはありません</Text>
+                </View>
+              )
+            ) : null}
+
+            {totalSelected > 0 ? (
+              <GlobalSummary
+                receivesItems={aggregated.receivesItems}
+                givesItems={aggregated.givesItems}
+                highlightedItemId={highlightedItem.id}
+              />
+            ) : null}
+          </ScrollView>
+
+          {totalSelected > 0 ? (
+            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              <Pressable
+                onPress={() => setSelection({})}
+                style={styles.resetButton}
+              >
+                <Text style={styles.resetButtonText}>リセット</Text>
+              </Pressable>
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: "/proposal-select",
+                    params: { tab: "meetup" },
+                  })
+                }
+                style={styles.primaryFooterButton}
+              >
+                <Text style={styles.primaryFooterButtonText}>
+                  打診に進む（{totalSelected} 件）→
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {hasSimpleRelation ? (
+            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              <Pressable onPress={() => router.back()} style={styles.resetButton}>
+                <Text style={styles.resetButtonText}>閉じる</Text>
+              </Pressable>
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: "/proposal-select",
+                    params: { tab: "meetup" },
+                  })
+                }
+                style={styles.primaryFooterButton}
+              >
+                <Text style={styles.primaryFooterButtonText}>この内容で打診へ →</Text>
+              </Pressable>
             </View>
           ) : null}
         </View>
-
-        {data.myListings.length > 0 ? (
-          <SectionGroup
-            title="あなたの個別募集"
-            subtitle="あなたが出している条件で、相手の在庫がヒット"
-            accentColor={ihubColors.lavender}
-          >
-            {data.myListings.map((listing, index) => (
-              <ListingTree
-                key={listing.listingId}
-                listing={listing}
-                index={index}
-                viewpoint="mine"
-                highlightedItemId={highlightedItem.id}
-                selection={selection}
-                haveSelection={haveSelection}
-                onToggleCandidate={toggleCandidate}
-                onToggleHave={toggleHave}
-                onOpenPopup={setPopupTarget}
-              />
-            ))}
-          </SectionGroup>
-        ) : null}
-
-        {data.partnerListings.length > 0 ? (
-          <SectionGroup
-            title={`@${PARTNER_HANDLE} の個別募集`}
-            subtitle="相手が出している条件で、あなたの在庫がヒット"
-            accentColor={ihubColors.pink}
-          >
-            {data.partnerListings.map((listing, index) => (
-              <ListingTree
-                key={listing.listingId}
-                listing={listing}
-                index={index}
-                viewpoint="partner"
-                highlightedItemId={highlightedItem.id}
-                selection={selection}
-                haveSelection={haveSelection}
-                onToggleCandidate={toggleCandidate}
-                onToggleHave={toggleHave}
-                onOpenPopup={setPopupTarget}
-              />
-            ))}
-          </SectionGroup>
-        ) : null}
-
-        {!hasListingRelation ? (
-          hasSimpleRelation ? (
-            <SimpleRelationPanel
-              receivesItems={data.simpleReceives}
-              givesItems={data.simpleGives}
-              highlightedItemId={highlightedItem.id}
-            />
-          ) : (
-            <View style={styles.emptyRelation}>
-              <Text style={styles.emptyRelationText}>個別募集経由のマッチはありません</Text>
-            </View>
-          )
-        ) : null}
-
-        {totalSelected > 0 ? (
-          <GlobalSummary
-            receivesItems={aggregated.receivesItems}
-            givesItems={aggregated.givesItems}
-            highlightedItemId={highlightedItem.id}
-          />
-        ) : null}
-      </ScrollView>
-
-      {totalSelected > 0 ? (
-        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <Pressable
-            onPress={() => setSelection({})}
-            style={styles.resetButton}
-          >
-            <Text style={styles.resetButtonText}>リセット</Text>
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              router.push({
-                pathname: "/proposal-select",
-                params: { tab: "meetup" },
-              })
-            }
-            style={styles.primaryFooterButton}
-          >
-            <Text style={styles.primaryFooterButtonText}>
-              打診に進む（{totalSelected} 件）→
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {hasSimpleRelation ? (
-        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <Pressable onPress={() => router.back()} style={styles.resetButton}>
-            <Text style={styles.resetButtonText}>閉じる</Text>
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              router.push({
-                pathname: "/proposal-select",
-                params: { tab: "meetup" },
-              })
-            }
-            style={styles.primaryFooterButton}
-          >
-            <Text style={styles.primaryFooterButtonText}>この内容で打診へ →</Text>
-          </Pressable>
-        </View>
-      ) : null}
+      </Animated.View>
 
       {popupTarget ? (
         <WishPopup
@@ -329,6 +484,150 @@ export default function MatchDetailScreen() {
       return { ...current, [listingId]: nextIds };
     });
   }
+}
+
+function SwipePreview({
+  context,
+  side,
+  width,
+}: {
+  context: CandidateContext;
+  side: "previous" | "next";
+  width: number;
+}) {
+  const insets = useSafeAreaInsets();
+  const { row, candidate } = context;
+  const title = candidate.label;
+  const subtitle = `${row.character} × ${row.goodsType} / ${candidate.tag ?? "候補"}`;
+  const highlightedItem: MiniItem = {
+    id: candidate.id,
+    label: title,
+    glyph: candidate.member,
+    color: candidate.hue,
+  };
+  const listingKind = inferListingKind(candidate.priority, candidate.tag);
+  const data = useMemo(
+    () => buildDetailData(highlightedItem, listingKind),
+    [highlightedItem.id, highlightedItem.label, highlightedItem.glyph, highlightedItem.color, listingKind],
+  );
+  const previewListings = [...data.myListings, ...data.partnerListings];
+  const previewSelection = useMemo(
+    () => initialSelection(previewListings, highlightedItem.id),
+    [highlightedItem.id, previewListings],
+  );
+  const previewHaveSelection = useMemo(
+    () => initialHaveSelection(previewListings, highlightedItem.id),
+    [highlightedItem.id, previewListings],
+  );
+  const hasListingRelation =
+    data.myListings.length > 0 || data.partnerListings.length > 0;
+  const hasSimpleRelation =
+    !hasListingRelation &&
+    (data.simpleReceives.length > 0 || data.simpleGives.length > 0);
+
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.previewPage,
+        {
+          left: side === "previous" ? -width : width,
+          width,
+        },
+      ]}
+    >
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 18) + 8 }]}>
+        <View style={styles.closeButton}>
+          <Text style={styles.closeText}>×</Text>
+        </View>
+        <View style={styles.headerCopy}>
+          <Text style={styles.headerTitle}>関係図</Text>
+          <Text numberOfLines={1} style={styles.headerSubtitle}>
+            @{PARTNER_HANDLE} とのマッチ詳細
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView
+        scrollEnabled={false}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.content, styles.previewContent]}
+      >
+        <View style={styles.contextCard}>
+          <View style={[styles.contextThumb, priorityFrame(candidate.priority)]}>
+            <ItemPhoto item={highlightedItem} qty={1} size={58} variant="candidate" highlighted />
+          </View>
+          <View style={styles.contextText}>
+            <Text numberOfLines={1} style={styles.contextTitle}>
+              {title}
+            </Text>
+            <Text numberOfLines={1} style={styles.contextSubtitle}>
+              {subtitle}
+            </Text>
+          </View>
+          {candidate.local ? (
+            <View style={styles.livePill}>
+              <Text style={styles.livePillText}>LIVE</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {data.myListings.length > 0 ? (
+          <SectionGroup
+            title="あなたの個別募集"
+            subtitle="あなたが出している条件で、相手の在庫がヒット"
+            accentColor={ihubColors.lavender}
+          >
+            {data.myListings.map((listing, index) => (
+              <ListingTree
+                key={listing.listingId}
+                listing={listing}
+                index={index}
+                viewpoint="mine"
+                highlightedItemId={highlightedItem.id}
+                selection={previewSelection}
+                haveSelection={previewHaveSelection}
+                onToggleCandidate={() => undefined}
+                onToggleHave={() => undefined}
+                onOpenPopup={() => undefined}
+              />
+            ))}
+          </SectionGroup>
+        ) : null}
+
+        {data.partnerListings.length > 0 ? (
+          <SectionGroup
+            title={`@${PARTNER_HANDLE} の個別募集`}
+            subtitle="相手が出している条件で、あなたの在庫がヒット"
+            accentColor={ihubColors.pink}
+          >
+            {data.partnerListings.map((listing, index) => (
+              <ListingTree
+                key={listing.listingId}
+                listing={listing}
+                index={index}
+                viewpoint="partner"
+                highlightedItemId={highlightedItem.id}
+                selection={previewSelection}
+                haveSelection={previewHaveSelection}
+                onToggleCandidate={() => undefined}
+                onToggleHave={() => undefined}
+                onOpenPopup={() => undefined}
+              />
+            ))}
+          </SectionGroup>
+        ) : null}
+
+        {!hasListingRelation && hasSimpleRelation ? (
+          <SimpleRelationPanel
+            receivesItems={data.simpleReceives}
+            givesItems={data.simpleGives}
+            highlightedItemId={highlightedItem.id}
+          />
+        ) : null}
+      </ScrollView>
+    </View>
+  );
 }
 
 function ListingTree({
@@ -1348,6 +1647,24 @@ const styles = StyleSheet.create({
   root: {
     backgroundColor: ihubColors.background,
     flex: 1,
+    overflow: "hidden",
+  },
+  swipeRail: {
+    flex: 1,
+    position: "relative",
+  },
+  swipePage: {
+    backgroundColor: ihubColors.background,
+    flex: 1,
+  },
+  previewPage: {
+    backgroundColor: ihubColors.background,
+    bottom: 0,
+    position: "absolute",
+    top: 0,
+  },
+  previewContent: {
+    paddingBottom: 28,
   },
   header: {
     alignItems: "center",

@@ -19,7 +19,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "グッズや服装写真を撮影するためにカメラを使用します。",
         "NSLocationWhenInUseUsageDescription": "交換できる場所の設定と現地交換候補の表示に位置情報を使用します。",
-        "NSPhotoLibraryUsageDescription": "グッズ画像や服装写真を選択するために写真ライブラリを使用します。"
+        "NSPhotoLibraryUsageDescription": "グッズ画像や服装写真を選択するために写真ライブラリを使用します。",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -37,6 +38,12 @@
       "expo-router",
       "expo-secure-store",
       "expo-notifications"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d87b331c-bae7-4568-aa6b-aa1373aa87f3"
+      }
+    }
   }
 }
