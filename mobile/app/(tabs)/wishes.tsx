@@ -1,5 +1,12 @@
-import { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+} from "react-native";
 import {
   BottomOptionSheet,
   ColumnSwitcher,
@@ -29,6 +36,7 @@ type ListingItem = {
 };
 
 type Tab = "wish" | "listings";
+const TAB_ORDER: Tab[] = ["wish", "listings"];
 
 const INITIAL_WISHES: WishItem[] = [
   {
@@ -119,6 +127,12 @@ export default function WishesScreen() {
   const [selectedListing, setSelectedListing] = useState<ListingItem | null>(
     null,
   );
+  const tabSwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    tracking: boolean;
+    swiping: boolean;
+  } | null>(null);
 
   const tabs = useMemo(
     () => [
@@ -204,32 +218,40 @@ export default function WishesScreen() {
         </View>
       ) : null}
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+      <View
+        style={styles.contentHost}
+        onTouchStart={handleSwipeStart}
+        onTouchMove={handleSwipeMove}
+        onTouchEnd={handleSwipeEnd}
+        onTouchCancel={handleSwipeCancel}
       >
-        {tab === "wish" ? (
-          <GoodsGrid
-            items={wishes}
-            columns={columns}
-            emptyLabel="まだ Wish がありません"
-            onPressItem={(gridItem) => {
-              const wish = wishes.find((item) => item.id === gridItem.id);
-              if (wish) setSelectedWish(wish);
-            }}
-          />
-        ) : (
-          <View style={styles.listingList}>
-            {listings.map((listing) => (
-              <ListingCard
-                key={listing.id}
-                listing={listing}
-                onPress={() => setSelectedListing(listing)}
-              />
-            ))}
-          </View>
-        )}
-      </ScrollView>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {tab === "wish" ? (
+            <GoodsGrid
+              items={wishes}
+              columns={columns}
+              emptyLabel="まだ Wish がありません"
+              onPressItem={(gridItem) => {
+                const wish = wishes.find((item) => item.id === gridItem.id);
+                if (wish) setSelectedWish(wish);
+              }}
+            />
+          ) : (
+            <View style={styles.listingList}>
+              {listings.map((listing) => (
+                <ListingCard
+                  key={listing.id}
+                  listing={listing}
+                  onPress={() => setSelectedListing(listing)}
+                />
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      </View>
 
       <FloatingAddButton
         label={tab === "wish" ? "Wishを追加" : "個別募集を追加"}
@@ -292,6 +314,59 @@ export default function WishesScreen() {
       />
     </Screen>
   );
+
+  function moveTabBySwipe(direction: 1 | -1) {
+    const currentIndex = TAB_ORDER.indexOf(tab);
+    const next = TAB_ORDER[currentIndex + direction];
+    if (!next) return;
+    setTab(next);
+    setSelectedWish(null);
+    setSelectedListing(null);
+  }
+
+  function handleSwipeStart(event: GestureResponderEvent) {
+    const { pageX, pageY } = event.nativeEvent;
+    tabSwipeRef.current = {
+      startX: pageX,
+      startY: pageY,
+      tracking: true,
+      swiping: false,
+    };
+  }
+
+  function handleSwipeMove(event: GestureResponderEvent) {
+    const state = tabSwipeRef.current;
+    if (!state?.tracking) return;
+    const { pageX, pageY } = event.nativeEvent;
+    const dx = pageX - state.startX;
+    const dy = pageY - state.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (!state.swiping) {
+      if (absX > 14 && absX > absY * 1.25) {
+        state.swiping = true;
+      } else if (absY > 14 && absY > absX * 1.1) {
+        state.tracking = false;
+      }
+    }
+  }
+
+  function handleSwipeEnd(event: GestureResponderEvent) {
+    const state = tabSwipeRef.current;
+    tabSwipeRef.current = null;
+    if (!state?.tracking || !state.swiping) return;
+    const { pageX, pageY } = event.nativeEvent;
+    const dx = pageX - state.startX;
+    const dy = pageY - state.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (absX < 58 || absX < absY * 1.35) return;
+    moveTabBySwipe(dx < 0 ? 1 : -1);
+  }
+
+  function handleSwipeCancel() {
+    tabSwipeRef.current = null;
+  }
 }
 
 function ListingCard({
@@ -488,6 +563,9 @@ const styles = StyleSheet.create({
   filters: {
     marginHorizontal: -18,
     paddingLeft: 18,
+  },
+  contentHost: {
+    flex: 1,
   },
   scrollContent: {
     paddingBottom: 24,

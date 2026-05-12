@@ -1,5 +1,11 @@
-import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+} from "react-native";
 import {
   BottomOptionSheet,
   ColumnSwitcher,
@@ -116,12 +122,19 @@ const STATUS_TABS: {
   { id: "keep", label: "自分用キープ", color: ihubColors.pink },
   { id: "traded", label: "過去に譲った", color: "#9aa3b0" },
 ];
+const STATUS_ORDER: InventoryStatus[] = ["active", "keep", "traded"];
 
 export default function InventoryScreen() {
   const [items, setItems] = useState<InventoryItem[]>(INITIAL_ITEMS);
   const [status, setStatus] = useState<InventoryStatus>("active");
   const [columns, setColumns] = useState<ColumnCount>(3);
   const [selected, setSelected] = useState<InventoryItem | null>(null);
+  const tabSwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    tracking: boolean;
+    swiping: boolean;
+  } | null>(null);
 
   const visibleItems = useMemo(
     () => items.filter((item) => item.status === status),
@@ -196,26 +209,34 @@ export default function InventoryScreen() {
         <FilterChips chips={chips} />
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.gridScroll}
+      <View
+        style={styles.contentHost}
+        onTouchStart={handleSwipeStart}
+        onTouchMove={handleSwipeMove}
+        onTouchEnd={handleSwipeEnd}
+        onTouchCancel={handleSwipeCancel}
       >
-        <GoodsGrid
-          items={visibleItems}
-          columns={columns}
-          emptyLabel={
-            status === "active"
-              ? "譲る候補のグッズはまだありません"
-              : status === "keep"
-                ? "自分用キープのグッズはまだありません"
-                : "過去に譲ったグッズはまだありません"
-          }
-          onPressItem={(gridItem) => {
-            const item = items.find((current) => current.id === gridItem.id);
-            if (item) setSelected(item);
-          }}
-        />
-      </ScrollView>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.gridScroll}
+        >
+          <GoodsGrid
+            items={visibleItems}
+            columns={columns}
+            emptyLabel={
+              status === "active"
+                ? "譲る候補のグッズはまだありません"
+                : status === "keep"
+                  ? "自分用キープのグッズはまだありません"
+                  : "過去に譲ったグッズはまだありません"
+            }
+            onPressItem={(gridItem) => {
+              const item = items.find((current) => current.id === gridItem.id);
+              if (item) setSelected(item);
+            }}
+          />
+        </ScrollView>
+      </View>
 
       <FloatingAddButton
         label="グッズを追加"
@@ -255,6 +276,58 @@ export default function InventoryScreen() {
       />
     </Screen>
   );
+
+  function moveTabBySwipe(direction: 1 | -1) {
+    const currentIndex = STATUS_ORDER.indexOf(status);
+    const next = STATUS_ORDER[currentIndex + direction];
+    if (!next) return;
+    setStatus(next);
+    setSelected(null);
+  }
+
+  function handleSwipeStart(event: GestureResponderEvent) {
+    const { pageX, pageY } = event.nativeEvent;
+    tabSwipeRef.current = {
+      startX: pageX,
+      startY: pageY,
+      tracking: true,
+      swiping: false,
+    };
+  }
+
+  function handleSwipeMove(event: GestureResponderEvent) {
+    const state = tabSwipeRef.current;
+    if (!state?.tracking) return;
+    const { pageX, pageY } = event.nativeEvent;
+    const dx = pageX - state.startX;
+    const dy = pageY - state.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (!state.swiping) {
+      if (absX > 14 && absX > absY * 1.25) {
+        state.swiping = true;
+      } else if (absY > 14 && absY > absX * 1.1) {
+        state.tracking = false;
+      }
+    }
+  }
+
+  function handleSwipeEnd(event: GestureResponderEvent) {
+    const state = tabSwipeRef.current;
+    tabSwipeRef.current = null;
+    if (!state?.tracking || !state.swiping) return;
+    const { pageX, pageY } = event.nativeEvent;
+    const dx = pageX - state.startX;
+    const dy = pageY - state.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (absX < 58 || absX < absY * 1.35) return;
+    moveTabBySwipe(dx < 0 ? 1 : -1);
+  }
+
+  function handleSwipeCancel() {
+    tabSwipeRef.current = null;
+  }
 }
 
 function buildActions({
@@ -331,6 +404,9 @@ const styles = StyleSheet.create({
   filters: {
     marginHorizontal: -18,
     paddingLeft: 18,
+  },
+  contentHost: {
+    flex: 1,
   },
   gridScroll: {
     paddingBottom: 24,
