@@ -117,16 +117,11 @@ export default function MatchDetailScreen() {
   const activeCandidate = activeContext?.candidate;
   const activeRow = activeContext?.row;
   const title = activeCandidate?.label || one(params.title) || BASE_ITEMS.selected.label;
-  const subtitle =
-    activeCandidate && activeRow
-      ? `${activeRow.character} × ${activeRow.goodsType} / ${activeCandidate.tag ?? "候補"}`
-      : one(params.subtitle) || "マッチ詳細";
   const member = activeCandidate?.member || one(params.member) || title.slice(0, 1);
   const color = activeCandidate?.hue || one(params.hue) || BASE_ITEMS.selected.color;
   const priority = activeCandidate?.priority || parsePriority(one(params.priority));
   const tag = activeCandidate?.tag ?? one(params.tag);
   const listingKind = inferListingKind(priority, tag);
-  const local = activeCandidate?.local ?? one(params.local) === "true";
   const highlightedItem: MiniItem = {
     id: activeCandidate?.id ?? "selected",
     label: title,
@@ -251,6 +246,19 @@ export default function MatchDetailScreen() {
     selection,
     haveSelection,
   });
+  const proposalParams = {
+    tab: "meetup",
+    candidateId: highlightedItem.id,
+    gives: aggregated.giveIds.join(","),
+    receives: aggregated.receiveIds.join(","),
+    listings: aggregated.referencedListingIds.join(","),
+  };
+  const simpleProposalParams = {
+    tab: "meetup",
+    candidateId: highlightedItem.id,
+    gives: data.simpleGives.map((item) => item.id).join(","),
+    receives: data.simpleReceives.map((item) => item.id).join(","),
+  };
   const totalSelected = Object.values(selection).reduce(
     (sum, ids) => sum + ids.length,
     0,
@@ -316,25 +324,6 @@ export default function MatchDetailScreen() {
               },
             ]}
           >
-            <View style={styles.contextCard}>
-              <View style={[styles.contextThumb, priorityFrame(priority)]}>
-                <ItemPhoto item={highlightedItem} qty={1} size={58} variant="candidate" highlighted />
-              </View>
-              <View style={styles.contextText}>
-                <Text numberOfLines={1} style={styles.contextTitle}>
-                  {title}
-                </Text>
-                <Text numberOfLines={1} style={styles.contextSubtitle}>
-                  {subtitle}
-                </Text>
-              </View>
-              {local ? (
-                <View style={styles.livePill}>
-                  <Text style={styles.livePillText}>LIVE</Text>
-                </View>
-              ) : null}
-            </View>
-
             {data.myListings.length > 0 ? (
               <SectionGroup
                 title="あなたの個別募集"
@@ -416,7 +405,7 @@ export default function MatchDetailScreen() {
                 onPress={() =>
                   router.push({
                     pathname: "/proposal-select",
-                    params: { tab: "meetup" },
+                    params: proposalParams,
                   })
                 }
                 style={styles.primaryFooterButton}
@@ -437,7 +426,7 @@ export default function MatchDetailScreen() {
                 onPress={() =>
                   router.push({
                     pathname: "/proposal-select",
-                    params: { tab: "meetup" },
+                    params: simpleProposalParams,
                   })
                 }
                 style={styles.primaryFooterButton}
@@ -497,7 +486,6 @@ function SwipePreview({
   const insets = useSafeAreaInsets();
   const { row, candidate } = context;
   const title = candidate.label;
-  const subtitle = `${row.character} × ${row.goodsType} / ${candidate.tag ?? "候補"}`;
   const highlightedItem: MiniItem = {
     id: candidate.id,
     label: title,
@@ -552,25 +540,6 @@ function SwipePreview({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.content, styles.previewContent]}
       >
-        <View style={styles.contextCard}>
-          <View style={[styles.contextThumb, priorityFrame(candidate.priority)]}>
-            <ItemPhoto item={highlightedItem} qty={1} size={58} variant="candidate" highlighted />
-          </View>
-          <View style={styles.contextText}>
-            <Text numberOfLines={1} style={styles.contextTitle}>
-              {title}
-            </Text>
-            <Text numberOfLines={1} style={styles.contextSubtitle}>
-              {subtitle}
-            </Text>
-          </View>
-          {candidate.local ? (
-            <View style={styles.livePill}>
-              <Text style={styles.livePillText}>LIVE</Text>
-            </View>
-          ) : null}
-        </View>
-
         {data.myListings.length > 0 ? (
           <SectionGroup
             title="あなたの個別募集"
@@ -1578,7 +1547,13 @@ function aggregateSelection({
     }
   }
 
-  return { givesItems, receivesItems };
+  return {
+    givesItems,
+    receivesItems,
+    giveIds: [...giveIds],
+    receiveIds: [...receiveIds],
+    referencedListingIds: Object.keys(selection),
+  };
 }
 
 function inferListingKind(priority: Priority, tag?: string): ListingKind {
@@ -1595,31 +1570,6 @@ function parsePriority(value?: string): Priority {
 
 function one(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function priorityFrame(priority: Priority) {
-  if (priority === "both") {
-    return {
-      borderColor: ihubColors.lavender,
-      shadowColor: ihubColors.lavender,
-      shadowOpacity: 0.32,
-      shadowRadius: 16,
-    };
-  }
-  if (priority === "oneSide") {
-    return {
-      borderColor: ihubColors.sky,
-      shadowColor: ihubColors.sky,
-      shadowOpacity: 0.24,
-      shadowRadius: 12,
-    };
-  }
-  return {
-    borderColor: "rgba(58,50,74,0.14)",
-    shadowColor: ihubColors.ink,
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-  };
 }
 
 function exchangeLabel(type: ExchangeType) {
@@ -1707,52 +1657,6 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 18,
     paddingTop: 16,
-  },
-  contextCard: {
-    alignItems: "center",
-    backgroundColor: ihubColors.surface,
-    borderColor: "rgba(58,50,74,0.08)",
-    borderRadius: 16,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 11,
-    marginBottom: 12,
-    padding: 10,
-    shadowColor: ihubColors.ink,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-  },
-  contextThumb: {
-    borderRadius: 12,
-    borderWidth: 2,
-    padding: 3,
-    shadowOffset: { width: 0, height: 8 },
-  },
-  contextText: {
-    flex: 1,
-  },
-  contextTitle: {
-    color: ihubColors.ink,
-    fontSize: 13.5,
-    fontWeight: "900",
-  },
-  contextSubtitle: {
-    color: ihubColors.mutedInk,
-    fontSize: 10.5,
-    fontWeight: "700",
-    marginTop: 3,
-  },
-  livePill: {
-    backgroundColor: "rgba(166,149,216,0.16)",
-    borderRadius: ihubRadii.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  livePillText: {
-    color: ihubColors.lavender,
-    fontSize: 10,
-    fontWeight: "900",
   },
   section: {
     marginBottom: 16,
