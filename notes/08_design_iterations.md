@@ -4,6 +4,50 @@
 
 ---
 
+## イテレーション154.77：iOS Metroのmonorepo監視エラーを修正
+
+### 背景・問題意識
+
+オーナーがExpo GoでiOS版を確認しようとしたところ、`Could not connect to the server` が表示され、Mac側では `ENOENT: no such file or directory, watch '/.../Goods_exchange_platfform_iHub/node_modules'` で Metro が落ちていた。
+
+原因は、root `package.json` で npm workspaces を定義したことで Expo/Metro がリポジトリ直下を workspace root と認識し、存在しない root `node_modules` を watch 対象に含めていたこと。現状は `mobile/node_modules` に依存が入っているため、root `node_modules` が無くても起動できるよう Metro 設定で存在しない watch path を除外する必要があった。
+
+### 変更内容
+
+#### `mobile/metro.config.js`
+- Expo の default Metro config を読み込んだうえで、存在しない `watchFolders` と `resolver.nodeModulesPaths` を除外するようにした。
+- 将来 `@ihub/core` / `@ihub/design` / `@ihub/supabase` を iOS側から参照できるよう、`extraNodeModules` に package alias を追加した。
+
+#### `notes/21_ios_review_guide.md`
+- `Could not connect to the server` の場合は tunnel 起動へ切り替える手順を追加した。
+- `ENOENT ... node_modules` エラーの原因と、最新版取得後の再起動手順を追加した。
+
+### 影響範囲
+
+- iOS版のExpo/Metro開発サーバ起動
+- iOS画面レビュー手順
+- 今後の共通パッケージ参照
+
+### 確認方法
+
+- `node -e "const config = require('./mobile/metro.config'); console.log(config.watchFolders); console.log(config.resolver.nodeModulesPaths)"`
+- `npm run typecheck`
+- `git diff --check`
+
+### 関連ファイル
+
+- `mobile/metro.config.js`
+- `notes/21_ios_review_guide.md`
+
+### セルフレビュー結果
+
+- ✅ root `node_modules` が無い環境でも Metro config 上は存在しない watch path を持たない
+- ✅ 既存Web実装には触れていない
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / `git diff --check` 通過
+
+---
+
 ## イテレーション154.76：iOS認証骨格とレビュー手順を追加
 
 ### 背景・問題意識

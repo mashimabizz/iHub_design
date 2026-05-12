@@ -86,3 +86,31 @@ EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 - 一部のネイティブ権限挙動
 
 これらは EAS development build / TestFlight の段階で確認する。
+
+---
+
+## 6. トラブルシューティング
+
+### `Could not connect to the server`
+
+Mac と iPhone が同じ Wi-Fi にいても、LAN接続が通らないことがある。その場合は tunnel で起動する。
+
+```bash
+cd /Users/michitaka/Desktop/Claude/Goods_exchange_platfform_iHub/mobile
+npx expo start --tunnel --clear
+```
+
+`@expo/ngrok` のインストール確認が出たら `y` を押す。
+
+### `ENOENT: no such file or directory, watch .../node_modules`
+
+monorepo の root `node_modules` が無い環境で Metro が監視しようとした時のエラー。
+
+`mobile/metro.config.js` で存在しない watch path を除外するようにしているため、最新版を取得したうえで再起動する。
+
+```bash
+cd /Users/michitaka/Desktop/Claude/Goods_exchange_platfform_iHub
+git pull
+cd mobile
+npx expo start --tunnel --clear
+```
