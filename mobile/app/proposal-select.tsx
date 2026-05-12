@@ -55,6 +55,34 @@ type DragDraft = {
   currentSlot: number;
 };
 
+type CalendarFrame = {
+  pageX: number;
+  pageY: number;
+  width: number;
+  height: number;
+};
+
+type CandidateEdit = {
+  id: string;
+  action: "move" | "resize-end";
+  dayIndex: number;
+  startSlot: number;
+  endSlot: number;
+};
+
+type CandidateTouchState = {
+  timer: ReturnType<typeof setTimeout>;
+  mode: "pending" | "editing";
+  id: string;
+  action: "move" | "resize-end";
+  startX: number;
+  startY: number;
+  originalDayIndex: number;
+  originalStartSlot: number;
+  originalEndSlot: number;
+  pointerStartOffsetSlots: number;
+};
+
 const GIVE_CHOICES: ChoiceItem[] = [
   {
     id: "give-1",
@@ -121,6 +149,7 @@ const PRESET_PLACES = [
     },
   },
 ];
+const TAB_ORDER: ProposalTab[] = ["give", "receive", "meetup"];
 
 export default function ProposalSelectScreen() {
   const params = useLocalSearchParams<{ tab?: ProposalTab | ProposalTab[] }>();
@@ -131,9 +160,16 @@ export default function ProposalSelectScreen() {
   const [meetupCandidates, setMeetupCandidates] = useState<MeetupCandidate[]>([]);
   const [activeMeetupId, setActiveMeetupId] = useState<string | null>(null);
   const [placeSheetId, setPlaceSheetId] = useState<string | null>(null);
+  const tabSwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    tracking: boolean;
+    swiping: boolean;
+  } | null>(null);
   const meetupReady =
     meetupCandidates.length > 0 &&
     meetupCandidates.every((candidate) => candidate.place.trim().length > 0);
+  const meetupHasTimeDraft = meetupCandidates.length > 0;
 
   const tabs = useMemo(
     () => [
@@ -164,63 +200,71 @@ export default function ProposalSelectScreen() {
 
       <SectionTabs value={tab} tabs={tabs} onChange={setTab} />
 
-      {tab === "give" ? (
-        <ChoicePane
-          items={GIVE_CHOICES}
-          selectedId={giveSelected}
-          onSelect={setGiveSelected}
-        />
-      ) : null}
+      <View
+        style={styles.paneHost}
+        onTouchStart={handleTabSwipeStart}
+        onTouchMove={handleTabSwipeMove}
+        onTouchEnd={handleTabSwipeEnd}
+        onTouchCancel={handleTabSwipeCancel}
+      >
+        {tab === "give" ? (
+          <ChoicePane
+            items={GIVE_CHOICES}
+            selectedId={giveSelected}
+            onSelect={setGiveSelected}
+          />
+        ) : null}
 
-      {tab === "receive" ? (
-        <ChoicePane
-          items={RECEIVE_CHOICES}
-          selectedId={receiveSelected}
-          onSelect={setReceiveSelected}
-        />
-      ) : null}
+        {tab === "receive" ? (
+          <ChoicePane
+            items={RECEIVE_CHOICES}
+            selectedId={receiveSelected}
+            onSelect={setReceiveSelected}
+          />
+        ) : null}
 
-      {tab === "meetup" ? (
-        <MeetupPane
-          candidates={meetupCandidates}
-          activeCandidateId={activeMeetupId}
-          placeSheetId={placeSheetId}
-          onSelectCandidate={setActiveMeetupId}
-          onClosePlaceSheet={() => setPlaceSheetId(null)}
-          onOpenPlaceSheet={(id) => {
-            setActiveMeetupId(id);
-            setPlaceSheetId(id);
-          }}
-          onAddCandidate={(dayIndex, startSlot, endSlot) => {
-            const id = `candidate-${Date.now()}`;
-            const candidate: MeetupCandidate = {
-              id,
-              dayIndex,
-              startSlot,
-              endSlot,
-              place: "",
-              coordinate: FALLBACK_COORDINATE,
-            };
-            setMeetupCandidates((current) => [...current.slice(0, 2), candidate]);
-            setActiveMeetupId(id);
-            setPlaceSheetId(id);
-          }}
-          onDeleteCandidate={(id) => {
-            setMeetupCandidates((current) =>
-              current.filter((candidate) => candidate.id !== id),
-            );
-            setActiveMeetupId((current) => (current === id ? null : current));
-            setPlaceSheetId((current) => (current === id ? null : current));
-          }}
-          onUpdateCandidate={(id, patch) => {
-            setMeetupCandidates((current) =>
-              current.map((candidate) =>
-                candidate.id === id ? { ...candidate, ...patch } : candidate,
-              ),
-            );
-          }}
-        />
-      ) : null}
+        {tab === "meetup" ? (
+          <MeetupPane
+            candidates={meetupCandidates}
+            activeCandidateId={activeMeetupId}
+            placeSheetId={placeSheetId}
+            onSelectCandidate={setActiveMeetupId}
+            onClosePlaceSheet={() => setPlaceSheetId(null)}
+            onOpenPlaceSheet={(id) => {
+              setActiveMeetupId(id);
+              setPlaceSheetId(id);
+            }}
+            onAddCandidate={(dayIndex, startSlot, endSlot) => {
+              const id = `candidate-${Date.now()}`;
+              const candidate: MeetupCandidate = {
+                id,
+                dayIndex,
+                startSlot,
+                endSlot,
+                place: "",
+                coordinate: FALLBACK_COORDINATE,
+              };
+              setMeetupCandidates((current) => [...current.slice(0, 2), candidate]);
+              setActiveMeetupId(id);
+              setPlaceSheetId(id);
+            }}
+            onDeleteCandidate={(id) => {
+              setMeetupCandidates((current) =>
+                current.filter((candidate) => candidate.id !== id),
+              );
+              setActiveMeetupId((current) => (current === id ? null : current));
+              setPlaceSheetId((current) => (current === id ? null : current));
+            }}
+            onUpdateCandidate={(id, patch) => {
+              setMeetupCandidates((current) =>
+                current.map((candidate) =>
+                  candidate.id === id ? { ...candidate, ...patch } : candidate,
+                ),
+              );
+            }}
+          />
+        ) : null}
+      </View>
 
       <PrimaryButton
         onPress={() => {
@@ -250,12 +294,66 @@ export default function ProposalSelectScreen() {
       >
         {tab === "meetup"
           ? meetupReady
-            ? "送信確認へ進む"
-            : "交換できる時間と場所を設定してください"
+            ? "次へ：送信確認 →"
+            : meetupHasTimeDraft
+              ? "場所未設定の候補があります"
+              : "交換できる時間を設定してください"
           : "待ち合わせへ進む"}
       </PrimaryButton>
     </Screen>
   );
+
+  function moveTabBySwipe(direction: 1 | -1) {
+    if (tab === "meetup") return;
+    const currentIndex = TAB_ORDER.indexOf(tab);
+    const next = TAB_ORDER[currentIndex + direction];
+    if (!next) return;
+    setTab(next);
+  }
+
+  function handleTabSwipeStart(event: GestureResponderEvent) {
+    const { pageX, pageY } = event.nativeEvent;
+    tabSwipeRef.current = {
+      startX: pageX,
+      startY: pageY,
+      tracking: tab !== "meetup",
+      swiping: false,
+    };
+  }
+
+  function handleTabSwipeMove(event: GestureResponderEvent) {
+    const state = tabSwipeRef.current;
+    if (!state?.tracking) return;
+    const { pageX, pageY } = event.nativeEvent;
+    const dx = pageX - state.startX;
+    const dy = pageY - state.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (!state.swiping) {
+      if (absX > 14 && absX > absY * 1.25) {
+        state.swiping = true;
+      } else if (absY > 14 && absY > absX * 1.1) {
+        state.tracking = false;
+      }
+    }
+  }
+
+  function handleTabSwipeEnd(event: GestureResponderEvent) {
+    const state = tabSwipeRef.current;
+    tabSwipeRef.current = null;
+    if (!state?.tracking || !state.swiping) return;
+    const { pageX, pageY } = event.nativeEvent;
+    const dx = pageX - state.startX;
+    const dy = pageY - state.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (absX < 56 || absX < absY * 1.35) return;
+    moveTabBySwipe(dx < 0 ? 1 : -1);
+  }
+
+  function handleTabSwipeCancel() {
+    tabSwipeRef.current = null;
+  }
 }
 
 function ChoicePane({
@@ -340,8 +438,14 @@ function MeetupPane({
     startX: number;
     startY: number;
   } | null>(null);
+  const candidateTouchRef = useRef<CandidateTouchState | null>(null);
+  const candidateEditRef = useRef<CandidateEdit | null>(null);
+  const calendarFrameRef = useRef<CalendarFrame | null>(null);
+  const calendarGridRef = useRef<View>(null);
   const dragDraftRef = useRef<DragDraft | null>(null);
   const [dragDraft, setDragDraftState] = useState<DragDraft | null>(null);
+  const [candidateEdit, setCandidateEditState] =
+    useState<CandidateEdit | null>(null);
   const calendarWidth = width - 36;
   const dayWidth = (calendarWidth - TIME_LABEL_WIDTH) / DAYS.length;
   const contentHeight =
@@ -365,7 +469,13 @@ function MeetupPane({
     return () => clearTimeout(timer);
   }, []);
 
-  useEffect(() => () => clearTouchPress(), []);
+  useEffect(
+    () => () => {
+      clearTouchPress();
+      clearCandidateTouch();
+    },
+    [],
+  );
 
   function setDragDraft(next: DragDraft | null) {
     dragDraftRef.current = next;
@@ -377,6 +487,174 @@ function MeetupPane({
       clearTimeout(touchPressRef.current.timer);
     }
     touchPressRef.current = null;
+  }
+
+  function setCandidateEdit(next: CandidateEdit | null) {
+    candidateEditRef.current = next;
+    setCandidateEditState(next);
+  }
+
+  function clearCandidateTouch() {
+    if (candidateTouchRef.current) {
+      clearTimeout(candidateTouchRef.current.timer);
+    }
+    candidateTouchRef.current = null;
+    setCandidateEdit(null);
+  }
+
+  function measureCalendarFrame() {
+    calendarGridRef.current?.measure((_, __, measuredWidth, measuredHeight, pageX, pageY) => {
+      calendarFrameRef.current = {
+        pageX,
+        pageY,
+        width: measuredWidth,
+        height: measuredHeight,
+      };
+    });
+  }
+
+  function pointToCalendar(pageX: number, pageY: number) {
+    const frame = calendarFrameRef.current;
+    if (!frame) return null;
+    const dayAreaLeft = frame.pageX + TIME_LABEL_WIDTH;
+    const dayAreaWidth = Math.max(1, frame.width - TIME_LABEL_WIDTH);
+    const rawDayIndex = Math.floor(
+      ((pageX - dayAreaLeft) / dayAreaWidth) * DAYS.length,
+    );
+    const dayIndex = Math.max(0, Math.min(DAYS.length - 1, rawDayIndex));
+    return {
+      dayIndex,
+      slot: slotFromCalendarY(pageY - frame.pageY),
+    };
+  }
+
+  function beginCandidateEdit(state: CandidateTouchState) {
+    clearTimeout(state.timer);
+    candidateTouchRef.current = {
+      ...state,
+      mode: "editing",
+    };
+    setCandidateEdit({
+      id: state.id,
+      action: state.action,
+      dayIndex: state.originalDayIndex,
+      startSlot: state.originalStartSlot,
+      endSlot: state.originalEndSlot,
+    });
+  }
+
+  function updateCandidateEdit(pageX: number, pageY: number) {
+    const state = candidateTouchRef.current;
+    if (!state || state.mode !== "editing") return;
+    const point = pointToCalendar(pageX, pageY);
+    if (!point) return;
+    const duration = Math.max(
+      1,
+      state.originalEndSlot - state.originalStartSlot,
+    );
+    if (state.action === "move") {
+      const startSlot = Math.max(
+        0,
+        Math.min(
+          SLOT_COUNT - duration,
+          point.slot - state.pointerStartOffsetSlots,
+        ),
+      );
+      setCandidateEdit({
+        id: state.id,
+        action: state.action,
+        dayIndex: point.dayIndex,
+        startSlot,
+        endSlot: startSlot + duration,
+      });
+      return;
+    }
+    const endSlot = Math.max(
+      state.originalStartSlot + 1,
+      Math.min(SLOT_COUNT, point.slot + 1),
+    );
+    setCandidateEdit({
+      id: state.id,
+      action: state.action,
+      dayIndex: state.originalDayIndex,
+      startSlot: state.originalStartSlot,
+      endSlot,
+    });
+  }
+
+  function handleCandidateTouchStart(
+    event: GestureResponderEvent,
+    candidate: MeetupCandidate,
+    action: "move" | "resize-end",
+  ) {
+    event.stopPropagation();
+    clearTouchPress();
+    clearCandidateTouch();
+    measureCalendarFrame();
+    onSelectCandidate(candidate.id);
+    const { pageX, pageY } = event.nativeEvent;
+    const duration = Math.max(1, candidate.endSlot - candidate.startSlot);
+    const point = pointToCalendar(pageX, pageY);
+    const pointerStartOffsetSlots =
+      action === "move" && point?.dayIndex === candidate.dayIndex
+        ? Math.max(0, Math.min(duration - 1, point.slot - candidate.startSlot))
+        : 0;
+    const timer = setTimeout(() => {
+      const state = candidateTouchRef.current;
+      if (!state || state.id !== candidate.id || state.mode !== "pending") {
+        return;
+      }
+      beginCandidateEdit(state);
+    }, LONG_PRESS_MS);
+    candidateTouchRef.current = {
+      timer,
+      mode: "pending",
+      id: candidate.id,
+      action,
+      startX: pageX,
+      startY: pageY,
+      originalDayIndex: candidate.dayIndex,
+      originalStartSlot: candidate.startSlot,
+      originalEndSlot: candidate.endSlot,
+      pointerStartOffsetSlots,
+    };
+  }
+
+  function handleCandidateTouchMove(event: GestureResponderEvent) {
+    const state = candidateTouchRef.current;
+    if (!state) return;
+    event.stopPropagation();
+    const { pageX, pageY } = event.nativeEvent;
+    if (state.mode === "pending") {
+      const dx = pageX - state.startX;
+      const dy = pageY - state.startY;
+      if (Math.hypot(dx, dy) > TOUCH_CANCEL_PX) {
+        clearCandidateTouch();
+      }
+      return;
+    }
+    updateCandidateEdit(pageX, pageY);
+  }
+
+  function handleCandidateTouchEnd(event: GestureResponderEvent) {
+    const state = candidateTouchRef.current;
+    if (!state) return;
+    event.stopPropagation();
+    if (state.mode === "editing") {
+      updateCandidateEdit(event.nativeEvent.pageX, event.nativeEvent.pageY);
+      const edit = candidateEditRef.current;
+      if (edit) {
+        onUpdateCandidate(edit.id, {
+          dayIndex: edit.dayIndex,
+          startSlot: edit.startSlot,
+          endSlot: edit.endSlot,
+        });
+      }
+      clearCandidateTouch();
+      return;
+    }
+    clearCandidateTouch();
+    onOpenPlaceSheet(state.id);
   }
 
   function handleDayTouchStart(e: GestureResponderEvent, dayIndex: number) {
@@ -481,7 +759,11 @@ function MeetupPane({
           { height: contentHeight },
         ]}
       >
-        <View style={[styles.calendarGrid, { height: contentHeight }]}>
+        <View
+          ref={calendarGridRef}
+          onLayout={measureCalendarFrame}
+          style={[styles.calendarGrid, { height: contentHeight }]}
+        >
           <View style={[styles.timeAxis, { width: TIME_LABEL_WIDTH }]}>
             {HOURS.map((hour) => (
               <Text
@@ -531,24 +813,34 @@ function MeetupPane({
           {candidates.map((candidate, index) => {
             const active = candidate.id === activeCandidateId;
             const placeMissing = !candidate.place.trim();
+            const edit = candidateEdit?.id === candidate.id ? candidateEdit : null;
+            const effective = edit ?? candidate;
+            const editing = !!edit;
             return (
               <Pressable
                 key={candidate.id}
-                onPress={() => onOpenPlaceSheet(candidate.id)}
+                delayLongPress={LONG_PRESS_MS}
+                onTouchStart={(event) =>
+                  handleCandidateTouchStart(event, candidate, "move")
+                }
+                onTouchMove={handleCandidateTouchMove}
+                onTouchEnd={handleCandidateTouchEnd}
+                onTouchCancel={clearCandidateTouch}
                 style={[
                   styles.candidateBlock,
-                    active ? styles.candidateBlockActive : null,
-                    placeMissing ? styles.candidateBlockMissing : null,
-                    {
-                      left: TIME_LABEL_WIDTH + candidate.dayIndex * dayWidth + 4,
-                    top: calendarSlotTop(candidate.startSlot) + 3,
-                      width: dayWidth - 8,
-                      height:
-                      Math.max(1, candidate.endSlot - candidate.startSlot) *
+                  active ? styles.candidateBlockActive : null,
+                  placeMissing ? styles.candidateBlockMissing : null,
+                  editing ? styles.candidateBlockEditing : null,
+                  {
+                    left: TIME_LABEL_WIDTH + effective.dayIndex * dayWidth + 4,
+                    top: calendarSlotTop(effective.startSlot) + 3,
+                    width: dayWidth - 8,
+                    height:
+                      Math.max(1, effective.endSlot - effective.startSlot) *
                         SLOT_HEIGHT -
                       6,
-                    },
-                  ]}
+                  },
+                ]}
               >
                 {placeMissing ? (
                   <View style={styles.candidateAlert}>
@@ -579,6 +871,19 @@ function MeetupPane({
                     ×
                   </Text>
                 </Pressable>
+                <Pressable
+                  accessibilityLabel={`候補${index + 1}の終了時間を変更`}
+                  onTouchStart={(event) =>
+                    handleCandidateTouchStart(event, candidate, "resize-end")
+                  }
+                  onTouchMove={handleCandidateTouchMove}
+                  onTouchEnd={handleCandidateTouchEnd}
+                  onTouchCancel={clearCandidateTouch}
+                  style={[
+                    styles.candidateResizeHandle,
+                    placeMissing ? styles.candidateResizeHandleMissing : null,
+                  ]}
+                />
               </Pressable>
             );
           })}
@@ -774,7 +1079,11 @@ function dateKey(date: Date) {
 }
 
 function slotFromLocationY(locationY: number) {
-  const raw = Math.floor((locationY - CALENDAR_TOP_PADDING) / SLOT_HEIGHT);
+  return slotFromCalendarY(locationY);
+}
+
+function slotFromCalendarY(calendarY: number) {
+  const raw = Math.floor((calendarY - CALENDAR_TOP_PADDING) / SLOT_HEIGHT);
   return Math.max(0, Math.min(SLOT_COUNT - 1, raw));
 }
 
@@ -857,6 +1166,9 @@ const styles = StyleSheet.create({
     fontSize: 23,
     fontWeight: "900",
     lineHeight: 28,
+  },
+  paneHost: {
+    flex: 1,
   },
   choiceList: {
     gap: 10,
@@ -1046,6 +1358,14 @@ const styles = StyleSheet.create({
     shadowColor: ihubColors.lavender,
     shadowOpacity: 0.2,
   },
+  candidateBlockEditing: {
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.24,
+    shadowRadius: 22,
+    transform: [{ translateY: -4 }, { scale: 1.03 }],
+    zIndex: 30,
+  },
   candidateBlockMissing: {
     backgroundColor: "rgba(75,151,224,0.12)",
     borderColor: "rgba(230,149,67,0.58)",
@@ -1096,6 +1416,18 @@ const styles = StyleSheet.create({
   },
   candidateDeleteTextMissing: {
     color: "#d98232",
+  },
+  candidateResizeHandle: {
+    backgroundColor: "rgba(255,255,255,0.62)",
+    borderRadius: 999,
+    bottom: 3,
+    height: 5,
+    left: 10,
+    position: "absolute",
+    right: 10,
+  },
+  candidateResizeHandleMissing: {
+    backgroundColor: "rgba(242,157,75,0.48)",
   },
   calendarHint: {
     alignItems: "center",

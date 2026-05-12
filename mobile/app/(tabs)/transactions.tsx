@@ -16,6 +16,7 @@ import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 
 type TopTab = "pending" | "ongoing" | "past";
 type PendingSubTab = "action" | "waiting";
+type PastFilter = "all" | "completed" | "cancelled" | "ended";
 
 type TradeItem = {
   id: string;
@@ -168,6 +169,10 @@ const TOP_TABS = [
 export default function TransactionsScreen() {
   const [tab, setTab] = useState<TopTab>("pending");
   const [pendingSub, setPendingSub] = useState<PendingSubTab>("action");
+  const [pastFilter, setPastFilter] = useState<PastFilter>("all");
+  const [animatedTabs, setAnimatedTabs] = useState<Set<TopTab>>(
+    () => new Set(),
+  );
 
   const grouped = useMemo(() => {
     const pending = TRANSACTIONS.filter((tx) =>
@@ -187,16 +192,40 @@ export default function TransactionsScreen() {
   };
   const pendingAction = grouped.pending.filter((tx) => tx.needsAction);
   const pendingWaiting = grouped.pending.filter((tx) => !tx.needsAction);
+  const pastCounts = useMemo(
+    () => ({
+      all: grouped.past.length,
+      completed: grouped.past.filter((tx) => tx.status === "completed").length,
+      cancelled: grouped.past.filter((tx) => tx.status === "cancelled").length,
+      ended: grouped.past.filter((tx) => tx.status === "expired").length,
+    }),
+    [grouped.past],
+  );
+  const filteredPast =
+    pastFilter === "all"
+      ? grouped.past
+      : pastFilter === "ended"
+        ? grouped.past.filter((tx) => tx.status === "expired")
+        : grouped.past.filter((tx) => tx.status === pastFilter);
   const list =
     tab === "pending"
       ? pendingSub === "action"
         ? pendingAction
         : pendingWaiting
-      : grouped[tab];
+      : tab === "past"
+        ? filteredPast
+        : grouped.ongoing;
+  const shouldAnimate = !animatedTabs.has(tab);
   const topTabs = TOP_TABS.map((item) => ({
     ...item,
     count: counts[item.id],
   }));
+
+  useEffect(() => {
+    if (list.length === 0 && !animatedTabs.has(tab)) {
+      markTabAnimated(tab);
+    }
+  }, [animatedTabs, list.length, tab]);
 
   return (
     <Screen scroll={false} contentStyle={styles.screenContent}>
@@ -232,6 +261,14 @@ export default function TransactionsScreen() {
         />
       ) : null}
 
+      {tab === "past" ? (
+        <PastFilterChips
+          filter={pastFilter}
+          counts={pastCounts}
+          onChange={setPastFilter}
+        />
+      ) : null}
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
@@ -246,6 +283,10 @@ export default function TransactionsScreen() {
               key={tx.id}
               tx={tx}
               index={index}
+              animate={shouldAnimate}
+              onAnimated={
+                index === list.length - 1 ? () => markTabAnimated(tab) : undefined
+              }
               onPress={() => openTransactionDetail(tx)}
             />
           ))
@@ -253,6 +294,15 @@ export default function TransactionsScreen() {
       </ScrollView>
     </Screen>
   );
+
+  function markTabAnimated(target: TopTab) {
+    setAnimatedTabs((current) => {
+      if (current.has(target)) return current;
+      const next = new Set(current);
+      next.add(target);
+      return next;
+    });
+  }
 }
 
 function openTransactionDetail(tx: Transaction) {
@@ -270,15 +320,20 @@ function openTransactionDetail(tx: Transaction) {
 function AnimatedTransactionCard({
   tx,
   index,
+  animate,
+  onAnimated,
   onPress,
 }: {
   tx: Transaction;
   index: number;
+  animate: boolean;
+  onAnimated?: () => void;
   onPress: () => void;
 }) {
   const appear = useMemo(() => new Animated.Value(0), []);
 
   useEffect(() => {
+    if (!animate) return;
     const timer = setTimeout(() => {
       Animated.spring(appear, {
         toValue: 1,
@@ -286,11 +341,17 @@ function AnimatedTransactionCard({
         stiffness: 165,
         mass: 0.78,
         useNativeDriver: true,
-      }).start();
+      }).start(({ finished }) => {
+        if (finished) onAnimated?.();
+      });
     }, index * 72);
 
     return () => clearTimeout(timer);
-  }, [appear, index]);
+  }, [animate, appear, index, onAnimated]);
+
+  if (!animate) {
+    return <TransactionCard tx={tx} onPress={onPress} />;
+  }
 
   const translateY = appear.interpolate({
     inputRange: [0, 1],
@@ -306,6 +367,50 @@ function AnimatedTransactionCard({
     >
       <TransactionCard tx={tx} onPress={onPress} />
     </Animated.View>
+  );
+}
+
+function PastFilterChips({
+  filter,
+  counts,
+  onChange,
+}: {
+  filter: PastFilter;
+  counts: Record<PastFilter, number>;
+  onChange: (filter: PastFilter) => void;
+}) {
+  const chips = [
+    { id: "all" as const, label: `すべて ${counts.all}` },
+    { id: "completed" as const, label: `完了 ${counts.completed}` },
+    { id: "cancelled" as const, label: `キャンセル ${counts.cancelled}` },
+    { id: "ended" as const, label: `期限切れ ${counts.ended}` },
+  ];
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.filterChips}
+    >
+      {chips.map((chip) => {
+        const active = filter === chip.id;
+        return (
+          <Pressable
+            key={chip.id}
+            onPress={() => onChange(chip.id)}
+            style={[styles.filterChip, active ? styles.filterChipActive : null]}
+          >
+            <Text
+              style={[
+                styles.filterChipText,
+                active ? styles.filterChipTextActive : null,
+              ]}
+            >
+              {chip.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
   );
 }
 
@@ -489,6 +594,30 @@ const styles = StyleSheet.create({
   listContent: {
     gap: 10,
     paddingBottom: 24,
+  },
+  filterChips: {
+    gap: 7,
+    paddingBottom: 1,
+  },
+  filterChip: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  filterChipActive: {
+    backgroundColor: ihubColors.ink,
+    borderColor: ihubColors.ink,
+  },
+  filterChipText: {
+    color: ihubColors.ink,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  filterChipTextActive: {
+    color: ihubColors.surface,
   },
   emptyBox: {
     alignItems: "center",

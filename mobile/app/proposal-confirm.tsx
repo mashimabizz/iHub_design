@@ -78,7 +78,7 @@ export default function ProposalConfirmScreen() {
   const [submitted, setSubmitted] = useState(false);
 
   if (submitted) {
-    return <ProposalCompleteScreen />;
+    return <ProposalCompleteScreen partnerHandle={PARTNER_HANDLE} />;
   }
 
   return (
@@ -156,7 +156,7 @@ export default function ProposalConfirmScreen() {
       </ScrollView>
 
       <PrimaryButton onPress={() => setSubmitted(true)}>
-        打診を送る
+        この内容で打診を送信
       </PrimaryButton>
     </Screen>
   );
@@ -164,7 +164,7 @@ export default function ProposalConfirmScreen() {
 
 const PARTNER_HANDLE = "michilion";
 
-function ProposalCompleteScreen() {
+function ProposalCompleteScreen({ partnerHandle }: { partnerHandle: string }) {
   return (
     <Screen contentStyle={styles.completeScreen}>
       <View style={styles.completeHero}>
@@ -176,7 +176,7 @@ function ProposalCompleteScreen() {
         </View>
         <Text style={styles.completeTitle}>打診が完了しました</Text>
         <Text style={styles.completeText}>
-          相手からの返答を待ちながら、ほかの候補も探せます。
+          @{partnerHandle} に打診を送りました。返事が届いたら通知と打診一覧で確認できます。
         </Text>
       </View>
 
@@ -190,7 +190,7 @@ function ProposalCompleteScreen() {
         <PrimaryButton
           onPress={() => router.replace("/(tabs)/transactions")}
         >
-          打診一覧に行く
+          打診一覧に飛ぶ
         </PrimaryButton>
       </View>
     </Screen>
