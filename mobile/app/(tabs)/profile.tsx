@@ -85,6 +85,8 @@ export default function ProfileScreen() {
     fallbackProfile(user?.email, previewMode),
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     setProfile(fallbackProfile(user?.email, previewMode));
@@ -110,6 +112,18 @@ export default function ProfileScreen() {
   }, [previewMode, user]);
 
   const oshiSummary = formatOshiSummary(profile.oshiGroups);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    setAuthError(null);
+    const error = await signOut();
+    setSigningOut(false);
+    if (error) {
+      setAuthError(error);
+      return;
+    }
+    router.replace("/welcome");
+  }
 
   return (
     <Screen contentStyle={styles.screen}>
@@ -202,7 +216,6 @@ export default function ProfileScreen() {
         ))}
       </ProfileSection>
 
-      {user?.email ? <Text style={styles.email}>{user.email}</Text> : null}
       {previewMode ? (
         <View style={styles.authActions}>
           <PrimaryButton
@@ -218,9 +231,18 @@ export default function ProfileScreen() {
           </PrimaryButton>
         </View>
       ) : (
-        <PrimaryButton variant="secondary" onPress={() => void signOut()}>
-          ログアウト
-        </PrimaryButton>
+        <View style={styles.accountSection}>
+          <Text style={styles.accountTitle}>アカウント</Text>
+          {user?.email ? <Text style={styles.email}>{user.email}</Text> : null}
+          {authError ? <Text style={styles.inlineError}>{authError}</Text> : null}
+          <PrimaryButton
+            variant="secondary"
+            loading={signingOut}
+            onPress={handleSignOut}
+          >
+            ログアウト
+          </PrimaryButton>
+        </View>
       )}
     </Screen>
   );
@@ -655,6 +677,16 @@ const styles = StyleSheet.create({
     color: ihubColors.mutedInk,
     fontSize: 11,
     fontWeight: "800",
+    textAlign: "center",
+  },
+  accountSection: {
+    gap: 9,
+    paddingTop: 8,
+  },
+  accountTitle: {
+    color: ihubColors.ink,
+    fontSize: 13,
+    fontWeight: "900",
     textAlign: "center",
   },
   authActions: {

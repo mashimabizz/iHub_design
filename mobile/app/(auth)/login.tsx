@@ -51,6 +51,9 @@ export default function LoginScreen() {
         <View style={styles.brand}>
           <IHubLogo size={60} />
           <Text style={styles.welcome}>おかえりなさい</Text>
+          <Text style={styles.webAccountNote}>
+            Web版と同じメールアドレス・パスワードでログインできます
+          </Text>
         </View>
 
         {configured ? (
@@ -196,6 +199,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     marginTop: 14,
+  },
+  webAccountNote: {
+    color: ihubColors.mutedInk,
+    fontSize: 11.5,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 7,
+    textAlign: "center",
   },
   form: {
     gap: 14,

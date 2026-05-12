@@ -69,11 +69,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) return "Supabaseの環境変数が未設定です";
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    if (!error) setPreviewMode(false);
+    if (!error) {
+      setSession(data.session);
+      setPreviewMode(false);
+    }
     return error?.message ?? null;
   }, []);
 
@@ -101,6 +104,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setPreviewMode(false);
     if (!supabase) return "Supabaseの環境変数が未設定です";
     const { error } = await supabase.auth.signOut();
+    if (!error) setSession(null);
     return error?.message ?? null;
   }, []);
 

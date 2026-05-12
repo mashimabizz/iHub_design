@@ -4,6 +4,56 @@
 
 ---
 
+## イテレーション155.17：iOSプロフ下部ログアウトとログイン安定化
+
+### 背景・問題意識
+
+iOS版プロフ画面のログアウトが画面下部のアカウント操作として十分に明示されておらず、ログアウト後も遷移先が分かりづらかった。また、Web版で作成済みのメール/パスワードアカウントでiOS版へ入る前提なので、ログイン成功時にsessionを即時反映し、ホーム遷移が認証状態の更新待ちでブレないようにした。
+
+### 変更内容
+
+#### `mobile/app/(tabs)/profile.tsx`
+- プロフ画面の最下部に「アカウント」セクションを追加し、メールアドレスとログアウトボタンを明示した。
+- ログアウト押下時はSupabase signOut後に `/welcome` へ戻すようにした。
+- ログアウト中のloading表示とエラー表示を追加した。
+
+#### `mobile/src/auth/AuthProvider.tsx`
+- `signIn` 成功時に返却されたsessionを即時 `setSession` へ反映するようにした。
+- `signOut` 成功時にsessionを即時nullへ更新するようにした。
+
+#### `mobile/app/(auth)/login.tsx`
+- Web版と同じメールアドレス・パスワードでログインできる旨をログイン画面に明記した。
+
+### 影響範囲
+
+- iOS版ログイン
+- iOS版ログアウト
+- iOS版プロフ画面下部
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `git diff --check`
+- Web版で作ったメール/パスワードアカウントでiOS版ログイン画面からログインできることを確認
+- プロフ最下部のログアウトボタンを押し、Welcomeへ戻ることを確認
+
+### 関連ファイル
+
+- `mobile/app/(tabs)/profile.tsx`
+- `mobile/src/auth/AuthProvider.tsx`
+- `mobile/app/(auth)/login.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版と同じSupabase Authを使う前提に沿っている
+- ✅ DBスキーマ・状態名の変更はないため `notes/05_data_model.md` / `notes/09_state_machines.md` は更新不要
+- ✅ 新用語は追加していないため `notes/10_glossary.md` は更新不要
+- ✅ `PrimaryButton` を使い回している
+- ✅ `npm run typecheck`（`mobile/`）通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.16：iOS認証とオンボーディングをWeb版構成へ拡張
 
 ### 背景・問題意識
