@@ -4,6 +4,47 @@
 
 ---
 
+## イテレーション155.11：iOSプロフの表示データをWeb版と同期
+
+### 背景・問題意識
+
+前iterでホーム・打診・取引・在庫/Wishを実データへ接続した一方で、iOS版プロフは `michi`、取引18回、固定の推し表示など静的なプレビュー値が残っていた。Web版プロフィールは `users`、`user_oshi`、完了取引数、評価サマリを組み合わせて表示しているため、iOS版も同じデータソースに接続する必要があった。
+
+### 変更内容
+
+#### `mobile/app/(tabs)/profile.tsx`
+- `users` から handle / display_name / primary_area / avatar_url を取得してヒーローに表示するようにした。
+- `user_oshi` から登録済み推しをグループ単位にまとめ、推しカードのタイトル/件数を実データ化した。
+- `proposals(status='completed')` から取引回数を取得し、`user_evaluations` から評価平均と件数を算出するようにした。
+- Supabase未設定・プレビューモードでは従来のプレビュー値にfallbackするようにした。
+
+### 影響範囲
+
+- iOS版プロフ画面
+- iOS版推しサマリ表示
+- iOS版評価/取引回数表示
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `git diff --check`
+- iOSアプリでプロフを開き、登録済みプロフィール・推し・評価・取引回数が表示されることを確認
+- プレビュー/未接続時に画面が崩れずfallback表示になることを確認
+
+### 関連ファイル
+
+- `mobile/app/(tabs)/profile.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版 `profile/page.tsx` と同じ主要データソースを確認してから接続した
+- ✅ 新しい状態名・用語・DBカラムは追加していない
+- ✅ `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `npm run typecheck`（`mobile/`）通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.10：iOS主要画面を実データ接続へ前進
 
 ### 背景・問題意識
