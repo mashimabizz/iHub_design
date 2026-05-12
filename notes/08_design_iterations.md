@@ -4,6 +4,58 @@
 
 ---
 
+## イテレーション155.26：iOS申告詳細を追加
+
+### 背景・問題意識
+
+WebAppには `/disputes/[id]` の申告ステータス画面があり、申告後や通知から現在の進行状況・相手回答・運営確認を確認できる。一方iOS版では申告フォームの入口は追加済みだったが、作成後や通知から開く申告詳細画面が不足していた。
+
+### 変更内容
+
+#### `mobile/app/dispute-detail.tsx`
+- Web版 `/disputes/[id]` に合わせて、申告ステータス画面を追加した。
+- 申告カテゴリ、申告本文、証跡写真、進行状況、結果、追加メッセージを表示するようにした。
+- 被申告者の場合、事実を認める/反論を提出する回答UIを追加した。
+- クローズ前は追加情報を `dispute_messages` に送信できるようにした。
+
+#### `mobile/app/dispute-new.tsx`
+- 申告送信後、取引詳細ではなく申告詳細へ遷移するようにした。
+
+#### `mobile/app/notifications.tsx`
+- `/disputes/:id` のlink_pathをiOSの申告詳細へマップした。
+
+### 影響範囲
+
+- iOS版申告フォーム
+- iOS版申告詳細
+- iOS版通知リンク解決
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- 申告フォーム送信後に申告詳細へ遷移すること
+- 通知の `/disputes/:id` link_path から申告詳細へ遷移すること
+- 被申告者アカウントで回答UIが表示されること
+
+### 関連ファイル
+
+- `mobile/app/dispute-detail.tsx`
+- `mobile/app/dispute-new.tsx`
+- `mobile/app/notifications.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版の申告詳細に対応するiOS実画面を追加
+- ✅ 申告作成後と通知から申告詳細へ到達できるようにした
+- ✅ 被申告者回答・追加情報送信の最低限の操作をiOS版にも追加
+- ✅ 既存D-flow状態に沿った実装のため `notes/09_state_machines.md` 更新不要
+- ✅ 新用語追加なしのため `notes/10_glossary.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.25：iOS遅刻通知/キャンセル相談を追加
 
 ### 背景・問題意識

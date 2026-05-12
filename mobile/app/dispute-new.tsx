@@ -88,7 +88,11 @@ export default function DisputeNewScreen() {
         evidencePhotoUrls: context.photoUrls,
       });
       if (result.error) setError(result.error);
-      else router.replace({ pathname: "/transaction-detail", params: { id: context.proposalId } });
+      else if (result.disputeId) {
+        router.replace({ pathname: "/dispute-detail", params: { id: result.disputeId } });
+      } else {
+        router.replace({ pathname: "/transaction-detail", params: { id: context.proposalId } });
+      }
     } finally {
       setSubmitting(false);
     }

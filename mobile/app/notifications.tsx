@@ -273,6 +273,10 @@ function normalizeKind(value: string): NotificationKind {
 function routeFromLinkPath(path: string | null) {
   if (!path) return null;
   if (path === "/" || path === "/profile" || path === "/search") return path;
+  const dispute = path.match(/^\/disputes\/([^/]+)/);
+  if (dispute) {
+    return { pathname: "/dispute-detail", params: { id: dispute[1] } } as const;
+  }
   const proposal = path.match(/^\/proposals\/([^/]+)/);
   if (proposal) {
     return { pathname: "/transaction-detail", params: { id: proposal[1] } } as const;
