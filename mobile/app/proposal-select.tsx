@@ -133,13 +133,7 @@ export default function ProposalSelectScreen() {
             return;
           }
           router.push({
-            pathname: "/preview-detail",
-            params: {
-              kind: "transaction",
-              badge: "送信確認",
-              title: "打診内容の確認",
-              subtitle: "提示物と待ち合わせ候補を確認して送信します。",
-            },
+            pathname: "/proposal-confirm",
           });
         }}
       >
