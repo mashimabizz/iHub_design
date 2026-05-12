@@ -4,6 +4,58 @@
 
 ---
 
+## イテレーション154.79：iOS認証リダイレクトをlayout単位へ移動
+
+### 背景・問題意識
+
+iter154.78 の修正後も、オーナーのExpo Go画面で `Attempted to navigate before mounting the Root Layout component` が再発した。
+
+`RouteGuard` をRoot Layout配下に置いたまま `router.replace()` を実行する構成では、Expo RouterのRoot Layout初回renderと競合する可能性が残る。Root Layoutではnavigatorだけを確実に描画し、認証状態による遷移は各route group layoutが宣言的に `<Redirect />` を返す構造へ変更する必要があった。
+
+### 変更内容
+
+#### `mobile/app/_layout.tsx`
+- `<RouteGuard />` を削除し、Root Layoutは `AuthProvider` と `<Stack />` だけを描画する構造にした。
+
+#### `mobile/app/(tabs)/_layout.tsx`
+- 未設定・未ログイン時は `<Redirect href="/login" />` を返すようにした。
+- 認証確認中は中央ローディングを表示するようにした。
+
+#### `mobile/app/(auth)/_layout.tsx`
+- プレビューモードまたはログイン済みの場合は `<Redirect href="/" />` を返すようにした。
+- 認証確認中は中央ローディングを表示するようにした。
+
+#### `mobile/src/auth/RouteGuard.tsx`
+- Root Layout起動時エラーの原因になりうる命令的リダイレクトを廃止したため削除した。
+
+### 影響範囲
+
+- iOS版のExpo Go起動
+- 未ログイン時のログイン画面遷移
+- プレビューモードからタブ画面へ入る導線
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+
+### 関連ファイル
+
+- `mobile/app/_layout.tsx`
+- `mobile/app/(tabs)/_layout.tsx`
+- `mobile/app/(auth)/_layout.tsx`
+- `mobile/src/auth/RouteGuard.tsx`
+
+### セルフレビュー結果
+
+- ✅ Root Layoutで命令的な `router.replace()` が走らない構造にした
+- ✅ Expo Routerのroute group layoutで宣言的に `<Redirect />` を返す構成にした
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション154.78：iOS起動時のRoot Layout遷移エラーを修正
 
 ### 背景・問題意識

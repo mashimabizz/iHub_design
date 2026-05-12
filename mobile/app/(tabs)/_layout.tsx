@@ -1,5 +1,6 @@
-import { Tabs } from "expo-router";
-import { Text } from "react-native";
+import { Redirect, Tabs } from "expo-router";
+import { ActivityIndicator, Text, View } from "react-native";
+import { useAuth } from "../../src/auth/AuthProvider";
 import { ihubColors } from "../../src/theme/tokens";
 
 const TAB_LABELS = {
@@ -19,6 +20,27 @@ function tabIcon(label: string, color: string, focused: boolean) {
 }
 
 export default function TabLayout() {
+  const { configured, loading, previewMode, session } = useAuth();
+
+  if (loading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: ihubColors.background,
+        }}
+      >
+        <ActivityIndicator color={ihubColors.lavender} />
+      </View>
+    );
+  }
+
+  if ((!configured && !previewMode) || (configured && !session)) {
+    return <Redirect href="/login" />;
+  }
+
   return (
     <Tabs
       screenOptions={{

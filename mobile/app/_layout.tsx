@@ -2,7 +2,6 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "../src/auth/AuthProvider";
-import { RouteGuard } from "../src/auth/RouteGuard";
 import { ihubColors } from "../src/theme/tokens";
 
 export default function RootLayout() {
@@ -17,7 +16,6 @@ export default function RootLayout() {
             contentStyle: { backgroundColor: ihubColors.background },
           }}
         />
-        <RouteGuard />
       </AuthProvider>
     </SafeAreaProvider>
   );
