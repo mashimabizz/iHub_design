@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "iHub",
+    "slug": "ihub",
+    "scheme": "ihub",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "bundleIdentifier": "tokyo.ihub.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "グッズや服装写真を撮影するためにカメラを使用します。",
+        "NSLocationWhenInUseUsageDescription": "交換できる場所の設定と現地交換候補の表示に位置情報を使用します。",
+        "NSPhotoLibraryUsageDescription": "グッズ画像や服装写真を選択するために写真ライブラリを使用します。"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-notifications"
+    ]
+  }
+}

@@ -4,6 +4,87 @@
 
 ---
 
+## イテレーション154.75：iOSアプリ基盤を追加
+
+### 背景・問題意識
+
+オーナーから、Webアプリ版と機能連動する iOS ネイティブアプリを React Native / Expo 方針で進めたいという相談と依頼があった。
+
+iHub は地図、カレンダー、Push通知、カメラ、横スワイプ、取引チャットなど iOS 固有の操作感が重要になる。一方で Web と iOS の状態判定やマッチング判定がズレると、在庫残数や打診ステータスで重大な不整合が起きる。そこで、先に monorepo と共通パッケージの土台を作り、iOS側は Expo Router ベースで立ち上げることにした。
+
+### 変更内容
+
+#### `mobile/`
+- Expo / React Native / TypeScript の iOS アプリ scaffold を追加した。
+- Expo Router を導入し、ホーム/在庫/Wish/取引/プロフのタブ画面を作成した。
+- Supabase Auth 連携用のクライアント初期化ファイルを追加した。
+- Expo Notifications と `react-native-maps` を導入し、Push通知とApple Maps利用に進める依存関係を追加した。
+- `mobile/.env.example` を追加し、iOS側の公開環境変数を明示した。
+
+#### `packages/core/`
+- Web/iOS共通化の第一歩として、proposal の pending 判定と詳細遷移先判定を切り出した。
+- マッチ強度の優先度判定の土台を追加した。
+
+#### `packages/design/`
+- ブランドカラー、余白、角丸、影の共通トークンを追加した。
+
+#### `packages/supabase/`
+- Supabase公開環境変数の型と検証補助を追加した。
+
+#### `package.json` / `.nvmrc`
+- root を npm workspace 化し、`web/`、`mobile/`、`packages/*` を同一リポジトリで管理する土台を作った。
+- Expo/RN の要求に合わせて Node.js `20.19.4` を `.nvmrc` に明示した。
+
+#### `notes/20_ios_app_roadmap.md`
+- iOSアプリ化の方針、リポジトリ構成、PoC範囲、実装順、オーナー依頼事項を新規整理した。
+
+#### `notes/14_implementation_phases.md`
+- モバイル技術スタックを React Native + Expo 方針に更新した。
+- Post-MVP の「アプリ化」記述を、iOSネイティブ強化に差し替えた。
+
+#### `notes/10_glossary.md`
+- `Webアプリ版` / `iOSアプリ版` / `共通ロジック` を用語として追加した。
+
+### 影響範囲
+
+- iOSアプリ開発の開始点
+- Web/iOS共通ロジックの置き場
+- 今後のCI/CD、EAS、TestFlight運用
+- 実装フェーズ計画と用語管理
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `./mobile/node_modules/.bin/tsc -p packages/core/tsconfig.json --noEmit`
+- `./mobile/node_modules/.bin/tsc -p packages/design/tsconfig.json --noEmit`
+- `./mobile/node_modules/.bin/tsc -p packages/supabase/tsconfig.json --noEmit`
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+
+### 関連ファイル
+
+- `mobile/`
+- `packages/core/`
+- `packages/design/`
+- `packages/supabase/`
+- `package.json`
+- `.nvmrc`
+- `notes/20_ios_app_roadmap.md`
+- `notes/14_implementation_phases.md`
+- `notes/10_glossary.md`
+
+### セルフレビュー結果
+
+- ✅ 既存Webアプリの実装ファイルには触れず、iOS版の基盤を別ディレクトリに追加した
+- ✅ Web/iOSでズレやすい pending 判定と遷移先判定を `packages/core/` に置き始めた
+- ✅ 新しい正式用語は `notes/10_glossary.md` に追加した
+- ✅ 状態の追加・削除・名称変更はないため `notes/09_state_machines.md` は更新不要
+- ✅ DBスキーマ変更はないため `notes/05_data_model.md` は更新不要
+- ⚠️ 最新Expo/RNは Node.js `>=20.19.4` を要求するが、現在のローカルは `v20.11.1`。`.nvmrc` に要求バージョンを明示済み
+- ✅ `mobile` / `packages/*` の typecheck、Expo config 確認、`git diff --check` 通過
+
+---
+
 ## イテレーション154.74：相手待ち打診の遷移先を修正
 
 ### 背景・問題意識
