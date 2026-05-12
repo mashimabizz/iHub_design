@@ -4,6 +4,52 @@
 
 ---
 
+## イテレーション155.14：iOS推し設定を実データ一覧へ接続
+
+### 背景・問題意識
+
+iOS版プロフの「推し設定」もプロフィール編集と同様に `preview-detail` へ飛ぶだけで、Web版の `profile/oshi` のように登録済み推しを確認・管理できなかった。まずは既存の `user_oshi` を読み、グループ/メンバー単位で表示・削除できる画面へ差し替えた。
+
+### 変更内容
+
+#### `mobile/app/(tabs)/profile.tsx`
+- 「推し設定」行の遷移先を `preview-detail` から `/oshi-settings` に変更した。
+
+#### `mobile/app/oshi-settings.tsx`
+- iOS版推し設定画面を追加した。
+- `user_oshi` を `groups_master` / `characters_master` / `oshi_requests` / `character_requests` と合わせて取得し、グループ単位にまとめて表示するようにした。
+- 承認待ちの仮登録グループ/メンバーも表示できるようにした。
+- グループ削除、メンバー削除を `user_oshi` へ反映するようにした。
+- 「登録済みの推しを追加」は次段階の検索/追加リクエスト本画面へ接続するため、現時点では明示的なNEXTプレビューにした。
+
+### 影響範囲
+
+- iOS版プロフ画面
+- iOS版推し設定画面
+- iOS版 `user_oshi` 表示/削除
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `git diff --check`
+- iOSアプリでプロフ > 推し設定を開き、登録済み推しが表示されることを確認
+- グループ/メンバー削除後、一覧が更新されることを確認
+
+### 関連ファイル
+
+- `mobile/app/(tabs)/profile.tsx`
+- `mobile/app/oshi-settings.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版 `profile/oshi` と同じ `user_oshi` / request 系データソースを確認してから実装した
+- ✅ 既存の `仮登録` / `承認待ち` の意味に沿って表示した
+- ✅ 新しい状態名・DBカラムは追加していないため `notes/05_data_model.md` / `notes/09_state_machines.md` は更新不要
+- ✅ 新用語は追加していないため `notes/10_glossary.md` は更新不要
+- ✅ `npm run typecheck`（`mobile/`）通過
+
+---
+
 ## イテレーション155.13：iOSプロフィール編集を保存可能画面へ差し替え
 
 ### 背景・問題意識

@@ -353,6 +353,10 @@ function openProfileDetail(row: ProfileSheet) {
     router.push("/profile-edit");
     return;
   }
+  if (row.title === "推し設定") {
+    router.push("/oshi-settings");
+    return;
+  }
 
   router.push({
     pathname: "/preview-detail",
