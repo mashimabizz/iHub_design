@@ -4,6 +4,51 @@
 
 ---
 
+## イテレーション155.18：iOSログイン設定の実機導線修正
+
+### 背景・問題意識
+
+iOS版でログインを押しても「Supabase設定待ち」から preview 導線しか出ず、Web版で作成済みの michilion アカウントでログインできなかった。原因は `mobile/.env.local` が無く、Expo 側が Supabase 公開設定を読めていなかったこと。また、新規登録画面からログインへ戻る導線も不足していた。
+
+### 変更内容
+
+#### ローカル環境
+- `web/.env.local` の公開用 Supabase URL / publishable key だけを `mobile/.env.local` に反映した。
+- `SUPABASE_SECRET_KEY` は反映していない。
+
+#### `mobile/app/(auth)/signup.tsx`
+- 新規登録画面下部に「すでにアカウントをお持ちの方は ログイン」を追加した。
+- ログイン押下時は `/login` へ明示的に遷移するようにした。
+
+### 影響範囲
+
+- iOS版ログイン画面表示
+- iOS版新規登録からログインへの導線
+- ローカルExpo起動時のSupabase接続
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `git diff --check`
+- Metroを再起動し、Welcome > ログインでログインフォームが出ることを確認
+- 新規登録画面下部のログインリンクからログイン画面へ戻れることを確認
+
+### 関連ファイル
+
+- `mobile/app/(auth)/signup.tsx`
+- `mobile/.env.local`（gitignore、ローカルのみ）
+
+### セルフレビュー結果
+
+- ✅ Web版と同じSupabase Authへ接続する前提を満たした
+- ✅ secret key はmobileへコピーしていない
+- ✅ DBスキーマ・状態名の変更はないため `notes/05_data_model.md` / `notes/09_state_machines.md` は更新不要
+- ✅ 新用語は追加していないため `notes/10_glossary.md` は更新不要
+- ✅ `npm run typecheck`（`mobile/`）通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.17：iOSプロフ下部ログアウトとログイン安定化
 
 ### 背景・問題意識

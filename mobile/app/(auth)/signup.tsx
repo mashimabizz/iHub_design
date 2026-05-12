@@ -178,6 +178,12 @@ export default function SignUpScreen() {
           <PrimaryButton loading={pending} disabled={!canSubmit} onPress={submit}>
             次へ
           </PrimaryButton>
+          <View style={styles.loginRow}>
+            <Text style={styles.loginText}>すでにアカウントをお持ちの方は </Text>
+            <Pressable onPress={() => router.replace("/login")}>
+              <Text style={styles.loginLink}>ログイン</Text>
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Screen>
@@ -345,5 +351,21 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 18,
     padding: 12,
+  },
+  loginRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    paddingTop: 4,
+  },
+  loginText: {
+    color: ihubColors.mutedInk,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  loginLink: {
+    color: ihubColors.lavender,
+    fontSize: 13,
+    fontWeight: "900",
   },
 });
