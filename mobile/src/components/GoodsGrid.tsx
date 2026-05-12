@@ -200,25 +200,36 @@ function AnimatedGoodsTile({
       }}
     >
       <Pressable onPress={onPress} style={styles.tilePressable}>
-        <View style={[styles.tileImage, { height: width * 1.32 }]}>
+        <View style={[styles.tileImage, { height: width * 1.34 }]}>
           <View style={[styles.tileImageFill, { backgroundColor: item.hue }]}>
             <View style={styles.tileShine} />
             <Text style={styles.tileGlyph}>{item.glyph}</Text>
           </View>
-          {item.badge ? (
-            <View style={styles.tileBadge}>
-              <Text numberOfLines={1} style={styles.tileBadgeText}>
-                {item.badge}
+          <View style={styles.tileTopRow}>
+            <View style={styles.tileTitlePlate}>
+              <Text numberOfLines={1} style={styles.tileTitlePlateText}>
+                {item.title}
               </Text>
             </View>
-          ) : null}
+            {item.badge ? (
+              <View
+                style={[
+                  styles.tileBadge,
+                  item.badge === "未紐付け" ? styles.tileBadgeWarn : null,
+                ]}
+              >
+                <Text numberOfLines={1} style={styles.tileBadgeText}>
+                  {item.badge}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.tileBottomStrip}>
+            <Text numberOfLines={1} style={styles.tileSubtitle}>
+              {item.subtitle}
+            </Text>
+          </View>
         </View>
-        <Text numberOfLines={1} style={styles.tileTitle}>
-          {item.title}
-        </Text>
-        <Text numberOfLines={1} style={styles.tileSubtitle}>
-          {item.subtitle}
-        </Text>
       </Pressable>
     </Animated.View>
   );
@@ -462,7 +473,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   tilePressable: {
-    gap: 5,
+    borderRadius: 13,
   },
   tileImage: {
     backgroundColor: "rgba(58,50,74,0.05)",
@@ -497,30 +508,58 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 5,
   },
-  tileBadge: {
-    alignSelf: "center",
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: ihubRadii.pill,
-    bottom: 6,
-    maxWidth: "84%",
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+  tileTopRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 4,
+    left: 6,
     position: "absolute",
+    right: 6,
+    top: 6,
+  },
+  tileTitlePlate: {
+    backgroundColor: "rgba(255,255,255,0.86)",
+    borderRadius: 6,
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  tileTitlePlateText: {
+    color: ihubColors.ink,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  tileBadge: {
+    backgroundColor: ihubColors.lavender,
+    borderRadius: 6,
+    flexShrink: 0,
+    maxWidth: "50%",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  tileBadgeWarn: {
+    backgroundColor: ihubColors.warn,
   },
   tileBadgeText: {
-    color: ihubColors.ink,
+    color: ihubColors.surface,
     fontSize: 8.5,
     fontWeight: "900",
   },
-  tileTitle: {
-    color: ihubColors.ink,
-    fontSize: 10.5,
-    fontWeight: "900",
+  tileBottomStrip: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 7,
+    paddingBottom: 6,
+    paddingTop: 14,
+    position: "absolute",
+    right: 0,
   },
   tileSubtitle: {
-    color: ihubColors.mutedInk,
+    color: ihubColors.ink,
     fontSize: 9.5,
-    fontWeight: "700",
+    fontWeight: "900",
   },
   sheetRoot: {
     backgroundColor: "rgba(20,16,29,0.36)",
