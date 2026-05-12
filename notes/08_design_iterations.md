@@ -4,6 +4,52 @@
 
 ---
 
+## イテレーション155.01：iOS打診フローで相手ハンドルを引き継ぐ
+
+### 背景・問題意識
+
+iOS版の送信確認と打診完了画面は、関係図から遷移しても相手表示が固定の `@michilion` に閉じていた。今後マッチングパネルや取引相手が増えた時に、遷移元の相手文脈を後続画面へ渡せる必要がある。
+
+### 変更内容
+
+#### `mobile/app/match-detail.tsx`
+- 関係図から提示物選択へ進む route params に `partnerHandle` を追加した。
+
+#### `mobile/app/proposal-select.tsx`
+- `partnerHandle` を受け取り、送信確認画面へそのまま引き継ぐようにした。
+
+#### `mobile/app/proposal-confirm.tsx`
+- 送信確認の宛先表示と打診完了演出の相手ハンドルを、route params 由来の値で表示するようにした。
+- params が無い場合のみ既存のプレビュー用 fallback を使うようにした。
+
+### 影響範囲
+
+- iOS版関係図から提示物選択への遷移
+- iOS版送信確認
+- iOS版打診完了画面
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+- iOSアプリでホーム → マッチングパネル → 関係図 → 打診に進む → 送信確認 → 打診送信を開き、相手ハンドルが画面間で維持されることを確認
+
+### 関連ファイル
+
+- `mobile/app/match-detail.tsx`
+- `mobile/app/proposal-select.tsx`
+- `mobile/app/proposal-confirm.tsx`
+
+### セルフレビュー結果
+
+- ✅ 相手表示を固定値前提から route params 優先へ寄せた
+- ✅ 既存プレビュー単体起動時の fallback は維持した
+- ✅ 新しい正式用語・状態名・DBカラムは追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション155.00：iOS提示物選択に関係図の選択内容を反映
 
 ### 背景・問題意識

@@ -116,12 +116,14 @@ export default function ProposalSelectScreen() {
     receives?: string | string[];
     listings?: string | string[];
     candidateId?: string | string[];
+    partnerHandle?: string | string[];
   }>();
   const initialTab = parseTab(one(params.tab));
   const givesParam = one(params.gives);
   const receivesParam = one(params.receives);
   const listingsParam = one(params.listings);
   const candidateIdParam = one(params.candidateId);
+  const partnerHandleParam = one(params.partnerHandle);
   const initialGiveIds = useMemo(
     () => parseProposalIdList(givesParam),
     [givesParam],
@@ -299,6 +301,7 @@ export default function ProposalSelectScreen() {
               receives: receiveSelectedIds.join(","),
               ...(listingsParam ? { listings: listingsParam } : {}),
               ...(candidateIdParam ? { candidateId: candidateIdParam } : {}),
+              ...(partnerHandleParam ? { partnerHandle: partnerHandleParam } : {}),
               meetups: JSON.stringify(
                 meetupCandidates
                   .filter((candidate) => candidate.place.trim())

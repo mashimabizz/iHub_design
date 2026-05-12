@@ -59,10 +59,12 @@ export default function ProposalConfirmScreen() {
     meetups?: string | string[];
     gives?: string | string[];
     receives?: string | string[];
+    partnerHandle?: string | string[];
   }>();
   const meetupsParam = one(params.meetups);
   const givesParam = one(params.gives);
   const receivesParam = one(params.receives);
+  const partnerHandle = one(params.partnerHandle) ?? PARTNER_HANDLE;
   const meetupCandidates = useMemo(
     () => parseMeetups(meetupsParam),
     [meetupsParam],
@@ -80,7 +82,7 @@ export default function ProposalConfirmScreen() {
   const [submitted, setSubmitted] = useState(false);
 
   if (submitted) {
-    return <ProposalCompleteScreen partnerHandle={PARTNER_HANDLE} />;
+    return <ProposalCompleteScreen partnerHandle={partnerHandle} />;
   }
 
   return (
@@ -108,7 +110,7 @@ export default function ProposalConfirmScreen() {
         <View style={styles.notice}>
           <Text style={styles.noticeBadge}>送信確認</Text>
           <Text style={styles.noticeText}>
-            @{PARTNER_HANDLE} に下記の内容で打診を送ります。
+            @{partnerHandle} に下記の内容で打診を送ります。
           </Text>
         </View>
 

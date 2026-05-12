@@ -283,6 +283,7 @@ export default function MatchDetailScreen() {
   const proposalParams = {
     tab: "meetup",
     candidateId: highlightedItem.id,
+    partnerHandle: PARTNER_HANDLE,
     gives: aggregated.giveIds.join(","),
     receives: aggregated.receiveIds.join(","),
     listings: aggregated.referencedListingIds.join(","),
@@ -290,6 +291,7 @@ export default function MatchDetailScreen() {
   const simpleProposalParams = {
     tab: "meetup",
     candidateId: highlightedItem.id,
+    partnerHandle: PARTNER_HANDLE,
     gives: data.simpleGives.map((item) => item.id).join(","),
     receives: data.simpleReceives.map((item) => item.id).join(","),
   };
