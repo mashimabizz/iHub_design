@@ -106,7 +106,14 @@ export default function MatchDetailScreen() {
         </Text>
       </Pressable>
 
-      <PrimaryButton onPress={() => router.push("/preview-detail")}>
+      <PrimaryButton
+        onPress={() =>
+          router.push({
+            pathname: "/proposal-select",
+            params: { tab: "meetup" },
+          })
+        }
+      >
         提示物の選択へ進む
       </PrimaryButton>
     </Screen>
