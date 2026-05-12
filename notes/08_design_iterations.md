@@ -4,6 +4,48 @@
 
 ---
 
+## イテレーション155.12：iOS取引詳細に取引チャットを接続
+
+### 背景・問題意識
+
+iOS版の取引詳細は、前iterで `proposals` の内容確認と基本応答までは実データ接続できたが、Web版の C-1.5 / C-2 にある `messages` ベースのネゴチャット・取引チャットがまだ表示されていなかった。打診後の体験が「内容を見るだけ」に寄るとWeb版との差が大きいため、まずメッセージ表示・送信・到着ステータス投稿を同じ `messages` テーブルに接続した。
+
+### 変更内容
+
+#### `mobile/app/transaction-detail.tsx`
+- `messages` を proposal 単位で取得し、取引詳細内にネゴチャット/取引チャットとして表示するようにした。
+- `text` / `system` / `arrival_status` / `photo` / `outfit_photo` / `location` の既存 `message_type` を読み分け、吹き出し・システム表示へ反映した。
+- テキストメッセージ送信を `messages` へ INSERT するようにした。
+- `agreed` 状態では「向かう」「到着」ボタンから `arrival_status` メッセージを投稿できるようにした。
+
+### 影響範囲
+
+- iOS版取引詳細
+- iOS版ネゴチャット
+- iOS版取引チャット
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `git diff --check`
+- iOSアプリで取引一覧から打診/取引詳細を開き、既存メッセージが表示されることを確認
+- メッセージ送信後、同じ画面に反映されることを確認
+- 合意済み取引で「向かう」「到着」がシステム表示として投稿されることを確認
+
+### 関連ファイル
+
+- `mobile/app/transaction-detail.tsx`
+
+### セルフレビュー結果
+
+- ✅ `取引チャット` / `ネゴチャット` / `打診` の用語は既存定義に沿っている
+- ✅ `messages.message_type` は既存スキーマの範囲のみを使用している
+- ✅ 新しい状態名・DBカラムは追加していないため `notes/05_data_model.md` / `notes/09_state_machines.md` は更新不要
+- ✅ 新用語は追加していないため `notes/10_glossary.md` は更新不要
+- ✅ `npm run typecheck`（`mobile/`）通過
+
+---
+
 ## イテレーション155.11：iOSプロフの表示データをWeb版と同期
 
 ### 背景・問題意識

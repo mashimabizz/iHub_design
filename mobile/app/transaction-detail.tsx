@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useAuth } from "../src/auth/AuthProvider";
@@ -95,6 +96,35 @@ type TransactionDetail = {
   meetups: MeetupCandidate[];
   message: string | null;
   expiresAt: string | null;
+  messages: ChatMessage[];
+};
+
+type ChatMessage = {
+  id: string;
+  senderId: string;
+  type:
+    | "text"
+    | "photo"
+    | "outfit_photo"
+    | "location"
+    | "arrival_status"
+    | "system";
+  body: string | null;
+  photoUrl: string | null;
+  locationLabel: string | null;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+type MessageRow = {
+  id: string;
+  sender_id: string;
+  message_type: ChatMessage["type"];
+  body: string | null;
+  photo_url: string | null;
+  location_label: string | null;
+  meta: Record<string, unknown> | null;
+  created_at: string;
 };
 
 export default function TransactionDetailScreen() {
@@ -105,8 +135,10 @@ export default function TransactionDetailScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<
-    "accept" | "negotiate" | "reject" | null
+    "accept" | "negotiate" | "reject" | "enroute" | "arrived" | null
   >(null);
+  const [draft, setDraft] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   const canAccept = useMemo(() => {
     if (!detail) return false;
@@ -117,6 +149,11 @@ export default function TransactionDetailScreen() {
   }, [detail]);
   const canNegotiate = detail?.isReceiver && ["sent", "negotiating"].includes(detail.status);
   const canReject = detail?.isReceiver && ["sent", "negotiating"].includes(detail.status);
+  const canChat =
+    detail &&
+    ["sent", "negotiating", "agreement_one_side", "agreed", "completed"].includes(
+      detail.status,
+    );
 
   useEffect(() => {
     if (!proposalId) {
@@ -160,6 +197,55 @@ export default function TransactionDetailScreen() {
         actionError instanceof Error
           ? actionError.message
           : "更新に失敗しました",
+      );
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleSendMessage() {
+    if (!detail || !user || !supabase) return;
+    const body = draft.trim();
+    if (!body) return;
+    setSendingMessage(true);
+    setError(null);
+    try {
+      const { error: insertError } = await supabase.from("messages").insert({
+        proposal_id: detail.id,
+        sender_id: user.id,
+        message_type: "text",
+        body,
+      });
+      if (insertError) throw insertError;
+      setDraft("");
+      setDetail(await fetchTransactionDetail(detail.id, user.id));
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : "送信に失敗しました");
+    } finally {
+      setSendingMessage(false);
+    }
+  }
+
+  async function handleArrivalStatus(status: "enroute" | "arrived") {
+    if (!detail || !user || !supabase) return;
+    setActionLoading(status);
+    setError(null);
+    try {
+      const label = status === "enroute" ? "向かっています" : "到着しました";
+      const { error: insertError } = await supabase.from("messages").insert({
+        proposal_id: detail.id,
+        sender_id: user.id,
+        message_type: "arrival_status",
+        body: label,
+        meta: { status },
+      });
+      if (insertError) throw insertError;
+      setDetail(await fetchTransactionDetail(detail.id, user.id));
+    } catch (arrivalError) {
+      setError(
+        arrivalError instanceof Error
+          ? arrivalError.message
+          : "ステータス更新に失敗しました",
       );
     } finally {
       setActionLoading(null);
@@ -246,6 +332,87 @@ export default function TransactionDetailScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>メッセージ</Text>
               <Text style={styles.messageText}>{detail.message}</Text>
+            </View>
+          ) : null}
+
+          {canChat ? (
+            <View style={styles.chatSection}>
+              <View style={styles.chatHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>
+                    {detail.status === "agreed" || detail.status === "completed"
+                      ? "取引チャット"
+                      : "ネゴチャット"}
+                  </Text>
+                  <Text style={styles.chatSub}>
+                    {detail.messages.length}件
+                  </Text>
+                </View>
+                {detail.status === "agreed" ? (
+                  <View style={styles.arrivalActions}>
+                    <Pressable
+                      disabled={!!actionLoading}
+                      onPress={() => handleArrivalStatus("enroute")}
+                      style={styles.arrivalButton}
+                    >
+                      <Text style={styles.arrivalButtonText}>向かう</Text>
+                    </Pressable>
+                    <Pressable
+                      disabled={!!actionLoading}
+                      onPress={() => handleArrivalStatus("arrived")}
+                      style={[styles.arrivalButton, styles.arrivalButtonStrong]}
+                    >
+                      <Text
+                        style={[
+                          styles.arrivalButtonText,
+                          styles.arrivalButtonTextStrong,
+                        ]}
+                      >
+                        到着
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.messagesList}>
+                {detail.messages.length === 0 ? (
+                  <Text style={styles.emptyText}>まだメッセージはありません</Text>
+                ) : (
+                  detail.messages.map((message) => (
+                    <ChatBubble
+                      key={message.id}
+                      message={message}
+                      mine={message.senderId === user?.id}
+                    />
+                  ))
+                )}
+              </View>
+
+              {detail.status !== "completed" ? (
+                <View style={styles.composer}>
+                  <TextInput
+                    value={draft}
+                    onChangeText={setDraft}
+                    placeholder="メッセージ"
+                    placeholderTextColor="rgba(58,50,74,0.38)"
+                    multiline
+                    style={styles.composerInput}
+                  />
+                  <Pressable
+                    disabled={sendingMessage || draft.trim().length === 0}
+                    onPress={handleSendMessage}
+                    style={[
+                      styles.sendButton,
+                      sendingMessage || draft.trim().length === 0
+                        ? styles.sendButtonDisabled
+                        : null,
+                    ]}
+                  >
+                    <Text style={styles.sendButtonText}>送信</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -380,7 +547,30 @@ async function buildDetail(
     meetups: parseMeetups(proposal),
     message: proposal.message,
     expiresAt: proposal.expires_at,
+    messages: await fetchMessages(proposal.id),
   };
+}
+
+async function fetchMessages(proposalId: string): Promise<ChatMessage[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("messages")
+    .select(
+      "id, sender_id, message_type, body, photo_url, location_label, meta, created_at",
+    )
+    .eq("proposal_id", proposalId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return ((data as MessageRow[] | null) ?? []).map((row) => ({
+    id: row.id,
+    senderId: row.sender_id,
+    type: row.message_type,
+    body: row.body,
+    photoUrl: row.photo_url,
+    locationLabel: row.location_label,
+    meta: row.meta,
+    createdAt: row.created_at,
+  }));
 }
 
 async function updateProposalAction(
@@ -464,6 +654,67 @@ function TradeColumn({
       </View>
     </View>
   );
+}
+
+function ChatBubble({
+  message,
+  mine,
+}: {
+  message: ChatMessage;
+  mine: boolean;
+}) {
+  const system = message.type === "system" || message.type === "arrival_status";
+  const text = messageText(message);
+
+  if (system) {
+    return (
+      <View style={styles.systemMessage}>
+        <Text style={styles.systemMessageText}>{text}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.chatBubbleRow, mine ? styles.chatBubbleRowMine : null]}>
+      <View style={[styles.chatBubble, mine ? styles.chatBubbleMine : null]}>
+        {message.photoUrl ? (
+          <Image source={{ uri: message.photoUrl }} style={styles.chatPhoto} />
+        ) : null}
+        <Text style={[styles.chatBubbleText, mine ? styles.chatBubbleTextMine : null]}>
+          {text}
+        </Text>
+        <Text style={[styles.chatTime, mine ? styles.chatTimeMine : null]}>
+          {shortTime(message.createdAt)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function messageText(message: ChatMessage) {
+  if (message.type === "arrival_status") {
+    const status = message.meta?.status;
+    if (status === "arrived") return "到着しました";
+    if (status === "enroute") return "向かっています";
+    if (status === "left") return "離れました";
+  }
+  if (message.type === "location") {
+    return message.locationLabel ?? "現在地を共有しました";
+  }
+  if (message.type === "outfit_photo") {
+    return message.body ?? "服装写真を共有しました";
+  }
+  if (message.type === "photo") {
+    return message.body ?? "写真を共有しました";
+  }
+  return message.body ?? "";
+}
+
+function shortTime(value: string) {
+  const date = new Date(value);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
 }
 
 function toDetailItem(id: string, qty: number, row?: InventoryRow): DetailItem {
@@ -771,6 +1022,140 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: ihubColors.ink,
     fontSize: 14,
+    fontWeight: "900",
+  },
+  chatSection: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.xl,
+    borderWidth: 1,
+    gap: 12,
+    padding: 14,
+  },
+  chatHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  chatSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  arrivalActions: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  arrivalButton: {
+    backgroundColor: "rgba(168,212,230,0.18)",
+    borderRadius: ihubRadii.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  arrivalButtonStrong: {
+    backgroundColor: ihubColors.lavender,
+  },
+  arrivalButtonText: {
+    color: "#3a7c93",
+    fontSize: 10.5,
+    fontWeight: "900",
+  },
+  arrivalButtonTextStrong: {
+    color: ihubColors.surface,
+  },
+  messagesList: {
+    gap: 8,
+  },
+  systemMessage: {
+    alignSelf: "center",
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: ihubRadii.pill,
+    maxWidth: "86%",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  systemMessageText: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  chatBubbleRow: {
+    alignItems: "flex-start",
+  },
+  chatBubbleRowMine: {
+    alignItems: "flex-end",
+  },
+  chatBubble: {
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: 17,
+    borderTopLeftRadius: 6,
+    maxWidth: "82%",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  chatBubbleMine: {
+    backgroundColor: ihubColors.lavender,
+    borderTopLeftRadius: 17,
+    borderTopRightRadius: 6,
+  },
+  chatBubbleText: {
+    color: ihubColors.ink,
+    fontSize: 12.5,
+    fontWeight: "700",
+    lineHeight: 19,
+  },
+  chatBubbleTextMine: {
+    color: ihubColors.surface,
+  },
+  chatPhoto: {
+    borderRadius: 12,
+    height: 150,
+    marginBottom: 7,
+    width: 190,
+  },
+  chatTime: {
+    color: ihubColors.mutedInk,
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  chatTimeMine: {
+    color: "rgba(255,255,255,0.72)",
+  },
+  composer: {
+    alignItems: "flex-end",
+    backgroundColor: "rgba(58,50,74,0.04)",
+    borderRadius: 18,
+    flexDirection: "row",
+    gap: 8,
+    padding: 7,
+  },
+  composerInput: {
+    color: ihubColors.ink,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    maxHeight: 92,
+    minHeight: 38,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+  sendButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.lavender,
+    borderRadius: ihubRadii.pill,
+    height: 38,
+    justifyContent: "center",
+    paddingHorizontal: 13,
+  },
+  sendButtonDisabled: {
+    opacity: 0.45,
+  },
+  sendButtonText: {
+    color: ihubColors.surface,
+    fontSize: 12,
     fontWeight: "900",
   },
   meetupCard: {
