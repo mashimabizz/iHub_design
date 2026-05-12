@@ -203,18 +203,25 @@ export default function ProfileScreen() {
       </ProfileSection>
 
       {user?.email ? <Text style={styles.email}>{user.email}</Text> : null}
-      <PrimaryButton
-        variant="secondary"
-        onPress={() => {
-          if (previewMode) {
-            exitPreview();
-            return;
-          }
-          void signOut();
-        }}
-      >
-        {previewMode ? "プレビューを終了" : "ログアウト"}
-      </PrimaryButton>
+      {previewMode ? (
+        <View style={styles.authActions}>
+          <PrimaryButton
+            onPress={() => {
+              exitPreview();
+              router.replace("/login");
+            }}
+          >
+            michilionでログインする
+          </PrimaryButton>
+          <PrimaryButton variant="secondary" onPress={exitPreview}>
+            プレビューだけ終了
+          </PrimaryButton>
+        </View>
+      ) : (
+        <PrimaryButton variant="secondary" onPress={() => void signOut()}>
+          ログアウト
+        </PrimaryButton>
+      )}
     </Screen>
   );
 }
@@ -649,5 +656,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     textAlign: "center",
+  },
+  authActions: {
+    gap: 10,
   },
 });

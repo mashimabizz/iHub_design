@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { router } from "expo-router";
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { FoundationCard } from "../../src/components/FoundationCard";
 import { IHubLogo } from "../../src/components/IHubLogo";
@@ -53,7 +54,7 @@ export default function LoginScreen() {
           title={configured ? "ログイン" : "Supabase設定待ち"}
           body={
             configured
-              ? "Web版と同じアカウントでログインし、同じ在庫・Wish・打診を表示する想定です。"
+              ? "michilionのメールアドレスとパスワードでログインすると、取引チャットを実データで確認できます。"
               : "mobile/.env.local に Supabase の公開URLとpublishable keyを入れるとログイン検証に進めます。"
           }
         >
@@ -103,7 +104,13 @@ export default function LoginScreen() {
               <Text style={styles.envLine}>
                 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY
               </Text>
-              <PrimaryButton variant="secondary" onPress={enterPreview}>
+              <PrimaryButton
+                variant="secondary"
+                onPress={() => {
+                  enterPreview();
+                  router.replace("/");
+                }}
+              >
                 画面だけプレビューする
               </PrimaryButton>
             </View>

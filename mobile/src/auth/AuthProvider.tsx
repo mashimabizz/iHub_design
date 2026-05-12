@@ -63,6 +63,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       email,
       password,
     });
+    if (!error) setPreviewMode(false);
     return error?.message ?? null;
   }, []);
 
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       email,
       password,
     });
+    if (!error) setPreviewMode(false);
     return error?.message ?? null;
   }, []);
 

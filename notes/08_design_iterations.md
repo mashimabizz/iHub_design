@@ -4,6 +4,62 @@
 
 ---
 
+## イテレーション155.15：iOS Previewから実ログインへ抜ける導線
+
+### 背景・問題意識
+
+iOS Preview では `Preview_hana` のアカウント表示のまま取引チャットを開くと「ログイン後に取引詳細を確認できます」と出るだけで、michilion の実アカウントへ切り替える入口が分かりづらかった。取引チャットは実データに接続しているため、preview からログインへ迷わず進める導線を追加した。
+
+### 変更内容
+
+#### `mobile/src/auth/AuthProvider.tsx`
+- `signIn` / `signUp` 成功時に `previewMode` を解除するようにした。
+
+#### `mobile/app/(tabs)/profile.tsx`
+- preview 中のプロフ画面下部に「michilionでログインする」ボタンを追加し、preview を解除して `/login` へ遷移するようにした。
+- preview 終了だけを行うサブボタンを分離した。
+
+#### `mobile/app/transaction-detail.tsx`
+- preview または未ログインで取引詳細を開いた時、理由を明示したうえでログイン CTA を表示するようにした。
+- CTA から preview を解除して `/login` へ遷移できるようにした。
+
+#### `mobile/app/(auth)/login.tsx`
+- ログイン画面の説明文を、取引チャット確認のために実アカウントでログインする文脈へ合わせた。
+- Supabase未設定時の preview 開始は、ログイン画面側から明示的にホームへ遷移するようにした。
+
+#### `mobile/app/(auth)/_layout.tsx`
+- preview 中に `/login` を開いた場合でもログイン画面を表示できるよう、previewMode による自動ホームリダイレクトを廃止した。
+
+### 影響範囲
+
+- iOS版ログイン導線
+- iOS版プロフ画面
+- iOS版取引詳細/取引チャットの未ログイン表示
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `git diff --check`
+- iOS Preview のプロフから「michilionでログインする」を押し、ログイン画面へ遷移することを確認
+- Preview_hana 状態で取引詳細を開いた時、ログイン CTA が表示されることを確認
+
+### 関連ファイル
+
+- `mobile/src/auth/AuthProvider.tsx`
+- `mobile/app/(tabs)/profile.tsx`
+- `mobile/app/(auth)/_layout.tsx`
+- `mobile/app/transaction-detail.tsx`
+- `mobile/app/(auth)/login.tsx`
+
+### セルフレビュー結果
+
+- ✅ `取引チャット` / `打診` の既存用語に沿って表示している
+- ✅ DBスキーマ・状態名の変更はないため `notes/05_data_model.md` / `notes/09_state_machines.md` は更新不要
+- ✅ 新用語は追加していないため `notes/10_glossary.md` は更新不要
+- ✅ `npm run typecheck`（`mobile/`）通過
+
+---
+
 ## イテレーション155.14：iOS推し設定を実データ一覧へ接続
 
 ### 背景・問題意識

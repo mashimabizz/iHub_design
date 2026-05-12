@@ -130,7 +130,7 @@ type MessageRow = {
 export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const proposalId = Array.isArray(id) ? id[0] : id;
-  const { user, previewMode } = useAuth();
+  const { user, previewMode, exitPreview } = useAuth();
   const [detail, setDetail] = useState<TransactionDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,11 +157,17 @@ export default function TransactionDetailScreen() {
 
   useEffect(() => {
     if (!proposalId) {
+      setDetail(null);
       setError("打診IDが見つかりません");
       return;
     }
     if (!supabase || !user || previewMode) {
-      setError("ログイン後に取引詳細を確認できます");
+      setDetail(null);
+      setError(
+        previewMode
+          ? "Preview_hanaでは取引チャットを開けません"
+          : "ログイン後に取引詳細を確認できます",
+      );
       return;
     }
 
@@ -268,6 +274,22 @@ export default function TransactionDetailScreen() {
 
       {loading ? <Text style={styles.inlineNotice}>取引を読み込み中…</Text> : null}
       {error ? <Text style={styles.inlineError}>{error}</Text> : null}
+      {(previewMode || !user) && !detail ? (
+        <View style={styles.loginPrompt}>
+          <Text style={styles.loginPromptTitle}>michilionでログイン</Text>
+          <Text style={styles.loginPromptText}>
+            取引チャットは実アカウントの打診データに接続して表示します。
+          </Text>
+          <PrimaryButton
+            onPress={() => {
+              exitPreview();
+              router.replace("/login");
+            }}
+          >
+            ログインして取引チャットを見る
+          </PrimaryButton>
+        </View>
+      ) : null}
 
       {detail ? (
         <>
@@ -874,6 +896,26 @@ const styles = StyleSheet.create({
   },
   inlineError: {
     color: ihubColors.warn,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+  loginPrompt: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(166,149,216,0.22)",
+    borderRadius: ihubRadii.xl,
+    borderWidth: 1,
+    gap: 11,
+    padding: 16,
+    ...ihubShadow,
+  },
+  loginPromptTitle: {
+    color: ihubColors.ink,
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  loginPromptText: {
+    color: ihubColors.mutedInk,
     fontSize: 12,
     fontWeight: "800",
     lineHeight: 18,

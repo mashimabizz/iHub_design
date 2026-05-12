@@ -4,7 +4,7 @@ import { useAuth } from "../../src/auth/AuthProvider";
 import { ihubColors } from "../../src/theme/tokens";
 
 export default function AuthLayout() {
-  const { configured, loading, previewMode, session } = useAuth();
+  const { configured, loading, session } = useAuth();
 
   if (loading) {
     return (
@@ -21,7 +21,7 @@ export default function AuthLayout() {
     );
   }
 
-  if (previewMode || (configured && session)) {
+  if (configured && session) {
     return <Redirect href="/" />;
   }
 
