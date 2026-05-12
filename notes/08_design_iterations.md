@@ -4,6 +4,101 @@
 
 ---
 
+## イテレーション155.22：iOS検索/通知/予定導線を本体化
+
+### 背景・問題意識
+
+WebApp と照合すると、iOS版ではホーム左下検索、ホームのベル通知、プロフィール内のスケジュール/通知設定/ヘルプが無反応またはプレビュー画面止まりになっていた。またログイン画面の「パスワードを忘れた方」もメッセージ表示だけで、Web版のパスワード再設定導線に到達できていなかった。
+
+### 変更内容
+
+#### `mobile/src/components/RouteHeader.tsx`
+- Web版 `HeaderBack` 相当の戻るボタン付きヘッダーをiOS共通コンポーネントとして追加した。
+
+#### `mobile/app/search.tsx`
+- Web版 `/search` に合わせて、他ユーザーの `goods_inventory(kind=for_trade, status=active)` をキーワード検索できる画面を追加した。
+- title / character / group の部分一致検索、検索履歴、人気検索チップ、wish候補の優先表示を実装した。
+- 検索結果から相手プロフィールへ遷移できるようにした。
+
+#### `mobile/app/user-profile.tsx`
+- Web版 `/users/[id]` に対応する相手プロフィール画面を追加した。
+- 相手の基本情報、評価、取引回数、譲る候補を表示し、打診導線へつなげるようにした。
+
+#### `mobile/app/notifications.tsx`
+- Web版 `/notifications` に合わせて通知一覧を追加した。
+- 未読/既読の見た目、相対時刻、タップで既読化、すべて既読、`link_path` から取引詳細/相手プロフィール等への遷移を実装した。
+
+#### `mobile/app/notification-settings.tsx`
+- Web版 `/settings/notifications` に合わせて通知設定画面を追加した。
+- アプリ内通知は常時ON、メール通知は `user_notification_settings.email_enabled` を upsert するようにした。
+
+#### `mobile/app/schedules.tsx` / `mobile/app/schedule-editor.tsx`
+- Web版 `/schedules` と `/schedules/new` / `/schedules/[id]` に対応する予定一覧・作成/編集画面を追加した。
+- 今後/過去の予定分割、削除、追加、編集、終日、メモ保存を実装した。
+
+#### `mobile/app/help.tsx`
+- Web版 `/help` に合わせて、FAQと運営問い合わせ導線を追加した。
+
+#### `mobile/app/password-reset.tsx` / `mobile/app/auth/password-reset-confirm.tsx`
+- Web版のパスワード再設定に合わせて、リセットメール送信と新パスワード設定画面を追加した。
+
+#### `mobile/app/(tabs)/index.tsx`
+- ホームのベルを通知一覧へ、左下検索ボタンを検索画面へ、場所表示をスケジュール画面へ接続した。
+
+#### `mobile/app/(tabs)/profile.tsx`
+- スケジュール、通知設定、ヘルプ・FAQをプレビューではなく実画面へ接続した。
+
+#### `mobile/app/(auth)/login.tsx`
+- 「パスワードを忘れた方」をパスワード再設定画面へ接続した。
+
+### 影響範囲
+
+- iOS版ホーム
+- iOS版検索
+- iOS版通知一覧/通知設定
+- iOS版スケジュール
+- iOS版ヘルプ
+- iOS版パスワード再設定
+- iOS版相手プロフィール
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- ホーム左下検索から検索画面へ遷移し、検索履歴/人気検索/検索結果が表示されることを確認
+- ホームのベルから通知一覧へ遷移し、未読既読とすべて既読が動くことを確認
+- プロフィールのスケジュール/通知設定/ヘルプが実画面へ遷移することを確認
+- ログイン画面からパスワード再設定メール送信画面へ遷移できることを確認
+
+### 関連ファイル
+
+- `mobile/src/components/RouteHeader.tsx`
+- `mobile/app/search.tsx`
+- `mobile/app/user-profile.tsx`
+- `mobile/app/notifications.tsx`
+- `mobile/app/notification-settings.tsx`
+- `mobile/app/schedules.tsx`
+- `mobile/app/schedule-editor.tsx`
+- `mobile/app/help.tsx`
+- `mobile/app/password-reset.tsx`
+- `mobile/app/auth/password-reset-confirm.tsx`
+- `mobile/app/(tabs)/index.tsx`
+- `mobile/app/(tabs)/profile.tsx`
+- `mobile/app/(auth)/login.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版に存在してiOSでプレビュー止まりだった検索/通知/通知設定/スケジュール/ヘルプを実画面化
+- ✅ ホームとプロフィールの主要導線を無反応/プレビューから本体画面へ接続
+- ✅ パスワード再設定をメール送信から新パスワード設定まで追加
+- ✅ DBスキーマ・状態名の変更はないため `notes/05_data_model.md` / `notes/09_state_machines.md` は更新不要
+- ✅ 新しい業務用語は追加していないため `notes/10_glossary.md` は更新不要
+- ⚠️ 取引証跡/承認/評価、申告、法的ページはWeb版との差分が残るため次の継続対象
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.21：iOS Apple ID認証導線追加
 
 ### 背景・問題意識

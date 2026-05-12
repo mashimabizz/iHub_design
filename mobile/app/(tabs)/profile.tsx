@@ -386,6 +386,18 @@ function openProfileDetail(row: ProfileSheet) {
     router.push("/oshi-settings");
     return;
   }
+  if (row.title === "スケジュール") {
+    router.push("/schedules");
+    return;
+  }
+  if (row.title === "通知設定") {
+    router.push("/notification-settings");
+    return;
+  }
+  if (row.title === "ヘルプ・FAQ") {
+    router.push("/help");
+    return;
+  }
 
   router.push({
     pathname: "/preview-detail",

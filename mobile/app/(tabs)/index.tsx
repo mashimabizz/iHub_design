@@ -99,10 +99,15 @@ export default function HomeScreen() {
               icon="notifications-outline"
               accessibilityLabel="通知"
               badge={unreadCount > 0 ? String(Math.min(unreadCount, 9)) : undefined}
+              onPress={() => router.push("/notifications")}
             />
           </View>
           <View style={styles.topRight}>
-            <Pressable style={styles.placeButton}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/schedules")}
+              style={styles.placeButton}
+            >
               <Text numberOfLines={1} style={styles.placeText}>
                 {placeLabel}
               </Text>
@@ -325,13 +330,20 @@ function CircleIconButton({
   icon,
   accessibilityLabel,
   badge,
+  onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   accessibilityLabel: string;
   badge?: string;
+  onPress?: () => void;
 }) {
   return (
-    <Pressable accessibilityLabel={accessibilityLabel} style={styles.circleButton}>
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={styles.circleButton}
+    >
       <Ionicons name={icon} size={20} color={ihubColors.ink} />
       {badge ? (
         <View style={styles.notificationBadge}>
@@ -344,7 +356,12 @@ function CircleIconButton({
 
 function FloatingSearchButton() {
   return (
-    <Pressable accessibilityLabel="検索" style={styles.floatingSearchButton}>
+    <Pressable
+      accessibilityLabel="検索"
+      accessibilityRole="button"
+      onPress={() => router.push("/search")}
+      style={styles.floatingSearchButton}
+    >
       <Ionicons name="search" size={24} color={ihubColors.ink} />
     </Pressable>
   );

@@ -77,7 +77,7 @@ export default function LoginScreen() {
                 textContentType="password"
                 placeholder="パスワードを入力"
               />
-              <Pressable onPress={() => setMessage("パスワード再設定は次の接続対象です")}>
+              <Pressable onPress={() => router.push("/password-reset")}>
                 <Text style={styles.forgot}>パスワードを忘れた方</Text>
               </Pressable>
               {message ? <Text style={styles.message}>{message}</Text> : null}
