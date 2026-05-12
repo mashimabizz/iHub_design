@@ -1,4 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
+import type { LocationGeocodedAddress } from "expo-location";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
@@ -34,6 +35,11 @@ type MeetupCandidate = {
   startSlot: number;
   endSlot: number;
   place: string;
+  coordinate: MapCoordinate;
+};
+
+type PlaceSuggestion = {
+  label: string;
   coordinate: MapCoordinate;
 };
 
@@ -94,7 +100,7 @@ const FALLBACK_COORDINATE = {
   latitude: 35.5075,
   longitude: 139.6174,
 };
-const PRESET_PLACES = [
+const PRESET_PLACES: PlaceSuggestion[] = [
   {
     label: "横浜アリーナ 北口",
     coordinate: FALLBACK_COORDINATE,
@@ -973,27 +979,115 @@ function PlaceSheet({
   const [placeDraft, setPlaceDraft] = useState("");
   const [coordinateDraft, setCoordinateDraft] =
     useState<MapCoordinate>(FALLBACK_COORDINATE);
+  const [placeSuggestions, setPlaceSuggestions] =
+    useState<PlaceSuggestion[]>(PRESET_PLACES);
+  const [resolvingPlace, setResolvingPlace] = useState(false);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const reverseRequestRef = useRef(0);
 
   useEffect(() => {
     if (!candidate) return;
     setPlaceDraft(candidate.place);
     setCoordinateDraft(candidate.coordinate);
+    setPlaceSuggestions(
+      candidate.place.trim()
+        ? buildPlaceSuggestions(candidate.coordinate, candidate.place)
+        : PRESET_PLACES,
+    );
+    setLocationMessage(null);
   }, [candidate]);
 
   if (!candidate) return null;
 
   function applyPreset(index: number) {
-    const preset = PRESET_PLACES[index] ?? PRESET_PLACES[0];
+    const preset =
+      placeSuggestions[index] ?? placeSuggestions[0] ?? PRESET_PLACES[0];
     setPlaceDraft(preset.label);
     setCoordinateDraft(preset.coordinate);
+    setPlaceSuggestions(buildPlaceSuggestions(preset.coordinate, preset.label));
+    setLocationMessage(null);
   }
 
   function confirm() {
     onUpdate({
-      place: placeDraft.trim() || PRESET_PLACES[0].label,
+      place:
+        placeDraft.trim() ||
+        placeSuggestions[0]?.label ||
+        PRESET_PLACES[0].label,
       coordinate: coordinateDraft,
     });
     onClose();
+  }
+
+  async function resolvePlaceForCoordinate(
+    coordinate: MapCoordinate,
+    options: { fallbackLabel?: string } = {},
+  ) {
+    const requestId = reverseRequestRef.current + 1;
+    reverseRequestRef.current = requestId;
+    setResolvingPlace(true);
+    setLocationMessage(null);
+    try {
+      const ExpoLocation = await import("expo-location");
+      const addresses = await ExpoLocation.reverseGeocodeAsync(coordinate);
+      if (reverseRequestRef.current !== requestId) return;
+      const address = addresses[0];
+      const label =
+        labelFromGeocodedAddress(address) ??
+        options.fallbackLabel ??
+        coordinateLabel(coordinate);
+      setPlaceDraft(label);
+      setPlaceSuggestions(buildPlaceSuggestions(coordinate, label, address));
+    } catch {
+      if (reverseRequestRef.current !== requestId) return;
+      const label = options.fallbackLabel ?? coordinateLabel(coordinate);
+      setPlaceDraft(label);
+      setPlaceSuggestions(buildPlaceSuggestions(coordinate, label));
+      setLocationMessage("場所名を取得できませんでした");
+    } finally {
+      if (reverseRequestRef.current === requestId) {
+        setResolvingPlace(false);
+      }
+    }
+  }
+
+  async function useCurrentLocation() {
+    setLocationMessage(null);
+    setResolvingPlace(true);
+    try {
+      const ExpoLocation = await import("expo-location");
+      const permission = await ExpoLocation.requestForegroundPermissionsAsync();
+      if (permission.status !== "granted") {
+        setResolvingPlace(false);
+        setLocationMessage("位置情報の許可が必要です");
+        return;
+      }
+      const current = await ExpoLocation.getCurrentPositionAsync({
+        accuracy: ExpoLocation.Accuracy.Balanced,
+      });
+      const coordinate = {
+        latitude: current.coords.latitude,
+        longitude: current.coords.longitude,
+      };
+      setCoordinateDraft(coordinate);
+      setPlaceDraft("");
+      setPlaceSuggestions(buildPlaceSuggestions(coordinate, "現在地周辺"));
+      await resolvePlaceForCoordinate(coordinate, {
+        fallbackLabel: "現在地周辺",
+      });
+    } catch {
+      setResolvingPlace(false);
+      setLocationMessage("現在地を取得できませんでした");
+    }
+  }
+
+  function handleMapPress(coordinate: MapCoordinate) {
+    setCoordinateDraft(coordinate);
+    setPlaceDraft("");
+    setPlaceSuggestions(buildPlaceSuggestions(coordinate, "選択した場所"));
+    void resolvePlaceForCoordinate(coordinate, {
+      fallbackLabel: "選択した場所",
+    });
   }
 
   return (
@@ -1014,8 +1108,10 @@ function PlaceSheet({
           </View>
 
           <View style={styles.placeActions}>
-            <Pressable onPress={() => applyPreset(0)} style={styles.placeAction}>
-              <Text style={styles.placeActionText}>現在地を中心に</Text>
+            <Pressable onPress={useCurrentLocation} style={styles.placeAction}>
+              <Text style={styles.placeActionText}>
+                {resolvingPlace ? "取得中…" : "現在地を中心に"}
+              </Text>
             </Pressable>
             <Pressable
               disabled={!previousCandidate}
@@ -1023,6 +1119,13 @@ function PlaceSheet({
                 if (!previousCandidate) return;
                 setPlaceDraft(previousCandidate.place);
                 setCoordinateDraft(previousCandidate.coordinate);
+                setPlaceSuggestions(
+                  buildPlaceSuggestions(
+                    previousCandidate.coordinate,
+                    previousCandidate.place,
+                  ),
+                );
+                setLocationMessage("前の設定を適用しました");
               }}
               style={[
                 styles.placeAction,
@@ -1036,14 +1139,23 @@ function PlaceSheet({
 
           <TextInput
             value={placeDraft}
-            onChangeText={setPlaceDraft}
-            placeholder="取得中"
+            onChangeText={(text) => {
+              setPlaceDraft(text);
+              setLocationMessage(null);
+            }}
+            placeholder={resolvingPlace ? "取得中…" : "交換できる場所"}
             placeholderTextColor="rgba(58,50,74,0.34)"
             style={styles.placeInput}
           />
+          {locationMessage ? (
+            <Text style={styles.placeMessage}>{locationMessage}</Text>
+          ) : null}
 
           <View style={styles.placeMapWrap}>
             <NativeMapPreview
+              key={`${coordinateDraft.latitude.toFixed(6)}-${coordinateDraft.longitude.toFixed(
+                6,
+              )}`}
               center={coordinateDraft}
               markers={[
                 {
@@ -1055,17 +1167,14 @@ function PlaceSheet({
               ]}
               interactive
               height={210}
-              onPress={(coordinate) => {
-                setCoordinateDraft(coordinate);
-                if (!placeDraft.trim()) setPlaceDraft(PRESET_PLACES[0].label);
-              }}
+              onPress={handleMapPress}
             />
           </View>
 
           <View style={styles.placePresetRow}>
-            {PRESET_PLACES.map((preset, index) => (
+            {placeSuggestions.slice(0, 2).map((preset, index) => (
               <Pressable
-                key={preset.label}
+                key={`${preset.label}-${index}`}
                 onPress={() => applyPreset(index)}
                 style={styles.placePreset}
               >
@@ -1140,6 +1249,62 @@ function formatSlot(slot: number) {
 function formatCandidateRange(candidate: MeetupCandidate) {
   const day = DAYS[candidate.dayIndex];
   return `${day?.month ?? ""}${day?.date ?? ""}日 ${formatSlot(candidate.startSlot)} - ${formatSlot(candidate.endSlot)}`;
+}
+
+function labelFromGeocodedAddress(
+  address?: LocationGeocodedAddress | null,
+) {
+  if (!address) return null;
+  const main =
+    cleanAddressPart(address.name) ||
+    cleanAddressPart(address.street) ||
+    cleanAddressPart(address.district) ||
+    cleanAddressPart(address.city) ||
+    cleanAddressPart(address.region) ||
+    cleanAddressPart(address.formattedAddress);
+  return main;
+}
+
+function buildPlaceSuggestions(
+  coordinate: MapCoordinate,
+  label: string,
+  address?: LocationGeocodedAddress | null,
+): PlaceSuggestion[] {
+  const primaryLabel = label.trim() || coordinateLabel(coordinate);
+  const secondaryLabel =
+    [
+      cleanAddressPart(address?.district),
+      cleanAddressPart(address?.city),
+      cleanAddressPart(address?.region),
+    ]
+      .filter(Boolean)
+      .join(" ") || "このピン周辺";
+  const suggestions: PlaceSuggestion[] = [
+    {
+      label: primaryLabel,
+      coordinate,
+    },
+    {
+      label:
+        secondaryLabel === primaryLabel
+          ? `${primaryLabel} 周辺`
+          : secondaryLabel,
+      coordinate,
+    },
+  ];
+  return suggestions.filter(
+    (suggestion, index, array) =>
+      array.findIndex((item) => item.label === suggestion.label) === index,
+  );
+}
+
+function cleanAddressPart(value?: string | null) {
+  const cleaned = value?.trim();
+  return cleaned && cleaned !== "Unnamed Road" ? cleaned : null;
+}
+
+function coordinateLabel(coordinate: MapCoordinate) {
+  return `選択地点 ${coordinate.latitude.toFixed(5)}, ${coordinate.longitude.toFixed(5)}`;
 }
 
 function one(value?: string | string[]) {
@@ -1590,6 +1755,12 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     paddingHorizontal: 12,
     paddingVertical: 11,
+  },
+  placeMessage: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+    marginTop: -4,
   },
   placeMapWrap: {
     borderRadius: 18,
