@@ -34,6 +34,7 @@ type TransactionStatus =
   | "agreed"
   | "completed"
   | "cancelled"
+  | "rejected"
   | "expired";
 
 type Transaction = {
@@ -197,7 +198,7 @@ export default function TransactionsScreen() {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setTransactions(TRANSACTIONS);
+        setTransactions([]);
         setLoadError(error instanceof Error ? error.message : "読み込みに失敗しました");
       })
       .finally(() => {
@@ -215,7 +216,7 @@ export default function TransactionsScreen() {
     );
     const ongoing = transactions.filter((tx) => tx.status === "agreed");
     const past = transactions.filter((tx) =>
-      ["completed", "cancelled", "expired"].includes(tx.status),
+      ["completed", "cancelled", "expired", "rejected"].includes(tx.status),
     );
 
     return { pending, ongoing, past };
@@ -232,7 +233,9 @@ export default function TransactionsScreen() {
       all: grouped.past.length,
       completed: grouped.past.filter((tx) => tx.status === "completed").length,
       cancelled: grouped.past.filter((tx) => tx.status === "cancelled").length,
-      ended: grouped.past.filter((tx) => tx.status === "expired").length,
+      ended: grouped.past.filter((tx) =>
+        tx.status === "expired" || tx.status === "rejected",
+      ).length,
     }),
     [grouped.past],
   );
@@ -240,7 +243,9 @@ export default function TransactionsScreen() {
     pastFilter === "all"
       ? grouped.past
       : pastFilter === "ended"
-        ? grouped.past.filter((tx) => tx.status === "expired")
+        ? grouped.past.filter((tx) =>
+            tx.status === "expired" || tx.status === "rejected",
+          )
         : grouped.past.filter((tx) => tx.status === pastFilter);
   const list =
     tab === "pending"
@@ -368,7 +373,7 @@ type ProposalRow = {
   meetup_place_name: string | null;
   created_at: string;
   last_action_at: string | null;
-  completed_at: string | null;
+  completed_at?: string | null;
   message: string | null;
 };
 
@@ -389,21 +394,26 @@ type InventoryRow = {
 
 async function fetchTransactions(userId: string): Promise<Transaction[]> {
   if (!supabase) return TRANSACTIONS;
-  const { data, error } = await supabase
-    .from("proposals")
-    .select(
-      `id, sender_id, receiver_id, status,
-       sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
-       agreed_by_sender, agreed_by_receiver,
-       meetup_start_at, meetup_end_at, meetup_place_name,
-       created_at, last_action_at, completed_at, message`,
-    )
-    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-    .neq("status", "draft")
-    .order("last_action_at", { ascending: false });
-  if (error) throw error;
-
-  const proposals = (data as ProposalRow[] | null) ?? [];
+  const proposalFields = [
+    "id",
+    "sender_id",
+    "receiver_id",
+    "status",
+    "sender_have_ids",
+    "sender_have_qtys",
+    "receiver_have_ids",
+    "receiver_have_qtys",
+    "agreed_by_sender",
+    "agreed_by_receiver",
+    "meetup_start_at",
+    "meetup_end_at",
+    "meetup_place_name",
+    "created_at",
+    "last_action_at",
+    "completed_at",
+    "message",
+  ];
+  const proposals = await fetchProposalRows(userId, proposalFields);
   if (proposals.length === 0) return [];
 
   const partnerIds = Array.from(
@@ -466,6 +476,40 @@ async function fetchTransactions(userId: string): Promise<Transaction[]> {
   });
 }
 
+async function fetchProposalRows(
+  userId: string,
+  fields: string[],
+): Promise<ProposalRow[]> {
+  if (!supabase) return [];
+  const selectableFields = [...fields];
+  for (let attempt = 0; attempt < fields.length; attempt += 1) {
+    const { data, error } = await supabase
+      .from("proposals")
+      .select(selectableFields.join(", "))
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .neq("status", "draft")
+      .order("last_action_at", { ascending: false });
+    const missingColumn = getMissingProposalColumn(error);
+    if (missingColumn && selectableFields.includes(missingColumn)) {
+      selectableFields.splice(selectableFields.indexOf(missingColumn), 1);
+      continue;
+    }
+    if (error) throw error;
+    return ((data as unknown as Record<string, unknown>[] | null) ?? []).map((row) => ({
+      completed_at: null,
+      message: null,
+      ...row,
+    })) as ProposalRow[];
+  }
+  return [];
+}
+
+function getMissingProposalColumn(error: { code?: string; message?: string } | null) {
+  const message = error?.message ?? "";
+  if (error?.code !== "PGRST204" && !message.includes("schema cache")) return null;
+  return message.match(/Could not find the '([^']+)' column of 'proposals'/)?.[1] ?? null;
+}
+
 function toTradeItem(id: string, row?: InventoryRow): TradeItem {
   const label =
     pickName(row?.character) ?? pickName(row?.group) ?? row?.title ?? "グッズ";
@@ -498,6 +542,7 @@ function noteFor(row: ProposalRow, userId: string) {
   if (row.status === "agreed") return "取引予定です";
   if (row.status === "completed") return "取引完了";
   if (row.status === "expired") return "期限切れ";
+  if (row.status === "rejected") return "見送り済み";
   return "キャンセル済み";
 }
 
@@ -509,6 +554,7 @@ function normalizeTransactionStatus(status: string): TransactionStatus {
     status === "agreed" ||
     status === "completed" ||
     status === "cancelled" ||
+    status === "rejected" ||
     status === "expired"
   ) {
     return status;
@@ -634,12 +680,13 @@ function PastFilterChips({
     { id: "all" as const, label: `すべて ${counts.all}` },
     { id: "completed" as const, label: `完了 ${counts.completed}` },
     { id: "cancelled" as const, label: `キャンセル ${counts.cancelled}` },
-    { id: "ended" as const, label: `期限切れ ${counts.ended}` },
+    { id: "ended" as const, label: `終了 ${counts.ended}` },
   ];
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      style={styles.filterScroller}
       contentContainerStyle={styles.filterChips}
     >
       {chips.map((chip) => {
@@ -651,6 +698,7 @@ function PastFilterChips({
             style={[styles.filterChip, active ? styles.filterChipActive : null]}
           >
             <Text
+              numberOfLines={1}
               style={[
                 styles.filterChipText,
                 active ? styles.filterChipTextActive : null,
@@ -808,6 +856,7 @@ function statusLabel(tx: Transaction) {
   if (tx.status === "agreed") return tx.needsAction ? "要確認" : "取引予定";
   if (tx.status === "completed") return "完了";
   if (tx.status === "cancelled") return "キャンセル";
+  if (tx.status === "rejected") return "見送り";
   return "期限切れ";
 }
 
@@ -858,14 +907,25 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   filterChips: {
+    alignItems: "center",
     gap: 7,
     paddingBottom: 1,
+    paddingRight: 18,
+  },
+  filterScroller: {
+    flexGrow: 0,
+    maxHeight: 44,
+    minHeight: 38,
   },
   filterChip: {
+    alignItems: "center",
     backgroundColor: ihubColors.surface,
     borderColor: "rgba(58,50,74,0.08)",
     borderRadius: ihubRadii.pill,
     borderWidth: 1,
+    flexShrink: 0,
+    justifyContent: "center",
+    minHeight: 34,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
@@ -877,6 +937,8 @@ const styles = StyleSheet.create({
     color: ihubColors.ink,
     fontSize: 11,
     fontWeight: "800",
+    includeFontPadding: false,
+    lineHeight: 14,
   },
   filterChipTextActive: {
     color: ihubColors.surface,

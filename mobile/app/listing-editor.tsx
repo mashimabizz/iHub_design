@@ -15,6 +15,7 @@ import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 type ListingMode = "create" | "edit";
 type ListingLogic = "すべて" | "1pick";
 type ListingStatus = "ACTIVE" | "PAUSED";
+type ExchangeType = "同異種" | "同種のみ" | "異種のみ";
 
 export default function ListingEditorScreen() {
   const params = useLocalSearchParams<{
@@ -31,6 +32,8 @@ export default function ListingEditorScreen() {
   const [logic, setLogic] = useState<ListingLogic>(
     (one(params.logic) as ListingLogic | undefined) ?? "1pick",
   );
+  const [haveLogic, setHaveLogic] = useState<ListingLogic>("すべて");
+  const [exchangeType, setExchangeType] = useState<ExchangeType>("同異種");
   const [give, setGive] = useState(one(params.give) ?? "");
   const [want, setWant] = useState(one(params.want) ?? "");
   const [note, setNote] = useState("");
@@ -84,8 +87,20 @@ export default function ListingEditorScreen() {
       </View>
 
       <View style={styles.form}>
-        <Section label="譲る条件" right={giveItems.length > 0 ? `${giveItems.length}点` : undefined}>
-          <Text style={styles.label}>譲る候補</Text>
+        <Section label="譲る条件" right={giveItems.length > 0 ? `${giveItems.length}点 / ${haveLogic}` : haveLogic}>
+          <View style={styles.fieldHeader}>
+            <Text style={styles.label}>譲る候補</Text>
+            <Segmented
+              compact
+              value={haveLogic}
+              options={[
+                { value: "すべて", label: "すべて" },
+                { value: "1pick", label: "1pick" },
+              ]}
+              onChange={setHaveLogic}
+            />
+          </View>
+          <TokenPreview values={giveItems} emptyLabel="譲るグッズを選択" tone="give" />
           <TextInput
             value={give}
             onChangeText={setGive}
@@ -97,7 +112,11 @@ export default function ListingEditorScreen() {
           />
         </Section>
 
-        <Section label="求める条件" right={logic}>
+        <Section label="求める条件" right={`選択肢1 / ${logic}`}>
+          <View style={styles.optionBadgeRow}>
+            <Text style={styles.optionBadge}>選択肢 1</Text>
+            <Text style={styles.optionHint}>最大5件まで追加できます</Text>
+          </View>
           <View style={styles.fieldHeader}>
             <Text style={styles.label}>求めるもの</Text>
             <Segmented
@@ -110,6 +129,16 @@ export default function ListingEditorScreen() {
               onChange={setLogic}
             />
           </View>
+          <Segmented
+            value={exchangeType}
+            options={[
+              { value: "同異種", label: "同異種" },
+              { value: "同種のみ", label: "同種のみ" },
+              { value: "異種のみ", label: "異種のみ" },
+            ]}
+            onChange={setExchangeType}
+          />
+          <TokenPreview values={wantItems} emptyLabel="求めるWishを選択" tone="want" />
           <TextInput
             value={want}
             onChangeText={setWant}
@@ -119,6 +148,9 @@ export default function ListingEditorScreen() {
             style={styles.textArea}
             textAlignVertical="top"
           />
+          <Pressable style={styles.addOptionButton}>
+            <Text style={styles.addOptionText}>+ 選択肢を追加</Text>
+          </Pressable>
         </Section>
 
         <Section label="メモ">
@@ -235,6 +267,45 @@ function PreviewSide({
           </View>
         ))}
       </View>
+    </View>
+  );
+}
+
+function TokenPreview({
+  values,
+  emptyLabel,
+  tone,
+}: {
+  values: string[];
+  emptyLabel: string;
+  tone: "give" | "want";
+}) {
+  const items = values.length > 0 ? values : [emptyLabel];
+  return (
+    <View style={styles.tokenPreview}>
+      {items.slice(0, 5).map((value, index) => {
+        const empty = values.length === 0;
+        return (
+          <View
+            key={`${value}-${index}`}
+            style={[
+              styles.tokenChip,
+              tone === "give" ? styles.tokenChipGive : styles.tokenChipWant,
+              empty ? styles.tokenChipEmpty : null,
+            ]}
+          >
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.tokenText,
+                empty ? styles.tokenTextEmpty : null,
+              ]}
+            >
+              {value}
+            </Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -415,6 +486,72 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+  optionBadgeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  optionBadge: {
+    backgroundColor: "rgba(166,149,216,0.12)",
+    borderRadius: ihubRadii.pill,
+    color: ihubColors.lavender,
+    fontSize: 11,
+    fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  optionHint: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  tokenPreview: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7,
+  },
+  tokenChip: {
+    borderRadius: ihubRadii.pill,
+    maxWidth: "100%",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  tokenChipGive: {
+    backgroundColor: "rgba(166,149,216,0.14)",
+  },
+  tokenChipWant: {
+    backgroundColor: "rgba(243,197,212,0.24)",
+  },
+  tokenChipEmpty: {
+    backgroundColor: "rgba(58,50,74,0.05)",
+    borderColor: "rgba(58,50,74,0.10)",
+    borderStyle: "dashed",
+    borderWidth: 1,
+  },
+  tokenText: {
+    color: ihubColors.ink,
+    fontSize: 11.5,
+    fontWeight: "900",
+  },
+  tokenTextEmpty: {
+    color: ihubColors.mutedInk,
+  },
+  addOptionButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(166,149,216,0.35)",
+    borderRadius: ihubRadii.md,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 42,
+  },
+  addOptionText: {
+    color: ihubColors.lavender,
+    fontSize: 12,
+    fontWeight: "900",
   },
   label: {
     color: ihubColors.ink,

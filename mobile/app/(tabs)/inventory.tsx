@@ -1,12 +1,14 @@
 import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
-  type GestureResponderEvent,
 } from "react-native";
 import {
   BottomOptionSheet,
@@ -153,12 +155,9 @@ export default function InventoryScreen() {
   const [activeType, setActiveType] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const tabSwipeRef = useRef<{
-    startX: number;
-    startY: number;
-    tracking: boolean;
-    swiping: boolean;
-  } | null>(null);
+  const pagerRef = useRef<ScrollView>(null);
+  const { width: windowWidth } = useWindowDimensions();
+  const pageWidth = Math.max(1, windowWidth - 36);
 
   useEffect(() => {
     if (!supabase || !user || previewMode) {
@@ -207,17 +206,24 @@ export default function InventoryScreen() {
       }),
     [activeGroup, activeType, items],
   );
-  const visibleItems = useMemo(
-    () => filteredItems.filter((item) => item.status === status),
-    [filteredItems, status],
+  const itemsByStatus = useMemo(
+    () =>
+      filteredItems.reduce<Record<InventoryStatus, InventoryItem[]>>(
+        (acc, item) => {
+          acc[item.status].push(item);
+          return acc;
+        },
+        { active: [], keep: [], traded: [] },
+      ),
+    [filteredItems],
   );
   const counts = useMemo(
     () => ({
-      active: filteredItems.filter((item) => item.status === "active").length,
-      keep: filteredItems.filter((item) => item.status === "keep").length,
-      traded: filteredItems.filter((item) => item.status === "traded").length,
+      active: itemsByStatus.active.length,
+      keep: itemsByStatus.keep.length,
+      traded: itemsByStatus.traded.length,
     }),
-    [filteredItems],
+    [itemsByStatus],
   );
   const tabs = STATUS_TABS.map((tab) => ({
     ...tab,
@@ -291,10 +297,7 @@ export default function InventoryScreen() {
       <SectionTabs
         value={status}
         tabs={tabs}
-        onChange={(next) => {
-          setStatus(next);
-          setSelected(null);
-        }}
+        onChange={selectStatus}
       />
 
       {loading ? <Text style={styles.inlineNotice}>在庫を読み込み中…</Text> : null}
@@ -321,43 +324,18 @@ export default function InventoryScreen() {
         />
       </View>
 
-      <View
-        style={styles.contentHost}
-        onTouchStart={handleSwipeStart}
-        onTouchMove={handleSwipeMove}
-        onTouchEnd={handleSwipeEnd}
-        onTouchCancel={handleSwipeCancel}
-      >
+      <View style={styles.contentHost}>
         <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.gridScroll}
+          ref={pagerRef}
+          horizontal
+          pagingEnabled
+          directionalLockEnabled
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          style={styles.pager}
+          onMomentumScrollEnd={handlePagerSettled}
         >
-          <GoodsGrid
-            items={visibleItems}
-            columns={columns}
-            addTileLabel={status === "active" ? "追加" : undefined}
-            onPressAddTile={
-              status === "active"
-                ? () => openInventoryEditor(null, "create")
-                : undefined
-            }
-            emptyLabel={
-              status === "active"
-                ? "譲る候補のグッズはまだありません"
-                : status === "keep"
-                  ? "自分用キープのグッズはまだありません"
-                  : "過去に譲ったグッズはまだありません"
-            }
-            onPressItem={(gridItem) => {
-              const item = items.find((current) => current.id === gridItem.id);
-              if (!item) return;
-              if (item.status === "traded") {
-                openInventoryEditor(item, "readonly");
-                return;
-              }
-              setSelected(item);
-            }}
-          />
+          {STATUS_ORDER.map((pageStatus) => renderInventoryPage(pageStatus))}
         </ScrollView>
       </View>
 
@@ -377,56 +355,64 @@ export default function InventoryScreen() {
     </Screen>
   );
 
-  function moveTabBySwipe(direction: 1 | -1) {
-    const currentIndex = STATUS_ORDER.indexOf(status);
-    const next = STATUS_ORDER[currentIndex + direction];
-    if (!next) return;
+  function selectStatus(next: InventoryStatus) {
+    const nextIndex = STATUS_ORDER.indexOf(next);
+    if (nextIndex < 0) return;
+    setStatus(next);
+    setSelected(null);
+    pagerRef.current?.scrollTo({ x: nextIndex * pageWidth, animated: true });
+  }
+
+  function handlePagerSettled(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const nextIndex = Math.max(
+      0,
+      Math.min(
+        STATUS_ORDER.length - 1,
+        Math.round(event.nativeEvent.contentOffset.x / pageWidth),
+      ),
+    );
+    const next = STATUS_ORDER[nextIndex];
+    if (!next || next === status) return;
     setStatus(next);
     setSelected(null);
   }
 
-  function handleSwipeStart(event: GestureResponderEvent) {
-    const { pageX, pageY } = event.nativeEvent;
-    tabSwipeRef.current = {
-      startX: pageX,
-      startY: pageY,
-      tracking: true,
-      swiping: false,
-    };
-  }
-
-  function handleSwipeMove(event: GestureResponderEvent) {
-    const state = tabSwipeRef.current;
-    if (!state?.tracking) return;
-    const { pageX, pageY } = event.nativeEvent;
-    const dx = pageX - state.startX;
-    const dy = pageY - state.startY;
-    const absX = Math.abs(dx);
-    const absY = Math.abs(dy);
-    if (!state.swiping) {
-      if (absX > 14 && absX > absY * 1.25) {
-        state.swiping = true;
-      } else if (absY > 14 && absY > absX * 1.1) {
-        state.tracking = false;
-      }
-    }
-  }
-
-  function handleSwipeEnd(event: GestureResponderEvent) {
-    const state = tabSwipeRef.current;
-    tabSwipeRef.current = null;
-    if (!state?.tracking || !state.swiping) return;
-    const { pageX, pageY } = event.nativeEvent;
-    const dx = pageX - state.startX;
-    const dy = pageY - state.startY;
-    const absX = Math.abs(dx);
-    const absY = Math.abs(dy);
-    if (absX < 58 || absX < absY * 1.35) return;
-    moveTabBySwipe(dx < 0 ? 1 : -1);
-  }
-
-  function handleSwipeCancel() {
-    tabSwipeRef.current = null;
+  function renderInventoryPage(pageStatus: InventoryStatus) {
+    return (
+      <View key={pageStatus} style={[styles.pagerPage, { width: pageWidth }]}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.gridScroll}
+        >
+          <GoodsGrid
+            items={itemsByStatus[pageStatus]}
+            columns={columns}
+            addTileLabel={pageStatus === "active" ? "追加" : undefined}
+            onPressAddTile={
+              pageStatus === "active"
+                ? () => openInventoryEditor(null, "create")
+                : undefined
+            }
+            emptyLabel={
+              pageStatus === "active"
+                ? "譲る候補のグッズはまだありません"
+                : pageStatus === "keep"
+                  ? "自分用キープのグッズはまだありません"
+                  : "過去に譲ったグッズはまだありません"
+            }
+            onPressItem={(gridItem) => {
+              const item = items.find((current) => current.id === gridItem.id);
+              if (!item) return;
+              if (item.status === "traded") {
+                openInventoryEditor(item, "readonly");
+                return;
+              }
+              setSelected(item);
+            }}
+          />
+        </ScrollView>
+      </View>
+    );
   }
 }
 
@@ -771,6 +757,12 @@ const styles = StyleSheet.create({
     color: ihubColors.surface,
   },
   contentHost: {
+    flex: 1,
+  },
+  pager: {
+    flex: 1,
+  },
+  pagerPage: {
     flex: 1,
   },
   gridScroll: {

@@ -15,8 +15,16 @@ import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
 type GoodsKind = "inventory" | "wish";
 type EditorMode = "create" | "edit" | "readonly";
+type Condition = "sealed" | "mint" | "good" | "fair" | "poor";
 
 const TAG_OPTIONS = ["ラキドロ", "会場限定", "通常盤", "同種優先", "現地OK"];
+const CONDITIONS: { value: Condition; label: string }[] = [
+  { value: "sealed", label: "未開封" },
+  { value: "mint", label: "極美" },
+  { value: "good", label: "良好" },
+  { value: "fair", label: "普通" },
+  { value: "poor", label: "難あり" },
+];
 
 export default function GoodsEditorScreen() {
   const params = useLocalSearchParams<{
@@ -42,6 +50,10 @@ export default function GoodsEditorScreen() {
   const [title, setTitle] = useState(initialTitle);
   const [group, setGroup] = useState(initialGroup);
   const [goodsType, setGoodsType] = useState(initialType);
+  const [member, setMember] = useState("");
+  const [series, setSeries] = useState("");
+  const [condition, setCondition] = useState<Condition>("good");
+  const [startCarrying, setStartCarrying] = useState(false);
   const [quantity, setQuantity] = useState(() =>
     Math.max(1, Number(one(params.quantity) ?? "1") || 1),
   );
@@ -99,95 +111,141 @@ export default function GoodsEditorScreen() {
         </View>
       ) : null}
 
-      <Section
-        label="写真"
-        right={readonly ? "詳細のみ" : mode === "create" ? "追加予定" : "差し替え可"}
-      >
-        <View style={styles.previewCard}>
-          <View style={[styles.previewImage, { backgroundColor: hue }]}>
-            <View style={styles.previewShine} />
-            <Text style={styles.previewGlyph}>{glyph.slice(0, 2)}</Text>
-            <View style={styles.previewTop}>
-              <View style={styles.previewTitlePlate}>
-                <Text numberOfLines={1} style={styles.previewTitleText}>
-                  {title || initialTitle}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.previewBadge,
-                  badge === "未紐付け" ? styles.previewBadgeWarn : null,
-                ]}
-              >
-                <Text numberOfLines={1} style={styles.previewBadgeText}>
-                  {badge}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.previewBottom}>
-              <Text numberOfLines={1} style={styles.previewBottomText}>
-                {[group || "グループ", goodsType || "種別"].join(" / ")}
-              </Text>
-              {quantity > 1 ? (
-                <View style={styles.quantityPill}>
-                  <Text style={styles.quantityPillText}>×{quantity}</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        </View>
-      </Section>
-
       <View style={readonly ? styles.formReadonly : styles.form}>
+        {!isWish ? (
+          <Section label="写真" right={readonly ? "詳細のみ" : "準備中"}>
+            <PhotoPlaceholder
+              badge={badge}
+              glyph={glyph}
+              hue={hue}
+              readonly={readonly}
+              title={title || initialTitle}
+            />
+          </Section>
+        ) : null}
+
         <Section label="推し">
           <TextField
-            label="グループ・作品"
+            label="グループ"
             value={group}
             editable={!readonly}
             onChangeText={setGroup}
-            placeholder="例: LUMENA"
+            placeholder="選択してください"
+          />
+          <TextField
+            label={isWish ? "メンバー（任意）" : "メンバー（任意・空 = 箱推し / 共通）"}
+            value={member}
+            editable={!readonly}
+            onChangeText={setMember}
+            placeholder="指定なし"
           />
         </Section>
 
         <Section label="グッズ">
-        <TextField
-          label="タイトル"
-          value={title}
-          editable={!readonly}
-          onChangeText={setTitle}
-          placeholder={isWish ? "例: スア ラキドロ" : "例: スア 春ver."}
-        />
-        <TextField
-          label="グッズ種別"
-          value={goodsType}
-          editable={!readonly}
-          onChangeText={setGoodsType}
-          placeholder="例: トレカ"
-        />
-
-        <View style={styles.fieldBlock}>
-          <Text style={styles.fieldLabel}>数量</Text>
-          <View style={styles.stepper}>
-            <Pressable
-              disabled={readonly}
-              onPress={() => setQuantity((current) => Math.max(1, current - 1))}
-              style={styles.stepButton}
-            >
-              <Text style={styles.stepButtonText}>−</Text>
-            </Pressable>
-            <Text style={styles.stepValue}>{quantity}</Text>
-            <Pressable
-              disabled={readonly}
-              onPress={() => setQuantity((current) => Math.min(99, current + 1))}
-              style={styles.stepButton}
-            >
-              <Text style={styles.stepButtonText}>＋</Text>
-            </Pressable>
-          </View>
-        </View>
+          <TextField
+            label="種別"
+            value={goodsType}
+            editable={!readonly}
+            onChangeText={setGoodsType}
+            placeholder="選択してください"
+          />
+          <TextField
+            label="タイトル"
+            value={title}
+            editable={!readonly}
+            onChangeText={setTitle}
+            placeholder={isWish ? "例: 公式ステッカー" : "例: スア トレカ（カムバ盤）"}
+          />
+          {!isWish ? (
+            <TextField
+              label="シリーズ・弾名（任意）"
+              value={series}
+              editable={!readonly}
+              onChangeText={setSeries}
+              placeholder="例: WORLD TOUR / 5th Mini / 公式"
+            />
+          ) : null}
+          {isWish ? (
+            <QuantityStepper
+              value={quantity}
+              readonly={readonly}
+              onChange={setQuantity}
+            />
+          ) : null}
         </Section>
 
-        <Section label="タグ">
+        {isWish ? (
+          <Section label="画像" right="任意">
+            <PhotoPlaceholder
+              badge={badge}
+              glyph={glyph}
+              hue={hue}
+              readonly={readonly}
+              title={title || initialTitle}
+            />
+          </Section>
+        ) : (
+          <Section label="状態">
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>コンディション</Text>
+              <View style={styles.conditionGrid}>
+                {CONDITIONS.map((item) => {
+                  const active = item.value === condition;
+                  return (
+                    <Pressable
+                      key={item.value}
+                      disabled={readonly}
+                      onPress={() => setCondition(item.value)}
+                      style={[
+                        styles.conditionButton,
+                        active ? styles.conditionButtonActive : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.conditionText,
+                          active ? styles.conditionTextActive : null,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+            <QuantityStepper
+              value={quantity}
+              readonly={readonly}
+              onChange={setQuantity}
+            />
+          </Section>
+        )}
+
+        {!isWish ? (
+          <Pressable
+            disabled={readonly}
+            onPress={() => setStartCarrying((current) => !current)}
+            style={styles.carryToggle}
+          >
+            <View
+              style={[
+                styles.checkbox,
+                startCarrying ? styles.checkboxActive : null,
+              ]}
+            >
+              {startCarrying ? <Text style={styles.checkboxText}>✓</Text> : null}
+            </View>
+            <View style={styles.carryCopy}>
+              <Text style={styles.carryTitle}>今日から持参中にする</Text>
+              <Text style={styles.carryText}>
+                会場で交換可能な状態にする
+              </Text>
+            </View>
+          </Pressable>
+        ) : null}
+
+        <Section label={isWish ? "タグ（任意）" : "タグ（任意）"} right="マッチ優先度に使用">
           <View style={styles.tagWrap}>
             {TAG_OPTIONS.map((tag) => {
               const active = tags.includes(tag);
@@ -212,13 +270,13 @@ export default function GoodsEditorScreen() {
           </View>
         </Section>
 
-        <Section label="メモ">
+        <Section label="メモ" right={isWish ? `${note.length} / 200` : `${note.length} / 1000`}>
           <TextInput
             value={note}
             editable={!readonly}
             multiline
             onChangeText={setNote}
-            placeholder="メモ"
+            placeholder={isWish ? "例: 4/27 横アリで取引できる人優先" : "状態の補足、入手経路など"}
             placeholderTextColor="rgba(58,50,74,0.35)"
             style={styles.noteInput}
             textAlignVertical="top"
@@ -262,6 +320,74 @@ function Section({
         {right ? <Text style={styles.sectionRight}>{right}</Text> : null}
       </View>
       <View style={styles.sectionBody}>{children}</View>
+    </View>
+  );
+}
+
+function PhotoPlaceholder({
+  badge,
+  glyph,
+  hue,
+  readonly,
+  title,
+}: {
+  badge: string;
+  glyph: string;
+  hue: string;
+  readonly: boolean;
+  title: string;
+}) {
+  return (
+    <View style={styles.photoRow}>
+      <View style={[styles.photoThumb, { backgroundColor: hue }]}>
+        <Text style={styles.photoGlyph}>{glyph.slice(0, 2)}</Text>
+      </View>
+      <View style={styles.photoCopy}>
+        <Text numberOfLines={1} style={styles.photoTitle}>
+          {title}
+        </Text>
+        <Text numberOfLines={1} style={styles.photoMeta}>
+          {badge}
+        </Text>
+        {!readonly ? (
+          <Pressable style={styles.photoButton}>
+            <Text style={styles.photoButtonText}>+ 画像を選択</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function QuantityStepper({
+  value,
+  readonly,
+  onChange,
+}: {
+  value: number;
+  readonly: boolean;
+  onChange: (value: number | ((current: number) => number)) => void;
+}) {
+  return (
+    <View style={styles.fieldBlock}>
+      <Text style={styles.fieldLabel}>数量</Text>
+      <View style={styles.stepper}>
+        <Pressable
+          disabled={readonly || value <= 1}
+          onPress={() => onChange((current) => Math.max(1, current - 1))}
+          style={styles.stepButton}
+        >
+          <Text style={styles.stepButtonText}>−</Text>
+        </Pressable>
+        <Text style={styles.stepValue}>{value}</Text>
+        <Pressable
+          disabled={readonly}
+          onPress={() => onChange((current) => Math.min(999, current + 1))}
+          style={styles.stepButton}
+        >
+          <Text style={styles.stepButtonText}>＋</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -329,6 +455,55 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 18,
     marginTop: 5,
+  },
+  photoRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  photoThumb: {
+    alignItems: "center",
+    borderColor: "rgba(255,255,255,0.92)",
+    borderRadius: 13,
+    borderWidth: 2,
+    height: 88,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 68,
+  },
+  photoGlyph: {
+    color: ihubColors.surface,
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  photoCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  photoTitle: {
+    color: ihubColors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  photoMeta: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  photoButton: {
+    alignSelf: "flex-start",
+    backgroundColor: ihubColors.background,
+    borderColor: "rgba(166,149,216,0.35)",
+    borderRadius: 10,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  photoButtonText: {
+    color: ihubColors.lavender,
+    fontSize: 11.5,
+    fontWeight: "900",
   },
   previewCard: {
     alignItems: "center",
@@ -472,6 +647,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
   },
+  conditionGrid: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  conditionButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.10)",
+    borderRadius: ihubRadii.md,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 40,
+  },
+  conditionButtonActive: {
+    backgroundColor: "rgba(166,149,216,0.08)",
+    borderColor: ihubColors.lavender,
+  },
+  conditionText: {
+    color: ihubColors.ink,
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  conditionTextActive: {
+    color: ihubColors.ink,
+    fontWeight: "900",
+  },
   stepper: {
     alignItems: "center",
     alignSelf: "flex-start",
@@ -544,5 +746,49 @@ const styles = StyleSheet.create({
   actions: {
     gap: 10,
     marginTop: 2,
+  },
+  carryToggle: {
+    alignItems: "flex-start",
+    backgroundColor: "rgba(168,212,230,0.18)",
+    borderRadius: ihubRadii.md,
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  checkbox: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.18)",
+    borderRadius: 5,
+    borderWidth: 1,
+    height: 18,
+    justifyContent: "center",
+    marginTop: 1,
+    width: 18,
+  },
+  checkboxActive: {
+    backgroundColor: ihubColors.lavender,
+    borderColor: ihubColors.lavender,
+  },
+  checkboxText: {
+    color: ihubColors.surface,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 14,
+  },
+  carryCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  carryTitle: {
+    color: ihubColors.ink,
+    fontSize: 12.5,
+    fontWeight: "900",
+  },
+  carryText: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "700",
   },
 });

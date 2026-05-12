@@ -477,21 +477,69 @@ async function fetchTransactionDetail(
   userId: string,
 ): Promise<TransactionDetail> {
   if (!supabase) throw new Error("Supabaseが未設定です");
-  const { data, error } = await supabase
-    .from("proposals")
-    .select(
-      `id, sender_id, receiver_id, status,
-       sender_have_ids, sender_have_qtys, receiver_have_ids, receiver_have_qtys,
-       agreed_by_sender, agreed_by_receiver,
-       meetup_start_at, meetup_end_at, meetup_place_name, meetup_lat, meetup_lng,
-       meetup_candidates, message, created_at, last_action_at, expires_at`,
-    )
-    .eq("id", proposalId)
-    .maybeSingle();
-  if (error) throw error;
+  const proposalFields = [
+    "id",
+    "sender_id",
+    "receiver_id",
+    "status",
+    "sender_have_ids",
+    "sender_have_qtys",
+    "receiver_have_ids",
+    "receiver_have_qtys",
+    "agreed_by_sender",
+    "agreed_by_receiver",
+    "meetup_start_at",
+    "meetup_end_at",
+    "meetup_place_name",
+    "meetup_lat",
+    "meetup_lng",
+    "meetup_candidates",
+    "message",
+    "created_at",
+    "last_action_at",
+    "expires_at",
+  ];
+  const data = await fetchProposalRow(proposalId, proposalFields);
   if (!data) throw new Error("打診が見つかりません");
 
-  return buildDetail(data as ProposalRow, userId);
+  return buildDetail(
+    {
+      meetup_candidates: [],
+      meetup_lat: null,
+      meetup_lng: null,
+      ...data,
+    } as ProposalRow,
+    userId,
+  );
+}
+
+async function fetchProposalRow(
+  proposalId: string,
+  fields: string[],
+): Promise<Record<string, unknown> | null> {
+  if (!supabase) throw new Error("Supabaseが未設定です");
+  const selectableFields = [...fields];
+  for (let attempt = 0; attempt < fields.length; attempt += 1) {
+    const { data, error } = await supabase
+      .from("proposals")
+      .select(selectableFields.join(", "))
+      .eq("id", proposalId)
+      .maybeSingle();
+    const missingColumn = getMissingProposalColumn(error);
+    if (missingColumn && selectableFields.includes(missingColumn)) {
+      selectableFields.splice(selectableFields.indexOf(missingColumn), 1);
+      continue;
+    }
+    if (error) throw error;
+    return (data as Record<string, unknown> | null) ?? null;
+  }
+  return null;
+}
+
+function getMissingProposalColumn(error: { code?: string; message?: string } | null) {
+  const message = error?.message ?? "";
+  if (error?.code !== "PGRST204" && !message.includes("schema cache")) return null;
+  return message.match(/Could not find the '([^']+)' column of 'proposals'/)?.[1] ?? null;
 }
 
 async function buildDetail(
@@ -582,7 +630,7 @@ async function fetchMessages(proposalId: string): Promise<ChatMessage[]> {
     )
     .eq("proposal_id", proposalId)
     .order("created_at", { ascending: true });
-  if (error) throw error;
+  if (error) return [];
   return ((data as MessageRow[] | null) ?? []).map((row) => ({
     id: row.id,
     senderId: row.sender_id,
