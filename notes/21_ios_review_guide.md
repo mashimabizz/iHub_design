@@ -2,8 +2,8 @@
 
 > 目的：iOSアプリ版の画面をオーナーが実機またはSimulatorで確認するための手順。
 
-最終更新: 2026-05-12（iter154.76）
-ステータス: Draft v0.1
+最終更新: 2026-05-12（iter154.90）
+ステータス: Draft v0.2
 
 ---
 
@@ -19,7 +19,7 @@ nvm use
 
 `.nvmrc` に `20.19.4` を指定済み。
 
-### iPhone実機で見る場合
+### iPhone実機で見る場合（Expo Go）
 
 1. iPhone に Expo Go をインストールする
 2. PC と iPhone を同じ Wi-Fi に接続する
@@ -30,12 +30,52 @@ nvm use
 npm run mobile:start
 ```
 
+### iPhone実機で見る場合（Development Build）
+
+Expo Go のQR読み込みを毎回やりたくない場合は、iHub専用の開発版アプリをiPhoneに入れる。
+
+初回だけ、以下が必要：
+
+- Expo account
+- EAS CLI
+- Apple Developer account（実機iPhoneへ入れる場合は署名に必要）
+- iPhoneのDeveloper Mode有効化（iOS 16以降）
+
+```bash
+cd /Users/michitaka/Desktop/Claude/Goods_exchange_platfform_iHub/mobile
+npm install -g eas-cli
+eas login
+eas build --platform ios --profile development
+```
+
+ビルドが完了すると、Expoのページにインストール用リンクが出る。iPhoneでそのリンクを開いてiHubをインストールする。
+
+インストール後の普段のレビューは以下：
+
+```bash
+cd /Users/michitaka/Desktop/Claude/Goods_exchange_platfform_iHub
+git pull
+cd mobile
+npm run start:dev
+```
+
+iPhone側は、ホーム画面の **iHub** アプリを開く。QRを毎回読む必要はない。
+
+ネイティブ依存を追加・変更した時だけ、開発版アプリを作り直す。
+
 ### iOS Simulatorで見る場合
 
 MacにXcode / iOS Simulatorがある場合：
 
 ```bash
 npm run mobile:ios
+```
+
+Development BuildをSimulatorで見る場合：
+
+```bash
+cd /Users/michitaka/Desktop/Claude/Goods_exchange_platfform_iHub/mobile
+eas build --platform ios --profile development-simulator
 ```
 
 ---

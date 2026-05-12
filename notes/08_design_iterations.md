@@ -4,6 +4,65 @@
 
 ---
 
+## イテレーション154.90：iOS Development Build設定を追加
+
+### 背景・問題意識
+
+オーナーから、Expo Goで毎回QRを読み込むレビュー運用が面倒なので、もっと簡単に確認できる方法にしたいという相談があった。
+
+iOS版のレビュー頻度が上がってきているため、Expo Go前提ではなく、iPhoneにiHub専用の開発版アプリを入れて、ホーム画面のiHubアイコンから開ける運用に移行できるようにする。
+
+### 変更内容
+
+#### `mobile/package.json`
+- `expo-dev-client` を追加した。
+- `start:dev` を追加し、Development Build用のMetroを起動できるようにした。
+- `build:ios:dev` / `build:ios:sim` を追加した。
+
+#### `mobile/package-lock.json`
+- `expo-dev-client` の依存解決を反映した。
+
+#### `mobile/eas.json`
+- EAS Build用の設定を追加した。
+- `development` profile は実機iPhone向けのDevelopment Buildにした。
+- `development-simulator` profile はiOS Simulator向けにした。
+- `preview` / `production` profile も将来用に用意した。
+
+#### `notes/21_ios_review_guide.md`
+- Expo GoレビューとDevelopment Buildレビューを分けて記載した。
+- 初回セットアップ、開発版アプリのインストール、普段のレビューコマンドを追加した。
+- 実機iPhoneのEAS Development BuildではApple Developer accountが必要なことを明記した。
+
+### 影響範囲
+
+- iOS版レビュー運用
+- Expo GoからDevelopment Buildへの移行準備
+- EAS Buildの初回設定
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+- `mobile/package-lock.json` に `expo-dev-client` が反映されていることを確認
+
+### 関連ファイル
+
+- `mobile/package.json`
+- `mobile/package-lock.json`
+- `mobile/eas.json`
+- `notes/21_ios_review_guide.md`
+
+### セルフレビュー結果
+
+- ✅ iHub専用の開発版アプリを作るための `expo-dev-client` とEAS profileを追加した
+- ✅ Expo Go運用とDevelopment Build運用の違いをレビュー手順に追記した
+- ✅ 実機iPhoneにはApple Developer accountが必要な点を明記した
+- ✅ UI・状態遷移・DBスキーマには影響しないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション154.89：iOSマッチ詳細をWeb版関係図へ寄せ直し
 
 ### 背景・問題意識
