@@ -4,6 +4,54 @@
 
 ---
 
+## イテレーション155.27：iOSキャンセル同意を追加
+
+### 背景・問題意識
+
+WebAppの取引チャットでは、キャンセル要請を受け取った側がチャット内カードから「同意してキャンセル」または「申告する」を選べる。iOS版は遅刻通知/キャンセル相談の送信までは実装済みだったが、受信側の同意導線が不足しており、キャンセル相談が完結しなかった。
+
+### 変更内容
+
+#### `mobile/src/lib/transactionActions.ts`
+- Web版 `approveTradeCancel` に合わせて、iOS版にもキャンセル同意アクションを追加した。
+- 合意済み取引のみキャンセルできるようにし、`proposals.status='cancelled'` と `last_action_at` を更新するようにした。
+- 同意完了時に「評価への影響なし」のsystem messageを投稿するようにした。
+
+#### `mobile/app/transaction-detail.tsx`
+- `messages.meta.action='cancel_requested'` のsystem messageを、受信側だけキャンセル要請カードとして表示するようにした。
+- カード内に「申告する」と「同意してキャンセル」を配置し、同意前にiOS標準アラートで確認するようにした。
+- 同意後は取引一覧へ戻る導線にした。
+
+### 影響範囲
+
+- iOS版取引チャット
+- iOS版キャンセル相談フロー
+- iOS版申告入口
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- 相手からのキャンセル要請メッセージでカードが表示されること
+- 「申告する」から申告作成画面へ進むこと
+- 「同意してキャンセル」で取引が `cancelled` になり、取引一覧へ戻ること
+
+### 関連ファイル
+
+- `mobile/src/lib/transactionActions.ts`
+- `mobile/app/transaction-detail.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版と同じ受信側キャンセル同意導線をiOSチャットに追加
+- ✅ 既存の `cancelled` 状態を使うため `notes/09_state_machines.md` 更新不要
+- ✅ 新用語追加なしのため `notes/10_glossary.md` 更新不要
+- ✅ データモデル変更なしのため `notes/05_data_model.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.26：iOS申告詳細を追加
 
 ### 背景・問題意識

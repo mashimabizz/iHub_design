@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import {
+  Alert,
   Image,
   Pressable,
   StyleSheet,
@@ -12,6 +13,7 @@ import { useAuth } from "../src/auth/AuthProvider";
 import { PrimaryButton } from "../src/components/PrimaryButton";
 import { Screen } from "../src/components/Screen";
 import { StatusPill } from "../src/components/StatusPill";
+import { approveTradeCancel } from "../src/lib/transactionActions";
 import { supabase } from "../src/lib/supabase";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
@@ -415,6 +417,7 @@ export default function TransactionDetailScreen() {
                       message={message}
                       mine={message.senderId === user?.id}
                       proposalId={detail.id}
+                      userId={user?.id ?? ""}
                     />
                   ))
                 )}
@@ -759,16 +762,88 @@ function ChatBubble({
   message,
   mine,
   proposalId,
+  userId,
 }: {
   message: ChatMessage;
   mine: boolean;
   proposalId: string;
+  userId: string;
 }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const system = message.type === "system" || message.type === "arrival_status";
   const text = messageText(message);
   const openApprove = message.meta?.action === "open_approve";
+  const cancelRequested = message.meta?.action === "cancel_requested" && !mine;
+
+  async function handleApproveCancel() {
+    if (!userId || pending) return;
+    Alert.alert(
+      "キャンセルに同意しますか？",
+      "取引は無効化され、評価への影響はありません。",
+      [
+        { text: "戻る", style: "cancel" },
+        {
+          text: "同意する",
+          style: "destructive",
+          onPress: async () => {
+            setPending(true);
+            setError(null);
+            const result = await approveTradeCancel({ proposalId, userId });
+            setPending(false);
+            if (result.error) {
+              setError(result.error);
+              return;
+            }
+            router.replace("/transactions");
+          },
+        },
+      ],
+    );
+  }
 
   if (system) {
+    if (cancelRequested) {
+      return (
+        <View style={styles.cancelRequestCard}>
+          <View style={styles.cancelRequestHeader}>
+            <View style={styles.cancelRequestIcon}>
+              <Text style={styles.cancelRequestIconText}>!</Text>
+            </View>
+            <Text style={styles.cancelRequestTitle}>キャンセル要請</Text>
+          </View>
+          <Text style={styles.cancelRequestBody}>{text}</Text>
+          {error ? <Text style={styles.cancelRequestError}>{error}</Text> : null}
+          <View style={styles.cancelRequestActions}>
+            <Pressable
+              disabled={pending}
+              onPress={() =>
+                router.push({
+                  pathname: "/dispute-new",
+                  params: { proposalId },
+                })
+              }
+              style={styles.cancelRequestSecondary}
+            >
+              <Text style={styles.cancelRequestSecondaryText}>申告する</Text>
+            </Pressable>
+            <Pressable
+              disabled={pending}
+              onPress={handleApproveCancel}
+              style={[
+                styles.cancelRequestPrimary,
+                pending ? styles.cancelRequestDisabled : null,
+              ]}
+            >
+              <Text style={styles.cancelRequestPrimaryText}>
+                {pending ? "処理中…" : "同意してキャンセル"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+
     return (
       <Pressable
         disabled={!openApprove}
@@ -1337,6 +1412,99 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 2,
     textAlign: "center",
+  },
+  cancelRequestCard: {
+    alignSelf: "stretch",
+    backgroundColor: "#fff5f0",
+    borderColor: "rgba(217,130,107,0.25)",
+    borderRadius: ihubRadii.lg,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  cancelRequestHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingTop: 11,
+  },
+  cancelRequestIcon: {
+    alignItems: "center",
+    backgroundColor: ihubColors.warn,
+    borderRadius: 10,
+    height: 20,
+    justifyContent: "center",
+    width: 20,
+  },
+  cancelRequestIconText: {
+    color: ihubColors.surface,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 14,
+  },
+  cancelRequestTitle: {
+    color: ihubColors.warn,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+  cancelRequestBody: {
+    color: ihubColors.ink,
+    fontSize: 11.5,
+    fontWeight: "700",
+    lineHeight: 18,
+    paddingHorizontal: 12,
+    paddingTop: 6,
+  },
+  cancelRequestError: {
+    color: "#b42318",
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16,
+    paddingHorizontal: 12,
+    paddingTop: 7,
+  },
+  cancelRequestActions: {
+    backgroundColor: "rgba(255,255,255,0.42)",
+    borderTopColor: "rgba(217,130,107,0.12)",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  cancelRequestSecondary: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  cancelRequestSecondaryText: {
+    color: ihubColors.ink,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  cancelRequestPrimary: {
+    alignItems: "center",
+    backgroundColor: ihubColors.warn,
+    borderRadius: 10,
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  cancelRequestDisabled: {
+    opacity: 0.55,
+  },
+  cancelRequestPrimaryText: {
+    color: ihubColors.surface,
+    fontSize: 12,
+    fontWeight: "900",
   },
   chatBubbleRow: {
     alignItems: "flex-start",

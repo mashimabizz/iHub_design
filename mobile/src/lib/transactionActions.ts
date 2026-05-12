@@ -346,6 +346,48 @@ export async function requestTradeCancel(input: {
   return {};
 }
 
+export async function approveTradeCancel(input: {
+  proposalId: string;
+  userId: string;
+}): Promise<ActionResult> {
+  if (!supabase) return { error: "Supabaseが未設定です" };
+  const { data: prop } = await supabase
+    .from("proposals")
+    .select("status, sender_id, receiver_id")
+    .eq("id", input.proposalId)
+    .maybeSingle();
+  const proposal = prop as Pick<
+    ProposalCompletionRow,
+    "status" | "sender_id" | "receiver_id"
+  > | null;
+  if (!proposal) return { error: "取引が見つかりません" };
+  if (proposal.sender_id !== input.userId && proposal.receiver_id !== input.userId) {
+    return { error: "参加者ではありません" };
+  }
+  if (proposal.status !== "agreed") {
+    return { error: "合意済の取引のみキャンセルできます" };
+  }
+
+  const { error } = await supabase
+    .from("proposals")
+    .update({
+      status: "cancelled",
+      last_action_at: new Date().toISOString(),
+    })
+    .eq("id", input.proposalId);
+  if (error) return { error: error.message };
+
+  await supabase.from("messages").insert({
+    proposal_id: input.proposalId,
+    sender_id: input.userId,
+    message_type: "system",
+    body: "✓ 取引キャンセルが合意されました（評価への影響なし）",
+    meta: { action: "cancel_approved" },
+  });
+
+  return { redirectTo: "/transactions" };
+}
+
 export async function notifyLate(input: {
   proposalId: string;
   userId: string;
