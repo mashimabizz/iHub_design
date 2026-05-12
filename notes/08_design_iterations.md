@@ -4,6 +4,50 @@
 
 ---
 
+## イテレーション154.81：iOSホームのモード切替と横スクロール慣性を改善
+
+### 背景・問題意識
+
+オーナーから、iOS版ホームの細かい挙動は今後実装する理解でよいか確認があり、特に「最新のiOSの水のような切り替え感」と「マッチングパネル行をぐわっとスクロールした時に途中で止まらず流れる感じ」が例として挙がった。
+
+iter154.80 のホームは構成確認用の第一弾だったため、次の区切りとして触り心地に直結するモード切替と横スクロール棚の慣性を先に磨くことにした。
+
+### 変更内容
+
+#### `mobile/app/(tabs)/index.tsx`
+- 上部の小さい現地交換トグルを `Animated.spring` で滑るように変更した。
+- 全国交換モード / 今すぐ現地交換モードの segmented control を `ModeSwitch` コンポーネント化した。
+- segmented control の thumb を spring で移動させ、切り替え時に横方向へ少し伸びる pulse を追加した。
+- thumb 内に光沢レイヤーと柔らかい blob を重ね、最新iOS系の水っぽい質感に近づけた。
+- 横スクロール棚に `alwaysBounceHorizontal` / `bounces` / `decelerationRate="normal"` / `scrollEventThrottle` を明示し、snapせず慣性で流れる挙動へ寄せた。
+
+### 影響範囲
+
+- iOS版ホームタブ
+- 現地交換モード切替の操作感
+- マッチ棚の横スクロール操作感
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+- Expo Goでホームタブを開き、モード切替と横スクロール棚を操作する
+
+### 関連ファイル
+
+- `mobile/app/(tabs)/index.tsx`
+
+### セルフレビュー結果
+
+- ✅ モード切替が即時ジャンプではなく、spring/pulseで動く構造になった
+- ✅ 横スクロール棚はsnap指定なしで、iOSの慣性スクロールを妨げない設定にした
+- ✅ まだ本格的なhapticsやblur overlayは未導入。次以降の触り心地改善候補として残す
+- ✅ 新しい状態名・DBカラム・正式用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション154.80：iOSホームのマッチ棚プレビューを実装
 
 ### 背景・問題意識

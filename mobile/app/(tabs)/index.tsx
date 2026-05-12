@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -254,22 +255,10 @@ export default function HomeScreen() {
               {placeLabel}
             </Text>
           </Pressable>
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityState={{ checked: localMode }}
-            onPress={() => setLocalMode((current) => !current)}
-            style={[
-              styles.localToggle,
-              localMode ? styles.localToggleOn : styles.localToggleOff,
-            ]}
-          >
-            <Animated.View
-              style={[
-                styles.localToggleKnob,
-                localMode ? styles.localToggleKnobOn : styles.localToggleKnobOff,
-              ]}
-            />
-          </Pressable>
+          <TinyLocalToggle
+            value={localMode}
+            onChange={() => setLocalMode((current) => !current)}
+          />
         </View>
       </View>
 
@@ -285,38 +274,11 @@ export default function HomeScreen() {
         />
       </View>
 
-      <View style={styles.modeSwitch}>
-        <View
-          pointerEvents="none"
-          style={[
-            styles.modeThumb,
-            localMode ? styles.modeThumbRight : styles.modeThumbLeft,
-          ]}
-        />
-        <Pressable
-          style={styles.modeButton}
-          onPress={() => setLocalMode(false)}
-        >
-          <Text
-            style={[
-              styles.modeText,
-              !localMode ? styles.modeTextActive : styles.modeTextInactive,
-            ]}
-          >
-            全国交換モード
-          </Text>
-        </Pressable>
-        <Pressable style={styles.modeButton} onPress={() => setLocalMode(true)}>
-          <Text
-            style={[
-              styles.modeText,
-              localMode ? styles.modeTextActive : styles.modeTextInactive,
-            ]}
-          >
-            今すぐ現地交換
-          </Text>
-        </Pressable>
-      </View>
+      <ModeSwitch
+        localMode={localMode}
+        width={width}
+        onChange={setLocalMode}
+      />
 
       <View style={styles.sections}>
         {MATCH_SECTIONS.map((section, sectionIndex) => (
@@ -330,6 +292,178 @@ export default function HomeScreen() {
         ))}
       </View>
     </Screen>
+  );
+}
+
+function TinyLocalToggle({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: () => void;
+}) {
+  const progress = useRef(new Animated.Value(value ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(progress, {
+      toValue: value ? 1 : 0,
+      damping: 16,
+      stiffness: 210,
+      mass: 0.74,
+      useNativeDriver: true,
+    }).start();
+  }, [progress, value]);
+
+  const translateX = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 20],
+  });
+
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      onPress={onChange}
+      style={[
+        styles.localToggle,
+        value ? styles.localToggleOn : styles.localToggleOff,
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.localToggleKnob,
+          {
+            transform: [{ translateX }],
+          },
+        ]}
+      />
+    </Pressable>
+  );
+}
+
+function ModeSwitch({
+  localMode,
+  width,
+  onChange,
+}: {
+  localMode: boolean;
+  width: number;
+  onChange: (next: boolean) => void;
+}) {
+  const progress = useRef(new Animated.Value(localMode ? 1 : 0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
+  const switchWidth = Math.max(280, width - 36);
+  const thumbWidth = (switchWidth - 8) / 2;
+
+  useEffect(() => {
+    pulse.setValue(0);
+    Animated.parallel([
+      Animated.spring(progress, {
+        toValue: localMode ? 1 : 0,
+        damping: 19,
+        stiffness: 176,
+        mass: 0.76,
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 170,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 260,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, [localMode, progress, pulse]);
+
+  const translateX = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, thumbWidth],
+  });
+  const stretch = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.09],
+  });
+  const glossOpacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.26, 0.64],
+  });
+  const blobScale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.86, 1.18],
+  });
+
+  return (
+    <View style={styles.modeSwitch}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.modeThumb,
+          {
+            width: thumbWidth,
+            transform: [{ translateX }, { scaleX: stretch }],
+          },
+        ]}
+      >
+        <Animated.View
+          style={[
+            styles.modeThumbGloss,
+            {
+              opacity: glossOpacity,
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.modeThumbBlob,
+            styles.modeThumbBlobLeft,
+            {
+              opacity: glossOpacity,
+              transform: [{ scale: blobScale }],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.modeThumbBlob,
+            styles.modeThumbBlobRight,
+            {
+              opacity: glossOpacity,
+              transform: [{ scale: blobScale }],
+            },
+          ]}
+        />
+      </Animated.View>
+      <Pressable
+        style={styles.modeButton}
+        onPress={() => onChange(false)}
+      >
+        <Text
+          style={[
+            styles.modeText,
+            !localMode ? styles.modeTextActive : styles.modeTextInactive,
+          ]}
+        >
+          全国交換モード
+        </Text>
+      </Pressable>
+      <Pressable style={styles.modeButton} onPress={() => onChange(true)}>
+        <Text
+          style={[
+            styles.modeText,
+            localMode ? styles.modeTextActive : styles.modeTextInactive,
+          ]}
+        >
+          今すぐ現地交換
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -400,9 +534,12 @@ function ShelfRowView({
       </View>
       <ScrollView
         horizontal
-        bounces={false}
+        alwaysBounceHorizontal
+        bounces
+        decelerationRate="normal"
         showsHorizontalScrollIndicator={false}
         directionalLockEnabled
+        scrollEventThrottle={16}
         contentContainerStyle={styles.rowScroller}
       >
         {row.candidates.map((candidate, index) => (
@@ -689,12 +826,6 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     width: 22,
   },
-  localToggleKnobOn: {
-    marginLeft: 20,
-  },
-  localToggleKnobOff: {
-    marginLeft: 0,
-  },
   identityRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -726,21 +857,40 @@ const styles = StyleSheet.create({
     marginBottom: 11,
     overflow: "hidden",
     padding: 4,
+    position: "relative",
   },
   modeThumb: {
     backgroundColor: ihubColors.surface,
     borderRadius: ihubRadii.pill,
     bottom: 4,
+    left: 4,
+    overflow: "hidden",
     position: "absolute",
     top: 4,
-    width: "49%",
     ...ihubShadow,
   },
-  modeThumbLeft: {
-    left: 4,
+  modeThumbGloss: {
+    backgroundColor: "rgba(255,255,255,0.62)",
+    borderRadius: 999,
+    height: "72%",
+    left: 8,
+    position: "absolute",
+    right: 8,
+    top: 3,
   },
-  modeThumbRight: {
-    right: 4,
+  modeThumbBlob: {
+    backgroundColor: "rgba(166,149,216,0.22)",
+    borderRadius: 999,
+    height: 52,
+    position: "absolute",
+    top: -10,
+    width: 52,
+  },
+  modeThumbBlobLeft: {
+    left: -16,
+  },
+  modeThumbBlobRight: {
+    right: -16,
   },
   modeButton: {
     alignItems: "center",
