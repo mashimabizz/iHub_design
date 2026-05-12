@@ -19,18 +19,14 @@ import {
   NativeMapPreview,
   type MapCoordinate,
 } from "../src/components/NativeMapPreview";
+import {
+  buildProposalChoices,
+  parseProposalIdList,
+  type ProposalChoiceItem,
+} from "../src/data/proposalItems";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
 type ProposalTab = "give" | "receive" | "meetup";
-
-type ChoiceItem = {
-  id: string;
-  title: string;
-  subtitle: string;
-  glyph: string;
-  hue: string;
-  hint: string;
-};
 
 type MeetupCandidate = {
   id: string;
@@ -83,44 +79,6 @@ type CandidateTouchState = {
   pointerStartOffsetSlots: number;
 };
 
-const GIVE_CHOICES: ChoiceItem[] = [
-  {
-    id: "give-1",
-    title: "カリナ 春ver.",
-    subtitle: "aespa / トレカ",
-    glyph: "K",
-    hue: "#f3c5d4",
-    hint: "相手がほしいものかも？",
-  },
-  {
-    id: "give-2",
-    title: "ジョンウ ラキドロ",
-    subtitle: "NCT / トレカ",
-    glyph: "J",
-    hue: "#a8d4e6",
-    hint: "相手がほしいものかも？",
-  },
-];
-
-const RECEIVE_CHOICES: ChoiceItem[] = [
-  {
-    id: "receive-1",
-    title: "スア ラキドロ",
-    subtitle: "LUMENA / トレカ",
-    glyph: "S",
-    hue: "#cbbcf4",
-    hint: "私がほしいものかも？",
-  },
-  {
-    id: "receive-2",
-    title: "ニンニン 制服",
-    subtitle: "aespa / アクスタ",
-    glyph: "N",
-    hue: "#d5cff4",
-    hint: "私がほしいものかも？",
-  },
-];
-
 const DAYS = buildMeetupDays();
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const SLOT_MINUTES = 15;
@@ -152,11 +110,49 @@ const PRESET_PLACES = [
 const TAB_ORDER: ProposalTab[] = ["give", "receive", "meetup"];
 
 export default function ProposalSelectScreen() {
-  const params = useLocalSearchParams<{ tab?: ProposalTab | ProposalTab[] }>();
+  const params = useLocalSearchParams<{
+    tab?: ProposalTab | ProposalTab[];
+    gives?: string | string[];
+    receives?: string | string[];
+    listings?: string | string[];
+    candidateId?: string | string[];
+  }>();
   const initialTab = parseTab(one(params.tab));
+  const givesParam = one(params.gives);
+  const receivesParam = one(params.receives);
+  const listingsParam = one(params.listings);
+  const candidateIdParam = one(params.candidateId);
+  const initialGiveIds = useMemo(
+    () => parseProposalIdList(givesParam),
+    [givesParam],
+  );
+  const initialReceiveIds = useMemo(
+    () => parseProposalIdList(receivesParam),
+    [receivesParam],
+  );
+  const giveChoices = useMemo(
+    () => buildProposalChoices(initialGiveIds, "give"),
+    [initialGiveIds],
+  );
+  const receiveChoices = useMemo(
+    () => buildProposalChoices(initialReceiveIds, "receive"),
+    [initialReceiveIds],
+  );
   const [tab, setTab] = useState<ProposalTab>(initialTab);
-  const [giveSelected, setGiveSelected] = useState("give-1");
-  const [receiveSelected, setReceiveSelected] = useState("receive-1");
+  const [giveSelectedIds, setGiveSelectedIds] = useState<string[]>(() =>
+    initialGiveIds.length > 0
+      ? initialGiveIds
+      : giveChoices[0]
+        ? [giveChoices[0].id]
+        : [],
+  );
+  const [receiveSelectedIds, setReceiveSelectedIds] = useState<string[]>(() =>
+    initialReceiveIds.length > 0
+      ? initialReceiveIds
+      : receiveChoices[0]
+        ? [receiveChoices[0].id]
+        : [],
+  );
   const [meetupCandidates, setMeetupCandidates] = useState<MeetupCandidate[]>([]);
   const [activeMeetupId, setActiveMeetupId] = useState<string | null>(null);
   const [placeSheetId, setPlaceSheetId] = useState<string | null>(null);
@@ -171,13 +167,33 @@ export default function ProposalSelectScreen() {
     meetupCandidates.every((candidate) => candidate.place.trim().length > 0);
   const meetupHasTimeDraft = meetupCandidates.length > 0;
 
+  useEffect(() => {
+    setGiveSelectedIds((current) => ensureChoiceSelection(current, giveChoices));
+  }, [giveChoices]);
+
+  useEffect(() => {
+    setReceiveSelectedIds((current) =>
+      ensureChoiceSelection(current, receiveChoices),
+    );
+  }, [receiveChoices]);
+
   const tabs = useMemo(
     () => [
-      { id: "give" as const, label: "私が出す", count: 1, color: ihubColors.lavender },
-      { id: "receive" as const, label: "受け取る", count: 1, color: ihubColors.sky },
+      {
+        id: "give" as const,
+        label: "私が出す",
+        count: giveSelectedIds.length,
+        color: ihubColors.lavender,
+      },
+      {
+        id: "receive" as const,
+        label: "受け取る",
+        count: receiveSelectedIds.length,
+        color: ihubColors.sky,
+      },
       { id: "meetup" as const, label: "待ち合わせ", count: 1, color: ihubColors.pink },
     ],
-    [],
+    [giveSelectedIds.length, receiveSelectedIds.length],
   );
 
   return (
@@ -209,17 +225,21 @@ export default function ProposalSelectScreen() {
       >
         {tab === "give" ? (
           <ChoicePane
-            items={GIVE_CHOICES}
-            selectedId={giveSelected}
-            onSelect={setGiveSelected}
+            items={giveChoices}
+            selectedIds={giveSelectedIds}
+            onToggle={(id) =>
+              setGiveSelectedIds((current) => toggleChoiceId(current, id))
+            }
           />
         ) : null}
 
         {tab === "receive" ? (
           <ChoicePane
-            items={RECEIVE_CHOICES}
-            selectedId={receiveSelected}
-            onSelect={setReceiveSelected}
+            items={receiveChoices}
+            selectedIds={receiveSelectedIds}
+            onToggle={(id) =>
+              setReceiveSelectedIds((current) => toggleChoiceId(current, id))
+            }
           />
         ) : null}
 
@@ -275,6 +295,10 @@ export default function ProposalSelectScreen() {
           router.push({
             pathname: "/proposal-confirm",
             params: {
+              gives: giveSelectedIds.join(","),
+              receives: receiveSelectedIds.join(","),
+              ...(listingsParam ? { listings: listingsParam } : {}),
+              ...(candidateIdParam ? { candidateId: candidateIdParam } : {}),
               meetups: JSON.stringify(
                 meetupCandidates
                   .filter((candidate) => candidate.place.trim())
@@ -358,24 +382,25 @@ export default function ProposalSelectScreen() {
 
 function ChoicePane({
   items,
-  selectedId,
-  onSelect,
+  selectedIds,
+  onToggle,
 }: {
-  items: ChoiceItem[];
-  selectedId: string;
-  onSelect: (id: string) => void;
+  items: ProposalChoiceItem[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
 }) {
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.choiceList}
     >
       {items.map((item) => {
-        const selected = selectedId === item.id;
+        const selected = selectedSet.has(item.id);
         return (
           <Pressable
             key={item.id}
-            onPress={() => onSelect(item.id)}
+            onPress={() => onToggle(item.id)}
             style={[styles.choiceCard, selected ? styles.choiceCardSelected : null]}
           >
             <View style={[styles.choiceImage, { backgroundColor: item.hue }]}>
@@ -1124,6 +1149,25 @@ function parseTab(value?: string): ProposalTab {
     return value;
   }
   return "give";
+}
+
+function ensureChoiceSelection(
+  current: string[],
+  choices: ProposalChoiceItem[],
+) {
+  const choiceIds = new Set(choices.map((choice) => choice.id));
+  const valid = current.filter((id) => choiceIds.has(id));
+  if (valid.length > 0) return valid;
+  return choices[0] ? [choices[0].id] : [];
+}
+
+function toggleChoiceId(current: string[], id: string) {
+  if (current.includes(id)) {
+    return current.length > 1
+      ? current.filter((selectedId) => selectedId !== id)
+      : current;
+  }
+  return [...current, id];
 }
 
 const styles = StyleSheet.create({

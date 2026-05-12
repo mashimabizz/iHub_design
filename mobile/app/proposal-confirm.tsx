@@ -16,14 +16,12 @@ import {
   NativeMapPreview,
   type MapCoordinate,
 } from "../src/components/NativeMapPreview";
+import {
+  buildProposalThumbs,
+  parseProposalIdList,
+  type ProposalThumbItem,
+} from "../src/data/proposalItems";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
-
-type ThumbItem = {
-  id: string;
-  label: string;
-  glyph: string;
-  color: string;
-};
 
 type MeetupCandidate = {
   id: string;
@@ -32,16 +30,6 @@ type MeetupCandidate = {
   place: string;
   coordinate: MapCoordinate;
 };
-
-const THEIR_ITEMS: ThumbItem[] = [
-  { id: "receive-1", label: "スア ラキドロ", glyph: "S", color: "#cbbcf4" },
-  { id: "receive-2", label: "ニンニン 制服", glyph: "N", color: "#d5cff4" },
-];
-
-const MY_ITEMS: ThumbItem[] = [
-  { id: "give-1", label: "カリナ 春ver.", glyph: "K", color: "#f3c5d4" },
-  { id: "give-2", label: "ジョンウ ラキドロ", glyph: "J", color: "#a8d4e6" },
-];
 
 const MEETUP_CANDIDATES: MeetupCandidate[] = [
   {
@@ -67,11 +55,25 @@ const MEETUP_CANDIDATES: MeetupCandidate[] = [
 ];
 
 export default function ProposalConfirmScreen() {
-  const params = useLocalSearchParams<{ meetups?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    meetups?: string | string[];
+    gives?: string | string[];
+    receives?: string | string[];
+  }>();
   const meetupsParam = one(params.meetups);
+  const givesParam = one(params.gives);
+  const receivesParam = one(params.receives);
   const meetupCandidates = useMemo(
     () => parseMeetups(meetupsParam),
     [meetupsParam],
+  );
+  const myItems = useMemo(
+    () => buildProposalThumbs(parseProposalIdList(givesParam), "give"),
+    [givesParam],
+  );
+  const theirItems = useMemo(
+    () => buildProposalThumbs(parseProposalIdList(receivesParam), "receive"),
+    [receivesParam],
   );
   const [message, setMessage] = useState("");
   const [shareSchedule, setShareSchedule] = useState(true);
@@ -111,7 +113,7 @@ export default function ProposalConfirmScreen() {
         </View>
 
         <Section title="交換内容">
-          <ExchangeCard />
+          <ExchangeCard theirItems={theirItems} myItems={myItems} />
         </Section>
 
         <Section title="交換できる候補">
@@ -217,15 +219,21 @@ function Section({
   );
 }
 
-function ExchangeCard() {
+function ExchangeCard({
+  theirItems,
+  myItems,
+}: {
+  theirItems: ProposalThumbItem[];
+  myItems: ProposalThumbItem[];
+}) {
   return (
     <View style={styles.exchangeCard}>
-      <SidePanel label={`相手の譲（${THEIR_ITEMS.length}）`} items={THEIR_ITEMS} />
+      <SidePanel label={`相手の譲（${theirItems.length}）`} items={theirItems} />
       <View style={styles.swapColumn}>
         <ArrowDot color={ihubColors.lavender} direction="right" />
         <ArrowDot color={ihubColors.sky} direction="left" />
       </View>
-      <SidePanel label={`あなたの譲（${MY_ITEMS.length}）`} items={MY_ITEMS} alignRight />
+      <SidePanel label={`あなたの譲（${myItems.length}）`} items={myItems} alignRight />
     </View>
   );
 }
@@ -236,7 +244,7 @@ function SidePanel({
   alignRight,
 }: {
   label: string;
-  items: ThumbItem[];
+  items: ProposalThumbItem[];
   alignRight?: boolean;
 }) {
   return (

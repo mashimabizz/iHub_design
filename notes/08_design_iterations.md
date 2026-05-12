@@ -4,6 +4,54 @@
 
 ---
 
+## イテレーション155.00：iOS提示物選択に関係図の選択内容を反映
+
+### 背景・問題意識
+
+iOS版の関係図から提示物選択へ進む時、関係図側では `gives` / `receives` / `listings` を渡していたが、提示物選択と送信確認は固定サンプルを表示していた。ホームで選んだマッチングパネルの文脈が後続画面に反映されず、Web版の「選んだ候補を持ったまま打診へ進む」体験と差分が残っていた。
+
+### 変更内容
+
+#### `mobile/src/data/proposalItems.ts`
+- 関係図から渡されるグッズIDを、提示物選択カードと送信確認サムネイル用の表示データへ変換する共通ヘルパーを追加した。
+- ホームのマッチ候補IDは `findCandidateContext` を使ってラベル・キャラ名・種別・色を解決し、未知IDでもプレビュー表示が破綻しない fallback を用意した。
+
+#### `mobile/app/proposal-select.tsx`
+- route params の `gives` / `receives` / `listings` / `candidateId` を読み取り、関係図で選ばれた譲・受け取り候補を初期選択として表示するようにした。
+- 提示物カードを複数選択できる形にし、選択数を上部タブの count に反映するようにした。
+- 送信確認へ進む時に、選択済みの `gives` / `receives` と関係図由来の `listings` / `candidateId` を引き継ぐようにした。
+
+#### `mobile/app/proposal-confirm.tsx`
+- 送信確認の「交換内容」を固定サンプルではなく、前画面で選ばれた譲・受け取り候補から組み立てるようにした。
+
+### 影響範囲
+
+- iOS版関係図から提示物選択への遷移
+- iOS版提示物選択の `私が出す` / `受け取る` タブ
+- iOS版送信確認の交換内容表示
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `npx expo config --type public`（`mobile/`）
+- `git diff --check`
+- iOSアプリでホーム → マッチングパネル → 関係図 → 打診に進む → 提示物選択 → 送信確認を開き、関係図で選ばれた候補が提示物選択と送信確認に引き継がれることを確認
+
+### 関連ファイル
+
+- `mobile/src/data/proposalItems.ts`
+- `mobile/app/proposal-select.tsx`
+- `mobile/app/proposal-confirm.tsx`
+
+### セルフレビュー結果
+
+- ✅ 関係図側で既に渡している `gives` / `receives` をiOS版C-0で利用するようにした
+- ✅ 送信確認の交換内容が固定サンプルに戻らず、選択済みグッズで表示されるようにした
+- ✅ 新しい正式用語・状態名・DBカラムは追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` / `notes/05_data_model.md` は更新不要
+- ✅ `typecheck` / Expo config 確認 / `git diff --check` 通過
+
+---
+
 ## イテレーション154.99：iOS関係図スワイプ終端のちらつきを抑制
 
 ### 背景・問題意識
