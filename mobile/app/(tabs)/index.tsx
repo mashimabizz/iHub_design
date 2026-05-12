@@ -494,11 +494,7 @@ function ShelfSectionView({
   sectionIndex: number;
   tileWidth: number;
   localMode: boolean;
-  onCandidatePress: (
-    section: ShelfSection,
-    row: ShelfRow,
-    candidate: Candidate,
-  ) => void;
+  onCandidatePress: (row: ShelfRow, candidate: Candidate) => void;
 }) {
   return (
     <View style={styles.shelfSection}>
@@ -511,7 +507,6 @@ function ShelfSectionView({
           sectionIndex={sectionIndex}
           tileWidth={tileWidth}
           localMode={localMode}
-          section={section}
           onCandidatePress={onCandidatePress}
         />
       ))}
@@ -525,7 +520,6 @@ function ShelfRowView({
   sectionIndex,
   tileWidth,
   localMode,
-  section,
   onCandidatePress,
 }: {
   row: ShelfRow;
@@ -533,12 +527,7 @@ function ShelfRowView({
   sectionIndex: number;
   tileWidth: number;
   localMode: boolean;
-  section: ShelfSection;
-  onCandidatePress: (
-    section: ShelfSection,
-    row: ShelfRow,
-    candidate: Candidate,
-  ) => void;
+  onCandidatePress: (row: ShelfRow, candidate: Candidate) => void;
 }) {
   const baseDelay = sectionIndex * 190 + rowIndex * 95;
 
@@ -567,7 +556,7 @@ function ShelfRowView({
             delayMs={baseDelay + index * 82}
             width={tileWidth}
             localMode={localMode}
-            onPress={() => onCandidatePress(section, row, candidate)}
+            onPress={() => onCandidatePress(row, candidate)}
           />
         ))}
       </ScrollView>
@@ -683,18 +672,16 @@ function CandidateTile({
   );
 }
 
-function openMatchDetail(
-  section: ShelfSection,
-  row: ShelfRow,
-  candidate: Candidate,
-) {
+function openMatchDetail(row: ShelfRow, candidate: Candidate) {
   router.push({
-    pathname: "/preview-detail",
+    pathname: "/match-detail",
     params: {
-      kind: "match",
-      badge: section.title,
       title: candidate.label,
       subtitle: `${row.character} × ${row.goodsType} / ${candidate.tag ?? "候補"}`,
+      member: candidate.member,
+      hue: candidate.hue,
+      priority: candidate.priority,
+      local: candidate.local ? "true" : "false",
     },
   });
 }
