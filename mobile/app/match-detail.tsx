@@ -1,32 +1,87 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { PrimaryButton } from "../src/components/PrimaryButton";
-import { Screen } from "../src/components/Screen";
-import { StatusPill } from "../src/components/StatusPill";
-import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
+import { useMemo, useState } from "react";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ihubColors, ihubRadii } from "../src/theme/tokens";
 
 type Priority = "both" | "oneSide" | "wish";
+type ListingKind = "both" | "mine" | "partner" | "simple";
+type Logic = "and" | "or";
+type ExchangeType = "same_kind" | "cross_kind" | "any";
 
-type MiniCandidate = {
+type MiniItem = {
   id: string;
   label: string;
   glyph: string;
-  hue: string;
-  available: boolean;
+  color: string;
 };
 
-const GIVE_ITEMS: MiniCandidate[] = [
-  { id: "give-1", label: "カリナ 春ver.", glyph: "K", hue: "#f3c5d4", available: true },
-  { id: "give-2", label: "ジョンウ ラキドロ", glyph: "J", hue: "#a8d4e6", available: true },
-  { id: "give-3", label: "V トレカ", glyph: "V", hue: "#b7dceb", available: false },
-];
+type ListingHave = {
+  item: MiniItem;
+  qty: number;
+  matched: boolean;
+};
 
-const RECEIVE_ITEMS: MiniCandidate[] = [
-  { id: "receive-1", label: "選択した譲", glyph: "S", hue: "#cbbcf4", available: true },
-  { id: "receive-2", label: "同条件候補", glyph: "N", hue: "#d5cff4", available: true },
-  { id: "receive-3", label: "条件外候補", glyph: "W", hue: "#c8e8f2", available: false },
-];
+type ListingWish = {
+  item: MiniItem;
+  qty: number;
+  candidates: { item: MiniItem; qty: number }[];
+};
+
+type ListingOption = {
+  id: string;
+  position: number;
+  logic: Logic;
+  exchangeType: ExchangeType;
+  isCashOffer?: boolean;
+  cashAmount?: number | null;
+  matched: boolean;
+  wishes: ListingWish[];
+};
+
+type ListingInfo = {
+  listingId: string;
+  haveLogic: Logic;
+  haves: ListingHave[];
+  options: ListingOption[];
+  isMyListing: boolean;
+};
+
+type PopupTarget = {
+  listingId: string;
+  viewpoint: "mine" | "partner";
+  wishItem: MiniItem;
+  wishQty: number;
+  candidates: { item: MiniItem; qty: number }[];
+  exchangeType: ExchangeType;
+  fallbackHave: MiniItem;
+};
+
+type Selection = Record<string, string[]>;
+type HaveSelection = Record<string, string[]>;
+
+const PARTNER_HANDLE = "michilion";
+const MY_AVATAR = "私";
+
+const BASE_ITEMS = {
+  selected: { id: "selected", label: "スア ラキドロ", glyph: "S", color: "#cbbcf4" },
+  selectedAlt: { id: "selected-alt", label: "スア 会場限定", glyph: "S", color: "#f3c5d4" },
+  partnerHave: { id: "partner-have-1", label: "ニンニン 制服", glyph: "N", color: "#a8d4e6" },
+  partnerHave2: { id: "partner-have-2", label: "ウィンター 缶バッジ", glyph: "W", color: "#d5cff4" },
+  myHave: { id: "my-have-1", label: "カリナ 春ver.", glyph: "K", color: "#f3c5d4" },
+  myHave2: { id: "my-have-2", label: "ジョンウ ラキドロ", glyph: "J", color: "#a8d4e6" },
+  myHaveBad: { id: "my-have-bad", label: "V トレカ", glyph: "V", color: "#b7dceb" },
+  wishPartner: { id: "wish-partner-1", label: "カリナ 店舗特典", glyph: "K", color: "#f7d5df" },
+  wishMine: { id: "wish-mine-1", label: "スア ラキドロ", glyph: "S", color: "#cbbcf4" },
+  wishMine2: { id: "wish-mine-2", label: "ニンニン 制服", glyph: "N", color: "#d5cff4" },
+};
 
 export default function MatchDetailScreen() {
   const params = useLocalSearchParams<{
@@ -36,373 +91,2151 @@ export default function MatchDetailScreen() {
     hue?: string | string[];
     priority?: Priority | Priority[];
     local?: string | string[];
+    tag?: string | string[];
   }>();
-  const [showUnavailable, setShowUnavailable] = useState(false);
-  const title = one(params.title) || "マッチ候補";
-  const subtitle = one(params.subtitle) || "選んだグッズから交換候補を確認します。";
+  const insets = useSafeAreaInsets();
+  const title = one(params.title) || BASE_ITEMS.selected.label;
+  const subtitle = one(params.subtitle) || "マッチ詳細";
   const member = one(params.member) || title.slice(0, 1);
-  const hue = one(params.hue) || "#cbbcf4";
-  const priority = ((one(params.priority) as Priority | "") || "wish") as Priority;
+  const color = one(params.hue) || BASE_ITEMS.selected.color;
+  const priority = parsePriority(one(params.priority));
+  const listingKind = inferListingKind(priority, one(params.tag));
   const local = one(params.local) === "true";
-
-  const giveVisible = GIVE_ITEMS.filter((item) => item.available || showUnavailable);
-  const receiveVisible = RECEIVE_ITEMS.map((item, index) =>
-    index === 0 ? { ...item, label: title, glyph: member, hue } : item,
-  ).filter((item) => item.available || showUnavailable);
+  const highlightedItem: MiniItem = {
+    id: "selected",
+    label: title,
+    glyph: member,
+    color,
+  };
+  const data = useMemo(
+    () => buildDetailData(highlightedItem, listingKind),
+    [highlightedItem.id, highlightedItem.label, highlightedItem.glyph, highlightedItem.color, listingKind],
+  );
+  const [selection, setSelection] = useState<Selection>(() =>
+    initialSelection([...data.myListings, ...data.partnerListings], highlightedItem.id),
+  );
+  const [haveSelection, setHaveSelection] = useState<HaveSelection>(() =>
+    initialHaveSelection([...data.myListings, ...data.partnerListings], highlightedItem.id),
+  );
+  const [popupTarget, setPopupTarget] = useState<PopupTarget | null>(null);
+  const aggregated = aggregateSelection({
+    myListings: data.myListings,
+    partnerListings: data.partnerListings,
+    selection,
+    haveSelection,
+  });
+  const totalSelected = Object.values(selection).reduce(
+    (sum, ids) => sum + ids.length,
+    0,
+  );
+  const hasListingRelation =
+    data.myListings.length > 0 || data.partnerListings.length > 0;
+  const hasSimpleRelation =
+    !hasListingRelation &&
+    (data.simpleReceives.length > 0 || data.simpleGives.length > 0);
 
   return (
-    <Screen contentStyle={styles.screen}>
-      <View style={styles.header}>
+    <View style={styles.root}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 18) + 8 }]}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="戻る"
+          accessibilityLabel="閉じる"
           onPress={() => router.back()}
-          style={styles.backButton}
+          style={styles.closeButton}
         >
-          <Text style={styles.backText}>‹</Text>
+          <Text style={styles.closeText}>×</Text>
         </Pressable>
-        <StatusPill label={priorityLabel(priority)} tone={priorityTone(priority)} />
+        <View style={styles.headerCopy}>
+          <Text style={styles.headerTitle}>関係図</Text>
+          <Text numberOfLines={1} style={styles.headerSubtitle}>
+            @{PARTNER_HANDLE} とのマッチ詳細
+          </Text>
+        </View>
       </View>
 
-      <View style={styles.hero}>
-        {local ? <View style={styles.liveAura} /> : null}
-        <View style={[styles.selectedTile, priorityFrame(priority)]}>
-          <View style={[styles.selectedImage, { backgroundColor: hue }]}>
-            <View style={styles.selectedGlow} />
-            <Text style={styles.selectedGlyph}>{member}</Text>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingBottom:
+              Math.max(insets.bottom, 12) +
+              (totalSelected > 0 || hasSimpleRelation ? 96 : 24),
+          },
+        ]}
+      >
+        <View style={styles.contextCard}>
+          <View style={[styles.contextThumb, priorityFrame(priority)]}>
+            <ItemPhoto item={highlightedItem} qty={1} size={58} variant="candidate" highlighted />
           </View>
+          <View style={styles.contextText}>
+            <Text numberOfLines={1} style={styles.contextTitle}>
+              {title}
+            </Text>
+            <Text numberOfLines={1} style={styles.contextSubtitle}>
+              {subtitle}
+            </Text>
+          </View>
+          {local ? (
+            <View style={styles.livePill}>
+              <Text style={styles.livePillText}>LIVE</Text>
+            </View>
+          ) : null}
         </View>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>{subtitle}</Text>
-        {local ? (
-          <View style={styles.localBadge}>
-            <Text style={styles.localBadgeText}>現地交換できる可能性あり</Text>
+
+        {data.myListings.length > 0 ? (
+          <SectionGroup
+            title="あなたの個別募集"
+            subtitle="あなたが出している条件で、相手の在庫がヒット"
+            accentColor={ihubColors.lavender}
+          >
+            {data.myListings.map((listing, index) => (
+              <ListingTree
+                key={listing.listingId}
+                listing={listing}
+                index={index}
+                viewpoint="mine"
+                highlightedItemId={highlightedItem.id}
+                selection={selection}
+                haveSelection={haveSelection}
+                onToggleCandidate={toggleCandidate}
+                onToggleHave={toggleHave}
+                onOpenPopup={setPopupTarget}
+              />
+            ))}
+          </SectionGroup>
+        ) : null}
+
+        {data.partnerListings.length > 0 ? (
+          <SectionGroup
+            title={`@${PARTNER_HANDLE} の個別募集`}
+            subtitle="相手が出している条件で、あなたの在庫がヒット"
+            accentColor={ihubColors.pink}
+          >
+            {data.partnerListings.map((listing, index) => (
+              <ListingTree
+                key={listing.listingId}
+                listing={listing}
+                index={index}
+                viewpoint="partner"
+                highlightedItemId={highlightedItem.id}
+                selection={selection}
+                haveSelection={haveSelection}
+                onToggleCandidate={toggleCandidate}
+                onToggleHave={toggleHave}
+                onOpenPopup={setPopupTarget}
+              />
+            ))}
+          </SectionGroup>
+        ) : null}
+
+        {!hasListingRelation ? (
+          hasSimpleRelation ? (
+            <SimpleRelationPanel
+              receivesItems={data.simpleReceives}
+              givesItems={data.simpleGives}
+              highlightedItemId={highlightedItem.id}
+            />
+          ) : (
+            <View style={styles.emptyRelation}>
+              <Text style={styles.emptyRelationText}>個別募集経由のマッチはありません</Text>
+            </View>
+          )
+        ) : null}
+
+        {totalSelected > 0 ? (
+          <GlobalSummary
+            receivesItems={aggregated.receivesItems}
+            givesItems={aggregated.givesItems}
+            highlightedItemId={highlightedItem.id}
+          />
+        ) : null}
+      </ScrollView>
+
+      {totalSelected > 0 ? (
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <Pressable
+            onPress={() => setSelection({})}
+            style={styles.resetButton}
+          >
+            <Text style={styles.resetButtonText}>リセット</Text>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/proposal-select",
+                params: { tab: "meetup" },
+              })
+            }
+            style={styles.primaryFooterButton}
+          >
+            <Text style={styles.primaryFooterButtonText}>
+              打診に進む（{totalSelected} 件）→
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {hasSimpleRelation ? (
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <Pressable onPress={() => router.back()} style={styles.resetButton}>
+            <Text style={styles.resetButtonText}>閉じる</Text>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/proposal-select",
+                params: { tab: "meetup" },
+              })
+            }
+            style={styles.primaryFooterButton}
+          >
+            <Text style={styles.primaryFooterButtonText}>この内容で打診へ →</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {popupTarget ? (
+        <WishPopup
+          target={popupTarget}
+          highlightedItemId={highlightedItem.id}
+          selectedIds={selection[popupTarget.listingId] ?? []}
+          onToggleCandidate={(id) => toggleCandidate(popupTarget.listingId, id)}
+          onClose={() => setPopupTarget(null)}
+        />
+      ) : null}
+    </View>
+  );
+
+  function toggleCandidate(listingId: string, candidateId: string) {
+    setSelection((current) => {
+      const ids = current[listingId] ?? [];
+      const nextIds = ids.includes(candidateId)
+        ? ids.filter((id) => id !== candidateId)
+        : [...ids, candidateId];
+      const next = { ...current };
+      if (nextIds.length === 0) delete next[listingId];
+      else next[listingId] = nextIds;
+      return next;
+    });
+  }
+
+  function toggleHave(listingId: string, haveId: string) {
+    setHaveSelection((current) => {
+      const ids = current[listingId] ?? [];
+      const nextIds = ids.includes(haveId)
+        ? ids.filter((id) => id !== haveId)
+        : [...ids, haveId];
+      return { ...current, [listingId]: nextIds };
+    });
+  }
+}
+
+function ListingTree({
+  listing,
+  index,
+  viewpoint,
+  highlightedItemId,
+  selection,
+  haveSelection,
+  onToggleCandidate,
+  onToggleHave,
+  onOpenPopup,
+}: {
+  listing: ListingInfo;
+  index: number;
+  viewpoint: "mine" | "partner";
+  highlightedItemId: string;
+  selection: Selection;
+  haveSelection: HaveSelection;
+  onToggleCandidate: (listingId: string, candidateId: string) => void;
+  onToggleHave: (listingId: string, haveId: string) => void;
+  onOpenPopup: (target: PopupTarget) => void;
+}) {
+  const fallbackHave = listing.haves[0]?.item ?? BASE_ITEMS.myHave;
+  const optionCount = listing.options.filter((option) => !option.isCashOffer).length;
+  const cashOption = listing.options.find((option) => option.isCashOffer);
+
+  return (
+    <View style={styles.listingTree}>
+      <View style={styles.listingHeader}>
+        <View style={styles.listingHeaderText}>
+          <Text style={styles.listingTitle}>個別募集{index + 1}</Text>
+          <Text style={styles.listingOptionCount}>（選択肢 {optionCount} 件）</Text>
+        </View>
+        {cashOption ? (
+          <View style={styles.cashPill}>
+            <Text style={styles.cashPillText}>
+              ¥{cashOption.cashAmount?.toLocaleString() ?? "—"} も可
+            </Text>
           </View>
         ) : null}
       </View>
 
-      <View style={styles.diagram}>
-        <CandidateColumn title="相手の譲" items={receiveVisible} selectedId="receive-1" />
-        <View style={styles.linkColumn}>
-          <View style={styles.linkDot} />
-          <View style={styles.linkLine} />
-          <Text style={styles.linkText}>結ばれる候補</Text>
-          <View style={styles.linkLine} />
-          <View style={styles.linkDotAlt} />
+      <View style={styles.treeBody}>
+        <View style={styles.treeSideLeft}>
+          <OwnerLabel
+            color={ihubColors.pink}
+            name={`@${PARTNER_HANDLE} が譲るもの`}
+            avatarName={PARTNER_HANDLE}
+          />
+          {viewpoint === "mine" ? (
+            <OptionList
+              listing={listing}
+              viewpoint={viewpoint}
+              fallbackHave={fallbackHave}
+              highlightedItemId={highlightedItemId}
+              selection={selection}
+              onOpenPopup={onOpenPopup}
+            />
+          ) : (
+            <HaveList
+              listing={listing}
+              highlightedItemId={highlightedItemId}
+              selectedIds={haveSelection[listing.listingId] ?? []}
+              onToggleHave={onToggleHave}
+            />
+          )}
         </View>
-        <CandidateColumn title="私が出す" items={giveVisible} />
+
+        <View style={styles.treeSideRight}>
+          <OwnerLabel
+            color={ihubColors.lavender}
+            name="あなた が譲るもの"
+            avatarName={MY_AVATAR}
+            right
+          />
+          {viewpoint === "mine" ? (
+            <HaveList
+              listing={listing}
+              highlightedItemId={highlightedItemId}
+              selectedIds={haveSelection[listing.listingId] ?? []}
+              onToggleHave={onToggleHave}
+            />
+          ) : (
+            <OptionList
+              listing={listing}
+              viewpoint={viewpoint}
+              fallbackHave={fallbackHave}
+              highlightedItemId={highlightedItemId}
+              selection={selection}
+              onOpenPopup={onOpenPopup}
+            />
+          )}
+        </View>
       </View>
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setShowUnavailable((current) => !current)}
-        style={styles.unavailableButton}
-      >
-        <Text style={styles.unavailablePlus}>
-          {showUnavailable ? "−" : "+"}
-        </Text>
-        <Text style={styles.unavailableText}>
-          交換できなさそうな候補を{showUnavailable ? "隠す" : "見る"}
-        </Text>
-      </Pressable>
-
-      <PrimaryButton
-        onPress={() =>
-          router.push({
-            pathname: "/proposal-select",
-            params: { tab: "meetup" },
-          })
-        }
-      >
-        提示物の選択へ進む
-      </PrimaryButton>
-    </Screen>
+    </View>
   );
 }
 
-function CandidateColumn({
-  title,
-  items,
-  selectedId,
+function OptionList({
+  listing,
+  viewpoint,
+  fallbackHave,
+  highlightedItemId,
+  selection,
+  onOpenPopup,
 }: {
-  title: string;
-  items: MiniCandidate[];
-  selectedId?: string;
+  listing: ListingInfo;
+  viewpoint: "mine" | "partner";
+  fallbackHave: MiniItem;
+  highlightedItemId: string;
+  selection: Selection;
+  onOpenPopup: (target: PopupTarget) => void;
 }) {
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const validOptions = listing.options.filter((option) => !option.isCashOffer);
+  const matchingOptions = validOptions
+    .filter((option) => option.wishes.some((wish) => wish.candidates.length > 0))
+    .sort((a, b) => {
+      if (a.matched !== b.matched) return Number(b.matched) - Number(a.matched);
+      return a.position - b.position;
+    });
+  const unavailableGroups = validOptions
+    .map((option) => ({
+      option,
+      wishes: option.wishes.filter((wish) => wish.candidates.length === 0),
+    }))
+    .filter((group) => group.wishes.length > 0);
+  const unavailableTotal = unavailableGroups.reduce(
+    (sum, group) => sum + group.wishes.length,
+    0,
+  );
+
   return (
-    <View style={styles.candidateColumn}>
-      <Text style={styles.columnTitle}>{title}</Text>
-      <View style={styles.candidateList}>
-        {items.map((item) => (
+    <View style={styles.optionList}>
+      {matchingOptions.map((option) => (
+        <OptionGroup
+          key={option.id}
+          option={option}
+          listing={listing}
+          viewpoint={viewpoint}
+          fallbackHave={fallbackHave}
+          highlightedItemId={highlightedItemId}
+          selectedIds={selection[listing.listingId] ?? []}
+          onOpenPopup={onOpenPopup}
+        />
+      ))}
+      {unavailableTotal > 0 ? (
+        <View style={styles.unavailableArchive}>
+          <Pressable
+            onPress={() => setArchiveOpen((current) => !current)}
+            style={styles.unavailableArchiveButton}
+          >
+            <Text style={styles.unavailableArchiveText}>
+              {archiveOpen ? "− 閉じる" : `＋ 条件外の選択肢 ${unavailableTotal} 件`}
+            </Text>
+          </Pressable>
+          {archiveOpen ? (
+            <View style={styles.unavailableArchiveBody}>
+              {unavailableGroups.map(({ option, wishes }) => (
+                <View key={option.id} style={styles.unavailableGroup}>
+                  <Text style={styles.unavailableGroupTitle}>
+                    #{option.position}
+                    {option.logic === "and" && wishes.length > 1 ? " セット" : ""}
+                    {option.logic === "or" && wishes.length > 1 ? " いずれか" : ""}
+                  </Text>
+                  {wishes.map((wish) => (
+                    <UnavailableWishRow
+                      key={`${option.id}-${wish.item.id}`}
+                      wish={wish}
+                      exchangeType={option.exchangeType}
+                      fallbackHave={fallbackHave}
+                    />
+                  ))}
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function OptionGroup({
+  option,
+  listing,
+  viewpoint,
+  fallbackHave,
+  highlightedItemId,
+  selectedIds,
+  onOpenPopup,
+}: {
+  option: ListingOption;
+  listing: ListingInfo;
+  viewpoint: "mine" | "partner";
+  fallbackHave: MiniItem;
+  highlightedItemId: string;
+  selectedIds: string[];
+  onOpenPopup: (target: PopupTarget) => void;
+}) {
+  const visibleWishes = option.wishes.filter((wish) => wish.candidates.length > 0);
+  const isAndGroup = option.logic === "and" && option.wishes.length > 1;
+  const isOrGroup = option.logic === "or" && option.wishes.length > 1;
+  if (visibleWishes.length === 0) return null;
+
+  return (
+    <View
+      style={[
+        styles.optionGroup,
+        isAndGroup ? styles.optionGroupAnd : null,
+        isOrGroup ? styles.optionGroupOr : null,
+      ]}
+    >
+      {isAndGroup || isOrGroup ? (
+        <View style={styles.optionGroupHeader}>
           <View
-            key={item.id}
             style={[
-              styles.smallItem,
-              !item.available ? styles.smallItemDisabled : null,
-              selectedId === item.id ? styles.smallItemSelected : null,
+              styles.optionGroupBadge,
+              isAndGroup ? styles.optionGroupBadgeAnd : styles.optionGroupBadgeOr,
             ]}
           >
-            <View style={[styles.smallImage, { backgroundColor: item.hue }]}>
-              <Text style={styles.smallGlyph}>{item.glyph}</Text>
-            </View>
-            <Text numberOfLines={1} style={styles.smallLabel}>
-              {item.label}
+            <Text
+              style={[
+                styles.optionGroupBadgeText,
+                isAndGroup
+                  ? styles.optionGroupBadgeTextAnd
+                  : styles.optionGroupBadgeTextOr,
+              ]}
+            >
+              #{option.position} {isAndGroup ? "セット (AND)" : "いずれか (OR)"}
             </Text>
           </View>
+          <Text style={styles.optionGroupSub}>
+            {isAndGroup ? "全部一緒に" : "どれか 1 つで OK"}
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.optionWishes}>
+        {visibleWishes.map((wish) => (
+          <WishRow
+            key={wish.item.id}
+            wish={wish}
+            exchangeType={option.exchangeType}
+            fallbackHave={fallbackHave}
+            highlightedItemId={highlightedItemId}
+            selectedIds={selectedIds}
+            onOpen={() =>
+              onOpenPopup({
+                listingId: listing.listingId,
+                viewpoint,
+                wishItem: wish.item,
+                wishQty: wish.qty,
+                candidates: wish.candidates,
+                exchangeType: option.exchangeType,
+                fallbackHave,
+              })
+            }
+          />
         ))}
       </View>
     </View>
   );
 }
 
-function one(value?: string | string[]) {
-  if (Array.isArray(value)) {
-    return value[0];
+function WishRow({
+  wish,
+  exchangeType,
+  fallbackHave,
+  highlightedItemId,
+  selectedIds,
+  onOpen,
+}: {
+  wish: ListingWish;
+  exchangeType: ExchangeType;
+  fallbackHave: MiniItem;
+  highlightedItemId: string;
+  selectedIds: string[];
+  onOpen: () => void;
+}) {
+  const selectedCandidates = wish.candidates.filter((candidate) =>
+    selectedIds.includes(candidate.item.id),
+  );
+
+  return (
+    <View style={styles.wishRow}>
+      <Pressable onPress={onOpen} style={styles.wishButton}>
+        <View style={styles.wishPhotoWrap}>
+          <ItemPhoto item={wish.item} qty={1} size={42} variant="wish" />
+          <View style={[styles.exchangeChipSmall, exchangeChipStyle(exchangeType)]}>
+            <Text style={styles.exchangeChipSmallText}>
+              {exchangeLabel(exchangeType)}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.wishText}>
+          <View style={styles.wishTitleLine}>
+            <Text style={styles.wishTargetIcon}>🎯</Text>
+            <Text numberOfLines={1} style={styles.wishTitle}>
+              {wish.item.label}
+            </Text>
+            <Text style={styles.wishQty}>×{wish.qty}</Text>
+          </View>
+          <Text style={styles.wishMeta}>候補 {wish.candidates.length} 件</Text>
+        </View>
+        <Text style={styles.chevron}>›</Text>
+      </Pressable>
+
+      {selectedCandidates.length > 0 ? (
+        <View style={styles.selectedCandidates}>
+          <Text style={styles.selectedCandidatesLabel}>選択中：</Text>
+          <View style={styles.selectedCandidateStrip}>
+            {selectedCandidates.map((candidate) => (
+              <ItemPhoto
+                key={candidate.item.id}
+                item={candidate.item}
+                qty={1}
+                size={38}
+                variant="candidate"
+                highlighted={candidate.item.id === highlightedItemId}
+              />
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function HaveList({
+  listing,
+  highlightedItemId,
+  selectedIds,
+  onToggleHave,
+}: {
+  listing: ListingInfo;
+  highlightedItemId: string;
+  selectedIds: string[];
+  onToggleHave: (listingId: string, haveId: string) => void;
+}) {
+  const [showUnavailable, setShowUnavailable] = useState(false);
+  const interactive = listing.haveLogic === "or" && listing.haves.length >= 2;
+  const visibleHaves = listing.haves.filter(
+    (have) =>
+      showUnavailable || have.matched || have.item.id === highlightedItemId,
+  );
+  const hiddenUnavailableCount = listing.haves.length - visibleHaves.length;
+
+  return (
+    <View style={styles.haveList}>
+      {visibleHaves.map((have) => {
+        const selected = selectedIds.includes(have.item.id);
+        const highlighted = have.item.id === highlightedItemId;
+        if (!interactive) {
+          return (
+            <ItemPhoto
+              key={have.item.id}
+              item={have.item}
+              qty={have.qty}
+              size={56}
+              variant="have"
+              dim={!have.matched}
+              highlighted={highlighted}
+            />
+          );
+        }
+
+        return (
+          <Pressable
+            key={have.item.id}
+            onPress={() => onToggleHave(listing.listingId, have.item.id)}
+            style={[
+              styles.haveSelectable,
+              selected ? styles.haveSelectableOn : styles.haveSelectableOff,
+            ]}
+          >
+            <ItemPhoto
+              item={have.item}
+              qty={have.qty}
+              size={56}
+              variant="have"
+              highlighted={highlighted}
+            />
+            {selected ? (
+              <View style={styles.selectedBadge}>
+                <Text style={styles.selectedBadgeText}>✓</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        );
+      })}
+      {hiddenUnavailableCount > 0 ? (
+        <Pressable
+          onPress={() => setShowUnavailable(true)}
+          style={styles.hiddenButton}
+        >
+          <Text style={styles.hiddenButtonText}>
+            ＋ 交換できない候補 {hiddenUnavailableCount} 件
+          </Text>
+        </Pressable>
+      ) : null}
+      {showUnavailable && hiddenUnavailableCount === 0 ? (
+        <Pressable
+          onPress={() => setShowUnavailable(false)}
+          style={styles.hiddenButton}
+        >
+          <Text style={styles.hiddenButtonMuted}>閉じる</Text>
+        </Pressable>
+      ) : null}
+      {listing.haves.length > 1 ? (
+        <View
+          style={[
+            styles.logicPill,
+            listing.haveLogic === "and" ? styles.logicPillAnd : styles.logicPillOr,
+          ]}
+        >
+          <Text
+            style={[
+              styles.logicPillText,
+              listing.haveLogic === "and"
+                ? styles.logicPillTextAnd
+                : styles.logicPillTextOr,
+            ]}
+          >
+            {listing.haveLogic === "and" ? "全部 AND" : "いずれか OR ─ 選択可"}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function SimpleRelationPanel({
+  receivesItems,
+  givesItems,
+  highlightedItemId,
+}: {
+  receivesItems: MiniItem[];
+  givesItems: MiniItem[];
+  highlightedItemId: string;
+}) {
+  return (
+    <View style={styles.simplePanel}>
+      <View style={styles.simpleHeader}>
+        <Text style={styles.simpleHeaderTitle}>譲 × wish の関係</Text>
+        <Text style={styles.simpleHeaderSub}>
+          個別募集なしで、お互いの登録内容が重なっています
+        </Text>
+      </View>
+      <View style={styles.simpleBody}>
+        <View style={[styles.simpleSide, styles.simpleReceive]}>
+          <Text style={styles.simpleReceiveTitle}>あなたが受け取る</Text>
+          <Text style={styles.simpleMeta}>@{PARTNER_HANDLE} の譲</Text>
+          <ThumbStrip items={receivesItems} highlightedItemId={highlightedItemId} />
+        </View>
+        <View style={styles.simpleSwap}>
+          <Text style={styles.simpleSwapText}>⇄</Text>
+        </View>
+        <View style={[styles.simpleSide, styles.simpleGive]}>
+          <Text style={styles.simpleGiveTitle}>あなたが譲る</Text>
+          <Text style={styles.simpleMeta}>相手の wish に一致</Text>
+          <ThumbStrip items={givesItems} highlightedItemId={highlightedItemId} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function GlobalSummary({
+  receivesItems,
+  givesItems,
+  highlightedItemId,
+}: {
+  receivesItems: MiniItem[];
+  givesItems: MiniItem[];
+  highlightedItemId: string;
+}) {
+  return (
+    <View style={styles.summary}>
+      <Text style={styles.summaryTitle}>📋 結論：この交換</Text>
+      <View style={styles.summaryLine}>
+        <View style={styles.summarySide}>
+          <Text style={[styles.summaryBadge, styles.summaryReceiveBadge]}>あなたが受</Text>
+          <ThumbStrip items={receivesItems} highlightedItemId={highlightedItemId} />
+        </View>
+        <Text style={styles.summarySwap}>⇄</Text>
+        <View style={styles.summarySide}>
+          <Text style={[styles.summaryBadge, styles.summaryGiveBadge]}>あなたが譲</Text>
+          <ThumbStrip items={givesItems} highlightedItemId={highlightedItemId} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function WishPopup({
+  target,
+  highlightedItemId,
+  selectedIds,
+  onToggleCandidate,
+  onClose,
+}: {
+  target: PopupTarget;
+  highlightedItemId: string;
+  selectedIds: string[];
+  onToggleCandidate: (candidateId: string) => void;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const candidateOwner =
+    target.viewpoint === "mine" ? `@${PARTNER_HANDLE}` : "あなた";
+  const candidateColor =
+    target.viewpoint === "mine" ? ihubColors.pink : ihubColors.lavender;
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.popupBackdrop} onPress={onClose}>
+        <Pressable
+          style={[
+            styles.popupPanel,
+            { paddingBottom: Math.max(insets.bottom, 12) + 10 },
+          ]}
+        >
+          <View style={styles.popupHeader}>
+            <Text style={styles.popupTargetIcon}>🎯</Text>
+            <View style={styles.popupHeaderCopy}>
+              <Text numberOfLines={1} style={styles.popupTitle}>
+                {target.wishItem.label}
+              </Text>
+              <Text style={styles.popupSub}>
+                wish ×{target.wishQty}・{target.candidates.length} 件の候補
+              </Text>
+            </View>
+            <Pressable onPress={onClose} style={styles.popupClose}>
+              <Text style={styles.popupCloseText}>×</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.popupBody}>
+            <View style={styles.popupWishSide}>
+              <ItemPhoto item={target.wishItem} qty={target.wishQty} size={104} variant="wish" />
+              <View style={[styles.exchangeChip, exchangeChipStyle(target.exchangeType)]}>
+                <Text style={styles.exchangeChipText}>
+                  {exchangeLabel(target.exchangeType)}
+                </Text>
+              </View>
+              <Text numberOfLines={1} style={styles.popupFallback}>
+                ↑ あなたの譲：{target.fallbackHave.label}
+              </Text>
+            </View>
+
+            <View style={styles.popupCandidates}>
+              <View style={styles.popupOwnerLine}>
+                <MiniAvatar name={candidateOwner} color={candidateColor} />
+                <Text style={[styles.popupOwnerText, { color: candidateColor }]}>
+                  {candidateOwner} が譲るもの
+                </Text>
+                <Text style={styles.popupTapHint}>（タップで選択）</Text>
+              </View>
+              <View style={styles.candidateGrid}>
+                {target.candidates.map((candidate) => {
+                  const selected = selectedIds.includes(candidate.item.id);
+                  const highlighted = candidate.item.id === highlightedItemId;
+                  return (
+                    <Pressable
+                      key={candidate.item.id}
+                      onPress={() => onToggleCandidate(candidate.item.id)}
+                      style={[
+                        styles.candidateButton,
+                        selected ? styles.candidateButtonSelected : null,
+                        highlighted ? styles.candidateButtonHighlighted : null,
+                      ]}
+                    >
+                      <ItemPhoto
+                        item={candidate.item}
+                        qty={candidate.qty}
+                        size={56}
+                        variant="candidate"
+                        highlighted={highlighted}
+                      />
+                      <Text numberOfLines={1} style={styles.candidateLabel}>
+                        {candidate.item.label}
+                      </Text>
+                      {highlighted ? (
+                        <View style={styles.sourceBadge}>
+                          <Text style={styles.sourceBadgeText}>選択元</Text>
+                        </View>
+                      ) : null}
+                      {selected ? (
+                        <View style={styles.candidateCheck}>
+                          <Text style={styles.candidateCheckText}>✓</Text>
+                        </View>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+
+          <Pressable onPress={onClose} style={styles.popupReturnButton}>
+            <Text style={styles.popupReturnButtonText}>戻る</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function SectionGroup({
+  title,
+  subtitle,
+  accentColor,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  accentColor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <View style={[styles.sectionHeader, { backgroundColor: alpha(accentColor, 0.08) }]}>
+        <Text style={[styles.sectionTitle, { color: accentColor }]}>{title}</Text>
+        <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function OwnerLabel({
+  color,
+  name,
+  avatarName,
+  right,
+}: {
+  color: string;
+  name: string;
+  avatarName: string;
+  right?: boolean;
+}) {
+  return (
+    <View style={[styles.ownerLabel, right ? styles.ownerLabelRight : null]}>
+      <MiniAvatar name={avatarName} color={color} />
+      <Text numberOfLines={1} style={[styles.ownerLabelText, { color }]}>
+        {name}
+      </Text>
+    </View>
+  );
+}
+
+function MiniAvatar({ name, color }: { name: string; color: string }) {
+  return (
+    <View style={[styles.miniAvatar, { backgroundColor: color }]}>
+      <Text style={styles.miniAvatarText}>
+        {name.replace(/^@/, "").slice(0, 1).toUpperCase()}
+      </Text>
+    </View>
+  );
+}
+
+function ItemPhoto({
+  item,
+  qty,
+  size,
+  variant,
+  dim,
+  highlighted,
+}: {
+  item: MiniItem;
+  qty: number;
+  size: number;
+  variant: "have" | "candidate" | "wish";
+  dim?: boolean;
+  highlighted?: boolean;
+}) {
+  return (
+    <View
+      style={[
+        styles.itemPhoto,
+        {
+          width: size,
+          height: size,
+          borderColor: variant === "have" ? ihubColors.sky : ihubColors.pink,
+          backgroundColor: item.color,
+          opacity: dim ? 0.48 : 1,
+        },
+        highlighted ? styles.itemPhotoHighlighted : null,
+      ]}
+    >
+      <View style={styles.itemPhotoShine} />
+      <Text style={[styles.itemPhotoGlyph, { fontSize: Math.max(14, size * 0.34) }]}>
+        {item.glyph}
+      </Text>
+      {qty > 1 ? (
+        <View style={styles.qtyBadge}>
+          <Text style={styles.qtyBadgeText}>×{qty}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function ThumbStrip({
+  items,
+  highlightedItemId,
+}: {
+  items: MiniItem[];
+  highlightedItemId: string;
+}) {
+  if (items.length === 0) {
+    return <Text style={styles.thumbEmpty}>未選択</Text>;
   }
-  return value;
+
+  return (
+    <View style={styles.thumbStrip}>
+      {items.slice(0, 6).map((item) => (
+        <ItemPhoto
+          key={item.id}
+          item={item}
+          qty={1}
+          size={26}
+          variant="candidate"
+          highlighted={item.id === highlightedItemId}
+        />
+      ))}
+      {items.length > 6 ? (
+        <Text style={styles.thumbOverflow}>+{items.length - 6}</Text>
+      ) : null}
+    </View>
+  );
 }
 
-function priorityLabel(priority: Priority) {
-  if (priority === "both") return "双方条件";
-  if (priority === "oneSide") return "一方条件";
-  return "Wish一致";
+function UnavailableWishRow({
+  wish,
+  exchangeType,
+  fallbackHave,
+}: {
+  wish: ListingWish;
+  exchangeType: ExchangeType;
+  fallbackHave: MiniItem;
+}) {
+  return (
+    <View style={styles.unavailableWishRow}>
+      <View style={styles.wishPhotoWrap}>
+        <ItemPhoto item={wish.item} qty={1} size={38} variant="wish" dim />
+        <View style={[styles.exchangeChipSmall, exchangeChipStyle(exchangeType)]}>
+          <Text style={styles.exchangeChipSmallText}>{exchangeLabel(exchangeType)}</Text>
+        </View>
+      </View>
+      <View style={styles.unavailableWishText}>
+        <Text numberOfLines={1} style={styles.unavailableWishTitle}>
+          {wish.item.label} ×{wish.qty}
+        </Text>
+        <Text numberOfLines={1} style={styles.unavailableWishMeta}>
+          条件に合う候補なし / 参考: {fallbackHave.label}
+        </Text>
+      </View>
+    </View>
+  );
 }
 
-function priorityTone(priority: Priority) {
-  if (priority === "both") return "lavender" as const;
-  if (priority === "oneSide") return "sky" as const;
-  return "pink" as const;
+function buildDetailData(highlightedItem: MiniItem, listingKind: ListingKind) {
+  const selected = highlightedItem;
+  const myListing: ListingInfo = {
+    listingId: "my-listing-1",
+    haveLogic: "or",
+    isMyListing: true,
+    haves: [
+      { item: BASE_ITEMS.myHave, qty: 1, matched: true },
+      { item: BASE_ITEMS.myHave2, qty: 1, matched: true },
+      { item: BASE_ITEMS.myHaveBad, qty: 1, matched: false },
+    ],
+    options: [
+      {
+        id: "my-opt-1",
+        position: 1,
+        logic: "and",
+        exchangeType: "any",
+        matched: true,
+        wishes: [
+          {
+            item: { ...selected, id: "wish-mine-1" },
+            qty: 1,
+            candidates: [
+              { item: selected, qty: 1 },
+              { item: BASE_ITEMS.selectedAlt, qty: 1 },
+            ],
+          },
+          {
+            item: BASE_ITEMS.wishMine2,
+            qty: 1,
+            candidates: [{ item: BASE_ITEMS.partnerHave, qty: 1 }],
+          },
+        ],
+      },
+      {
+        id: "my-opt-2",
+        position: 2,
+        logic: "or",
+        exchangeType: "same_kind",
+        matched: false,
+        wishes: [
+          {
+            item: BASE_ITEMS.partnerHave2,
+            qty: 1,
+            candidates: [],
+          },
+        ],
+      },
+    ],
+  };
+  const partnerListing: ListingInfo = {
+    listingId: "partner-listing-1",
+    haveLogic: "and",
+    isMyListing: false,
+    haves: [
+      { item: selected, qty: 1, matched: true },
+      { item: BASE_ITEMS.partnerHave, qty: 1, matched: true },
+    ],
+    options: [
+      {
+        id: "partner-opt-1",
+        position: 1,
+        logic: "or",
+        exchangeType: "cross_kind",
+        matched: true,
+        wishes: [
+          {
+            item: BASE_ITEMS.wishPartner,
+            qty: 1,
+            candidates: [
+              { item: BASE_ITEMS.myHave, qty: 1 },
+              { item: BASE_ITEMS.myHave2, qty: 1 },
+            ],
+          },
+        ],
+      },
+      {
+        id: "partner-opt-cash",
+        position: 2,
+        logic: "or",
+        exchangeType: "any",
+        matched: false,
+        isCashOffer: true,
+        cashAmount: 800,
+        wishes: [],
+      },
+    ],
+  };
+
+  return {
+    myListings:
+      listingKind === "both" || listingKind === "mine" ? [myListing] : [],
+    partnerListings:
+      listingKind === "both" || listingKind === "partner" ? [partnerListing] : [],
+    simpleReceives:
+      listingKind === "simple" ? [selected, BASE_ITEMS.partnerHave] : [],
+    simpleGives:
+      listingKind === "simple" ? [BASE_ITEMS.myHave, BASE_ITEMS.myHave2] : [],
+  };
+}
+
+function initialSelection(listings: ListingInfo[], highlightedItemId: string): Selection {
+  const selection: Selection = {};
+  for (const listing of listings) {
+    for (const option of listing.options) {
+      for (const wish of option.wishes) {
+        if (wish.candidates.some((candidate) => candidate.item.id === highlightedItemId)) {
+          selection[listing.listingId] = [
+            ...(selection[listing.listingId] ?? []),
+            highlightedItemId,
+          ];
+        }
+      }
+    }
+  }
+  return selection;
+}
+
+function initialHaveSelection(listings: ListingInfo[], highlightedItemId: string): HaveSelection {
+  const selection: HaveSelection = {};
+  for (const listing of listings) {
+    if (listing.haveLogic !== "or" || listing.haves.length < 2) continue;
+    const highlighted = listing.haves.find((have) => have.item.id === highlightedItemId);
+    const first = highlighted ?? listing.haves.find((have) => have.matched) ?? listing.haves[0];
+    if (first) selection[listing.listingId] = [first.item.id];
+  }
+  return selection;
+}
+
+function aggregateSelection({
+  myListings,
+  partnerListings,
+  selection,
+  haveSelection,
+}: {
+  myListings: ListingInfo[];
+  partnerListings: ListingInfo[];
+  selection: Selection;
+  haveSelection: HaveSelection;
+}) {
+  const listings = [...myListings, ...partnerListings];
+  const byId = new Map(listings.map((listing) => [listing.listingId, listing] as const));
+  const candidateById = new Map<string, MiniItem>();
+  for (const listing of listings) {
+    for (const option of listing.options) {
+      for (const wish of option.wishes) {
+        for (const candidate of wish.candidates) {
+          candidateById.set(candidate.item.id, candidate.item);
+        }
+      }
+    }
+  }
+  const givesItems: MiniItem[] = [];
+  const receivesItems: MiniItem[] = [];
+  const giveIds = new Set<string>();
+  const receiveIds = new Set<string>();
+  const add = (items: MiniItem[], ids: Set<string>, item: MiniItem) => {
+    if (ids.has(item.id)) return;
+    ids.add(item.id);
+    items.push(item);
+  };
+
+  for (const [listingId, candidateIds] of Object.entries(selection)) {
+    const listing = byId.get(listingId);
+    if (!listing) continue;
+    const haves =
+      listing.haveLogic === "or" && listing.haves.length >= 2
+        ? listing.haves.filter((have) =>
+            (haveSelection[listingId] ?? []).includes(have.item.id),
+          )
+        : listing.haves;
+
+    if (listing.isMyListing) {
+      for (const have of haves) add(givesItems, giveIds, have.item);
+      for (const candidateId of candidateIds) {
+        const item = candidateById.get(candidateId);
+        if (item) add(receivesItems, receiveIds, item);
+      }
+    } else {
+      for (const candidateId of candidateIds) {
+        const item = candidateById.get(candidateId);
+        if (item) add(givesItems, giveIds, item);
+      }
+      for (const have of haves) add(receivesItems, receiveIds, have.item);
+    }
+  }
+
+  return { givesItems, receivesItems };
+}
+
+function inferListingKind(priority: Priority, tag?: string): ListingKind {
+  if (priority === "wish") return "simple";
+  if (priority === "both") return "both";
+  if (tag?.includes("相手")) return "partner";
+  return "mine";
+}
+
+function parsePriority(value?: string): Priority {
+  if (value === "both" || value === "oneSide" || value === "wish") return value;
+  return "wish";
+}
+
+function one(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function priorityFrame(priority: Priority) {
   if (priority === "both") {
     return {
-      borderColor: "rgba(166,149,216,0.72)",
+      borderColor: ihubColors.lavender,
       shadowColor: ihubColors.lavender,
       shadowOpacity: 0.32,
-      shadowRadius: 22,
+      shadowRadius: 16,
     };
   }
-
   if (priority === "oneSide") {
     return {
-      borderColor: "rgba(168,212,230,0.76)",
+      borderColor: ihubColors.sky,
       shadowColor: ihubColors.sky,
       shadowOpacity: 0.24,
-      shadowRadius: 18,
+      shadowRadius: 12,
     };
   }
-
   return {
-    borderColor: "rgba(58,50,74,0.12)",
+    borderColor: "rgba(58,50,74,0.14)",
     shadowColor: ihubColors.ink,
-    shadowOpacity: 0.10,
-    shadowRadius: 14,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
   };
 }
 
+function exchangeLabel(type: ExchangeType) {
+  if (type === "same_kind") return "同種";
+  if (type === "cross_kind") return "異種";
+  return "同異種";
+}
+
+function exchangeChipStyle(type: ExchangeType) {
+  if (type === "same_kind") return { backgroundColor: "#5fa884" };
+  if (type === "cross_kind") return { backgroundColor: "#d9826b" };
+  return { backgroundColor: ihubColors.lavender };
+}
+
+function alpha(hex: string, opacity: number) {
+  const sanitized = hex.replace("#", "");
+  const r = parseInt(sanitized.slice(0, 2), 16);
+  const g = parseInt(sanitized.slice(2, 4), 16);
+  const b = parseInt(sanitized.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${opacity})`;
+}
+
 const styles = StyleSheet.create({
-  screen: {
-    gap: 15,
+  root: {
+    backgroundColor: ihubColors.background,
+    flex: 1,
   },
   header: {
     alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderBottomColor: "rgba(58,50,74,0.08)",
+    borderBottomWidth: 1,
     flexDirection: "row",
-    justifyContent: "space-between",
+    gap: 12,
+    paddingBottom: 12,
+    paddingHorizontal: 18,
   },
-  backButton: {
+  closeButton: {
     alignItems: "center",
     backgroundColor: ihubColors.surface,
     borderColor: "rgba(58,50,74,0.08)",
     borderRadius: ihubRadii.pill,
     borderWidth: 1,
-    height: 44,
+    height: 36,
     justifyContent: "center",
-    width: 44,
-    ...ihubShadow,
+    width: 36,
   },
-  backText: {
+  closeText: {
+    color: "rgba(58,50,74,0.55)",
+    fontSize: 21,
+    fontWeight: "900",
+    lineHeight: 24,
+  },
+  headerCopy: {
+    flex: 1,
+  },
+  headerTitle: {
     color: ihubColors.ink,
-    fontSize: 32,
-    fontWeight: "700",
-    lineHeight: 34,
-  },
-  hero: {
-    alignItems: "center",
-    backgroundColor: ihubColors.surface,
-    borderColor: "rgba(58,50,74,0.08)",
-    borderRadius: 28,
-    borderWidth: 1,
-    overflow: "hidden",
-    padding: 18,
-    ...ihubShadow,
-  },
-  liveAura: {
-    backgroundColor: "rgba(166,149,216,0.18)",
-    borderRadius: 999,
-    height: 210,
-    position: "absolute",
-    top: -74,
-    width: 210,
-  },
-  selectedTile: {
-    backgroundColor: ihubColors.surface,
-    borderRadius: 24,
-    borderWidth: 2,
-    padding: 7,
-    shadowOffset: { width: 0, height: 14 },
-  },
-  selectedImage: {
-    alignItems: "center",
-    borderRadius: 19,
-    height: 118,
-    justifyContent: "center",
-    overflow: "hidden",
-    width: 104,
-  },
-  selectedGlow: {
-    backgroundColor: "rgba(255,255,255,0.25)",
-    borderRadius: 999,
-    height: 82,
-    position: "absolute",
-    right: -18,
-    top: -14,
-    width: 82,
-  },
-  selectedGlyph: {
-    color: ihubColors.surface,
-    fontSize: 44,
+    fontSize: 15,
     fontWeight: "900",
   },
-  title: {
-    color: ihubColors.ink,
-    fontSize: 23,
-    fontWeight: "900",
-    marginTop: 14,
-    textAlign: "center",
-  },
-  subtitle: {
+  headerSubtitle: {
     color: ihubColors.mutedInk,
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 18,
-    marginTop: 5,
-    textAlign: "center",
+    fontSize: 11,
+    marginTop: 2,
   },
-  localBadge: {
-    backgroundColor: "rgba(166,149,216,0.14)",
+  content: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+  },
+  contextCard: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 11,
+    marginBottom: 12,
+    padding: 10,
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+  },
+  contextThumb: {
+    borderRadius: 12,
+    borderWidth: 2,
+    padding: 3,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  contextText: {
+    flex: 1,
+  },
+  contextTitle: {
+    color: ihubColors.ink,
+    fontSize: 13.5,
+    fontWeight: "900",
+  },
+  contextSubtitle: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  livePill: {
+    backgroundColor: "rgba(166,149,216,0.16)",
     borderRadius: ihubRadii.pill,
-    marginTop: 10,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  localBadgeText: {
+  livePillText: {
     color: ihubColors.lavender,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  section: {
+    marginBottom: 16,
+  },
+  sectionHeader: {
+    borderRadius: 10,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+  },
+  sectionSubtitle: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  listingTree: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+    overflow: "hidden",
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+  },
+  listingHeader: {
+    alignItems: "center",
+    backgroundColor: ihubColors.background,
+    borderBottomColor: "rgba(58,50,74,0.04)",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  listingHeaderText: {
+    alignItems: "baseline",
+    flex: 1,
+    flexDirection: "row",
+  },
+  listingTitle: {
+    color: ihubColors.ink,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+  listingOptionCount: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+  },
+  cashPill: {
+    backgroundColor: "rgba(122,154,138,0.08)",
+    borderColor: "rgba(122,154,138,0.34)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  cashPillText: {
+    color: "#7a9a8a",
+    fontSize: 9.5,
+    fontWeight: "800",
+  },
+  treeBody: {
+    flexDirection: "row",
+  },
+  treeSideLeft: {
+    borderRightColor: "rgba(58,50,74,0.04)",
+    borderRightWidth: 1,
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  treeSideRight: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  ownerLabel: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    marginBottom: 7,
+  },
+  ownerLabelRight: {
+    justifyContent: "flex-end",
+  },
+  ownerLabelText: {
+    flexShrink: 1,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+  miniAvatar: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 20,
+    justifyContent: "center",
+    width: 20,
+  },
+  miniAvatarText: {
+    color: ihubColors.surface,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  optionList: {
+    gap: 8,
+  },
+  optionGroup: {
+    gap: 6,
+  },
+  optionGroupAnd: {
+    backgroundColor: "rgba(166,149,216,0.03)",
+    borderColor: ihubColors.lavender,
+    borderRadius: 12,
+    borderWidth: 2,
+    padding: 6,
+  },
+  optionGroupOr: {
+    backgroundColor: "rgba(166,149,216,0.02)",
+    borderColor: "rgba(166,149,216,0.34)",
+    borderRadius: 12,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    padding: 6,
+  },
+  optionGroupHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 5,
+  },
+  optionGroupBadge: {
+    borderRadius: ihubRadii.pill,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  optionGroupBadgeAnd: {
+    backgroundColor: ihubColors.lavender,
+  },
+  optionGroupBadgeOr: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(166,149,216,0.34)",
+    borderWidth: 1,
+  },
+  optionGroupBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  optionGroupBadgeTextAnd: {
+    color: ihubColors.surface,
+  },
+  optionGroupBadgeTextOr: {
+    color: ihubColors.lavender,
+  },
+  optionGroupSub: {
+    color: ihubColors.mutedInk,
+    flex: 1,
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  optionWishes: {
+    gap: 6,
+  },
+  wishRow: {
+    backgroundColor: ihubColors.background,
+    borderColor: "rgba(58,50,74,0.04)",
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  wishButton: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 9,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+  wishPhotoWrap: {
+    position: "relative",
+  },
+  wishText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  wishTitleLine: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 3,
+  },
+  wishTargetIcon: {
+    fontSize: 10,
+  },
+  wishTitle: {
+    color: ihubColors.ink,
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: "900",
+  },
+  wishQty: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  wishMeta: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  chevron: {
+    color: ihubColors.lavender,
+    fontSize: 19,
+    fontWeight: "900",
+  },
+  selectedCandidates: {
+    borderTopColor: "rgba(58,50,74,0.04)",
+    borderTopWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  selectedCandidatesLabel: {
+    color: ihubColors.mutedInk,
+    fontSize: 9.5,
+    fontWeight: "800",
+    marginBottom: 5,
+  },
+  selectedCandidateStrip: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  haveList: {
+    alignItems: "center",
+    gap: 8,
+  },
+  haveSelectable: {
+    borderRadius: 10,
+    padding: 2,
+    position: "relative",
+  },
+  haveSelectableOn: {
+    backgroundColor: "rgba(166,149,216,0.06)",
+    borderColor: ihubColors.lavender,
+    borderWidth: 2,
+  },
+  haveSelectableOff: {
+    opacity: 0.5,
+  },
+  selectedBadge: {
+    alignItems: "center",
+    backgroundColor: ihubColors.lavender,
+    borderRadius: 999,
+    height: 16,
+    justifyContent: "center",
+    position: "absolute",
+    right: -3,
+    top: -3,
+    width: 16,
+  },
+  selectedBadgeText: {
+    color: ihubColors.surface,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  hiddenButton: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  hiddenButtonText: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  hiddenButtonMuted: {
+    color: "rgba(58,50,74,0.40)",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  logicPill: {
+    borderRadius: ihubRadii.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
+  logicPillAnd: {
+    backgroundColor: ihubColors.lavender,
+  },
+  logicPillOr: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(166,149,216,0.34)",
+    borderWidth: 1,
+  },
+  logicPillText: {
+    fontSize: 9.5,
+    fontWeight: "900",
+  },
+  logicPillTextAnd: {
+    color: ihubColors.surface,
+  },
+  logicPillTextOr: {
+    color: ihubColors.lavender,
+  },
+  unavailableArchive: {
+    paddingTop: 2,
+  },
+  unavailableArchiveButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.10)",
+    borderRadius: 10,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  unavailableArchiveText: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  unavailableArchiveBody: {
+    backgroundColor: "rgba(58,50,74,0.02)",
+    borderColor: "rgba(58,50,74,0.06)",
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+    marginTop: 8,
+    padding: 8,
+  },
+  unavailableGroup: {
+    gap: 5,
+  },
+  unavailableGroupTitle: {
+    color: "rgba(58,50,74,0.42)",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  unavailableWishRow: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.70)",
+    borderColor: "rgba(58,50,74,0.04)",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    opacity: 0.62,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+  },
+  unavailableWishText: {
+    flex: 1,
+  },
+  unavailableWishTitle: {
+    color: ihubColors.ink,
     fontSize: 11,
     fontWeight: "900",
   },
-  diagram: {
-    alignItems: "stretch",
-    flexDirection: "row",
-    gap: 8,
+  unavailableWishMeta: {
+    color: ihubColors.mutedInk,
+    fontSize: 9.5,
+    marginTop: 2,
   },
-  candidateColumn: {
+  exchangeChipSmall: {
+    borderRadius: ihubRadii.pill,
+    bottom: -4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    position: "absolute",
+    right: -4,
+  },
+  exchangeChipSmallText: {
+    color: ihubColors.surface,
+    fontSize: 8,
+    fontWeight: "900",
+  },
+  simplePanel: {
     backgroundColor: ihubColors.surface,
     borderColor: "rgba(58,50,74,0.08)",
-    borderRadius: ihubRadii.lg,
+    borderRadius: 16,
     borderWidth: 1,
-    flex: 1,
-    padding: 10,
+    overflow: "hidden",
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
   },
-  columnTitle: {
+  simpleHeader: {
+    backgroundColor: ihubColors.background,
+    borderBottomColor: "rgba(58,50,74,0.04)",
+    borderBottomWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  simpleHeaderTitle: {
     color: ihubColors.ink,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
-    marginBottom: 8,
+    letterSpacing: 0.3,
   },
-  candidateList: {
-    gap: 8,
+  simpleHeaderSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    marginTop: 2,
   },
-  smallItem: {
-    backgroundColor: "rgba(58,50,74,0.035)",
-    borderColor: "rgba(58,50,74,0.08)",
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 7,
-  },
-  smallItemSelected: {
-    backgroundColor: "rgba(166,149,216,0.12)",
-    borderColor: "rgba(166,149,216,0.54)",
-  },
-  smallItemDisabled: {
-    opacity: 0.42,
-  },
-  smallImage: {
+  simpleBody: {
     alignItems: "center",
-    borderRadius: 11,
-    height: 54,
-    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+    padding: 12,
   },
-  smallGlyph: {
-    color: ihubColors.surface,
-    fontSize: 19,
-    fontWeight: "900",
+  simpleSide: {
+    borderRadius: 12,
+    flex: 1,
+    minHeight: 96,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
   },
-  smallLabel: {
-    color: ihubColors.ink,
+  simpleReceive: {
+    backgroundColor: "rgba(243,197,212,0.08)",
+  },
+  simpleGive: {
+    backgroundColor: "rgba(166,149,216,0.08)",
+  },
+  simpleReceiveTitle: {
+    color: "#b66f87",
     fontSize: 10,
     fontWeight: "900",
-    marginTop: 5,
+    letterSpacing: 0.4,
   },
-  linkColumn: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: 54,
-  },
-  linkDot: {
-    backgroundColor: ihubColors.pink,
-    borderRadius: 999,
-    height: 12,
-    width: 12,
-  },
-  linkDotAlt: {
-    backgroundColor: ihubColors.sky,
-    borderRadius: 999,
-    height: 12,
-    width: 12,
-  },
-  linkLine: {
-    backgroundColor: "rgba(166,149,216,0.36)",
-    flex: 1,
-    width: 2,
-  },
-  linkText: {
+  simpleGiveTitle: {
     color: ihubColors.lavender,
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "900",
-    paddingVertical: 8,
-    textAlign: "center",
+    letterSpacing: 0.4,
   },
-  unavailableButton: {
+  simpleMeta: {
+    color: ihubColors.mutedInk,
+    fontSize: 9.5,
+    fontWeight: "700",
+    marginBottom: 7,
+    marginTop: 3,
+  },
+  simpleSwap: {
     alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.04)",
+    borderRadius: 999,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  simpleSwapText: {
+    color: ihubColors.mutedInk,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  emptyRelation: {
     backgroundColor: ihubColors.surface,
     borderColor: "rgba(58,50,74,0.08)",
-    borderRadius: ihubRadii.lg,
+    borderRadius: 10,
+    borderStyle: "dashed",
     borderWidth: 1,
-    flexDirection: "row",
-    gap: 9,
-    justifyContent: "center",
-    padding: 13,
+    padding: 16,
   },
-  unavailablePlus: {
+  emptyRelationText: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    textAlign: "center",
+  },
+  summary: {
+    backgroundColor: "rgba(166,149,216,0.04)",
+    borderColor: "rgba(166,149,216,0.34)",
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  summaryTitle: {
     color: ihubColors.lavender,
-    fontSize: 19,
+    fontSize: 10,
     fontWeight: "900",
-    lineHeight: 21,
+    letterSpacing: 0.4,
+    marginBottom: 7,
   },
-  unavailableText: {
-    color: ihubColors.ink,
-    fontSize: 13,
+  summaryLine: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  summarySide: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 5,
+  },
+  summaryBadge: {
+    borderRadius: ihubRadii.pill,
+    color: ihubColors.surface,
+    fontSize: 8.5,
     fontWeight: "900",
+    overflow: "hidden",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  summaryReceiveBadge: {
+    backgroundColor: ihubColors.pink,
+  },
+  summaryGiveBadge: {
+    backgroundColor: ihubColors.lavender,
+  },
+  summarySwap: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  thumbStrip: {
+    flexDirection: "row",
+    gap: 2,
+  },
+  thumbEmpty: {
+    color: "rgba(58,50,74,0.30)",
+    fontSize: 10,
+    fontStyle: "italic",
+  },
+  thumbOverflow: {
+    alignSelf: "center",
+    color: ihubColors.mutedInk,
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  itemPhoto: {
+    alignItems: "center",
+    borderRadius: 7,
+    borderWidth: 1,
+    justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+  },
+  itemPhotoHighlighted: {
+    borderColor: ihubColors.pink,
+    borderWidth: 2,
+    shadowColor: ihubColors.pink,
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+  },
+  itemPhotoShine: {
+    backgroundColor: "rgba(255,255,255,0.24)",
+    borderRadius: 999,
+    height: 40,
+    position: "absolute",
+    right: -10,
+    top: -8,
+    width: 40,
+  },
+  itemPhotoGlyph: {
+    color: "rgba(255,255,255,0.96)",
+    fontWeight: "900",
+    textShadowColor: "rgba(58,50,74,0.28)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  qtyBadge: {
+    backgroundColor: "rgba(0,0,0,0.70)",
+    borderBottomLeftRadius: 4,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    paddingHorizontal: 3,
+  },
+  qtyBadgeText: {
+    color: ihubColors.surface,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  popupBackdrop: {
+    backgroundColor: "rgba(0,0,0,0.55)",
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  popupPanel: {
+    backgroundColor: ihubColors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 40,
+  },
+  popupHeader: {
+    alignItems: "center",
+    backgroundColor: ihubColors.background,
+    borderBottomColor: "rgba(58,50,74,0.04)",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  popupTargetIcon: {
+    fontSize: 12,
+  },
+  popupHeaderCopy: {
+    flex: 1,
+  },
+  popupTitle: {
+    color: ihubColors.ink,
+    fontSize: 12.5,
+    fontWeight: "900",
+  },
+  popupSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  popupClose: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.04)",
+    borderRadius: 999,
+    height: 28,
+    justifyContent: "center",
+    width: 28,
+  },
+  popupCloseText: {
+    color: ihubColors.mutedInk,
+    fontSize: 17,
+    fontWeight: "900",
+    lineHeight: 20,
+  },
+  popupBody: {
+    flexDirection: "row",
+    gap: 12,
+    padding: 12,
+  },
+  popupWishSide: {
+    alignItems: "center",
+    width: 110,
+  },
+  exchangeChip: {
+    borderRadius: ihubRadii.pill,
+    marginTop: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  exchangeChipText: {
+    color: ihubColors.surface,
+    fontSize: 9.5,
+    fontWeight: "900",
+  },
+  popupFallback: {
+    color: ihubColors.mutedInk,
+    fontSize: 9,
+    marginTop: 5,
+    maxWidth: 110,
+    textAlign: "center",
+  },
+  popupCandidates: {
+    flex: 1,
+    minWidth: 0,
+  },
+  popupOwnerLine: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 5,
+    marginBottom: 8,
+  },
+  popupOwnerText: {
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  popupTapHint: {
+    color: ihubColors.mutedInk,
+    fontSize: 9.5,
+  },
+  candidateGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  candidateButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderRadius: 10,
+    minHeight: 82,
+    padding: 4,
+    position: "relative",
+    width: "31%",
+  },
+  candidateButtonSelected: {
+    backgroundColor: "rgba(166,149,216,0.08)",
+    borderColor: ihubColors.lavender,
+    borderWidth: 2,
+  },
+  candidateButtonHighlighted: {
+    backgroundColor: "#fff7fb",
+    borderColor: ihubColors.pink,
+    borderWidth: 2,
+  },
+  candidateLabel: {
+    color: ihubColors.ink,
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 3,
+    maxWidth: 64,
+  },
+  sourceBadge: {
+    backgroundColor: ihubColors.pink,
+    borderRadius: ihubRadii.pill,
+    left: -4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    position: "absolute",
+    top: -4,
+  },
+  sourceBadgeText: {
+    color: ihubColors.surface,
+    fontSize: 8.5,
+    fontWeight: "900",
+  },
+  candidateCheck: {
+    alignItems: "center",
+    backgroundColor: ihubColors.lavender,
+    borderRadius: 999,
+    height: 16,
+    justifyContent: "center",
+    position: "absolute",
+    right: -3,
+    top: -3,
+    width: 16,
+  },
+  candidateCheckText: {
+    color: ihubColors.surface,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  popupReturnButton: {
+    backgroundColor: ihubColors.lavender,
+    borderRadius: 10,
+    marginHorizontal: 12,
+    marginTop: 2,
+    paddingVertical: 11,
+  },
+  popupReturnButtonText: {
+    color: ihubColors.surface,
+    fontSize: 12.5,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  footer: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderTopColor: "rgba(58,50,74,0.08)",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+  },
+  resetButton: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  resetButtonText: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  primaryFooterButton: {
+    backgroundColor: ihubColors.lavender,
+    borderRadius: 12,
+    flex: 1,
+    paddingVertical: 12,
+    shadowColor: ihubColors.lavender,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.33,
+    shadowRadius: 14,
+  },
+  primaryFooterButtonText: {
+    color: ihubColors.surface,
+    fontSize: 13.5,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+    textAlign: "center",
   },
 });

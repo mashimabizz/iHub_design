@@ -682,6 +682,7 @@ function openMatchDetail(row: ShelfRow, candidate: Candidate) {
       hue: candidate.hue,
       priority: candidate.priority,
       local: candidate.local ? "true" : "false",
+      tag: candidate.tag ?? "",
     },
   });
 }
