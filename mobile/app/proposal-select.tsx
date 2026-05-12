@@ -692,7 +692,10 @@ function MeetupPane({
   }
 
   function handleDayTouchStart(e: GestureResponderEvent, dayIndex: number) {
+    e.stopPropagation();
     clearTouchPress();
+    clearCandidateTouch();
+    onSelectCandidate(null);
     const { locationY, pageX, pageY } = e.nativeEvent;
     const startSlot = slotFromLocationY(locationY);
     const timer = setTimeout(() => {
@@ -715,6 +718,7 @@ function MeetupPane({
   function handleDayTouchMove(e: GestureResponderEvent) {
     const press = touchPressRef.current;
     if (!press) return;
+    e.stopPropagation();
     const { locationY, pageX, pageY } = e.nativeEvent;
     const dx = pageX - press.startX;
     const dy = pageY - press.startY;
@@ -732,6 +736,7 @@ function MeetupPane({
   }
 
   function handleDayTouchEnd(e: GestureResponderEvent) {
+    e.stopPropagation();
     const draft = dragDraftRef.current;
     clearTouchPress();
     if (!draft) {
@@ -751,6 +756,7 @@ function MeetupPane({
 
   function handleDayTouchCancel() {
     clearTouchPress();
+    clearCandidateTouch();
     setDragDraft(null);
   }
 
