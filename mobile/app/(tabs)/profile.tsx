@@ -349,6 +349,11 @@ function pickRequestName(
 }
 
 function openProfileDetail(row: ProfileSheet) {
+  if (row.title === "プロフィール編集") {
+    router.push("/profile-edit");
+    return;
+  }
+
   router.push({
     pathname: "/preview-detail",
     params: {

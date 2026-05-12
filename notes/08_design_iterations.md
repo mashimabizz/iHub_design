@@ -4,6 +4,51 @@
 
 ---
 
+## イテレーション155.13：iOSプロフィール編集を保存可能画面へ差し替え
+
+### 背景・問題意識
+
+iOS版プロフ画面は前iterで表示データをWeb版と同期したが、アイデンティティ内の「プロフィール編集」はまだ `preview-detail` に遷移しており、Web版のように実際のプロフィールを編集・保存できなかった。プロフ周りの導線をWeb版へ近づけるため、まずプロフィール編集を本画面化した。
+
+### 変更内容
+
+#### `mobile/app/(tabs)/profile.tsx`
+- 「プロフィール編集」行の遷移先を `preview-detail` から `/profile-edit` に変更した。
+
+#### `mobile/app/profile-edit.tsx`
+- iOS版プロフィール編集画面を追加した。
+- `users` から handle / display_name / gender / primary_area / avatar_url を読み込み、編集フォームに反映するようにした。
+- handle 重複チェック、handle/displayName/primaryArea のバリデーションを行い、`users` を更新するようにした。
+- 既存アイコン画像は表示・削除できるようにした。ネイティブ画像選択/アップロードは次段階で追加する。
+
+### 影響範囲
+
+- iOS版プロフ画面
+- iOS版プロフィール編集導線
+- iOS版 `users` 更新
+
+### 確認方法
+
+- `npm run typecheck`（`mobile/`）
+- `git diff --check`
+- iOSアプリでプロフ > プロフィール編集を開き、保存できることを確認
+- 保存後にプロフ画面へ戻り、表示名・ハンドル・エリアが反映されることを確認
+
+### 関連ファイル
+
+- `mobile/app/(tabs)/profile.tsx`
+- `mobile/app/profile-edit.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版 `profile/edit` と同じ主要入力項目を確認してから実装した
+- ✅ `users` 既存カラムのみを更新しており、DBスキーマ変更はない
+- ✅ 新しい状態名・用語は追加していないため `notes/09_state_machines.md` / `notes/10_glossary.md` は更新不要
+- ✅ `npm run typecheck`（`mobile/`）通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.12：iOS取引詳細に取引チャットを接続
 
 ### 背景・問題意識
