@@ -44,7 +44,37 @@ const LOCAL_DURATION_OPTIONS = [
   { label: "6時間", value: 360 },
 ];
 const LOCAL_RADIUS_OPTIONS = [300, 500, 1000, 2000];
+const PREVIEW_CARRYING_ITEMS: LocalCarryingItem[] = [
+  {
+    id: "preview-carry-1",
+    title: "スア 春ver.",
+    subtitle: "LUMENA / トレカ",
+    photoUrl: null,
+    hue: "#cbbcf4",
+  },
+  {
+    id: "preview-carry-2",
+    title: "ジョンウ ラキドロ",
+    subtitle: "LUMENA / トレカ",
+    photoUrl: null,
+    hue: "#a8d4e6",
+  },
+  {
+    id: "preview-carry-3",
+    title: "ニンニン アクスタ",
+    subtitle: "aespa / アクスタ",
+    photoUrl: null,
+    hue: "#f3c5d4",
+  },
+];
 type HomeModeView = "national" | "local";
+type LocalCarryingItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  photoUrl: string | null;
+  hue: string;
+};
 
 export default function HomeScreen() {
   const { previewMode, user } = useAuth();
@@ -313,6 +343,8 @@ function LocalModeSheet({
   const [center, setCenter] = useState<MapCoordinate>(FALLBACK_LOCAL_CENTER);
   const [radiusM, setRadiusM] = useState(500);
   const [durationMin, setDurationMin] = useState(120);
+  const [carryingItems, setCarryingItems] = useState<LocalCarryingItem[]>([]);
+  const [selectedCarryingIds, setSelectedCarryingIds] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
   const [locating, setLocating] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
@@ -326,6 +358,8 @@ function LocalModeSheet({
 
     async function loadLocalMode() {
       if (!supabase || !userId || previewMode) {
+        setCarryingItems(PREVIEW_CARRYING_ITEMS);
+        setSelectedCarryingIds(PREVIEW_CARRYING_ITEMS.slice(0, 2).map((item) => item.id));
         if (!initialVenue) {
           const coordinate = await getCurrentCoordinate();
           if (!active || !coordinate) return;
@@ -338,7 +372,7 @@ function LocalModeSheet({
       let resolvedCenter: MapCoordinate | null = null;
       const { data: settings } = await supabase
         .from("user_local_mode_settings")
-        .select("aw_id, radius_m, last_lat, last_lng")
+        .select("aw_id, radius_m, last_lat, last_lng, selected_carrying_ids")
         .eq("user_id", userId)
         .maybeSingle();
       if (!active) return;
@@ -349,9 +383,11 @@ function LocalModeSheet({
             radius_m?: number | null;
             last_lat?: number | string | null;
             last_lng?: number | string | null;
+            selected_carrying_ids?: string[] | null;
           }
         | null;
       if (settingsRow?.radius_m) setRadiusM(settingsRow.radius_m);
+      setSelectedCarryingIds(settingsRow?.selected_carrying_ids ?? []);
       const lastLat = toNumber(settingsRow?.last_lat);
       const lastLng = toNumber(settingsRow?.last_lng);
       if (lastLat != null && lastLng != null) {
@@ -405,6 +441,9 @@ function LocalModeSheet({
         const label = await reverseGeocodeLabel(coordinate);
         if (active && label && !initialVenue) setVenue(label);
       }
+
+      const items = await fetchLocalCarryingItems(userId);
+      if (active) setCarryingItems(items);
     }
 
     loadLocalMode();
@@ -445,6 +484,7 @@ function LocalModeSheet({
       center,
       radiusM,
       durationMin,
+      selectedCarryingIds,
     });
     setPending(false);
     if (result?.error) {
@@ -457,6 +497,7 @@ function LocalModeSheet({
   }
 
   const radiusLabel = radiusM >= 1000 ? `${radiusM / 1000}km` : `${radiusM}m`;
+  const selectedCarryingCount = selectedCarryingIds.length;
 
   return (
     <Modal
@@ -592,6 +633,88 @@ function LocalModeSheet({
                   </Pressable>
                 ))}
               </View>
+            </View>
+
+            <View style={styles.localSection}>
+              <View style={styles.localSectionHeader}>
+                <Text style={styles.localSectionTitle}>持参するグッズ</Text>
+                <Text style={styles.localSectionMeta}>
+                  {selectedCarryingCount} / {carryingItems.length}
+                </Text>
+              </View>
+              {carryingItems.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.carryingScroller}
+                >
+                  {carryingItems.map((item) => {
+                    const selected = selectedCarryingIds.includes(item.id);
+                    return (
+                      <Pressable
+                        key={item.id}
+                        onPress={() => {
+                          setSelectedCarryingIds((current) =>
+                            current.includes(item.id)
+                              ? current.filter((id) => id !== item.id)
+                              : [...current, item.id],
+                          );
+                        }}
+                        style={[
+                          styles.carryingCard,
+                          selected ? styles.carryingCardActive : null,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.carryingThumb,
+                            { backgroundColor: item.photoUrl ? ihubColors.ink : item.hue },
+                          ]}
+                        >
+                          {item.photoUrl ? (
+                            <Image
+                              source={{ uri: item.photoUrl }}
+                              resizeMode="cover"
+                              style={styles.carryingImage}
+                            />
+                          ) : (
+                            <Text style={styles.carryingGlyph}>
+                              {item.title.slice(0, 1)}
+                            </Text>
+                          )}
+                          <View
+                            style={[
+                              styles.carryingCheck,
+                              selected ? styles.carryingCheckActive : null,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.carryingCheckText,
+                                selected ? styles.carryingCheckTextActive : null,
+                              ]}
+                            >
+                              {selected ? "✓" : "+"}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text numberOfLines={1} style={styles.carryingTitle}>
+                          {item.title}
+                        </Text>
+                        <Text numberOfLines={1} style={styles.carryingSub}>
+                          {item.subtitle}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              ) : (
+                <View style={styles.carryingEmpty}>
+                  <Text style={styles.carryingEmptyText}>
+                    譲る候補の在庫を登録すると、ここで持参グッズを選べます。
+                  </Text>
+                </View>
+              )}
             </View>
 
             {sheetError ? (
@@ -1029,6 +1152,7 @@ async function applyLocalModeSettings(input: {
   center: MapCoordinate;
   radiusM: number;
   durationMin: number;
+  selectedCarryingIds: string[];
 }): Promise<LocalModeActionResult> {
   if (!supabase) return undefined;
   const venue = input.venue.trim();
@@ -1101,12 +1225,75 @@ async function applyLocalModeSettings(input: {
         radius_m: input.radiusM,
         last_lat: input.center.latitude,
         last_lng: input.center.longitude,
+        selected_carrying_ids: input.selectedCarryingIds,
       },
       { onConflict: "user_id" },
     );
 
   if (upsertError) return { error: upsertError.message };
   return undefined;
+}
+
+async function fetchLocalCarryingItems(userId: string): Promise<LocalCarryingItem[]> {
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from("goods_inventory")
+    .select(
+      "id, title, photo_urls, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+    )
+    .eq("user_id", userId)
+    .eq("kind", "for_trade")
+    .eq("status", "active")
+    .order("created_at", { ascending: false });
+  return ((data as {
+    id: string;
+    title: string;
+    photo_urls: string[] | null;
+    hue: number | string | null;
+    group: LocalNameRelation;
+    character: LocalNameRelation;
+    goods_type: LocalNameRelation;
+  }[] | null) ?? []).map((row) => {
+    const label = pickLocalName(row.character) ?? pickLocalName(row.group) ?? row.title;
+    const goodsType = pickLocalName(row.goods_type) ?? "グッズ";
+    return {
+      id: row.id,
+      title: row.title || label,
+      subtitle: `${pickLocalName(row.group) ?? "未設定"} / ${goodsType}`,
+      photoUrl: row.photo_urls?.[0] ?? null,
+      hue: normalizeLocalHue(row.hue, label),
+    };
+  });
+}
+
+type LocalNameRelation =
+  | { name: string | null }
+  | { name: string | null }[]
+  | null
+  | undefined;
+
+function pickLocalName(value: LocalNameRelation) {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0]?.name ?? null : value.name;
+}
+
+function normalizeLocalHue(value: number | string | null | undefined, seed: string) {
+  if (typeof value === "number") return `hsl(${value}, 62%, 78%)`;
+  if (typeof value === "string" && value.trim()) {
+    return value.startsWith("#") || value.startsWith("hsl")
+      ? value
+      : `hsl(${Number(value) || localNameToHue(seed)}, 62%, 78%)`;
+  }
+  return `hsl(${localNameToHue(seed)}, 62%, 78%)`;
+}
+
+function localNameToHue(name: string) {
+  let hash = 0;
+  for (let index = 0; index < name.length; index += 1) {
+    hash = (hash << 5) - hash + name.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
 }
 
 function LocalAura() {
@@ -1386,6 +1573,103 @@ const styles = StyleSheet.create({
     color: ihubColors.ink,
     fontSize: 13,
     fontWeight: "900",
+  },
+  localSectionMeta: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  carryingScroller: {
+    gap: 10,
+    paddingRight: 12,
+  },
+  carryingCard: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderColor: "rgba(58,50,74,0.10)",
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 8,
+    width: 104,
+  },
+  carryingCardActive: {
+    borderColor: "rgba(166,149,216,0.72)",
+    shadowColor: ihubColors.lavender,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+  },
+  carryingThumb: {
+    alignItems: "center",
+    aspectRatio: 3 / 4,
+    borderRadius: 12,
+    justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
+    width: "100%",
+  },
+  carryingImage: {
+    height: "100%",
+    width: "100%",
+  },
+  carryingGlyph: {
+    color: ihubColors.surface,
+    fontSize: 26,
+    fontWeight: "900",
+    textShadowColor: "rgba(58,50,74,0.24)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 5,
+  },
+  carryingCheck: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.74)",
+    borderColor: "rgba(255,255,255,0.86)",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: "center",
+    position: "absolute",
+    right: 6,
+    top: 6,
+    width: 24,
+  },
+  carryingCheckActive: {
+    backgroundColor: ihubColors.lavender,
+    borderColor: ihubColors.surface,
+  },
+  carryingCheckText: {
+    color: ihubColors.lavender,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 16,
+  },
+  carryingCheckTextActive: {
+    color: ihubColors.surface,
+  },
+  carryingTitle: {
+    color: ihubColors.ink,
+    fontSize: 11,
+    fontWeight: "900",
+    marginTop: 7,
+  },
+  carryingSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 9.5,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  carryingEmpty: {
+    backgroundColor: "rgba(58,50,74,0.045)",
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+  },
+  carryingEmptyText: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16,
   },
   currentLocationButton: {
     backgroundColor: "rgba(166,149,216,0.13)",

@@ -4,6 +4,50 @@
 
 ---
 
+## イテレーション155.50：iOS現地交換設定に持参グッズ選択を追加
+
+### 背景・問題意識
+
+Web版の現地交換モード設定シートは、場所・時間・半径に加えて「持参するグッズ」を選べる。これは現地交換のマッチング市場に出す在庫を絞る重要な設定だが、iOS版の設定シートには未実装で、Web版と機能差があった。
+
+### 変更内容
+
+#### `mobile/app/(tabs)/index.tsx`
+- 現地交換モード設定シートに「持参するグッズ」セクションを追加した。
+- 自分の `goods_inventory` の `kind=for_trade` / `status=active` を読み込み、横スクロールのカードで選択できるようにした。
+- 選択した在庫IDを `user_local_mode_settings.selected_carrying_ids` に保存するようにした。
+- Previewモードでも挙動確認できるよう、プレビュー用の持参グッズ候補を表示するようにした。
+
+### 影響範囲
+
+- iOS版 ホーム
+- iOS版 現地交換モード設定シート
+- iOS版 現地交換モードのDB保存内容
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- iOS版ホームで現地交換モード設定を開き、持参グッズ候補が表示されること
+- グッズカードをタップすると選択状態が切り替わること
+- 「この設定で表示」後に `selected_carrying_ids` が保存されること
+
+### 関連ファイル
+
+- `mobile/app/(tabs)/index.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版の現地交換設定にある「持参するグッズ」機能をiOS版へ追加
+- ✅ 既存の場所・時間・半径設定と同じシート内で完結するようにした
+- ✅ 新用語追加なしのため `notes/10_glossary.md` 更新不要
+- ✅ DBスキーマ変更なしのため `notes/05_data_model.md` 更新不要
+- ✅ 状態遷移追加なしのため `notes/09_state_machines.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.49：iOS在庫編集のメンバーリクエスト導線をWeb版へ同期
 
 ### 背景・問題意識
