@@ -316,9 +316,8 @@ export default function ProposalSelectScreen() {
                 place: "",
                 coordinate: FALLBACK_COORDINATE,
               };
-              setMeetupCandidates((current) => [...current.slice(0, 2), candidate]);
+              setMeetupCandidates((current) => [...current, candidate]);
               setActiveMeetupId(id);
-              setPlaceSheetId(id);
             }}
             onDeleteCandidate={(id) => {
               setMeetupCandidates((current) =>
