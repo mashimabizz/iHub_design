@@ -32,6 +32,8 @@ type ProposalRow = {
   sender_id: string;
   receiver_id: string;
   status: string;
+  cash_offer: boolean | null;
+  cash_amount: number | null;
   sender_have_ids: string[] | null;
   sender_have_qtys: number[] | null;
   receiver_have_ids: string[] | null;
@@ -99,10 +101,13 @@ type TransactionDetail = {
   myCompletionApproved: boolean;
   partnerCompletionApproved: boolean;
   hasEvidence: boolean;
+  evidencePhotoCount: number;
   evidenceTakenAt: string | null;
   partner: UserRow;
   receive: DetailItem[];
   give: DetailItem[];
+  cashOffer: boolean;
+  cashAmount: number | null;
   meetups: MeetupCandidate[];
   message: string | null;
   expiresAt: string | null;
@@ -121,6 +126,8 @@ type ChatMessage = {
     | "system";
   body: string | null;
   photoUrl: string | null;
+  locationLat: number | null;
+  locationLng: number | null;
   locationLabel: string | null;
   meta: Record<string, unknown> | null;
   createdAt: string;
@@ -132,6 +139,8 @@ type MessageRow = {
   message_type: ChatMessage["type"];
   body: string | null;
   photo_url: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
   location_label: string | null;
   meta: Record<string, unknown> | null;
   created_at: string;
@@ -498,6 +507,8 @@ async function fetchTransactionDetail(
     "sender_id",
     "receiver_id",
     "status",
+    "cash_offer",
+    "cash_amount",
     "sender_have_ids",
     "sender_have_qtys",
     "receiver_have_ids",
@@ -524,6 +535,8 @@ async function fetchTransactionDetail(
 
   return buildDetail(
     {
+      cash_offer: false,
+      cash_amount: null,
       meetup_candidates: [],
       meetup_lat: null,
       meetup_lng: null,
@@ -571,8 +584,18 @@ function getMissingProposalColumn(error: { code?: string; message?: string } | n
     return null;
   }
   return (
-    message.match(/Could not find the '([^']+)' column of 'proposals'/)?.[1] ??
-    message.match(/column proposals\.([a-zA-Z0-9_]+) does not exist/)?.[1] ??
+    getMissingColumnName(error, "proposals")
+  );
+}
+
+function getMissingColumnName(
+  error: { code?: string; message?: string } | null,
+  tableName: string,
+) {
+  const message = error?.message ?? "";
+  return (
+    message.match(new RegExp(`Could not find the '([^']+)' column of '${tableName}'`))?.[1] ??
+    message.match(new RegExp(`column ${tableName}\\.([a-zA-Z0-9_]+) does not exist`))?.[1] ??
     message.match(/column "([a-zA-Z0-9_]+)" does not exist/)?.[1] ??
     null
   );
@@ -615,7 +638,7 @@ async function buildDetail(
     : proposal.sender_have_qtys ?? [];
   const itemIds = Array.from(new Set([...giveIds, ...receiveIds]));
 
-  const [{ data: partnerData }, { data: inventoryData }] = await Promise.all([
+  const [{ data: partnerData }, { data: inventoryData }, { data: evidencePhotos }] = await Promise.all([
     supabase
       .from("users")
       .select("id, handle, display_name, primary_area, avatar_url")
@@ -629,6 +652,11 @@ async function buildDetail(
           )
           .in("id", itemIds)
       : Promise.resolve({ data: [] }),
+    supabase
+      .from("proposal_evidence_photos")
+      .select("id, photo_url, position, taken_at")
+      .eq("proposal_id", proposal.id)
+      .order("position", { ascending: true }),
   ]);
 
   const inventoryById = new Map(
@@ -637,6 +665,9 @@ async function buildDetail(
       item,
     ]),
   );
+  const evidencePhotoCount =
+    ((evidencePhotos as { id: string }[] | null) ?? []).length;
+  const messages = await fetchMessages(proposal.id, proposal);
 
   return {
     id: proposal.id,
@@ -655,7 +686,8 @@ async function buildDetail(
     partnerCompletionApproved: isSender
       ? !!proposal.approved_by_receiver
       : !!proposal.approved_by_sender,
-    hasEvidence: !!proposal.evidence_photo_url,
+    hasEvidence: evidencePhotoCount > 0 || !!proposal.evidence_photo_url,
+    evidencePhotoCount,
     evidenceTakenAt: proposal.evidence_taken_at,
     partner:
       (partnerData as UserRow | null) ?? {
@@ -671,33 +703,74 @@ async function buildDetail(
     give: giveIds.map((id, index) =>
       toDetailItem(id, giveQtys[index] ?? 1, inventoryById.get(id)),
     ),
+    cashOffer: !!proposal.cash_offer,
+    cashAmount: proposal.cash_amount,
     meetups: parseMeetups(proposal),
     message: proposal.message,
     expiresAt: proposal.expires_at,
-    messages: await fetchMessages(proposal.id),
+    messages,
   };
 }
 
-async function fetchMessages(proposalId: string): Promise<ChatMessage[]> {
+async function fetchMessages(
+  proposalId: string,
+  proposal: ProposalRow,
+): Promise<ChatMessage[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase
-    .from("messages")
-    .select(
-      "id, sender_id, message_type, body, photo_url, location_label, meta, created_at",
-    )
-    .eq("proposal_id", proposalId)
-    .order("created_at", { ascending: true });
-  if (error) return [];
-  return ((data as MessageRow[] | null) ?? []).map((row) => ({
+  const selectableFields = [
+    "id",
+    "sender_id",
+    "message_type",
+    "body",
+    "photo_url",
+    "location_lat",
+    "location_lng",
+    "location_label",
+    "meta",
+    "created_at",
+  ];
+  let rows: MessageRow[] = [];
+  for (let attempt = 0; attempt < selectableFields.length; attempt += 1) {
+    const { data, error } = await supabase
+      .from("messages")
+      .select(selectableFields.join(", "))
+      .eq("proposal_id", proposalId)
+      .order("created_at", { ascending: true });
+    const missingColumn = getMissingColumnName(error, "messages");
+    if (missingColumn && selectableFields.includes(missingColumn)) {
+      selectableFields.splice(selectableFields.indexOf(missingColumn), 1);
+      continue;
+    }
+    if (!error) rows = ((data as unknown as MessageRow[] | null) ?? []);
+    break;
+  }
+  const messages: ChatMessage[] = rows.map((row) => ({
     id: row.id,
     senderId: row.sender_id,
     type: row.message_type,
     body: row.body,
-    photoUrl: row.photo_url,
-    locationLabel: row.location_label,
-    meta: row.meta,
+    photoUrl: row.photo_url ?? null,
+    locationLat: row.location_lat ?? null,
+    locationLng: row.location_lng ?? null,
+    locationLabel: row.location_label ?? null,
+    meta: row.meta ?? null,
     createdAt: row.created_at,
   }));
+  if (proposal.message?.trim()) {
+    messages.unshift({
+      id: `proposal-message-${proposal.id}`,
+      senderId: proposal.sender_id,
+      type: "text",
+      body: proposal.message,
+      photoUrl: null,
+      locationLat: null,
+      locationLng: null,
+      locationLabel: null,
+      meta: { virtual: "proposal_message" },
+      createdAt: proposal.created_at,
+    });
+  }
+  return messages;
 }
 
 async function updateProposalAction(
