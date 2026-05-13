@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,10 +33,39 @@ type WishItem = GoodsGridItem & {
 type ListingItem = {
   id: string;
   status: "ACTIVE" | "PAUSED";
+  haves: ListingGoodsItem[];
+  options: ListingOptionItem[];
   give: string[];
   want: string[];
   logic: "すべて" | "1pick";
   hue: string;
+};
+
+type ListingGoodsItem = {
+  id: string;
+  title: string;
+  qty: number;
+  photoUrl: string | null;
+  groupName: string | null;
+  characterName: string | null;
+  goodsTypeName: string | null;
+  hue: string;
+};
+
+type ListingOptionItem = {
+  id: string;
+  position: number;
+  logic: "すべて" | "1pick";
+  exchangeType: "same_kind" | "cross_kind" | "any";
+  isCashOffer: boolean;
+  cashAmount: number | null;
+  wishes: ListingGoodsItem[];
+};
+
+type ListingWishSlot = {
+  key: string;
+  option: ListingOptionItem;
+  wish: ListingGoodsItem | null;
 };
 
 type WishRow = {
@@ -53,14 +83,19 @@ type WishRow = {
 type ListingRow = {
   id: string;
   have_ids: string[] | null;
+  have_qtys: number[] | null;
   have_logic: "and" | "or" | null;
   status: "active" | "paused" | "matched" | "closed";
 };
 
 type OptionRow = {
+  id: string;
   listing_id: string;
+  position: number;
   wish_ids: string[] | null;
+  wish_qtys: number[] | null;
   logic: "and" | "or" | null;
+  exchange_type: "same_kind" | "cross_kind" | "any" | null;
   is_cash_offer: boolean;
   cash_amount: number | null;
 };
@@ -69,6 +104,7 @@ type InventoryLookupRow = {
   id: string;
   title: string;
   hue: number | string | null;
+  photo_urls: string[] | null;
   group: { name: string | null } | { name: string | null }[] | null;
   character: { name: string | null } | { name: string | null }[] | null;
   goods_type: { name: string | null } | { name: string | null }[] | null;
@@ -139,6 +175,23 @@ const INITIAL_LISTINGS: ListingItem[] = [
   {
     id: "listing-01",
     status: "ACTIVE",
+    haves: [
+      previewListingGoods("preview-have-1", "スア 春ver.", "LUMENA", "スア", "トレカ", "#cbbcf4", 1),
+      previewListingGoods("preview-have-2", "ジョンウ ラキドロ", "LUMENA", "ジョンウ", "トレカ", "#a8d4e6", 1),
+    ],
+    options: [
+      {
+        id: "listing-01-option-1",
+        position: 1,
+        logic: "1pick",
+        exchangeType: "any",
+        isCashOffer: false,
+        cashAmount: null,
+        wishes: [
+          previewListingGoods("preview-wish-1", "スア ラキドロ", "LUMENA", "スア", "トレカ", "#f3c5d4", 1),
+        ],
+      },
+    ],
     give: ["スア 春ver.", "ジョンウ ラキドロ"],
     want: ["スア ラキドロ"],
     logic: "1pick",
@@ -147,6 +200,23 @@ const INITIAL_LISTINGS: ListingItem[] = [
   {
     id: "listing-02",
     status: "ACTIVE",
+    haves: [
+      previewListingGoods("preview-have-3", "ニンニン アクスタ", "aespa", "ニンニン", "アクスタ", "#a8d4e6", 1),
+    ],
+    options: [
+      {
+        id: "listing-02-option-1",
+        position: 1,
+        logic: "すべて",
+        exchangeType: "same_kind",
+        isCashOffer: false,
+        cashAmount: null,
+        wishes: [
+          previewListingGoods("preview-wish-2", "ニンニン 制服", "aespa", "ニンニン", "アクスタ", "#f3c5d4", 1),
+          previewListingGoods("preview-wish-4", "ウィンター 缶バッジ", "aespa", "ウィンター", "缶バッジ", "#d5cff4", 1),
+        ],
+      },
+    ],
     give: ["ニンニン アクスタ"],
     want: ["ニンニン 制服", "ウィンター 缶バッジ"],
     logic: "すべて",
@@ -155,6 +225,22 @@ const INITIAL_LISTINGS: ListingItem[] = [
   {
     id: "listing-03",
     status: "PAUSED",
+    haves: [
+      previewListingGoods("preview-have-4", "カリナ 缶バッジ", "aespa", "カリナ", "缶バッジ", "#f3c5d4", 1),
+    ],
+    options: [
+      {
+        id: "listing-03-option-1",
+        position: 1,
+        logic: "1pick",
+        exchangeType: "any",
+        isCashOffer: false,
+        cashAmount: null,
+        wishes: [
+          previewListingGoods("preview-wish-3", "カリナ 店舗特典", "aespa", "カリナ", "トレカ", "#cbbcf4", 1),
+        ],
+      },
+    ],
     give: ["カリナ 缶バッジ"],
     want: ["カリナ 店舗特典"],
     logic: "1pick",
@@ -519,7 +605,7 @@ async function fetchWishData(userId: string): Promise<WishData> {
         .order("created_at", { ascending: false }),
       supabase
         .from("listings")
-        .select("id, have_ids, have_logic, status")
+        .select("id, have_ids, have_qtys, have_logic, status")
         .eq("user_id", userId)
         .neq("status", "closed")
         .order("created_at", { ascending: false }),
@@ -534,7 +620,7 @@ async function fetchWishData(userId: string): Promise<WishData> {
     listingIds.length > 0
       ? await supabase
           .from("listing_wish_options")
-          .select("listing_id, wish_ids, logic, is_cash_offer, cash_amount")
+          .select("id, listing_id, position, wish_ids, wish_qtys, logic, exchange_type, is_cash_offer, cash_amount")
           .in("listing_id", listingIds)
           .order("position", { ascending: true })
       : { data: [], error: null };
@@ -566,7 +652,7 @@ async function fetchWishData(userId: string): Promise<WishData> {
       ? await supabase
           .from("goods_inventory")
           .select(
-            "id, title, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+            "id, title, hue, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
           )
           .in("id", allItemIds)
       : { data: [], error: null };
@@ -612,29 +698,84 @@ function toListingItem(
   options: OptionRow[],
   inventoryById: Map<string, InventoryLookupRow>,
 ): ListingItem {
-  const giveLabels = (row.have_ids ?? []).map((id) =>
-    itemLabel(inventoryById.get(id)),
-  );
-  const wantLabels = options.flatMap((option) => {
-    if (option.is_cash_offer) {
-      return [`定価 ${option.cash_amount ?? ""}円`];
+  const haves = (row.have_ids ?? []).flatMap((id, index) => {
+    const source = inventoryById.get(id);
+    return source ? [toListingGoodsItem(source, row.have_qtys?.[index] ?? 1)] : [];
+  });
+  const optionItems: ListingOptionItem[] = [...options]
+    .sort((a, b) => a.position - b.position)
+    .map((option) => ({
+      id: option.id,
+      position: option.position,
+      logic: option.logic === "and" ? "すべて" : "1pick" as const,
+      exchangeType: option.exchange_type ?? "any",
+      isCashOffer: !!option.is_cash_offer,
+      cashAmount: option.cash_amount ?? null,
+      wishes: (option.wish_ids ?? []).flatMap((id, index) => {
+        const source = inventoryById.get(id);
+        return source ? [toListingGoodsItem(source, option.wish_qtys?.[index] ?? 1)] : [];
+      }),
+    }));
+  const giveLabels = haves.map((item) => shortItemLabel(item));
+  const wantLabels = optionItems.flatMap((option) => {
+    if (option.isCashOffer) {
+      return [`定価 ${option.cashAmount ?? ""}円`];
     }
-    return (option.wish_ids ?? []).map((id) => itemLabel(inventoryById.get(id)));
+    return option.wishes.map(shortItemLabel);
   });
   const seed = giveLabels[0] ?? wantLabels[0] ?? "募集";
   return {
     id: row.id,
     status: row.status === "active" ? "ACTIVE" : "PAUSED",
+    haves,
+    options: optionItems,
     give: giveLabels.length > 0 ? giveLabels : ["譲る候補"],
     want: wantLabels.length > 0 ? wantLabels : ["求めるもの"],
     logic: row.have_logic === "and" ? "すべて" : "1pick",
-    hue: normalizeHue(inventoryById.get(row.have_ids?.[0] ?? "")?.hue, seed),
+    hue: haves[0]?.hue ?? normalizeHue(inventoryById.get(row.have_ids?.[0] ?? "")?.hue, seed),
   };
 }
 
-function itemLabel(row?: InventoryLookupRow) {
-  if (!row) return "グッズ";
-  return pickName(row.character) ?? pickName(row.group) ?? row.title;
+function shortItemLabel(item: ListingGoodsItem) {
+  return item.characterName ?? item.groupName ?? item.title;
+}
+
+function toListingGoodsItem(row: InventoryLookupRow, qty: number): ListingGoodsItem {
+  const groupName = pickName(row.group);
+  const characterName = pickName(row.character);
+  const goodsTypeName = pickName(row.goods_type);
+  const seed = characterName ?? groupName ?? row.title;
+  return {
+    id: row.id,
+    title: row.title,
+    qty: Math.max(1, qty || 1),
+    photoUrl: row.photo_urls?.[0] ?? null,
+    groupName,
+    characterName,
+    goodsTypeName,
+    hue: normalizeHue(row.hue, seed),
+  };
+}
+
+function previewListingGoods(
+  id: string,
+  title: string,
+  groupName: string,
+  characterName: string,
+  goodsTypeName: string,
+  hue: string,
+  qty: number,
+): ListingGoodsItem {
+  return {
+    id,
+    title,
+    qty,
+    photoUrl: null,
+    groupName,
+    characterName,
+    goodsTypeName,
+    hue,
+  };
 }
 
 function priorityLabel(priority: number | null): WishItem["priority"] {
@@ -824,6 +965,7 @@ function ListingDeckCard({
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  const slots = getListingWishSlots(listing);
   return (
     <Pressable onPress={onPress} style={styles.deckCard}>
       <View style={styles.deckCardGlowPink} />
@@ -843,15 +985,15 @@ function ListingDeckCard({
         </View>
       </View>
 
-      <View style={styles.deckBody}>
-        <DeckSide label="譲る" values={listing.give} hue={listing.hue} />
+      <View style={styles.deckBodyRich}>
+        <DeckGoodsStack label="譲る" items={listing.haves} accent={ihubColors.sky} />
         <View style={styles.deckCord}>
           <View style={styles.deckCordLine} />
           <View style={styles.deckKnot}>
             <Text style={styles.deckKnotText}>∿</Text>
           </View>
         </View>
-        <DeckSide label="求める" values={listing.want} hue="#f3c5d4" />
+        <DeckWishCluster slots={slots} />
       </View>
     </Pressable>
   );
@@ -868,42 +1010,146 @@ function StatusBadge({ status }: { status: ListingItem["status"] }) {
   );
 }
 
-function DeckSide({
+function getListingWishSlots(listing: ListingItem): ListingWishSlot[] {
+  return [...listing.options]
+    .sort((a, b) => a.position - b.position)
+    .flatMap<ListingWishSlot>((option) => {
+      if (option.isCashOffer) {
+        return [{ key: `${option.id}:cash`, option, wish: null }];
+      }
+      return option.wishes.map((wish) => ({
+        key: `${option.id}:${wish.id}`,
+        option,
+        wish,
+      }));
+    });
+}
+
+function DeckGoodsStack({
   label,
-  values,
-  hue,
+  items,
+  accent,
 }: {
   label: string;
-  values: string[];
-  hue: string;
+  items: ListingGoodsItem[];
+  accent: string;
 }) {
-  const visible = values.slice(0, 3);
+  const visible = items.slice(0, 3);
   return (
     <View style={styles.deckSide}>
       <Text style={styles.deckSideLabel}>{label}</Text>
-      <View style={styles.deckBubbles}>
-        {visible.map((value, index) => (
-          <View
-            key={`${value}-${index}`}
-            style={[
-              styles.deckBubble,
-              {
-                backgroundColor: hue,
-                marginTop: index === 1 ? -8 : index === 2 ? 6 : 0,
-              },
-            ]}
-          >
-            <Text numberOfLines={1} style={styles.deckBubbleText}>
-              {value[0] ?? "?"}
-            </Text>
+      <View style={styles.deckPhotoStack}>
+        {visible.map((item, index) => (
+          <View key={item.id} style={[styles.deckPhotoLayer, { marginLeft: index === 0 ? 0 : -18, marginTop: index * 8 }]}>
+            <DeckGoodsVisual item={item} size={78 - index * 7} accent={accent} />
           </View>
         ))}
-        {values.length > visible.length ? (
-          <View style={styles.deckMore}>
-            <Text style={styles.deckMoreText}>+{values.length - visible.length}</Text>
+        {items.length === 0 ? <DeckEmptyVisual label="譲" size={78} /> : null}
+        {items.length > visible.length ? (
+          <View style={styles.deckMorePhoto}>
+            <Text style={styles.deckMoreText}>+{items.length - visible.length}</Text>
           </View>
         ) : null}
       </View>
+    </View>
+  );
+}
+
+function DeckWishCluster({ slots }: { slots: ListingWishSlot[] }) {
+  const visible = slots.slice(0, 4);
+  return (
+    <View style={styles.deckSide}>
+      <Text style={styles.deckSideLabel}>求める</Text>
+      <View style={styles.deckWishCluster}>
+        {visible.map((slot, index) => (
+          <View
+            key={slot.key}
+            style={[
+              styles.deckWishNode,
+              {
+                left: index % 2 === 0 ? 0 : 52,
+                top: index < 2 ? 0 : 58,
+              },
+            ]}
+          >
+            {slot.option.isCashOffer ? (
+              <DeckCashVisual amount={slot.option.cashAmount} size={64} />
+            ) : slot.wish ? (
+              <DeckGoodsVisual item={slot.wish} size={64} accent={ihubColors.pink} />
+            ) : (
+              <DeckEmptyVisual label="求" size={64} />
+            )}
+          </View>
+        ))}
+        {slots.length === 0 ? <DeckEmptyVisual label="求" size={72} /> : null}
+        {slots.length > visible.length ? (
+          <View style={styles.deckWishMore}>
+            <Text style={styles.deckMoreText}>+{slots.length - visible.length}</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function DeckGoodsVisual({
+  item,
+  size,
+  accent,
+}: {
+  item: ListingGoodsItem;
+  size: number;
+  accent: string;
+}) {
+  const glyph = shortItemLabel(item).slice(0, 1) || "?";
+  return (
+    <View
+      style={[
+        styles.deckGoodsVisual,
+        {
+          borderColor: accent,
+          height: size,
+          width: size,
+          borderRadius: size >= 76 ? 18 : 14,
+          backgroundColor: item.photoUrl ? ihubColors.surface : item.hue,
+        },
+      ]}
+    >
+      {item.photoUrl ? (
+        <Image source={{ uri: item.photoUrl }} resizeMode="cover" style={styles.deckGoodsImage} />
+      ) : (
+        <Text style={[styles.deckGoodsGlyph, { fontSize: Math.max(18, size * 0.34) }]}>
+          {glyph}
+        </Text>
+      )}
+      <View style={styles.deckQtyBadge}>
+        <Text style={styles.deckQtyText}>×{item.qty}</Text>
+      </View>
+    </View>
+  );
+}
+
+function DeckCashVisual({
+  amount,
+  size,
+}: {
+  amount: number | null;
+  size: number;
+}) {
+  return (
+    <View style={[styles.deckCashVisual, { height: size, width: size }]}>
+      <Text style={styles.deckCashSymbol}>¥</Text>
+      <Text numberOfLines={1} style={styles.deckCashText}>
+        {amount?.toLocaleString() ?? "相談"}
+      </Text>
+    </View>
+  );
+}
+
+function DeckEmptyVisual({ label, size }: { label: string; size: number }) {
+  return (
+    <View style={[styles.deckEmptyVisual, { height: size, width: size }]}>
+      <Text style={styles.deckEmptyText}>{label}</Text>
     </View>
   );
 }
@@ -944,6 +1190,7 @@ function ListingCard({
       <View style={styles.tradeLine}>
         <TradeSide
           label="譲"
+          items={listing.haves}
           values={listing.give}
           hue={listing.hue}
           logic={listing.logic}
@@ -955,6 +1202,7 @@ function ListingCard({
         </View>
         <TradeSide
           label="求"
+          items={getListingWishSlots(listing).flatMap((slot) => (slot.wish ? [slot.wish] : []))}
           values={listing.want}
           hue="#f3c5d4"
           logic={listing.logic}
@@ -1000,12 +1248,14 @@ function MiniIcon({
 
 function TradeSide({
   label,
+  items,
   values,
   hue,
   logic,
   right,
 }: {
   label: string;
+  items: ListingGoodsItem[];
   values: string[];
   hue: string;
   logic: ListingItem["logic"];
@@ -1034,7 +1284,16 @@ function TradeSide({
             right ? styles.tradeItemsRight : styles.tradeItemsLeft,
           ]}
         >
-          {values.slice(0, 3).map((value, index) => (
+          {items.length > 0
+            ? items.slice(0, 3).map((item) => (
+                <DeckGoodsVisual
+                  key={item.id}
+                  item={item}
+                  size={38}
+                  accent={right ? ihubColors.pink : ihubColors.sky}
+                />
+              ))
+            : values.slice(0, 3).map((value, index) => (
             <View
               key={`${value}-${index}`}
               style={[styles.tradeMiniItem, { backgroundColor: hue }]}
@@ -1281,6 +1540,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 14,
   },
+  deckBodyRich: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 14,
+    minHeight: 166,
+  },
   deckSide: {
     alignItems: "center",
     flex: 1,
@@ -1302,6 +1568,119 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: 118,
     width: "100%",
+  },
+  deckPhotoStack: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    minHeight: 122,
+    width: "100%",
+  },
+  deckPhotoLayer: {
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+  },
+  deckMorePhoto: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.78)",
+    borderRadius: ihubRadii.pill,
+    bottom: 10,
+    height: 26,
+    justifyContent: "center",
+    position: "absolute",
+    right: 5,
+    width: 38,
+  },
+  deckWishCluster: {
+    height: 126,
+    position: "relative",
+    width: 118,
+  },
+  deckWishNode: {
+    position: "absolute",
+  },
+  deckWishMore: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.78)",
+    borderRadius: ihubRadii.pill,
+    bottom: 0,
+    height: 26,
+    justifyContent: "center",
+    position: "absolute",
+    right: 2,
+    width: 38,
+  },
+  deckGoodsVisual: {
+    alignItems: "center",
+    borderWidth: 2,
+    justifyContent: "center",
+    overflow: "hidden",
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.15,
+    shadowRadius: 13,
+  },
+  deckGoodsImage: {
+    height: "100%",
+    width: "100%",
+  },
+  deckGoodsGlyph: {
+    color: ihubColors.surface,
+    fontWeight: "900",
+    textShadowColor: "rgba(58,50,74,0.24)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  deckQtyBadge: {
+    backgroundColor: "rgba(58,50,74,0.68)",
+    borderBottomLeftRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  deckQtyText: {
+    color: ihubColors.surface,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  deckCashVisual: {
+    alignItems: "center",
+    backgroundColor: "rgba(122,154,138,0.12)",
+    borderColor: "rgba(122,154,138,0.34)",
+    borderRadius: 15,
+    borderWidth: 1,
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  deckCashSymbol: {
+    color: ihubColors.ink,
+    fontSize: 22,
+    fontWeight: "900",
+    lineHeight: 24,
+  },
+  deckCashText: {
+    color: ihubColors.mutedInk,
+    fontSize: 9,
+    fontWeight: "900",
+    maxWidth: "82%",
+  },
+  deckEmptyVisual: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.70)",
+    borderColor: "rgba(58,50,74,0.16)",
+    borderRadius: 15,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    justifyContent: "center",
+  },
+  deckEmptyText: {
+    color: "rgba(58,50,74,0.45)",
+    fontSize: 12,
+    fontWeight: "900",
   },
   deckBubble: {
     alignItems: "center",
