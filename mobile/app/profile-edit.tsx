@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "../src/auth/AuthProvider";
 import { PrimaryButton } from "../src/components/PrimaryButton";
@@ -38,6 +47,7 @@ export default function ProfileEditScreen() {
   const [form, setForm] = useState<ProfileForm>(() => fallbackForm(user?.email));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -124,6 +134,70 @@ export default function ProfileEditScreen() {
     }
   }
 
+  function handlePickAvatar() {
+    if (!user || !supabase || previewMode) {
+      setError("ログイン後にアイコン画像を変更できます");
+      return;
+    }
+    Alert.alert(
+      form.avatarUrl ? "アイコン画像を変更" : "アイコン画像を選択",
+      "登録する画像を選んでください。",
+      [
+        {
+          text: "カメラで撮る",
+          onPress: () => {
+            void pickAvatar("camera");
+          },
+        },
+        {
+          text: "写真を選ぶ",
+          onPress: () => {
+            void pickAvatar("library");
+          },
+        },
+        { text: "閉じる", style: "cancel" },
+      ],
+    );
+  }
+
+  async function pickAvatar(source: "camera" | "library") {
+    if (!user || !supabase || previewMode) return;
+    setUploadingAvatar(true);
+    setError(null);
+    try {
+      const permission =
+        source === "camera"
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setError(source === "camera" ? "カメラの利用を許可してください" : "写真ライブラリの利用を許可してください");
+        return;
+      }
+      const pickerOptions: ImagePicker.ImagePickerOptions = {
+        allowsEditing: true,
+        aspect: [1, 1],
+        mediaTypes: ["images"],
+        quality: 0.88,
+      };
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync(pickerOptions)
+          : await ImagePicker.launchImageLibraryAsync(pickerOptions);
+      if (result.canceled || !result.assets[0]) return;
+      const publicUrl = await uploadAvatar({
+        userId: user.id,
+        uri: result.assets[0].uri,
+        mimeType: result.assets[0].mimeType,
+        fileName: result.assets[0].fileName,
+      });
+      setForm((current) => ({ ...current, avatarUrl: publicUrl }));
+    } catch (avatarError) {
+      setError(avatarError instanceof Error ? avatarError.message : "アップロードに失敗しました");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
+
   return (
     <Screen contentStyle={styles.screen}>
       <View style={styles.header}>
@@ -156,11 +230,29 @@ export default function ProfileEditScreen() {
         <View style={styles.avatarCopy}>
           <Text style={styles.avatarTitle}>アイコン画像</Text>
           <Text style={styles.avatarSub}>
-            ネイティブの画像選択は次の実装で追加します
+            {uploadingAvatar
+              ? "アップロード中…"
+              : form.avatarUrl
+                ? "タップして変更できます"
+                : "画像を選んで切り抜き登録"}
           </Text>
         </View>
+        <Pressable
+          disabled={uploadingAvatar}
+          onPress={handlePickAvatar}
+          style={styles.avatarChange}
+        >
+          {uploadingAvatar ? (
+            <ActivityIndicator color={ihubColors.lavender} size="small" />
+          ) : (
+            <Text style={styles.avatarChangeText}>
+              {form.avatarUrl ? "変更" : "選択"}
+            </Text>
+          )}
+        </Pressable>
         {form.avatarUrl ? (
           <Pressable
+            disabled={uploadingAvatar}
             onPress={() => setForm((current) => ({ ...current, avatarUrl: null }))}
             style={styles.avatarDelete}
           >
@@ -257,6 +349,34 @@ async function fetchProfile(userId: string, email?: string): Promise<ProfileForm
     primaryArea: row?.primary_area ?? "",
     avatarUrl: row?.avatar_url ?? null,
   };
+}
+
+async function uploadAvatar(input: {
+  userId: string;
+  uri: string;
+  mimeType?: string | null;
+  fileName?: string | null;
+}) {
+  if (!supabase) throw new Error("Supabaseが未設定です");
+  const ext = extensionFrom(input.fileName ?? input.uri, input.mimeType);
+  const path = `${input.userId}/avatar_${Date.now()}.${ext}`;
+  const response = await fetch(input.uri);
+  const body = await response.arrayBuffer();
+  const { error } = await supabase.storage.from("avatars").upload(path, body, {
+    contentType: input.mimeType ?? "image/jpeg",
+    upsert: false,
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+function extensionFrom(fileNameOrUri: string, mimeType?: string | null) {
+  const fromName = fileNameOrUri.split("?")[0]?.split(".").pop()?.toLowerCase();
+  if (fromName && /^[a-z0-9]{2,5}$/.test(fromName)) return fromName === "jpeg" ? "jpg" : fromName;
+  if (mimeType?.includes("png")) return "png";
+  if (mimeType?.includes("webp")) return "webp";
+  return "jpg";
 }
 
 function fallbackForm(email?: string): ProfileForm {
@@ -372,6 +492,23 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 15,
     marginTop: 3,
+  },
+  avatarChange: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(166,149,216,0.38)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 34,
+    minWidth: 52,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
+  avatarChangeText: {
+    color: ihubColors.lavender,
+    fontSize: 10.5,
+    fontWeight: "900",
   },
   avatarDelete: {
     backgroundColor: "rgba(217,130,107,0.12)",
