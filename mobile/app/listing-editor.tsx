@@ -102,6 +102,18 @@ type InventoryRow = {
   goods_type: RelationName;
 };
 
+type InventoryCheckRow = {
+  id: string;
+  user_id: string;
+  kind: string;
+  status: string;
+  quantity: number | null;
+  title: string | null;
+  group: RelationName;
+  character: RelationName;
+  goods_type: RelationName;
+};
+
 type WishRow = {
   id: string;
   title: string;
@@ -1496,9 +1508,11 @@ function buildPreviewData(
   };
 }
 
-async function getReservedQtyByInvId() {
+async function getReservedQtyByInvId(inventoryIds?: string[]) {
   const reserved = new Map<string, number>();
   if (!supabase) return reserved;
+  const filterIds =
+    inventoryIds && inventoryIds.length > 0 ? new Set(inventoryIds) : undefined;
   const { data } = await supabase
     .from("proposals")
     .select(
@@ -1507,10 +1521,10 @@ async function getReservedQtyByInvId() {
     .eq("status", "agreed");
   for (const row of (data as ProposalReservationRow[] | null) ?? []) {
     if (!row.approved_by_sender) {
-      addReserved(reserved, row.sender_have_ids, row.sender_have_qtys);
+      addReserved(reserved, row.sender_have_ids, row.sender_have_qtys, filterIds);
     }
     if (!row.approved_by_receiver) {
-      addReserved(reserved, row.receiver_have_ids, row.receiver_have_qtys);
+      addReserved(reserved, row.receiver_have_ids, row.receiver_have_qtys, filterIds);
     }
   }
   return reserved;
@@ -1520,10 +1534,11 @@ function addReserved(
   target: Map<string, number>,
   ids: string[] | null | undefined,
   qtys: number[] | null | undefined,
+  filterIds?: Set<string>,
 ) {
   for (let index = 0; index < (ids?.length ?? 0); index += 1) {
     const id = ids?.[index];
-    if (!id) continue;
+    if (!id || (filterIds && !filterIds.has(id))) continue;
     target.set(id, (target.get(id) ?? 0) + Math.max(1, qtys?.[index] ?? 1));
   }
 }
@@ -1537,6 +1552,12 @@ async function createListingMobile(input: {
   note: string;
 }) {
   if (!supabase) return undefined;
+  const capacity = await assertListingHavesMarketAvailable(
+    input.userId,
+    input.haveIds,
+    input.haveQtys,
+  );
+  if (capacity.error) return capacity;
   const { data: listing, error: listingError } = await supabase
     .from("listings")
     .insert({
@@ -1580,6 +1601,12 @@ async function updateListingFullMobile(input: {
   if (row.status === "matched" || row.status === "closed") {
     return { error: "成立／完了した個別募集は編集できません" };
   }
+  const capacity = await assertListingHavesMarketAvailable(
+    input.userId,
+    input.haveIds,
+    input.haveQtys,
+  );
+  if (capacity.error) return capacity;
   const { error: listingError } = await supabase
     .from("listings")
     .update({
@@ -1597,6 +1624,101 @@ async function updateListingFullMobile(input: {
     .eq("listing_id", input.listingId);
   if (deleteError) return { error: deleteError.message };
   return insertListingOptions(input.listingId, input.options);
+}
+
+async function assertListingHavesMarketAvailable(
+  userId: string,
+  haveIds: string[],
+  haveQtys: number[],
+) {
+  if (!supabase || haveIds.length === 0) return {};
+  const needed = aggregateNeeded(haveIds, haveQtys);
+  const ids = Array.from(needed.keys());
+  const [{ data: rows }, reservedQtyByInvId] = await Promise.all([
+    supabase
+      .from("goods_inventory")
+      .select(
+        "id, user_id, kind, status, quantity, title, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+      )
+      .in("id", ids),
+    getReservedQtyByInvId(ids),
+  ]);
+  const inventoryById = new Map(
+    ((rows as InventoryCheckRow[] | null) ?? []).map((row) => [row.id, row] as const),
+  );
+  const issues: string[] = [];
+
+  for (const [id, qty] of needed) {
+    const row = inventoryById.get(id);
+    const label = inventoryLabel(row, id);
+    if (!row || row.user_id !== userId) {
+      issues.push(
+        `・「${label}」：${row ? "このアカウントの譲グッズではありません" : "グッズが削除されているか、参照できません"}`,
+      );
+      continue;
+    }
+    if (row.kind !== "for_trade") {
+      issues.push(`・「${label}」：マイ在庫の分類が「${inventoryKindLabel(row.kind)}」です`);
+      continue;
+    }
+    if (row.status !== "active") {
+      issues.push(`・「${label}」：マイ在庫の状態が「${inventoryStatusLabel(row.status)}」です`);
+      continue;
+    }
+    const registered = row.quantity ?? 1;
+    const available = Math.max(0, registered - (reservedQtyByInvId.get(id) ?? 0));
+    if (qty > available) {
+      issues.push(
+        `・「${label}」：交換可能数が不足しています（必要 ${qty} / 市場残数 ${available} / 登録数 ${registered}）`,
+      );
+    }
+  }
+
+  if (issues.length === 0) return {};
+  const visibleIssues = issues.slice(0, 5).join("\n");
+  const extra = issues.length > 5 ? `\nほか ${issues.length - 5} 件あります。` : "";
+  return {
+    error:
+      "交換条件に使えない譲グッズがあります。\n" +
+      visibleIssues +
+      extra +
+      "\n対象のグッズを個別募集から外すか、マイ在庫で状態・在庫数を確認してください。",
+  };
+}
+
+function aggregateNeeded(ids: string[], qtys: number[]) {
+  const result = new Map<string, number>();
+  for (let index = 0; index < ids.length; index += 1) {
+    const id = ids[index];
+    if (!id) continue;
+    result.set(id, (result.get(id) ?? 0) + Math.max(1, qtys[index] ?? 1));
+  }
+  return result;
+}
+
+function inventoryLabel(row: InventoryCheckRow | undefined, id: string) {
+  if (!row) return `ID: ${id.slice(0, 8)}`;
+  const title = row.title?.trim();
+  const fallback = [pickName(row.group), pickName(row.character), pickName(row.goods_type)]
+    .filter(Boolean)
+    .join(" / ");
+  return title || fallback || `ID: ${id.slice(0, 8)}`;
+}
+
+function inventoryKindLabel(kind: string) {
+  if (kind === "for_trade") return "譲る候補";
+  if (kind === "wanted") return "Wish";
+  if (kind === "keep") return "自分キープ";
+  return kind;
+}
+
+function inventoryStatusLabel(status: string) {
+  if (status === "active") return "交換対象";
+  if (status === "keep") return "自分キープ";
+  if (status === "traded") return "譲渡済み";
+  if (status === "reserved") return "予約中";
+  if (status === "archived") return "削除済み";
+  return status;
 }
 
 async function insertListingOptions(listingId: string, options: WishOptionState[]) {
