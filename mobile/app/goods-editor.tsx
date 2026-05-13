@@ -34,6 +34,19 @@ type CharacterMaster = { id: string; name: string; group_id: string };
 type PendingMember = { id: string; name: string; group_id: string };
 type TagValue = { id: string | null; label: string };
 type TagSuggestion = { id: string; label: string; userCount: number };
+type CreateStep = "common" | "shoot" | "meta";
+type CreatePhoto = {
+  id: string;
+  uri: string;
+  publicUrl: string | null;
+  status: "uploading" | "uploaded" | "error";
+  error?: string;
+};
+type CreateMeta = {
+  characterValue: string;
+  title: string;
+  quantity: number;
+};
 
 type EditorItem = {
   id: string;
@@ -532,6 +545,44 @@ export default function GoodsEditorScreen() {
     : selectedGroup?.name.slice(0, 1) || one(params.glyph) || "iH";
   const previewHue = one(params.hue) ?? "#cbbcf4";
 
+  if (!isWish && mode === "create") {
+    return (
+      <Screen contentStyle={styles.screen}>
+        <View style={styles.header}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="戻る"
+            onPress={() => router.back()}
+            style={styles.backButton}
+          >
+            <Text style={styles.backText}>‹</Text>
+          </Pressable>
+          <View style={styles.headerCopy}>
+            <Text style={styles.kicker}>INVENTORY</Text>
+            <Text style={styles.title}>グッズを登録</Text>
+          </View>
+          <StatusPill label="NEW" tone="lavender" />
+        </View>
+
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator color={ihubColors.lavender} />
+            <Text style={styles.loadingText}>マスタを読み込み中…</Text>
+          </View>
+        ) : null}
+
+        {loadError ? <Notice tone="danger">{loadError}</Notice> : null}
+
+        <InventoryCreateFlow
+          data={data}
+          previewMode={previewMode}
+          userId={user?.id ?? null}
+          onSaved={navigateBackToList}
+        />
+      </Screen>
+    );
+  }
+
   return (
     <Screen contentStyle={styles.screen}>
       <View style={styles.header}>
@@ -788,6 +839,547 @@ function MasterBlock({
           </Pressable>
         );
       })}
+    </View>
+  );
+}
+
+function InventoryCreateFlow({
+  data,
+  previewMode,
+  userId,
+  onSaved,
+}: {
+  data: EditorData;
+  previewMode: boolean;
+  userId: string | null;
+  onSaved: () => void;
+}) {
+  const [step, setStep] = useState<CreateStep>("common");
+  const [groupId, setGroupId] = useState("");
+  const [goodsTypeId, setGoodsTypeId] = useState("");
+  const [pendingMembers, setPendingMembers] = useState(data.pendingMembers);
+  const [photos, setPhotos] = useState<CreatePhoto[]>([]);
+  const [metas, setMetas] = useState<CreateMeta[]>([]);
+  const [startCarrying, setStartCarrying] = useState(false);
+  const [tags, setTags] = useState<TagValue[]>([]);
+  const [tagDraft, setTagDraft] = useState("");
+  const [tagSuggestions, setTagSuggestions] = useState<TagSuggestion[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectedGroup = data.groups.find((group) => group.id === groupId);
+  const selectedGoodsType = data.goodsTypes.find((goodsType) => goodsType.id === goodsTypeId);
+  const filteredCharacters = useMemo(
+    () => data.characters.filter((character) => character.group_id === groupId),
+    [data.characters, groupId],
+  );
+  const filteredPending = useMemo(
+    () => pendingMembers.filter((member) => member.group_id === groupId),
+    [groupId, pendingMembers],
+  );
+  const uploadedCount = photos.filter((photo) => photo.status === "uploaded").length;
+  const uploadingCount = photos.filter((photo) => photo.status === "uploading").length;
+  const isOther = selectedGoodsType?.name === "その他";
+
+  useEffect(() => {
+    setPendingMembers(data.pendingMembers);
+  }, [data.pendingMembers]);
+
+  useEffect(() => {
+    if (!supabase || previewMode || !tagDraft.trim()) {
+      setTagSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void searchTags(tagDraft.trim())
+        .then(setTagSuggestions)
+        .catch(() => setTagSuggestions([]));
+    }, 160);
+
+    return () => clearTimeout(timer);
+  }, [previewMode, tagDraft]);
+
+  function addTag(raw: string, existingId: string | null = null) {
+    const label = raw.replace(/^#+/, "").trim();
+    if (!label) return;
+    setTags((current) => {
+      if (current.some((tag) => tag.label.toLowerCase() === label.toLowerCase())) {
+        return current;
+      }
+      if (current.length >= TAG_LIMIT) return current;
+      return [...current, { id: existingId, label }];
+    });
+    setTagDraft("");
+    setTagSuggestions([]);
+  }
+
+  function removeTag(index: number) {
+    setTags((current) => current.filter((_, i) => i !== index));
+  }
+
+  function goToShoot() {
+    if (!groupId || !goodsTypeId) {
+      setError("グループとグッズ種別を選択してください");
+      return;
+    }
+    setError(null);
+    setStep("shoot");
+  }
+
+  function goToMetaWithoutPhoto() {
+    setMetas([{ characterValue: "", title: "", quantity: 1 }]);
+    setStep("meta");
+  }
+
+  function goToMetaWithPhotos() {
+    const uploaded = photos.filter((photo) => photo.status === "uploaded");
+    if (uploaded.length === 0) {
+      setError("登録する写真を選んでください");
+      return;
+    }
+    setMetas((current) =>
+      uploaded.map((_, index) => current[index] ?? {
+        characterValue: "",
+        title: "",
+        quantity: 1,
+      }),
+    );
+    setError(null);
+    setStep("meta");
+  }
+
+  async function pickImages(source: "camera" | "library") {
+    if (!supabase || previewMode || !userId) {
+      setError("ログイン後に写真登録できます");
+      return;
+    }
+    setError(null);
+    const permission =
+      source === "camera"
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setError(source === "camera" ? "カメラの利用を許可してください" : "写真ライブラリの利用を許可してください");
+      return;
+    }
+
+    const result =
+      source === "camera"
+        ? await ImagePicker.launchCameraAsync({
+            allowsEditing: false,
+            mediaTypes: ["images"],
+            quality: 0.86,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            allowsEditing: false,
+            allowsMultipleSelection: true,
+            mediaTypes: ["images"],
+            quality: 0.86,
+          });
+    if (result.canceled || result.assets.length === 0) return;
+
+    const nextPhotos = result.assets.map((asset) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      uri: asset.uri,
+      publicUrl: null,
+      status: "uploading" as const,
+    }));
+    setPhotos((current) => [...current, ...nextPhotos]);
+
+    await Promise.all(
+      result.assets.map(async (asset, index) => {
+        const photoId = nextPhotos[index].id;
+        try {
+          const publicUrl = await uploadGoodsPhoto({
+            userId,
+            uri: asset.uri,
+            mimeType: asset.mimeType,
+            fileName: asset.fileName,
+          });
+          setPhotos((current) =>
+            current.map((photo) =>
+              photo.id === photoId
+                ? { ...photo, publicUrl, status: "uploaded" }
+                : photo,
+            ),
+          );
+        } catch (uploadError) {
+          setPhotos((current) =>
+            current.map((photo) =>
+              photo.id === photoId
+                ? {
+                    ...photo,
+                    status: "error",
+                    error:
+                      uploadError instanceof Error
+                        ? uploadError.message
+                        : "アップロード失敗",
+                  }
+                : photo,
+            ),
+          );
+        }
+      }),
+    );
+  }
+
+  function removePhoto(photoId: string) {
+    const target = photos.find((photo) => photo.id === photoId);
+    if (target?.publicUrl) {
+      void deleteGoodsPhoto(target.publicUrl);
+    }
+    setPhotos((current) => current.filter((photo) => photo.id !== photoId));
+  }
+
+  function updateMeta(index: number, patch: Partial<CreateMeta>) {
+    setMetas((current) =>
+      current.map((meta, i) => (i === index ? { ...meta, ...patch } : meta)),
+    );
+  }
+
+  async function handleMemberRequest() {
+    if (!supabase || !userId || !groupId) return;
+    const db = supabase;
+    Alert.prompt(
+      "メンバー追加リクエスト",
+      "メンバー名を入力してください",
+      async (value) => {
+        const name = value?.trim();
+        if (!name) return;
+        try {
+          const { data: inserted, error: insertError } = await db
+            .from("character_requests")
+            .insert({
+              user_id: userId,
+              group_id: groupId,
+              requested_name: name,
+              note: null,
+            })
+            .select("id")
+            .single();
+          if (insertError) throw insertError;
+          const next = {
+            id: String((inserted as { id: string }).id),
+            name,
+            group_id: groupId,
+          };
+          setPendingMembers((current) => [next, ...current]);
+        } catch (requestError) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "追加リクエストに失敗しました",
+          );
+        }
+      },
+    );
+  }
+
+  async function handleSave() {
+    if (!supabase || previewMode || !userId) {
+      onSaved();
+      return;
+    }
+    const db = supabase;
+    if (!groupId || !goodsTypeId) {
+      setError("グループとグッズ種別を選択してください");
+      return;
+    }
+
+    const uploaded = photos.filter(
+      (photo): photo is CreatePhoto & { publicUrl: string } =>
+        photo.status === "uploaded" && !!photo.publicUrl,
+    );
+    let rows;
+    try {
+      rows = metas.map((meta, index) => {
+        const finalTitle = meta.title.trim() || autoTitle(meta.characterValue);
+        if (!finalTitle) {
+          throw new Error("タイトルを入力してください");
+        }
+        const { characterId, characterRequestId } = splitCharacterValue(meta.characterValue);
+        return {
+          user_id: userId,
+          kind: "for_trade",
+          group_id: groupId,
+          character_id: characterRequestId ? null : characterId,
+          character_request_id: characterRequestId,
+          goods_type_id: goodsTypeId,
+          title: finalTitle,
+          series: null,
+          description: null,
+          condition: null,
+          quantity: Math.max(1, Math.min(999, meta.quantity || 1)),
+          photo_urls: uploaded[index]?.publicUrl ? [uploaded[index].publicUrl] : [],
+          carrying: startCarrying,
+        };
+      });
+    } catch (metaError) {
+      setError(metaError instanceof Error ? metaError.message : "入力内容を確認してください");
+      return;
+    }
+
+    if (rows.length === 0) {
+      setError("登録するアイテムがありません");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const { data: inserted, error: insertError } = await db
+        .from("goods_inventory")
+        .insert(rows)
+        .select("id");
+      if (insertError) throw insertError;
+
+      const insertedRows = (inserted as { id: string }[] | null) ?? [];
+      if (tags.length > 0) {
+        await Promise.all(
+          insertedRows.flatMap((row) =>
+            tags.map((tag) =>
+              db.rpc("attach_inventory_tag", {
+                p_inventory_id: row.id,
+                p_raw_label: tag.label,
+              }),
+            ),
+          ),
+        );
+      }
+      onSaved();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "保存に失敗しました");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function autoTitle(characterValue: string) {
+    const { characterId, characterRequestId } = splitCharacterValue(characterValue);
+    const characterName = characterId
+      ? data.characters.find((character) => character.id === characterId)?.name
+      : null;
+    const requestName = characterRequestId
+      ? pendingMembers.find((member) => member.id === characterRequestId)?.name
+      : null;
+    const name = characterName ?? requestName ?? selectedGroup?.name ?? "";
+    return `${name} ${selectedGoodsType?.name ?? ""}`.trim();
+  }
+
+  if (step === "common") {
+    return (
+      <View style={styles.createFlow}>
+        <View style={styles.createHint}>
+          <Text style={styles.createHintTitle}>1回の登録は同じ推し・種別が前提</Text>
+          <Text style={styles.createHintText}>
+            先にグループとグッズ種別を選び、次の画面で写真ごとにメンバーや数量を調整します。
+          </Text>
+        </View>
+
+        <Section label="推し" required>
+          <MasterBlock
+            groupId={groupId}
+            groups={data.groups}
+            readonly={false}
+            onGroupSelect={(nextGroupId) => {
+              setGroupId(nextGroupId);
+              setMetas([]);
+            }}
+          />
+        </Section>
+
+        <Section label="グッズ種別" required>
+          <GoodsTypeChips
+            value={goodsTypeId}
+            goodsTypes={data.goodsTypes}
+            readonly={false}
+            onChange={setGoodsTypeId}
+          />
+        </Section>
+
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+
+        <PrimaryButton disabled={!groupId || !goodsTypeId} onPress={goToShoot}>
+          次へ：写真を撮る
+        </PrimaryButton>
+      </View>
+    );
+  }
+
+  if (step === "shoot") {
+    return (
+      <View style={styles.createFlow}>
+        <View style={styles.createHint}>
+          <Text style={styles.createHintTitle}>写真を撮る / 選ぶ</Text>
+          <Text style={styles.createHintText}>
+            複数枚選ぶと、写真ごとに1件ずつ登録できます。写真なし登録もできます。
+          </Text>
+        </View>
+
+        <View style={styles.photoPickGrid}>
+          <Pressable style={styles.photoPickButton} onPress={() => void pickImages("camera")}>
+            <Text style={styles.photoPickIcon}>⌁</Text>
+            <Text style={styles.photoPickText}>カメラ</Text>
+          </Pressable>
+          <Pressable style={styles.photoPickButton} onPress={() => void pickImages("library")}>
+            <Text style={styles.photoPickIcon}>▧</Text>
+            <Text style={styles.photoPickText}>写真を選ぶ</Text>
+          </Pressable>
+        </View>
+
+        {photos.length > 0 ? (
+          <View style={styles.createPhotoSection}>
+            <View style={styles.createPhotoHeader}>
+              <Text style={styles.createPhotoMeta}>
+                {uploadedCount} / {photos.length} アップロード済
+              </Text>
+              {uploadingCount > 0 ? (
+                <Text style={styles.createPhotoUploading}>{uploadingCount}件アップ中…</Text>
+              ) : null}
+            </View>
+            <View style={styles.createPhotoGrid}>
+              {photos.map((photo) => (
+                <View key={photo.id} style={styles.createPhotoTile}>
+                  <Image source={{ uri: photo.uri }} resizeMode="cover" style={styles.createPhotoImage} />
+                  {photo.status === "uploading" ? (
+                    <View style={styles.createPhotoOverlay}>
+                      <ActivityIndicator color={ihubColors.surface} />
+                    </View>
+                  ) : null}
+                  {photo.status === "error" ? (
+                    <View style={styles.createPhotoError}>
+                      <Text style={styles.createPhotoErrorText}>エラー</Text>
+                    </View>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="写真を削除"
+                    onPress={() => removePhoto(photo.id)}
+                    style={styles.createPhotoRemove}
+                  >
+                    <Text style={styles.createPhotoRemoveText}>×</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+
+        <View style={styles.createActionsRow}>
+          <PrimaryButton variant="secondary" onPress={() => setStep("common")}>
+            戻る
+          </PrimaryButton>
+          <PrimaryButton
+            disabled={uploadedCount === 0 || uploadingCount > 0}
+            onPress={goToMetaWithPhotos}
+          >
+            次へ：ラベル設定
+          </PrimaryButton>
+        </View>
+
+        <Pressable onPress={goToMetaWithoutPhoto} style={styles.noPhotoLink}>
+          <Text style={styles.noPhotoText}>写真なしで登録する →</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const targetPhotos = photos.filter((photo) => photo.status === "uploaded");
+
+  return (
+    <View style={styles.createFlow}>
+      <View style={styles.createHint}>
+        <Text style={styles.createHintTitle}>各グッズのラベル設定</Text>
+        <Text style={styles.createHintText}>
+          {selectedGroup?.name ?? "推し"} / {selectedGoodsType?.name ?? "種別"} として登録します。
+        </Text>
+      </View>
+
+      <Pressable style={styles.requestButton} onPress={handleMemberRequest}>
+        <Text style={styles.requestButtonText}>+ メンバーが見つからない場合は追加リクエスト</Text>
+      </Pressable>
+
+      <View style={styles.createMetaList}>
+        {metas.map((meta, index) => (
+          <View key={index} style={styles.createMetaCard}>
+            {targetPhotos[index] ? (
+              <Image
+                source={{ uri: targetPhotos[index].uri }}
+                resizeMode="cover"
+                style={styles.createMetaThumb}
+              />
+            ) : null}
+            <View style={styles.createMetaBody}>
+              <CharacterChips
+                value={meta.characterValue}
+                characters={filteredCharacters}
+                pendingMembers={filteredPending}
+                readonly={false}
+                onChange={(next) => updateMeta(index, { characterValue: next })}
+              />
+              {isOther ? (
+                <TextInput
+                  value={meta.title}
+                  onChangeText={(next) => updateMeta(index, { title: next })}
+                  maxLength={100}
+                  placeholder="タイトル（その他なので入力）"
+                  placeholderTextColor="rgba(58,50,74,0.35)"
+                  style={styles.input}
+                />
+              ) : null}
+              <QuantityStepper
+                value={meta.quantity}
+                readonly={false}
+                onChange={(next) =>
+                  updateMeta(index, {
+                    quantity:
+                      typeof next === "function" ? next(meta.quantity) : next,
+                  })
+                }
+              />
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <Pressable
+        onPress={() => setStartCarrying((current) => !current)}
+        style={styles.carryToggle}
+      >
+        <View style={[styles.checkbox, startCarrying ? styles.checkboxActive : null]}>
+          {startCarrying ? <Text style={styles.checkboxText}>✓</Text> : null}
+        </View>
+        <View style={styles.carryCopy}>
+          <Text style={styles.carryTitle}>全部今日から持参中にする</Text>
+          <Text style={styles.carryText}>会場で交換可能な状態にする</Text>
+        </View>
+      </Pressable>
+
+      <Section label="タグ" hint="全グッズに付与">
+        <TagEditor
+          value={tags}
+          draft={tagDraft}
+          suggestions={tagSuggestions}
+          readonly={false}
+          onChangeDraft={setTagDraft}
+          onAdd={addTag}
+          onRemove={removeTag}
+        />
+      </Section>
+
+      {error ? <Notice tone="danger">{error}</Notice> : null}
+
+      <View style={styles.createActionsRow}>
+        <PrimaryButton variant="secondary" onPress={() => setStep(targetPhotos.length > 0 ? "shoot" : "common")}>
+          戻る
+        </PrimaryButton>
+        <PrimaryButton loading={saving} onPress={() => void handleSave()}>
+          {metas.length}件まとめて登録
+        </PrimaryButton>
+      </View>
     </View>
   );
 }
@@ -1595,6 +2187,167 @@ const styles = StyleSheet.create({
   formReadonly: {
     gap: 14,
     opacity: 0.86,
+  },
+  createFlow: {
+    gap: 14,
+  },
+  createHint: {
+    backgroundColor: "rgba(166,149,216,0.08)",
+    borderColor: "rgba(166,149,216,0.20)",
+    borderRadius: ihubRadii.lg,
+    borderWidth: 1,
+    gap: 6,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
+  },
+  createHintTitle: {
+    color: ihubColors.ink,
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 20,
+  },
+  createHintText: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+  photoPickGrid: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  photoPickButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.lg,
+    borderWidth: 1,
+    flex: 1,
+    gap: 7,
+    justifyContent: "center",
+    minHeight: 112,
+    padding: 14,
+    ...ihubShadow,
+  },
+  photoPickIcon: {
+    color: ihubColors.lavender,
+    fontSize: 28,
+    fontWeight: "900",
+    lineHeight: 30,
+  },
+  photoPickText: {
+    color: ihubColors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  createPhotoSection: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.lg,
+    borderWidth: 1,
+    gap: 12,
+    padding: 13,
+  },
+  createPhotoHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  createPhotoMeta: {
+    color: ihubColors.ink,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  createPhotoUploading: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  createPhotoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+  },
+  createPhotoTile: {
+    backgroundColor: ihubColors.background,
+    borderRadius: 16,
+    height: 104,
+    overflow: "hidden",
+    width: 92,
+  },
+  createPhotoImage: {
+    height: "100%",
+    width: "100%",
+  },
+  createPhotoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.32)",
+    justifyContent: "center",
+  },
+  createPhotoError: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    backgroundColor: "rgba(217,130,107,0.74)",
+    justifyContent: "center",
+  },
+  createPhotoErrorText: {
+    color: ihubColors.surface,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  createPhotoRemove: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: ihubRadii.pill,
+    height: 24,
+    justifyContent: "center",
+    position: "absolute",
+    right: 6,
+    top: 6,
+    width: 24,
+  },
+  createPhotoRemoveText: {
+    color: ihubColors.ink,
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  createActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  noPhotoLink: {
+    alignSelf: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  noPhotoText: {
+    color: ihubColors.lavender,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  createMetaList: {
+    gap: 12,
+  },
+  createMetaCard: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    padding: 12,
+  },
+  createMetaThumb: {
+    backgroundColor: ihubColors.background,
+    borderRadius: 16,
+    height: 98,
+    width: 82,
+  },
+  createMetaBody: {
+    flex: 1,
+    gap: 10,
   },
   section: {
     gap: 7,
