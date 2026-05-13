@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -267,6 +268,8 @@ export default function WishesScreen() {
     !supabase || previewMode ? INITIAL_LISTINGS : [],
   );
   const [selectedWish, setSelectedWish] = useState<WishItem | null>(null);
+  const [deleteConfirmWish, setDeleteConfirmWish] = useState<WishItem | null>(null);
+  const [deletingWishIds, setDeletingWishIds] = useState<string[]>([]);
   const [selectedListing, setSelectedListing] = useState<ListingItem | null>(
     null,
   );
@@ -410,24 +413,46 @@ export default function WishesScreen() {
           openListingEditor(null, "create", wish);
         },
         onDelete: () => {
-          const wishId = selectedWish.id;
-          setWishes((current) =>
-            current.filter((item) => item.id !== wishId),
-          );
+          const wish = selectedWish;
           setSelectedWish(null);
-          if (supabase && user && !previewMode) {
-            supabase
-              .from("goods_inventory")
-              .delete()
-              .eq("id", wishId)
-              .eq("user_id", user.id)
-              .then(({ error }) => {
-                if (error) setLoadError(error.message);
-              });
-          }
+          setDeleteConfirmWish(wish);
         },
       })
     : [];
+
+  function confirmWishDelete() {
+    if (!deleteConfirmWish) return;
+    const target = deleteConfirmWish;
+    setDeleteConfirmWish(null);
+    setDeletingWishIds((current) =>
+      current.includes(target.id) ? current : [...current, target.id],
+    );
+  }
+
+  function completeWishDelete(id: string) {
+    const target = wishes.find((item) => item.id === id);
+    setDeletingWishIds((current) => current.filter((itemId) => itemId !== id));
+    setWishes((current) => current.filter((item) => item.id !== id));
+    if (supabase && user && !previewMode) {
+      supabase
+        .from("goods_inventory")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .eq("kind", "wanted")
+        .then(({ error }) => {
+          if (!error) return;
+          setLoadError(error.message);
+          if (target) {
+            setWishes((current) =>
+              current.some((item) => item.id === target.id)
+                ? current
+                : [target, ...current],
+            );
+          }
+        });
+    }
+  }
 
   const listingActions = selectedListing
     ? buildListingActions({
@@ -483,7 +508,10 @@ export default function WishesScreen() {
               items={wishGridItems}
               columns={columns}
               emptyLabel="まだ Wish がありません"
+              deletingIds={deletingWishIds}
+              onItemFadeOutEnd={completeWishDelete}
               onPressItem={(gridItem) => {
+                if (deletingWishIds.includes(gridItem.id)) return;
                 const wish = wishes.find((item) => item.id === gridItem.id);
                 if (wish) setSelectedWish(wish);
               }}
@@ -518,6 +546,12 @@ export default function WishesScreen() {
         subtitle={selectedWish?.subtitle}
         actions={wishActions}
         onClose={() => setSelectedWish(null)}
+      />
+
+      <WishDeleteConfirmModal
+        item={deleteConfirmWish}
+        onCancel={() => setDeleteConfirmWish(null)}
+        onConfirm={confirmWishDelete}
       />
 
       <BottomOptionSheet
@@ -1351,6 +1385,73 @@ function buildWishActions({
   ];
 }
 
+function WishDeleteConfirmModal({
+  item,
+  onCancel,
+  onConfirm,
+}: {
+  item: WishItem | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      visible={!!item}
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <View style={styles.deleteModalRoot}>
+        <Pressable style={styles.deleteModalBackdrop} onPress={onCancel} />
+        <View style={styles.deleteModalPanel}>
+          <Text style={styles.deleteModalTitle}>wish を削除しますか？</Text>
+          {item ? (
+            <View style={styles.deleteModalPreview}>
+              {item.photoUrl ? (
+                <Image
+                  source={{ uri: item.photoUrl }}
+                  resizeMode="cover"
+                  style={styles.deleteModalImage}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.deleteModalFallback,
+                    { backgroundColor: item.hue },
+                  ]}
+                >
+                  <Text style={styles.deleteModalFallbackText}>
+                    {item.glyph}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.deleteModalCopy}>
+                <Text numberOfLines={1} style={styles.deleteModalItemTitle}>
+                  {item.title}
+                </Text>
+                <Text numberOfLines={1} style={styles.deleteModalItemSub}>
+                  {item.subtitle}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+          <Text style={styles.deleteModalBody}>
+            削除後はマッチング候補や個別募集の候補から外れます。
+          </Text>
+          <View style={styles.deleteModalActions}>
+            <Pressable onPress={onCancel} style={styles.deleteModalCancel}>
+              <Text style={styles.deleteModalCancelText}>閉じる</Text>
+            </Pressable>
+            <Pressable onPress={onConfirm} style={styles.deleteModalDanger}>
+              <Text style={styles.deleteModalDangerText}>削除する</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function buildListingActions({
   item,
   onClose,
@@ -1394,6 +1495,109 @@ const styles = StyleSheet.create({
   screenContent: {
     gap: 12,
     paddingHorizontal: 18,
+  },
+  deleteModalRoot: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    padding: 20,
+  },
+  deleteModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(20,18,28,0.50)",
+  },
+  deleteModalPanel: {
+    backgroundColor: ihubColors.surface,
+    borderRadius: 20,
+    gap: 13,
+    padding: 18,
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.24,
+    shadowRadius: 34,
+    width: "100%",
+  },
+  deleteModalTitle: {
+    color: ihubColors.ink,
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  deleteModalPreview: {
+    alignItems: "center",
+    backgroundColor: ihubColors.background,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 11,
+    padding: 10,
+  },
+  deleteModalImage: {
+    borderRadius: 8,
+    height: 54,
+    width: 40,
+  },
+  deleteModalFallback: {
+    alignItems: "center",
+    borderRadius: 8,
+    height: 54,
+    justifyContent: "center",
+    width: 40,
+  },
+  deleteModalFallbackText: {
+    color: ihubColors.surface,
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  deleteModalCopy: {
+    flex: 1,
+  },
+  deleteModalItemTitle: {
+    color: ihubColors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  deleteModalItemSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  deleteModalBody: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  deleteModalActions: {
+    flexDirection: "row",
+    gap: 9,
+  },
+  deleteModalCancel: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: 13,
+    flex: 1,
+    paddingVertical: 12,
+  },
+  deleteModalCancelText: {
+    color: ihubColors.mutedInk,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  deleteModalDanger: {
+    alignItems: "center",
+    backgroundColor: "rgba(239,68,68,0.12)",
+    borderColor: "rgba(239,68,68,0.24)",
+    borderRadius: 13,
+    borderWidth: 1,
+    flex: 1,
+    paddingVertical: 12,
+  },
+  deleteModalDangerText: {
+    color: "#dc2626",
+    fontSize: 13,
+    fontWeight: "900",
   },
   header: {
     alignItems: "center",

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   Animated,
+  Easing,
   Image,
   Modal,
   Pressable,
@@ -125,6 +126,8 @@ export function GoodsGrid({
   emptyLabel,
   addTileLabel,
   onPressAddTile,
+  deletingIds = [],
+  onItemFadeOutEnd,
 }: {
   items: GoodsGridItem[];
   columns: ColumnCount;
@@ -132,6 +135,8 @@ export function GoodsGrid({
   emptyLabel: string;
   addTileLabel?: string;
   onPressAddTile?: () => void;
+  deletingIds?: string[];
+  onItemFadeOutEnd?: (id: string) => void;
 }) {
   const { width } = useWindowDimensions();
   const screenPadding = 36;
@@ -162,6 +167,8 @@ export function GoodsGrid({
           item={item}
           width={tileWidth}
           delayMs={(showAddTile ? index + 1 : index) * 35}
+          deleting={deletingIds.includes(item.id)}
+          onFadeOutEnd={onItemFadeOutEnd}
           onPress={() => onPressItem(item)}
         />
       ))}
@@ -224,16 +231,21 @@ function AnimatedGoodsTile({
   item,
   width,
   delayMs,
+  deleting,
+  onFadeOutEnd,
   onPress,
 }: {
   item: GoodsGridItem;
   width: number;
   delayMs: number;
+  deleting?: boolean;
+  onFadeOutEnd?: (id: string) => void;
   onPress: () => void;
 }) {
   const appear = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (deleting) return;
     const timer = setTimeout(() => {
       Animated.spring(appear, {
         toValue: 1,
@@ -245,7 +257,19 @@ function AnimatedGoodsTile({
     }, delayMs);
 
     return () => clearTimeout(timer);
-  }, [appear, delayMs]);
+  }, [appear, deleting, delayMs]);
+
+  useEffect(() => {
+    if (!deleting) return;
+    Animated.timing(appear, {
+      toValue: 0,
+      duration: 320,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) onFadeOutEnd?.(item.id);
+    });
+  }, [appear, deleting, item.id, onFadeOutEnd]);
 
   const translateY = appear.interpolate({
     inputRange: [0, 1],

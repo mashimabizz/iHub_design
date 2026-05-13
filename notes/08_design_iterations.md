@@ -4,6 +4,54 @@
 
 ---
 
+## イテレーション155.47：iOS Wish削除を確認モーダルとフェードアウトへ同期
+
+### 背景・問題意識
+
+Web版のWish削除は、確認モーダルを挟んだうえで対象パネルがフェードアウトし、残りのパネルが自動整理される。一方iOS版はボトムシートの「削除」を押すと即時にリストから消えており、以前オーナーが希望した「Wishと同じようにフェードアウトして自動整理」に対して、スマホアプリ側の手触りが不足していた。
+
+### 変更内容
+
+#### `mobile/src/components/GoodsGrid.tsx`
+- グッズタイルに削除フェードアウト用の `deletingIds` / `onItemFadeOutEnd` を追加した。
+- 削除対象タイルは `Animated.timing` で奥へ消えるようにし、完了時に親へ通知するようにした。
+
+#### `mobile/app/(tabs)/wishes.tsx`
+- Wish削除前に、Web版と同じく確認モーダルを表示するようにした。
+- 確認後、対象Wishをフェードアウトさせ、アニメーション完了後にローカル一覧とSupabaseから削除するようにした。
+- サーバー削除に失敗した場合はエラー表示し、対象Wishを一覧へ戻すようにした。
+
+### 影響範囲
+
+- iOS版 Wish一覧
+- iOS版 グッズグリッド共通コンポーネント
+- iOS版 Wish削除フロー
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- iOS版Wish一覧でWishをタップし、「削除」を押すと確認モーダルが出ること
+- 「削除する」後に対象パネルがフェードアウトし、残りのパネルが詰まること
+- サーバー削除失敗時に対象Wishが戻ること
+
+### 関連ファイル
+
+- `mobile/src/components/GoodsGrid.tsx`
+- `mobile/app/(tabs)/wishes.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版Wish削除の確認・フェードアウト・reflow体験へ近づけた
+- ✅ グッズグリッドは既存呼び出しに影響しないoptional propsで拡張
+- ✅ 新用語追加なしのため `notes/10_glossary.md` 更新不要
+- ✅ DBスキーマ変更なしのため `notes/05_data_model.md` 更新不要
+- ✅ 状態遷移追加なしのため `notes/09_state_machines.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.46：iOS在庫編集から持参切替を外してWeb版へ同期
 
 ### 背景・問題意識
