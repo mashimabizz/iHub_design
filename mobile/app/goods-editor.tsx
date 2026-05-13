@@ -232,21 +232,52 @@ export default function GoodsEditorScreen() {
     setTags((current) => current.filter((_, i) => i !== index));
   }
 
-  async function handlePickPhoto() {
+  function handlePickPhoto() {
+    if (itemIsReadOnly || !user || !supabase) return;
+    Alert.alert(
+      photoUrls[0] ? "写真を差し替え" : "写真を追加",
+      "登録する画像を選んでください。",
+      [
+        {
+          text: "カメラで撮る",
+          onPress: () => {
+            void pickEditorPhoto("camera");
+          },
+        },
+        {
+          text: "写真を選ぶ",
+          onPress: () => {
+            void pickEditorPhoto("library");
+          },
+        },
+        { text: "閉じる", style: "cancel" },
+      ],
+    );
+  }
+
+  async function pickEditorPhoto(source: "camera" | "library") {
     if (itemIsReadOnly || !user || !supabase) return;
     setPhotoUploading(true);
     setError(null);
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permission =
+        source === "camera"
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        setError("写真ライブラリの利用を許可してください");
+        setError(source === "camera" ? "カメラの利用を許可してください" : "写真ライブラリの利用を許可してください");
         return;
       }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        allowsEditing: false,
+      const pickerOptions: ImagePicker.ImagePickerOptions = {
+        allowsEditing: true,
+        aspect: [1, 1],
         mediaTypes: ["images"],
         quality: 0.86,
-      });
+      };
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync(pickerOptions)
+          : await ImagePicker.launchImageLibraryAsync(pickerOptions);
       if (result.canceled || !result.assets[0]) return;
       const asset = result.assets[0];
       const publicUrl = await uploadGoodsPhoto({
