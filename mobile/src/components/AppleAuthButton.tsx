@@ -19,7 +19,7 @@ type AppleAuthButtonProps = {
 };
 
 export function AppleAuthButton({ disabled = false, mode, onError, style }: AppleAuthButtonProps) {
-  const { configured, signInWithAppleIdToken } = useAuth();
+  const { configured, refreshProfile, signInWithAppleIdToken } = useAuth();
   const [available, setAvailable] = useState<boolean | null>(
     Platform.OS === "ios" ? null : false,
   );
@@ -82,7 +82,13 @@ export function AppleAuthButton({ disabled = false, mode, onError, style }: Appl
         onError?.(normalizeAppleAuthError(error));
         return;
       }
-      router.replace("/");
+      const profile = await refreshProfile();
+      const needsOnboarding =
+        mode === "signUp" ||
+        !profile ||
+        profile.accountStatus !== "active" ||
+        !profile.gender;
+      router.replace(needsOnboarding ? "/onboarding/gender" : "/");
     } catch (error) {
       const code = typeof error === "object" && error && "code" in error ? error.code : null;
       if (code !== "ERR_REQUEST_CANCELED") {
