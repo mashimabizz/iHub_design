@@ -480,50 +480,6 @@ export default function GoodsEditorScreen() {
     }
   }
 
-  async function handleMemberRequest() {
-    if (!supabase || !user || !groupId || itemIsReadOnly) return;
-    const db = supabase;
-    const currentUserId = user.id;
-    const currentGroupId = groupId;
-    Alert.prompt(
-      "メンバー追加リクエスト",
-      "メンバー名を入力してください",
-      async (value) => {
-        const name = value?.trim();
-        if (!name) return;
-        try {
-          const { data: inserted, error: insertError } = await db
-            .from("character_requests")
-            .insert({
-              user_id: currentUserId,
-              group_id: currentGroupId,
-              requested_name: name,
-              note: null,
-            })
-            .select("id")
-            .single();
-          if (insertError) throw insertError;
-          const next = {
-            id: String((inserted as { id: string }).id),
-            name,
-            group_id: currentGroupId,
-          };
-          setData((current) => ({
-            ...current,
-            pendingMembers: [next, ...current.pendingMembers],
-          }));
-          setCharacterValue(`${REQ_PREFIX}${next.id}`);
-        } catch (requestErr) {
-          setError(
-            requestErr instanceof Error
-              ? requestErr.message
-              : "追加リクエストに失敗しました",
-          );
-        }
-      },
-    );
-  }
-
   function navigateBackToList() {
     const refresh = String(Date.now());
     if (isWish) {
@@ -664,11 +620,6 @@ export default function GoodsEditorScreen() {
             readonly={itemIsReadOnly}
             onChange={setCharacterValue}
           />
-          {!isWish && groupId && !itemIsReadOnly ? (
-            <Pressable style={styles.requestButton} onPress={handleMemberRequest}>
-              <Text style={styles.requestButtonText}>+ メンバーが見つからない場合は追加リクエスト</Text>
-            </Pressable>
-          ) : null}
         </Section>
 
         <Section label="グッズ種別" required>
