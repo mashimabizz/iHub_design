@@ -42,7 +42,7 @@ const GLYPHS: Record<IconSymbolName, string> = {
   "lock-closed-outline": "⌂",
   "mail-outline": "✉",
   "mail-unread-outline": "✉",
-  "notifications-outline": "!",
+  "notifications-outline": "🔔",
   "receipt-outline": "▧",
   "scale-outline": "⚖",
   search: "⌕",

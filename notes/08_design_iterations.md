@@ -4,6 +4,45 @@
 
 ---
 
+## イテレーション155.51：iOS通知アイコンをベル表示へ修正
+
+### 背景・問題意識
+
+ホーム画面の通知導線はベルアイコンとして認識されるべきだが、iOS版の共通アイコン定義では `notifications-outline` が `!` で表示されており、通知ではなく警告に見えていた。オーナーからも「びっくりのアイコンは、通知のベルアイコンのはず」と指摘があった。
+
+### 変更内容
+
+#### `mobile/src/components/IconSymbol.tsx`
+- `notifications-outline` のグリフを `!` からベルアイコンに変更した。
+- `warning-outline` は警告用途として `!` のまま維持した。
+
+### 影響範囲
+
+- iOS版 ホーム左上の通知ボタン
+- iOS版 共通 `IconSymbol` の通知表示
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- iOS版ホームで通知ボタンが警告記号ではなくベルとして表示されること
+
+### 関連ファイル
+
+- `mobile/src/components/IconSymbol.tsx`
+
+### セルフレビュー結果
+
+- ✅ ホーム画面の通知導線がベルとして認識しやすくなった
+- ✅ 警告用途の `warning-outline` は変更していない
+- ✅ 新用語追加なしのため `notes/10_glossary.md` 更新不要
+- ✅ DBスキーマ変更なしのため `notes/05_data_model.md` 更新不要
+- ✅ 状態遷移追加なしのため `notes/09_state_machines.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.50：iOS現地交換設定に持参グッズ選択を追加
 
 ### 背景・問題意識
