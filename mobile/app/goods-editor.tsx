@@ -28,6 +28,7 @@ type GoodsKind = "inventory" | "wish";
 type EditorMode = "create" | "edit" | "readonly";
 type DbKind = "for_trade" | "wanted";
 type DbStatus = "active" | "keep" | "traded" | "reserved" | "archived";
+type GoodsCondition = "sealed" | "mint" | "good" | "fair" | "poor";
 
 type Master = { id: string; name: string };
 type CharacterMaster = { id: string; name: string; group_id: string };
@@ -56,7 +57,9 @@ type EditorItem = {
   characterRequestId: string | null;
   goodsTypeId: string;
   title: string;
+  series: string;
   description: string;
+  condition: GoodsCondition;
   quantity: number;
   photoUrls: string[];
   carrying: boolean;
@@ -75,6 +78,15 @@ type EditorData = {
 
 const REQ_PREFIX = "req:";
 const TAG_LIMIT = 5;
+const INVENTORY_DESCRIPTION_LIMIT = 1000;
+const WISH_DESCRIPTION_LIMIT = 200;
+const CONDITIONS: { value: GoodsCondition; label: string }[] = [
+  { value: "sealed", label: "未開封" },
+  { value: "mint", label: "極美" },
+  { value: "good", label: "良好" },
+  { value: "fair", label: "普通" },
+  { value: "poor", label: "難あり" },
+];
 
 export default function GoodsEditorScreen() {
   const { user, previewMode } = useAuth();
@@ -112,6 +124,8 @@ export default function GoodsEditorScreen() {
   const [characterValue, setCharacterValue] = useState("");
   const [goodsTypeId, setGoodsTypeId] = useState("");
   const [title, setTitle] = useState(initialTitle);
+  const [series, setSeries] = useState("");
+  const [condition, setCondition] = useState<GoodsCondition>("good");
   const [quantity, setQuantity] = useState(() =>
     Math.max(1, Number(one(params.quantity) ?? "1") || 1),
   );
@@ -179,6 +193,8 @@ export default function GoodsEditorScreen() {
     setCharacterValue(packCharacterValue(item?.characterId ?? null, item?.characterRequestId ?? null));
     setGoodsTypeId(item?.goodsTypeId ?? "");
     setTitle(item?.title ?? (mode === "create" ? "" : initialTitle));
+    setSeries(item?.series ?? "");
+    setCondition(item?.condition ?? "good");
     setQuantity(item?.quantity ?? Math.max(1, Number(initialQuantity ?? "1") || 1));
     setDescription(item?.description ?? "");
     setPhotoUrls(item?.photoUrls ?? []);
@@ -348,8 +364,9 @@ export default function GoodsEditorScreen() {
     if (quantity < 1 || quantity > 999) return "数量は 1〜999 で入力してください";
     if (isOther && !title.trim()) return "タイトルを入力してください（その他選択時は必須）";
     if (title.trim().length > 100) return "タイトルは 100 文字以内で入力してください";
-    if (isWish && description.length > 200) return "メモは 200 文字以内で入力してください";
-    if (!isWish && description.length > 500) return "説明は 500 文字以内で入力してください";
+    if (series.trim().length > 80) return "シリーズ・弾名は 80 文字以内で入力してください";
+    if (isWish && description.length > WISH_DESCRIPTION_LIMIT) return "メモは 200 文字以内で入力してください";
+    if (!isWish && description.length > INVENTORY_DESCRIPTION_LIMIT) return "説明は 1000 文字以内で入力してください";
     if (mode === "edit" && !id) return "編集対象が見つかりません";
     return null;
   }
@@ -378,9 +395,9 @@ export default function GoodsEditorScreen() {
       character_request_id: characterRequestId,
       goods_type_id: goodsTypeId,
       title: input.finalTitle,
-      series: null,
+      series: series.trim() || null,
       description: description.trim() || null,
-      condition: null,
+      condition,
       quantity,
       photo_urls: photoUrls,
       carrying: startCarrying,
@@ -666,6 +683,30 @@ export default function GoodsEditorScreen() {
           />
         </Section>
 
+        {!isWish ? (
+          <>
+            <Section label="シリーズ・弾名" hint="任意">
+              <TextInput
+                value={series}
+                editable={!itemIsReadOnly}
+                onChangeText={setSeries}
+                maxLength={80}
+                placeholder="例: WORLD TOUR / 5th Mini / 公式"
+                placeholderTextColor="rgba(58,50,74,0.35)"
+                style={styles.input}
+              />
+            </Section>
+
+            <Section label="コンディション">
+              <ConditionChips
+                value={condition}
+                readonly={itemIsReadOnly}
+                onChange={setCondition}
+              />
+            </Section>
+          </>
+        ) : null}
+
         {isOther ? (
           <Section label="タイトル" required>
             <TextInput
@@ -723,13 +764,13 @@ export default function GoodsEditorScreen() {
 
         <Section
           label={isWish ? "メモ" : "説明 / メモ"}
-          hint={`${description.length} / ${isWish ? 200 : 500}`}
+          hint={`${description.length} / ${isWish ? WISH_DESCRIPTION_LIMIT : INVENTORY_DESCRIPTION_LIMIT}`}
         >
           <TextInput
             value={description}
             editable={!itemIsReadOnly}
             multiline
-            maxLength={isWish ? 200 : 500}
+            maxLength={isWish ? WISH_DESCRIPTION_LIMIT : INVENTORY_DESCRIPTION_LIMIT}
             onChangeText={setDescription}
             placeholder={isWish ? "例: 4/27 横アリで取引できる人優先" : "補足やコンディションの詳細"}
             placeholderTextColor="rgba(58,50,74,0.35)"
@@ -830,6 +871,8 @@ function InventoryCreateFlow({
   const [step, setStep] = useState<CreateStep>("common");
   const [groupId, setGroupId] = useState("");
   const [goodsTypeId, setGoodsTypeId] = useState("");
+  const [series, setSeries] = useState("");
+  const [condition, setCondition] = useState<GoodsCondition>("good");
   const [pendingMembers, setPendingMembers] = useState(data.pendingMembers);
   const [photos, setPhotos] = useState<CreatePhoto[]>([]);
   const [metas, setMetas] = useState<CreateMeta[]>([]);
@@ -1082,9 +1125,9 @@ function InventoryCreateFlow({
           character_request_id: characterRequestId,
           goods_type_id: goodsTypeId,
           title: finalTitle,
-          series: null,
+          series: series.trim() || null,
           description: null,
-          condition: null,
+          condition,
           quantity: Math.max(1, Math.min(999, meta.quantity || 1)),
           photo_urls: uploaded[index]?.publicUrl ? [uploaded[index].publicUrl] : [],
           carrying: startCarrying,
@@ -1170,6 +1213,25 @@ function InventoryCreateFlow({
             goodsTypes={data.goodsTypes}
             readonly={false}
             onChange={setGoodsTypeId}
+          />
+        </Section>
+
+        <Section label="シリーズ・弾名" hint="任意">
+          <TextInput
+            value={series}
+            onChangeText={setSeries}
+            maxLength={80}
+            placeholder="例: WORLD TOUR / 5th Mini / 公式"
+            placeholderTextColor="rgba(58,50,74,0.35)"
+            style={styles.input}
+          />
+        </Section>
+
+        <Section label="コンディション">
+          <ConditionChips
+            value={condition}
+            readonly={false}
+            onChange={setCondition}
           />
         </Section>
 
@@ -1422,6 +1484,41 @@ function GoodsTypeChips({
           readonly={readonly}
           onPress={() => onChange(goodsType.id)}
         />
+      ))}
+    </View>
+  );
+}
+
+function ConditionChips({
+  value,
+  readonly,
+  onChange,
+}: {
+  value: GoodsCondition;
+  readonly: boolean;
+  onChange: (value: GoodsCondition) => void;
+}) {
+  return (
+    <View style={styles.conditionGrid}>
+      {CONDITIONS.map((condition) => (
+        <Pressable
+          key={condition.value}
+          disabled={readonly}
+          onPress={() => onChange(condition.value)}
+          style={[
+            styles.conditionChip,
+            value === condition.value ? styles.conditionChipActive : null,
+          ]}
+        >
+          <Text
+            style={[
+              styles.conditionChipText,
+              value === condition.value ? styles.conditionChipTextActive : null,
+            ]}
+          >
+            {condition.label}
+          </Text>
+        </Pressable>
       ))}
     </View>
   );
@@ -1718,7 +1815,7 @@ async function fetchEditorData({
     ? supabase
         .from("goods_inventory")
         .select(
-          "id, kind, group_id, character_id, character_request_id, goods_type_id, title, description, quantity, photo_urls, carrying, status, group:groups_master(name), character:characters_master(name), character_request:character_requests(requested_name, status), goods_type:goods_types_master(name)",
+          "id, kind, group_id, character_id, character_request_id, goods_type_id, title, series, description, condition, quantity, photo_urls, carrying, status, group:groups_master(name), character:characters_master(name), character_request:character_requests(requested_name, status), goods_type:goods_types_master(name)",
         )
         .eq("id", id)
         .eq("user_id", userId)
@@ -1837,7 +1934,9 @@ function normalizeEditorItem(row: Record<string, unknown>): EditorItem {
       typeof row.character_request_id === "string" ? row.character_request_id : null,
     goodsTypeId: typeof row.goods_type_id === "string" ? row.goods_type_id : "",
     title: typeof row.title === "string" ? row.title : "",
+    series: typeof row.series === "string" ? row.series : "",
     description: typeof row.description === "string" ? row.description : "",
+    condition: normalizeCondition(row.condition),
     quantity: Math.max(1, Number(row.quantity) || 1),
     photoUrls: Array.isArray(row.photo_urls)
       ? row.photo_urls.filter((url): url is string => typeof url === "string")
@@ -1874,7 +1973,9 @@ function fallbackEditorData(
             characterRequestId: null,
             goodsTypeId: goodsType[0]?.id ?? "",
             title,
+            series: "",
             description: one((params as { note?: string | string[] }).note) ?? "",
+            condition: "good",
             quantity: Math.max(1, Number(one((params as { quantity?: string | string[] }).quantity) ?? "1") || 1),
             photoUrls: [],
             carrying: false,
@@ -2083,6 +2184,19 @@ function normalizeStatus(value: unknown): DbStatus {
     return value;
   }
   return "active";
+}
+
+function normalizeCondition(value: unknown): GoodsCondition {
+  if (
+    value === "sealed" ||
+    value === "mint" ||
+    value === "good" ||
+    value === "fair" ||
+    value === "poor"
+  ) {
+    return value;
+  }
+  return "good";
 }
 
 function extensionFrom(fileNameOrUri?: string | null, mimeType?: string | null) {
@@ -2429,6 +2543,36 @@ const styles = StyleSheet.create({
   },
   selectChipTextActive: {
     color: ihubColors.surface,
+  },
+  conditionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7,
+  },
+  conditionChip: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.10)",
+    borderRadius: ihubRadii.md,
+    borderWidth: 1.5,
+    flexBasis: "18%",
+    flexGrow: 1,
+    minWidth: 62,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
+  },
+  conditionChipActive: {
+    backgroundColor: "rgba(166,149,216,0.08)",
+    borderColor: ihubColors.lavender,
+  },
+  conditionChipText: {
+    color: ihubColors.ink,
+    fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  conditionChipTextActive: {
+    fontWeight: "900",
   },
   requestButton: {
     alignSelf: "flex-start",
