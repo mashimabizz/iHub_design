@@ -4,10 +4,13 @@ import {
   Animated,
   Easing,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -24,7 +27,23 @@ import {
   type ShelfSection,
 } from "../../src/data/homeMatches";
 import { fetchHomeSupabaseSections } from "../../src/data/homeSupabase";
-import { ihubColors, ihubRadii, ihubShadow } from "../../src/theme/tokens";
+import {
+  NativeMapPreview,
+  type MapCoordinate,
+} from "../../src/components/NativeMapPreview";
+import { ihubColors, ihubRadii } from "../../src/theme/tokens";
+
+const FALLBACK_LOCAL_CENTER: MapCoordinate = {
+  latitude: 35.6595,
+  longitude: 139.7005,
+};
+const LOCAL_DURATION_OPTIONS = [
+  { label: "1時間", value: 60 },
+  { label: "2時間", value: 120 },
+  { label: "3時間", value: 180 },
+  { label: "6時間", value: 360 },
+];
+const LOCAL_RADIUS_OPTIONS = [300, 500, 1000, 2000];
 
 export default function HomeScreen() {
   const { previewMode, user } = useAuth();
@@ -39,20 +58,22 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [homeLoading, setHomeLoading] = useState(!usePreviewData);
   const [homeError, setHomeError] = useState<string | null>(null);
+  const [localSheetOpen, setLocalSheetOpen] = useState(false);
+  const [revertLocalOnSheetClose, setRevertLocalOnSheetClose] = useState(false);
   const { width } = useWindowDimensions();
   const tileWidth = Math.max(128, Math.min(148, (width - 54) / 2.55));
   const placeLabel = localMode
     ? truncateLocation(placeName || "場所未設定")
     : "現地交換OFF";
 
-  useEffect(() => {
+  function refreshHomeData() {
     if (previewMode || !hasSupabaseConfig) {
       setSections(MATCH_SECTIONS);
       setPlaceName("守口市地区 豊秀町一丁目");
       setUnreadCount(0);
       setHomeLoading(false);
       setHomeError(null);
-      return;
+      return () => {};
     }
     if (!user) {
       setSections([]);
@@ -60,7 +81,7 @@ export default function HomeScreen() {
       setUnreadCount(0);
       setHomeLoading(false);
       setHomeError(null);
-      return;
+      return () => {};
     }
 
     let active = true;
@@ -86,18 +107,28 @@ export default function HomeScreen() {
     return () => {
       active = false;
     };
+  }
+
+  useEffect(() => {
+    return refreshHomeData();
   }, [previewMode, user]);
 
-  function handleLocalModeChange(next: boolean) {
+  async function handleLocalModeChange(next: boolean) {
     setLocalMode(next);
-    if (!supabase || !user) return;
-    supabase
+    setHomeError(null);
+    if (next) {
+      setRevertLocalOnSheetClose(true);
+      setLocalSheetOpen(true);
+      return;
+    }
+
+    setLocalSheetOpen(false);
+    setRevertLocalOnSheetClose(false);
+    if (!supabase || !user || usePreviewData) return;
+    const { error } = await supabase
       .from("user_local_mode_settings")
-      .update({ enabled: next })
-      .eq("user_id", user.id)
-      .then(({ error }) => {
-        if (error) setHomeError(error.message);
-      });
+      .upsert({ user_id: user.id, enabled: false }, { onConflict: "user_id" });
+    if (error) setHomeError(error.message);
   }
 
   return (
@@ -119,16 +150,29 @@ export default function HomeScreen() {
           <View style={styles.topRight}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.push("/schedules")}
+              onPress={() => {
+                if (localMode) {
+                  setRevertLocalOnSheetClose(false);
+                  setLocalSheetOpen(true);
+                } else {
+                  handleLocalModeChange(true);
+                }
+              }}
               style={styles.placeButton}
             >
               <Text numberOfLines={1} style={styles.placeText}>
                 {placeLabel}
               </Text>
             </Pressable>
-            <TinyLocalToggle
+            <Switch
               value={localMode}
-              onChange={() => handleLocalModeChange(!localMode)}
+              onValueChange={handleLocalModeChange}
+              ios_backgroundColor="rgba(58,50,74,0.14)"
+              thumbColor={ihubColors.surface}
+              trackColor={{
+                false: "rgba(58,50,74,0.14)",
+                true: "rgba(166,149,216,0.78)",
+              }}
             />
           </View>
         </View>
@@ -164,53 +208,365 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
       <FloatingSearchButton />
+      <LocalModeSheet
+        open={localSheetOpen}
+        previewMode={usePreviewData}
+        userId={user?.id ?? null}
+        placeName={placeName}
+        onClose={() => {
+          setLocalSheetOpen(false);
+          if (revertLocalOnSheetClose) {
+            setRevertLocalOnSheetClose(false);
+            handleLocalModeChange(false);
+          }
+        }}
+        onApplied={(nextPlace) => {
+          setRevertLocalOnSheetClose(false);
+          setLocalSheetOpen(false);
+          setLocalMode(true);
+          setPlaceName(nextPlace);
+          refreshHomeData();
+        }}
+        onError={setHomeError}
+      />
     </Screen>
   );
 }
 
-function TinyLocalToggle({
-  value,
-  onChange,
+function LocalModeSheet({
+  open,
+  previewMode,
+  userId,
+  placeName,
+  onClose,
+  onApplied,
+  onError,
 }: {
-  value: boolean;
-  onChange: () => void;
+  open: boolean;
+  previewMode: boolean;
+  userId: string | null;
+  placeName: string;
+  onClose: () => void;
+  onApplied: (placeName: string) => void;
+  onError: (message: string | null) => void;
 }) {
-  const progress = useRef(new Animated.Value(value ? 1 : 0)).current;
+  const initialVenue = placeName === "場所未設定" ? "" : placeName;
+  const [venue, setVenue] = useState(initialVenue);
+  const [center, setCenter] = useState<MapCoordinate>(FALLBACK_LOCAL_CENTER);
+  const [radiusM, setRadiusM] = useState(500);
+  const [durationMin, setDurationMin] = useState(120);
+  const [pending, setPending] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [sheetError, setSheetError] = useState<string | null>(null);
 
   useEffect(() => {
-    Animated.spring(progress, {
-      toValue: value ? 1 : 0,
-      damping: 16,
-      stiffness: 210,
-      mass: 0.74,
-      useNativeDriver: true,
-    }).start();
-  }, [progress, value]);
+    if (!open) return;
+    let active = true;
+    setVenue(initialVenue);
+    setSheetError(null);
+    setPending(false);
 
-  const translateX = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 20],
-  });
+    async function loadLocalMode() {
+      if (!supabase || !userId || previewMode) {
+        if (!initialVenue) {
+          const coordinate = await getCurrentCoordinate();
+          if (!active || !coordinate) return;
+          setCenter(coordinate);
+          const label = await reverseGeocodeLabel(coordinate);
+          if (active && label) setVenue(label);
+        }
+        return;
+      }
+      let resolvedCenter: MapCoordinate | null = null;
+      const { data: settings } = await supabase
+        .from("user_local_mode_settings")
+        .select("aw_id, radius_m, last_lat, last_lng")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!active) return;
+
+      const settingsRow = settings as
+        | {
+            aw_id?: string | null;
+            radius_m?: number | null;
+            last_lat?: number | string | null;
+            last_lng?: number | string | null;
+          }
+        | null;
+      if (settingsRow?.radius_m) setRadiusM(settingsRow.radius_m);
+      const lastLat = toNumber(settingsRow?.last_lat);
+      const lastLng = toNumber(settingsRow?.last_lng);
+      if (lastLat != null && lastLng != null) {
+        resolvedCenter = { latitude: lastLat, longitude: lastLng };
+        setCenter(resolvedCenter);
+      }
+
+      if (settingsRow?.aw_id) {
+        const { data: aw } = await supabase
+          .from("activity_windows")
+          .select("venue, start_at, end_at, radius_m, center_lat, center_lng")
+          .eq("id", settingsRow.aw_id)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (!active) return;
+        if (aw) {
+          const awRow = aw as {
+            venue?: string | null;
+            start_at?: string | null;
+            end_at?: string | null;
+            radius_m?: number | null;
+            center_lat?: number | string | null;
+            center_lng?: number | string | null;
+          };
+          if (awRow.venue) setVenue(awRow.venue);
+          if (awRow.radius_m) setRadiusM(awRow.radius_m);
+          const lat = toNumber(awRow.center_lat);
+          const lng = toNumber(awRow.center_lng);
+          if (lat != null && lng != null) {
+            resolvedCenter = { latitude: lat, longitude: lng };
+            setCenter(resolvedCenter);
+          }
+          if (awRow.start_at && awRow.end_at) {
+            const minutes = Math.max(
+              30,
+              Math.round(
+                (new Date(awRow.end_at).getTime() -
+                  new Date(awRow.start_at).getTime()) /
+                  60_000,
+              ),
+            );
+            setDurationMin(minutes);
+          }
+        }
+      }
+
+      if (!resolvedCenter) {
+        const coordinate = await getCurrentCoordinate();
+        if (!active || !coordinate) return;
+        setCenter(coordinate);
+        const label = await reverseGeocodeLabel(coordinate);
+        if (active && label && !initialVenue) setVenue(label);
+      }
+    }
+
+    loadLocalMode();
+    return () => {
+      active = false;
+    };
+  }, [open, initialVenue, previewMode, userId]);
+
+  async function useCurrentLocation() {
+    setLocating(true);
+    setSheetError(null);
+    const coordinate = await getCurrentCoordinate();
+    setLocating(false);
+    if (!coordinate) {
+      setSheetError("現在地を取得できませんでした");
+      return;
+    }
+    setCenter(coordinate);
+    const label = await reverseGeocodeLabel(coordinate);
+    if (label) setVenue(label);
+  }
+
+  async function applySettings() {
+    const trimmedVenue = venue.trim();
+    if (!trimmedVenue) {
+      setSheetError("交換場所を入力してください");
+      return;
+    }
+    if (!supabase || !userId || previewMode) {
+      onApplied(trimmedVenue);
+      return;
+    }
+    setPending(true);
+    setSheetError(null);
+    const result = await applyLocalModeSettings({
+      userId,
+      venue: trimmedVenue,
+      center,
+      radiusM,
+      durationMin,
+    });
+    setPending(false);
+    if (result?.error) {
+      setSheetError(result.error);
+      onError(result.error);
+      return;
+    }
+    onError(null);
+    onApplied(trimmedVenue);
+  }
+
+  const radiusLabel = radiusM >= 1000 ? `${radiusM / 1000}km` : `${radiusM}m`;
 
   return (
-    <Pressable
-      accessibilityRole="switch"
-      accessibilityState={{ checked: value }}
-      onPress={onChange}
-      style={[
-        styles.localToggle,
-        value ? styles.localToggleOn : styles.localToggleOff,
-      ]}
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      transparent
+      visible={open}
     >
-      <Animated.View
-        style={[
-          styles.localToggleKnob,
-          {
-            transform: [{ translateX }],
-          },
-        ]}
-      />
-    </Pressable>
+      <View style={styles.localSheetLayer}>
+        <Pressable
+          accessibilityLabel="閉じる"
+          accessibilityRole="button"
+          onPress={onClose}
+          style={styles.localSheetBackdrop}
+        />
+        <View style={styles.localSheet}>
+          <View style={styles.localSheetHandle} />
+          <View style={styles.localSheetHeader}>
+            <View>
+              <Text style={styles.localSheetKicker}>LOCAL MODE</Text>
+              <Text style={styles.localSheetTitle}>現地交換モード</Text>
+            </View>
+            <Pressable
+              accessibilityLabel="閉じる"
+              accessibilityRole="button"
+              onPress={onClose}
+              style={styles.localSheetClose}
+            >
+              <Text style={styles.localSheetCloseText}>×</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.localSheetLead}>
+            場所・時間・範囲を設定して、近くで交換できる候補を探します。
+          </Text>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.localSheetBody}
+          >
+            <View style={styles.localSection}>
+              <View style={styles.localSectionHeader}>
+                <Text style={styles.localSectionTitle}>交換場所</Text>
+                <Pressable
+                  disabled={locating}
+                  onPress={useCurrentLocation}
+                  style={styles.currentLocationButton}
+                >
+                  <Text style={styles.currentLocationText}>
+                    {locating ? "取得中…" : "現在地"}
+                  </Text>
+                </Pressable>
+              </View>
+              <NativeMapPreview
+                key={`${center.latitude}-${center.longitude}`}
+                center={center}
+                height={184}
+                interactive
+                markers={[
+                  {
+                    id: "local-center",
+                    coordinate: center,
+                    label: "●",
+                    title: venue || "交換場所",
+                  },
+                ]}
+                onPress={async (coordinate) => {
+                  setCenter(coordinate);
+                  const label = await reverseGeocodeLabel(coordinate);
+                  if (label) setVenue(label);
+                }}
+                style={styles.localMap}
+              />
+              <TextInput
+                onChangeText={setVenue}
+                placeholder="場所を選ぶと自動で入ります"
+                placeholderTextColor="rgba(58,50,74,0.38)"
+                style={styles.localInput}
+                value={venue}
+              />
+            </View>
+
+            <View style={styles.localSection}>
+              <Text style={styles.localSectionTitle}>
+                有効時間 / {durationMin}分
+              </Text>
+              <View style={styles.localChipRow}>
+                {LOCAL_DURATION_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => setDurationMin(option.value)}
+                    style={[
+                      styles.localChip,
+                      durationMin === option.value ? styles.localChipActive : null,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.localChipText,
+                        durationMin === option.value
+                          ? styles.localChipTextActive
+                          : null,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.localSection}>
+              <Text style={styles.localSectionTitle}>
+                マッチ範囲 / {radiusLabel}
+              </Text>
+              <View style={styles.localChipRow}>
+                {LOCAL_RADIUS_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option}
+                    onPress={() => setRadiusM(option)}
+                    style={[
+                      styles.localChip,
+                      radiusM === option ? styles.localChipActive : null,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.localChipText,
+                        radiusM === option ? styles.localChipTextActive : null,
+                      ]}
+                    >
+                      {option >= 1000 ? `${option / 1000}km` : `${option}m`}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {sheetError ? (
+              <View style={styles.localSheetError}>
+                <Text style={styles.localSheetErrorText}>{sheetError}</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+
+          <View style={styles.localSheetActions}>
+            <Pressable
+              disabled={pending}
+              onPress={onClose}
+              style={styles.localCancelButton}
+            >
+              <Text style={styles.localCancelText}>キャンセル</Text>
+            </Pressable>
+            <Pressable
+              disabled={pending || !venue.trim()}
+              onPress={applySettings}
+              style={[
+                styles.localApplyButton,
+                pending || !venue.trim() ? styles.localApplyButtonDisabled : null,
+              ]}
+            >
+              <Text style={styles.localApplyText}>
+                {pending ? "適用中…" : "この設定で表示"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -583,6 +939,140 @@ function openMatchDetail(row: ShelfRow, candidate: Candidate) {
   });
 }
 
+type LocalModeActionResult = { error?: string } | undefined;
+
+function toNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+async function getCurrentCoordinate(): Promise<MapCoordinate | null> {
+  try {
+    const Location = await import("expo-location");
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (permission.status !== "granted") return null;
+    const position = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    return {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function reverseGeocodeLabel(coordinate: MapCoordinate) {
+  try {
+    const Location = await import("expo-location");
+    const results = await Location.reverseGeocodeAsync(coordinate);
+    const first = results[0];
+    if (!first) return null;
+    return (
+      first.name ||
+      first.street ||
+      first.district ||
+      first.subregion ||
+      first.city ||
+      first.region ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function applyLocalModeSettings(input: {
+  userId: string;
+  venue: string;
+  center: MapCoordinate;
+  radiusM: number;
+  durationMin: number;
+}): Promise<LocalModeActionResult> {
+  if (!supabase) return undefined;
+  const venue = input.venue.trim();
+  if (!venue || venue.length > 100) {
+    return { error: "場所名を入力してください（1〜100文字）" };
+  }
+  if (input.radiusM < 50 || input.radiusM > 5000) {
+    return { error: "半径は50m〜5000mで指定してください" };
+  }
+
+  const start = new Date();
+  const end = new Date(
+    start.getTime() + Math.max(30, input.durationMin) * 60_000,
+  );
+  const { data: settings } = await supabase
+    .from("user_local_mode_settings")
+    .select("aw_id")
+    .eq("user_id", input.userId)
+    .maybeSingle();
+  const settingsRow = settings as { aw_id?: string | null } | null;
+  let awId = settingsRow?.aw_id ?? null;
+
+  const awFields = {
+    venue,
+    event_name: null,
+    eventless: true,
+    start_at: start.toISOString(),
+    end_at: end.toISOString(),
+    radius_m: input.radiusM,
+    center_lat: input.center.latitude,
+    center_lng: input.center.longitude,
+    status: "enabled" as const,
+  };
+
+  if (awId) {
+    const { error } = await supabase
+      .from("activity_windows")
+      .update(awFields)
+      .eq("id", awId)
+      .eq("user_id", input.userId);
+    if (error) awId = null;
+  }
+
+  if (!awId) {
+    const { data: created, error } = await supabase
+      .from("activity_windows")
+      .insert({ ...awFields, user_id: input.userId })
+      .select("id")
+      .single();
+    if (error || !created) {
+      return { error: error?.message ?? "AW の作成に失敗しました" };
+    }
+    awId = (created as { id: string }).id;
+  }
+
+  await supabase
+    .from("activity_windows")
+    .update({ status: "disabled" })
+    .eq("user_id", input.userId)
+    .eq("status", "enabled")
+    .neq("id", awId);
+
+  const { error: upsertError } = await supabase
+    .from("user_local_mode_settings")
+    .upsert(
+      {
+        user_id: input.userId,
+        enabled: true,
+        aw_id: awId,
+        radius_m: input.radiusM,
+        last_lat: input.center.latitude,
+        last_lng: input.center.longitude,
+      },
+      { onConflict: "user_id" },
+    );
+
+  if (upsertError) return { error: upsertError.message };
+  return undefined;
+}
+
 function LocalAura() {
   const pulse = useRef(new Animated.Value(0)).current;
 
@@ -769,28 +1259,202 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: "900",
   },
-  localToggle: {
-    borderRadius: ihubRadii.pill,
-    height: 28,
-    justifyContent: "center",
-    paddingHorizontal: 3,
-    width: 48,
+  localSheetLayer: {
+    backgroundColor: "rgba(20,18,28,0.28)",
+    flex: 1,
+    justifyContent: "flex-end",
   },
-  localToggleOn: {
-    backgroundColor: "rgba(166,149,216,0.95)",
+  localSheetBackdrop: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
-  localToggleOff: {
-    backgroundColor: "rgba(58,50,74,0.16)",
-  },
-  localToggleKnob: {
-    backgroundColor: ihubColors.surface,
-    borderRadius: 11,
-    height: 22,
+  localSheet: {
+    backgroundColor: "rgba(255,255,255,0.97)",
+    borderColor: "rgba(255,255,255,0.92)",
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    borderWidth: 1,
+    maxHeight: "86%",
+    paddingBottom: 18,
+    paddingHorizontal: 20,
+    paddingTop: 10,
     shadowColor: ihubColors.ink,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
-    width: 22,
+    shadowOffset: { width: 0, height: -16 },
+    shadowOpacity: 0.16,
+    shadowRadius: 34,
+  },
+  localSheetHandle: {
+    alignSelf: "center",
+    backgroundColor: "rgba(58,50,74,0.14)",
+    borderRadius: 999,
+    height: 5,
+    marginBottom: 15,
+    width: 42,
+  },
+  localSheetHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  localSheetKicker: {
+    color: ihubColors.lavender,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
+  localSheetTitle: {
+    color: ihubColors.ink,
+    fontSize: 22,
+    fontWeight: "900",
+    lineHeight: 27,
+    marginTop: 3,
+  },
+  localSheetClose: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.07)",
+    borderRadius: 999,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  localSheetCloseText: {
+    color: "rgba(58,50,74,0.62)",
+    fontSize: 24,
+    fontWeight: "600",
+    lineHeight: 27,
+  },
+  localSheetLead: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 9,
+  },
+  localSheetBody: {
+    gap: 16,
+    paddingBottom: 16,
+    paddingTop: 17,
+  },
+  localSection: {
+    gap: 10,
+  },
+  localSectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  localSectionTitle: {
+    color: ihubColors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  currentLocationButton: {
+    backgroundColor: "rgba(166,149,216,0.13)",
+    borderColor: "rgba(166,149,216,0.32)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  currentLocationText: {
+    color: ihubColors.lavender,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  localMap: {
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+  localInput: {
+    backgroundColor: "rgba(58,50,74,0.05)",
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 17,
+    borderWidth: 1,
+    color: ihubColors.ink,
+    fontSize: 13,
+    fontWeight: "800",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  localChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+  },
+  localChip: {
+    backgroundColor: "rgba(58,50,74,0.055)",
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+  },
+  localChipActive: {
+    backgroundColor: "rgba(166,149,216,0.18)",
+    borderColor: "rgba(166,149,216,0.48)",
+  },
+  localChipText: {
+    color: "rgba(58,50,74,0.60)",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  localChipTextActive: {
+    color: ihubColors.ink,
+  },
+  localSheetError: {
+    backgroundColor: "rgba(239,68,68,0.09)",
+    borderColor: "rgba(239,68,68,0.16)",
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+  localSheetErrorText: {
+    color: ihubColors.warn,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16,
+  },
+  localSheetActions: {
+    flexDirection: "row",
+    gap: 10,
+    paddingTop: 2,
+  },
+  localCancelButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: 18,
+    flex: 0.36,
+    justifyContent: "center",
+    paddingVertical: 14,
+  },
+  localCancelText: {
+    color: "rgba(58,50,74,0.62)",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  localApplyButton: {
+    alignItems: "center",
+    backgroundColor: ihubColors.lavender,
+    borderRadius: 18,
+    flex: 0.64,
+    justifyContent: "center",
+    paddingVertical: 14,
+    shadowColor: ihubColors.lavender,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+  },
+  localApplyButtonDisabled: {
+    opacity: 0.45,
+  },
+  localApplyText: {
+    color: ihubColors.surface,
+    fontSize: 13,
+    fontWeight: "900",
   },
   identityRow: {
     alignItems: "center",
@@ -815,8 +1479,8 @@ const styles = StyleSheet.create({
     lineHeight: 29,
   },
   modeSwitch: {
-    backgroundColor: "rgba(58,50,74,0.05)",
-    borderColor: "rgba(255,255,255,0.78)",
+    backgroundColor: "rgba(255,255,255,0.62)",
+    borderColor: "rgba(255,255,255,0.90)",
     borderRadius: ihubRadii.pill,
     borderWidth: 1,
     flexDirection: "row",
@@ -824,33 +1488,42 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     padding: 4,
     position: "relative",
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.09,
+    shadowRadius: 24,
   },
   modeThumb: {
-    backgroundColor: ihubColors.surface,
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderColor: "rgba(255,255,255,0.92)",
     borderRadius: ihubRadii.pill,
+    borderWidth: 1,
     bottom: 4,
     left: 4,
     overflow: "hidden",
     position: "absolute",
     top: 4,
-    ...ihubShadow,
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.13,
+    shadowRadius: 20,
   },
   modeThumbGloss: {
-    backgroundColor: "rgba(255,255,255,0.62)",
+    backgroundColor: "rgba(255,255,255,0.74)",
     borderRadius: 999,
-    height: "72%",
-    left: 8,
+    height: "68%",
+    left: 10,
     position: "absolute",
-    right: 8,
-    top: 3,
+    right: 10,
+    top: 4,
   },
   modeThumbBlob: {
-    backgroundColor: "rgba(166,149,216,0.22)",
+    backgroundColor: "rgba(166,149,216,0.14)",
     borderRadius: 999,
-    height: 52,
+    height: 56,
     position: "absolute",
-    top: -10,
-    width: 52,
+    top: -13,
+    width: 56,
   },
   modeThumbBlobLeft: {
     left: -16,
