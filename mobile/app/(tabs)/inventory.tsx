@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   NativeScrollEvent,
@@ -147,6 +147,8 @@ const STATUS_ORDER: InventoryStatus[] = ["active", "keep", "traded"];
 
 export default function InventoryScreen() {
   const { user, previewMode } = useAuth();
+  const params = useLocalSearchParams<{ refresh?: string | string[] }>();
+  const routeRefresh = one(params.refresh);
   const [items, setItems] = useState<InventoryItem[]>(() =>
     !supabase || previewMode ? INITIAL_ITEMS : [],
   );
@@ -194,7 +196,7 @@ export default function InventoryScreen() {
     return () => {
       active = false;
     };
-  }, [previewMode, user]);
+  }, [previewMode, routeRefresh, user]);
 
   const groupOptions = useMemo(() => {
     const values = new Set<string>();
@@ -540,6 +542,7 @@ function openInventoryEditor(
     params: {
       kind: "inventory",
       mode,
+      id: item?.id ?? "",
       title: item?.title ?? "",
       subtitle: item?.subtitle ?? "",
       group: item?.group ?? "",
@@ -548,7 +551,7 @@ function openInventoryEditor(
       glyph: item?.glyph ?? "",
       hue: item?.hue ?? "#cbbcf4",
       badge: item?.badge ?? (mode === "create" ? "NEW" : "譲る候補"),
-      quantity: item?.badge?.match(/\d+/)?.[0] ?? "1",
+      quantity: item?.quantity ? String(item.quantity) : "1",
     },
   });
 }
@@ -666,6 +669,10 @@ function buildActions({
       onPress: onClose,
     },
   ];
+}
+
+function one(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 const styles = StyleSheet.create({

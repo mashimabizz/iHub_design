@@ -26,6 +26,7 @@ import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 type WishItem = GoodsGridItem & {
   priority: "最優先" | "優先" | "ゆる募";
   linkedListings: number;
+  quantity?: number;
 };
 
 type ListingItem = {
@@ -40,6 +41,7 @@ type ListingItem = {
 type WishRow = {
   id: string;
   title: string;
+  quantity: number;
   priority: number | null;
   hue: number | string | null;
   photo_urls: string[] | null;
@@ -509,7 +511,7 @@ async function fetchWishData(userId: string): Promise<WishData> {
       supabase
         .from("goods_inventory")
         .select(
-          "id, title, priority, hue, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+          "id, title, quantity, priority, hue, photo_urls, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
         )
         .eq("user_id", userId)
         .eq("kind", "wanted")
@@ -600,6 +602,7 @@ function toWishItem(row: WishRow, linkedListings: number): WishItem {
     badge: linkedListings > 0 ? `募集 ${linkedListings}` : "未紐付け",
     priority,
     linkedListings,
+    quantity: row.quantity,
     photoUrl: row.photo_urls?.[0] ?? null,
   };
 }
@@ -683,6 +686,7 @@ function openWishEditor(
     params: {
       kind: "wish",
       mode,
+      id: wish?.id ?? "",
       title: wish?.title ?? "",
       subtitle: wish?.subtitle ?? "",
       group: wish?.subtitle.split(" / ")[0] ?? "",
@@ -696,7 +700,7 @@ function openWishEditor(
           : wish.linkedListings === 0
             ? "未紐付け"
             : `募集 ${wish.linkedListings}`,
-      quantity: "1",
+      quantity: wish?.quantity ? String(wish.quantity) : "1",
     },
   });
 }

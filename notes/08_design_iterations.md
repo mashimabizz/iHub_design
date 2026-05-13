@@ -4,6 +4,65 @@
 
 ---
 
+## イテレーション155.38：iOS在庫/Wish編集をWeb仕様へ同期
+
+### 背景・問題意識
+
+オーナーから「在庫の編集画面も、Wishの編集画面もちゃんとWebアプリ版に合わせてください。機能も、それぞれの項目のマスタ管理のところも。寸分違わず」と指摘があった。iOS版の `goods-editor` は URL パラメータ由来の仮フォームで、Web版にある `user_oshi` ベースのグループ候補、`characters_master` / `goods_types_master` のマスタ選択、審査中メンバー、画像アップロード、タグ同期、DB保存が未実装だった。
+
+### 変更内容
+
+#### `mobile/app/goods-editor.tsx`
+- 在庫/Wish 共通の仮フォームを、Supabase から対象アイテム・ユーザー推し・マスタ・タグを読み込む実フォームへ差し替えた。
+- 在庫編集は Web版と同じく、グループチップ、メンバー/審査中メンバーチップ、グッズ種別チップ、その他種別のみタイトル入力、数量、タグ、説明、画像差し替え、持参中フラグ、削除を扱うようにした。
+- Wish編集/作成は Web版と同じく、グループ、メンバー、グッズ種別、その他種別のみタイトル入力、数量、画像、タグ、メモを扱うようにした。
+- Wish画像は、個別募集で使用中の場合に削除不可・差し替え可のガードを入れた。
+- タグは `search_tags` / `attach_inventory_tag` / `detach_inventory_tag` RPC で検索・追加・同期するようにした。
+- 在庫削除時は Web版の `removeUnavailableHavesFromListings` と同じ考え方で、開いている個別募集の譲条件から削除済み在庫を外し、譲条件が空になった募集は `closed` にするようにした。
+- `status='traded'` の在庫は詳細確認のみで、更新・削除できないようにした。
+
+#### `mobile/app/(tabs)/inventory.tsx`
+- 在庫編集画面へ遷移する時に対象 `id` と `quantity` を渡すようにした。
+- 保存後に一覧へ戻った時、`refresh` パラメータで再取得できるようにした。
+
+#### `mobile/app/(tabs)/wishes.tsx`
+- Wish編集画面へ遷移する時に対象 `id` と `quantity` を渡すようにした。
+- Wish一覧取得で `quantity` も取得し、編集画面の初期値に使えるようにした。
+
+### 影響範囲
+
+- iOS版 マイ在庫編集/作成
+- iOS版 Wish編集/作成
+- iOS版 在庫/Wish一覧から編集画面への遷移
+- iOS版 個別募集と連動する Wish画像削除ガード / 在庫削除時の募集条件整理
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- iOS版でマイ在庫のグッズを開き、グループ/メンバー/種別/タグ/画像/数量/説明を編集して保存できること
+- iOS版でWishを開き、グループ/メンバー/種別/タグ/画像/数量/メモを編集して保存できること
+- 個別募集で使用中のWish画像は削除できず、差し替えはできること
+- 譲り済み在庫は詳細確認のみで更新/削除できないこと
+
+### 関連ファイル
+
+- `mobile/app/goods-editor.tsx`
+- `mobile/app/(tabs)/inventory.tsx`
+- `mobile/app/(tabs)/wishes.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版の在庫/Wish編集で使う既存テーブル・RPCに合わせて実装
+- ✅ 既存状態名 `active` / `keep` / `traded` / `archived` のみ利用
+- ✅ 新用語追加なしのため `notes/10_glossary.md` 更新不要
+- ✅ DBスキーマ変更なしのため `notes/05_data_model.md` 更新不要
+- ✅ 状態遷移追加なしのため `notes/09_state_machines.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.37：iOS取引詳細取得とオンボーディング導線を補正
 
 ### 背景・問題意識
