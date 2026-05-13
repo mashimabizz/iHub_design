@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
@@ -162,7 +162,15 @@ const INITIAL_LISTINGS: ListingItem[] = [
 
 export default function WishesScreen() {
   const { user, previewMode } = useAuth();
-  const [tab, setTab] = useState<Tab>("wish");
+  const params = useLocalSearchParams<{
+    tab?: Tab | Tab[];
+    refresh?: string | string[];
+  }>();
+  const routeTab = one(params.tab);
+  const routeRefresh = one(params.refresh);
+  const [tab, setTab] = useState<Tab>(
+    routeTab === "listings" ? "listings" : "wish",
+  );
   const [columns, setColumns] = useState<ColumnCount>(3);
   const [wishes, setWishes] = useState<WishItem[]>(() =>
     !supabase || previewMode ? INITIAL_WISHES : [],
@@ -182,6 +190,12 @@ export default function WishesScreen() {
     tracking: boolean;
     swiping: boolean;
   } | null>(null);
+
+  useEffect(() => {
+    if (routeTab === "listings" || routeTab === "wish") {
+      setTab(routeTab);
+    }
+  }, [routeTab]);
 
   useEffect(() => {
     if (!supabase || previewMode) {
@@ -221,7 +235,7 @@ export default function WishesScreen() {
     return () => {
       active = false;
     };
-  }, [previewMode, user]);
+  }, [previewMode, routeRefresh, user]);
 
   function toggleListingStatus(id: string) {
     const current = listings.find((item) => item.id === id);
@@ -656,6 +670,10 @@ function nameToHue(name: string) {
   return Math.abs(hash) % 360;
 }
 
+function one(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 function openWishEditor(
   wish: WishItem | null,
   mode: "create" | "edit",
@@ -692,6 +710,8 @@ function openListingEditor(
     pathname: "/listing-editor",
     params: {
       mode,
+      id: listing?.id ?? "",
+      wishId: wish?.id ?? "",
       status: listing?.status ?? "ACTIVE",
       logic: listing?.logic ?? "1pick",
       give: listing?.give.join("、") ?? "",

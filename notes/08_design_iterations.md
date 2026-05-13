@@ -4,6 +4,69 @@
 
 ---
 
+## イテレーション155.35：iOS個別募集の作成・編集画面をWeb仕様へ寄せる
+
+### 背景・問題意識
+
+オーナーから「個別募集の編集画面、作成画面も、仕様もデザインをWebアプリに合わせてほしい」と指示があった。iOS版の `listing-editor` は、譲・求をテキスト入力するだけの仮画面で、Web版の `listings/new/ListingNewForm.tsx` が持つ「譲グッズ選択、求の最大5選択肢、AND/OR、数量、画像ありWishでの交換タイプ非表示、定価交換、DB保存」仕様と大きく乖離していた。
+
+### 変更内容
+
+#### `mobile/app/listing-editor.tsx`
+- 仮のテキスト入力型UIを撤去し、Web版と同じデータモデルに沿った作成・編集フォームへ作り替えた。
+- Supabaseから自分の譲る候補・Wish・編集対象の `listings` / `listing_wish_options` を読み込むようにした。
+- 譲側でグループ・種別を選び、該当する譲グッズを画像カードで複数選択できるようにした。
+- 譲側の数量ステッパーを追加し、市場残数を上限にした。
+- 複数譲の `and` / `or` を「全部」「1pick」で切り替えられるようにした。
+- 求側は最大5つの選択肢を追加でき、選択肢ごとにグループ・種別・Wish・数量・`and` / `or` を設定できるようにした。
+- 選択したWishがすべて画像ありの場合は、Web版同様に同種 / 異種の交換タイプ指定を不要表示にした。
+- 画像なしWishを含む場合は、交換タイプ（同異種 / 同種のみ / 異種のみ）を表示するようにした。
+- 定価交換選択肢を追加し、金額入力と `is_cash_offer` 保存に対応した。
+- Web版と同じ OR×OR の曖昧条件をバリデーションで防ぐようにした。
+- 作成時は `listings` をinsertし、`listing_wish_options` をbulk insertするようにした。
+- 編集時は `listings` を更新し、既存 `listing_wish_options` を削除して再insertするWeb版相当の全置換更新にした。
+- 成立・完了済みの個別募集は編集不可として表示するようにした。
+- 保存後はWishタブの個別募集一覧へ戻り、一覧を再読込するようにした。
+
+#### `mobile/app/(tabs)/wishes.tsx`
+- 個別募集編集画面へ遷移する際に `id` を渡すようにした。
+- Wishから個別募集作成へ進む際に `wishId` を渡し、求側選択肢のプリセットに使えるようにした。
+- 保存後の `tab=listings` / `refresh` パラメータを受け、個別募集一覧タブを開いて再読込するようにした。
+
+### 影響範囲
+
+- iOS版 Wish タブ > 個別募集一覧
+- iOS版 個別募集作成画面
+- iOS版 個別募集編集画面
+- `listings`
+- `listing_wish_options`
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- Wishタブの個別募集一覧から編集を開くと、対象のDBデータがカード選択UIで復元されること
+- 個別募集作成で譲る候補、求めるWish、数量、AND/OR、交換タイプ、定価交換を設定できること
+- 画像ありWishのみを選ぶと交換タイプ指定が不要表示になること
+- 保存後に個別募集一覧へ戻り、一覧が再読込されること
+
+### 関連ファイル
+
+- `mobile/app/listing-editor.tsx`
+- `mobile/app/(tabs)/wishes.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版の作成・編集仕様に合わせて `listings` / `listing_wish_options` へ保存
+- ✅ テキスト入力だけの仮UIを撤去し、カード選択・数量・AND/OR・交換タイプ・定価交換を実装
+- ✅ 既存テーブル利用のみでデータモデル変更なしのため `notes/05_data_model.md` 更新不要
+- ✅ 状態名の追加・変更なしのため `notes/09_state_machines.md` 更新不要
+- ✅ 新用語追加なしのため `notes/10_glossary.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.34：iOSホームの現地モード切替を設定シート連動へ
 
 ### 背景・問題意識
