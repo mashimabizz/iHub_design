@@ -1,4 +1,4 @@
-import { Redirect, Tabs } from "expo-router";
+import { Redirect, Tabs, router } from "expo-router";
 import { useEffect, useRef } from "react";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import {
@@ -15,11 +15,11 @@ import { useAuth } from "../../src/auth/AuthProvider";
 import { ihubColors, ihubRadii } from "../../src/theme/tokens";
 
 const TAB_CONFIG: Record<string, { label: string; glyph: string }> = {
-  index: { label: "ホーム", glyph: "H" },
-  inventory: { label: "在庫", glyph: "I" },
-  wishes: { label: "Wish", glyph: "W" },
-  transactions: { label: "取引", glyph: "T" },
-  profile: { label: "プロフ", glyph: "P" },
+  index: { label: "ホーム", glyph: "⌂" },
+  inventory: { label: "在庫", glyph: "▦" },
+  wishes: { label: "Wish", glyph: "♡" },
+  transactions: { label: "取引", glyph: "↔" },
+  profile: { label: "プロフ", glyph: "◉" },
 };
 
 export default function TabLayout() {
@@ -72,9 +72,12 @@ function LiquidTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { width } = useWindowDimensions();
   const progress = useRef(new Animated.Value(state.index)).current;
   const routes = state.routes;
-  const barWidth = Math.min(width - 28, 414);
+  const shellWidth = Math.min(width - 24, 430);
+  const searchSize = 64;
+  const gap = 7;
+  const barWidth = shellWidth - searchSize - gap;
   const itemWidth = barWidth / routes.length;
-  const indicatorWidth = itemWidth - 8;
+  const indicatorWidth = itemWidth + 12;
   const translateX = Animated.multiply(progress, itemWidth);
 
   useEffect(() => {
@@ -97,64 +100,61 @@ function LiquidTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         },
       ]}
     >
-      <View style={[styles.tabBarGlass, { width: barWidth }]}>
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.tabBarIndicator,
-            {
-              width: indicatorWidth,
-              transform: [{ translateX }],
-            },
-          ]}
-        >
-          <View style={styles.tabBarIndicatorGloss} />
-        </Animated.View>
+      <View style={[styles.tabBarShell, { width: shellWidth }]}>
+        <View style={[styles.tabBarGlass, { width: barWidth }]}>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.tabBarIndicator,
+              {
+                width: indicatorWidth,
+                transform: [{ translateX }],
+              },
+            ]}
+          >
+            <View style={styles.tabBarIndicatorGloss} />
+            <View style={styles.tabBarIridescentA} />
+            <View style={styles.tabBarIridescentB} />
+          </Animated.View>
 
-        {routes.map((route, index) => {
-          const options = descriptors[route.key]?.options;
-          const focused = state.index === index;
-          const config = TAB_CONFIG[route.name] ?? {
-            label:
-              typeof options?.title === "string" ? options.title : route.name,
-            glyph: route.name.slice(0, 1).toUpperCase(),
-          };
+          {routes.map((route, index) => {
+            const options = descriptors[route.key]?.options;
+            const focused = state.index === index;
+            const config = TAB_CONFIG[route.name] ?? {
+              label:
+                typeof options?.title === "string" ? options.title : route.name,
+              glyph: route.name.slice(0, 1).toUpperCase(),
+            };
 
-          const onPress = () => {
-            const event = navigation.emit({
-              type: "tabPress",
-              target: route.key,
-              canPreventDefault: true,
-            });
+            const onPress = () => {
+              const event = navigation.emit({
+                type: "tabPress",
+                target: route.key,
+                canPreventDefault: true,
+              });
 
-            if (!focused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
-            }
-          };
+              if (!focused && !event.defaultPrevented) {
+                navigation.navigate(route.name);
+              }
+            };
 
-          const onLongPress = () => {
-            navigation.emit({
-              type: "tabLongPress",
-              target: route.key,
-            });
-          };
+            const onLongPress = () => {
+              navigation.emit({
+                type: "tabLongPress",
+                target: route.key,
+              });
+            };
 
-          return (
-            <Pressable
-              key={route.key}
-              accessibilityRole="button"
-              accessibilityState={focused ? { selected: true } : {}}
-              accessibilityLabel={options?.tabBarAccessibilityLabel}
-              testID={options?.tabBarButtonTestID}
-              onPress={onPress}
-              onLongPress={onLongPress}
-              style={[styles.tabBarItem, { width: itemWidth }]}
-            >
-              <View
-                style={[
-                  styles.tabGlyph,
-                  focused ? styles.tabGlyphActive : styles.tabGlyphInactive,
-                ]}
+            return (
+              <Pressable
+                key={route.key}
+                accessibilityRole="button"
+                accessibilityState={focused ? { selected: true } : {}}
+                accessibilityLabel={options?.tabBarAccessibilityLabel}
+                testID={options?.tabBarButtonTestID}
+                onPress={onPress}
+                onLongPress={onLongPress}
+                style={[styles.tabBarItem, { width: itemWidth }]}
               >
                 <Text
                   style={[
@@ -166,19 +166,27 @@ function LiquidTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 >
                   {config.glyph}
                 </Text>
-              </View>
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.tabLabel,
-                  focused ? styles.tabLabelActive : styles.tabLabelInactive,
-                ]}
-              >
-                {config.label}
-              </Text>
-            </Pressable>
-          );
-        })}
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.tabLabel,
+                    focused ? styles.tabLabelActive : styles.tabLabelInactive,
+                  ]}
+                >
+                  {config.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="検索"
+          onPress={() => router.push("/search")}
+          style={[styles.searchOrb, { height: searchSize, width: searchSize }]}
+        >
+          <Text style={styles.searchGlyph}>⌕</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -194,69 +202,83 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 0,
   },
+  tabBarShell: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 7,
+    justifyContent: "center",
+  },
   tabBarGlass: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.72)",
+    backgroundColor: "rgba(255,255,255,0.82)",
     borderColor: "rgba(255,255,255,0.88)",
     borderRadius: ihubRadii.pill,
     borderWidth: 1,
     flexDirection: "row",
-    height: 68,
+    height: 64,
     justifyContent: "center",
-    overflow: "hidden",
-    paddingHorizontal: 4,
+    overflow: "visible",
+    paddingHorizontal: 2,
     shadowColor: ihubColors.ink,
     shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.16,
-    shadowRadius: 30,
+    shadowOpacity: 0.14,
+    shadowRadius: 26,
   },
   tabBarIndicator: {
-    backgroundColor: "rgba(255,255,255,0.82)",
-    borderColor: "rgba(255,255,255,0.94)",
+    backgroundColor: "rgba(255,255,255,0.74)",
+    borderColor: "rgba(255,255,255,0.98)",
     borderRadius: ihubRadii.pill,
     borderWidth: 1,
-    bottom: 6,
-    left: 4,
+    bottom: 0,
+    left: -6,
+    overflow: "hidden",
     position: "absolute",
-    top: 6,
-    shadowColor: ihubColors.lavender,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
+    top: 0,
+    shadowColor: ihubColors.pink,
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
   },
   tabBarIndicatorGloss: {
-    backgroundColor: "rgba(166,149,216,0.13)",
+    backgroundColor: "rgba(255,255,255,0.42)",
     borderRadius: ihubRadii.pill,
-    bottom: 8,
-    left: 10,
+    bottom: 7,
+    left: 8,
     position: "absolute",
-    right: 10,
-    top: 8,
+    right: 8,
+    top: 7,
+  },
+  tabBarIridescentA: {
+    backgroundColor: "rgba(255,45,85,0.34)",
+    borderRadius: 999,
+    height: 38,
+    left: -5,
+    position: "absolute",
+    top: 5,
+    width: 24,
+  },
+  tabBarIridescentB: {
+    backgroundColor: "rgba(166,149,216,0.24)",
+    borderColor: "rgba(255,255,255,0.55)",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 62,
+    position: "absolute",
+    right: -12,
+    top: 1,
+    width: 62,
   },
   tabBarItem: {
     alignItems: "center",
-    gap: 3,
+    gap: 1,
     height: 60,
     justifyContent: "center",
     zIndex: 1,
   },
-  tabGlyph: {
-    alignItems: "center",
-    borderRadius: 10,
-    height: 24,
-    justifyContent: "center",
-    width: 24,
-  },
-  tabGlyphActive: {
-    backgroundColor: "rgba(166,149,216,0.18)",
-  },
-  tabGlyphInactive: {
-    backgroundColor: "transparent",
-  },
   tabGlyphText: {
-    fontSize: 13,
+    fontSize: 25,
     fontWeight: "900",
-    lineHeight: 16,
+    lineHeight: 28,
   },
   tabGlyphTextActive: {
     color: ihubColors.lavender,
@@ -265,7 +287,7 @@ const styles = StyleSheet.create({
     color: "rgba(58,50,74,0.52)",
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: "900",
     letterSpacing: 0,
   },
@@ -274,5 +296,23 @@ const styles = StyleSheet.create({
   },
   tabLabelInactive: {
     color: "rgba(58,50,74,0.52)",
+  },
+  searchOrb: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.80)",
+    borderColor: "rgba(255,255,255,0.96)",
+    borderRadius: 999,
+    borderWidth: 1,
+    justifyContent: "center",
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.16,
+    shadowRadius: 26,
+  },
+  searchGlyph: {
+    color: ihubColors.ink,
+    fontSize: 34,
+    fontWeight: "900",
+    lineHeight: 38,
   },
 });

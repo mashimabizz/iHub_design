@@ -35,6 +35,7 @@ type ProposalTab = "give" | "receive" | "meetup";
 
 type MeetupCandidate = {
   id: string;
+  dateId: string;
   dayIndex: number;
   startSlot: number;
   endSlot: number;
@@ -56,6 +57,7 @@ type MeetupDay = {
 };
 
 type DragDraft = {
+  dateId: string;
   dayIndex: number;
   startSlot: number;
   currentSlot: number;
@@ -71,6 +73,7 @@ type CalendarFrame = {
 type CandidateEdit = {
   id: string;
   action: "move" | "resize-end";
+  dateId: string;
   dayIndex: number;
   startSlot: number;
   endSlot: number;
@@ -84,12 +87,13 @@ type CandidateTouchState = {
   startX: number;
   startY: number;
   originalDayIndex: number;
+  originalDateId: string;
   originalStartSlot: number;
   originalEndSlot: number;
   pointerStartOffsetSlots: number;
 };
 
-const DAYS = buildMeetupDays();
+const DAYS = buildMeetupDays(0);
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const SLOT_MINUTES = 15;
 const SLOT_COUNT = 24 * (60 / SLOT_MINUTES);
@@ -300,10 +304,11 @@ export default function ProposalSelectScreen() {
               setActiveMeetupId(id);
               setPlaceSheetId(id);
             }}
-            onAddCandidate={(dayIndex, startSlot, endSlot) => {
+            onAddCandidate={(dayIndex, dateId, startSlot, endSlot) => {
               const id = `candidate-${Date.now()}`;
               const candidate: MeetupCandidate = {
                 id,
+                dateId,
                 dayIndex,
                 startSlot,
                 endSlot,
@@ -354,9 +359,9 @@ export default function ProposalSelectScreen() {
                   .map((candidate, index) => ({
                     id: candidate.id,
                     label: `候補${index + 1}`,
-                    time: `${DAYS[candidate.dayIndex]?.month ?? ""}${DAYS[candidate.dayIndex]?.date ?? ""}日 ${formatSlot(candidate.startSlot)} - ${formatSlot(candidate.endSlot)}`,
-                    startAt: slotToIso(candidate.dayIndex, candidate.startSlot),
-                    endAt: slotToIso(candidate.dayIndex, candidate.endSlot),
+                    time: `${formatCandidateDate(candidate.dateId)} ${formatSlot(candidate.startSlot)} - ${formatSlot(candidate.endSlot)}`,
+                    startAt: slotToIso(candidate.dateId, candidate.startSlot),
+                    endAt: slotToIso(candidate.dateId, candidate.endSlot),
                     place: candidate.place,
                     latitude: candidate.coordinate.latitude,
                     longitude: candidate.coordinate.longitude,
@@ -506,16 +511,27 @@ function MeetupPane({
   onSelectCandidate: (id: string | null) => void;
   onOpenPlaceSheet: (id: string) => void;
   onClosePlaceSheet: () => void;
-  onAddCandidate: (dayIndex: number, startSlot: number, endSlot: number) => void;
+  onAddCandidate: (
+    dayIndex: number,
+    dateId: string,
+    startSlot: number,
+    endSlot: number,
+  ) => void;
   onDeleteCandidate: (id: string) => void;
   onUpdateCandidate: (id: string, patch: Partial<MeetupCandidate>) => void;
 }) {
   const { width } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const days = useMemo(() => buildMeetupDays(weekOffset), [weekOffset]);
+  const weekHeaderTouchRef = useRef<{ startX: number; startY: number } | null>(
+    null,
+  );
   const touchPressRef = useRef<{
     timer: ReturnType<typeof setTimeout>;
     mode: "pending" | "scrolling" | "dragging";
     dayIndex: number;
+    dateId: string;
     startSlot: number;
     startX: number;
     startY: number;
@@ -525,11 +541,12 @@ function MeetupPane({
   const calendarFrameRef = useRef<CalendarFrame | null>(null);
   const calendarGridRef = useRef<View>(null);
   const dragDraftRef = useRef<DragDraft | null>(null);
+  const weekSwipeConsumedRef = useRef(false);
   const [dragDraft, setDragDraftState] = useState<DragDraft | null>(null);
   const [candidateEdit, setCandidateEditState] =
     useState<CandidateEdit | null>(null);
   const calendarWidth = width - 36;
-  const dayWidth = (calendarWidth - TIME_LABEL_WIDTH) / DAYS.length;
+  const dayWidth = (calendarWidth - TIME_LABEL_WIDTH) / days.length;
   const contentHeight =
     CALENDAR_TOP_PADDING + SLOT_COUNT * SLOT_HEIGHT + CALENDAR_BOTTOM_PADDING;
   const activeCandidate =
@@ -601,13 +618,38 @@ function MeetupPane({
     const dayAreaLeft = frame.pageX + TIME_LABEL_WIDTH;
     const dayAreaWidth = Math.max(1, frame.width - TIME_LABEL_WIDTH);
     const rawDayIndex = Math.floor(
-      ((pageX - dayAreaLeft) / dayAreaWidth) * DAYS.length,
+      ((pageX - dayAreaLeft) / dayAreaWidth) * days.length,
     );
-    const dayIndex = Math.max(0, Math.min(DAYS.length - 1, rawDayIndex));
+    const dayIndex = Math.max(0, Math.min(days.length - 1, rawDayIndex));
     return {
       dayIndex,
       slot: slotFromCalendarY(pageY - frame.pageY),
     };
+  }
+
+  function changeWeek(direction: 1 | -1) {
+    setWeekOffset((current) => current + direction);
+    onSelectCandidate(null);
+    clearTouchPress();
+    clearCandidateTouch();
+    setDragDraft(null);
+  }
+
+  function handleWeekSwipeStart(event: GestureResponderEvent) {
+    const { pageX, pageY } = event.nativeEvent;
+    weekHeaderTouchRef.current = { startX: pageX, startY: pageY };
+  }
+
+  function handleWeekSwipeEnd(event: GestureResponderEvent) {
+    const start = weekHeaderTouchRef.current;
+    weekHeaderTouchRef.current = null;
+    if (!start) return;
+    const { pageX, pageY } = event.nativeEvent;
+    const dx = pageX - start.startX;
+    const dy = pageY - start.startY;
+    if (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      changeWeek(dx < 0 ? 1 : -1);
+    }
   }
 
   function beginCandidateEdit(state: CandidateTouchState) {
@@ -620,6 +662,7 @@ function MeetupPane({
       id: state.id,
       action: state.action,
       dayIndex: state.originalDayIndex,
+      dateId: state.originalDateId,
       startSlot: state.originalStartSlot,
       endSlot: state.originalEndSlot,
     });
@@ -646,6 +689,7 @@ function MeetupPane({
         id: state.id,
         action: state.action,
         dayIndex: point.dayIndex,
+        dateId: days[point.dayIndex]?.id ?? state.originalDateId,
         startSlot,
         endSlot: startSlot + duration,
       });
@@ -659,6 +703,7 @@ function MeetupPane({
       id: state.id,
       action: state.action,
       dayIndex: state.originalDayIndex,
+      dateId: state.originalDateId,
       startSlot: state.originalStartSlot,
       endSlot,
     });
@@ -696,6 +741,7 @@ function MeetupPane({
       startX: pageX,
       startY: pageY,
       originalDayIndex: candidate.dayIndex,
+      originalDateId: candidate.dateId,
       originalStartSlot: candidate.startSlot,
       originalEndSlot: candidate.endSlot,
       pointerStartOffsetSlots,
@@ -728,6 +774,7 @@ function MeetupPane({
       if (edit) {
         onUpdateCandidate(edit.id, {
           dayIndex: edit.dayIndex,
+          dateId: edit.dateId,
           startSlot: edit.startSlot,
           endSlot: edit.endSlot,
         });
@@ -746,17 +793,25 @@ function MeetupPane({
     onSelectCandidate(null);
     const { locationY, pageX, pageY } = e.nativeEvent;
     const startSlot = slotFromLocationY(locationY);
+    const dateId = days[dayIndex]?.id ?? DAYS[0].id;
+    weekSwipeConsumedRef.current = false;
     const timer = setTimeout(() => {
       const press = touchPressRef.current;
       if (!press || press.mode !== "pending") return;
       press.mode = "dragging";
-      const draft = { dayIndex, startSlot, currentSlot: startSlot + 3 };
+      const draft = {
+        dayIndex,
+        dateId: press.dateId,
+        startSlot,
+        currentSlot: startSlot + 3,
+      };
       setDragDraft(draft);
     }, LONG_PRESS_MS);
     touchPressRef.current = {
       timer,
       mode: "pending",
       dayIndex,
+      dateId,
       startSlot,
       startX: pageX,
       startY: pageY,
@@ -770,6 +825,18 @@ function MeetupPane({
     const { locationY, pageX, pageY } = e.nativeEvent;
     const dx = pageX - press.startX;
     const dy = pageY - press.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (
+      press.mode === "pending" &&
+      !weekSwipeConsumedRef.current &&
+      absX > 58 &&
+      absX > absY * 1.25
+    ) {
+      weekSwipeConsumedRef.current = true;
+      changeWeek(dx < 0 ? 1 : -1);
+      return;
+    }
     if (press.mode === "pending" && Math.hypot(dx, dy) > TOUCH_CANCEL_PX) {
       clearTouchPress();
       return;
@@ -778,6 +845,7 @@ function MeetupPane({
     const currentSlot = slotFromLocationY(locationY);
     setDragDraft({
       dayIndex: press.dayIndex,
+      dateId: press.dateId,
       startSlot: press.startSlot,
       currentSlot,
     });
@@ -794,6 +862,7 @@ function MeetupPane({
         const startSlot = press.startSlot;
         onAddCandidate(
           press.dayIndex,
+          press.dateId,
           startSlot,
           Math.min(SLOT_COUNT, startSlot + 2),
         );
@@ -807,7 +876,12 @@ function MeetupPane({
         releaseSlot === draft.startSlot ? draft.currentSlot : releaseSlot,
     };
     const range = normalizedDraftRange(nextDraft);
-    onAddCandidate(nextDraft.dayIndex, range.startSlot, range.endSlot);
+    onAddCandidate(
+      nextDraft.dayIndex,
+      nextDraft.dateId,
+      range.startSlot,
+      range.endSlot,
+    );
     setDragDraft(null);
   }
 
@@ -826,9 +900,16 @@ function MeetupPane({
 
   return (
     <View style={styles.meetupRoot}>
-      <View style={styles.days}>
+      <View
+        style={styles.days}
+        onTouchStart={handleWeekSwipeStart}
+        onTouchEnd={handleWeekSwipeEnd}
+        onTouchCancel={() => {
+          weekHeaderTouchRef.current = null;
+        }}
+      >
         <View style={styles.dayTimeSpacer} />
-        {DAYS.map((day) => (
+        {days.map((day) => (
           <View
             key={day.id}
             style={[styles.dayCell, day.isToday ? styles.dayCellToday : null]}
@@ -849,7 +930,7 @@ function MeetupPane({
 
       <ScrollView
         ref={scrollRef}
-        scrollEnabled={!dragDraft}
+        scrollEnabled={!dragDraft && !candidateEdit}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.calendarContent,
@@ -878,7 +959,7 @@ function MeetupPane({
             ))}
           </View>
 
-          {DAYS.map((day, dayIndex) => (
+          {days.map((day, dayIndex) => (
             <View
               key={day.id}
               style={[
@@ -910,17 +991,25 @@ function MeetupPane({
           ))}
 
           {candidates.map((candidate, index) => {
+            const visibleDayIndex = days.findIndex(
+              (day) => day.id === candidate.dateId,
+            );
+            if (visibleDayIndex < 0) return null;
+            const visibleCandidate = {
+              ...candidate,
+              dayIndex: visibleDayIndex,
+            };
             const active = candidate.id === activeCandidateId;
             const placeMissing = !candidate.place.trim();
             const edit = candidateEdit?.id === candidate.id ? candidateEdit : null;
-            const effective = edit ?? candidate;
+            const effective = edit ?? visibleCandidate;
             const editing = !!edit;
             return (
               <Pressable
                 key={candidate.id}
                 delayLongPress={LONG_PRESS_MS}
                 onTouchStart={(event) =>
-                  handleCandidateTouchStart(event, candidate, "move")
+                  handleCandidateTouchStart(event, visibleCandidate, "move")
                 }
                 onTouchMove={handleCandidateTouchMove}
                 onTouchEnd={handleCandidateTouchEnd}
@@ -973,7 +1062,7 @@ function MeetupPane({
                 <Pressable
                   accessibilityLabel={`候補${index + 1}の終了時間を変更`}
                   onTouchStart={(event) =>
-                    handleCandidateTouchStart(event, candidate, "resize-end")
+                    handleCandidateTouchStart(event, visibleCandidate, "resize-end")
                   }
                   onTouchMove={handleCandidateTouchMove}
                   onTouchEnd={handleCandidateTouchEnd}
@@ -1005,15 +1094,16 @@ function MeetupPane({
             />
           ) : null}
 
-          {candidates.length === 0 && !preview ? (
-            <View pointerEvents="none" style={styles.calendarHint}>
-              <Text style={styles.calendarHintText}>
-                タップで30分、長押しで時間を伸ばせるよ
-              </Text>
-            </View>
-          ) : null}
         </View>
       </ScrollView>
+
+      {candidates.length === 0 && !preview ? (
+        <View pointerEvents="none" style={styles.calendarHint}>
+          <Text style={styles.calendarHintText}>
+            長押しで時間帯を選択できるよ
+          </Text>
+        </View>
+      ) : null}
 
       <PlaceSheet
         candidate={activeCandidate}
@@ -1255,13 +1345,15 @@ function PlaceSheet({
   );
 }
 
-function buildMeetupDays(): MeetupDay[] {
+function buildMeetupDays(weekOffset = 0): MeetupDay[] {
   const weekday = ["日", "月", "火", "水", "木", "金", "土"];
   const now = new Date();
+  const base = new Date(now);
+  base.setDate(now.getDate() + weekOffset * 5);
   const todayKey = dateKey(now);
   return Array.from({ length: 5 }, (_, index) => {
-    const date = new Date(now);
-    date.setDate(now.getDate() + index);
+    const date = new Date(base);
+    date.setDate(base.getDate() + index);
     return {
       id: dateKey(date),
       day: weekday[date.getDay()] ?? "",
@@ -1309,15 +1401,18 @@ function formatSlot(slot: number) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function slotToIso(dayIndex: number, slot: number) {
-  const day = DAYS[dayIndex];
-  const date = day?.id ?? dateKey(new Date());
-  return new Date(`${date}T${formatSlot(slot)}:00+09:00`).toISOString();
+function slotToIso(dateId: string, slot: number) {
+  return new Date(`${dateId}T${formatSlot(slot)}:00+09:00`).toISOString();
 }
 
 function formatCandidateRange(candidate: MeetupCandidate) {
-  const day = DAYS[candidate.dayIndex];
-  return `${day?.month ?? ""}${day?.date ?? ""}日 ${formatSlot(candidate.startSlot)} - ${formatSlot(candidate.endSlot)}`;
+  return `${formatCandidateDate(candidate.dateId)} ${formatSlot(candidate.startSlot)} - ${formatSlot(candidate.endSlot)}`;
+}
+
+function formatCandidateDate(dateId: string) {
+  const date = new Date(`${dateId}T00:00:00+09:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 function labelFromGeocodedAddress(
@@ -1551,6 +1646,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     flex: 1,
     overflow: "hidden",
+    position: "relative",
   },
   days: {
     borderBottomColor: "rgba(58,50,74,0.08)",
@@ -1719,16 +1815,18 @@ const styles = StyleSheet.create({
   calendarHint: {
     alignItems: "center",
     alignSelf: "center",
-    backgroundColor: "rgba(24,22,32,0.42)",
+    backgroundColor: "rgba(24,22,32,0.34)",
     borderRadius: 999,
     justifyContent: "center",
     left: "50%",
     marginLeft: -110,
+    marginTop: -24,
     paddingHorizontal: 18,
     paddingVertical: 12,
     position: "absolute",
-    top: 260,
+    top: "46%",
     width: 220,
+    zIndex: 40,
   },
   calendarHintText: {
     color: ihubColors.surface,
