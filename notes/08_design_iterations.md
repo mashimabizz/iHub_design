@@ -4,6 +4,54 @@
 
 ---
 
+## イテレーション155.33：iOSフッターをNativeTabsへ切り替え
+
+### 背景・問題意識
+
+オーナーから「風ではなく、本物を使いたい」と明確な要望があった。前回までの React Navigation 標準タブバーやカスタムガラス風UIは、いずれもJS側で見た目を寄せるアプローチであり、最新iOSの Liquid Glass / floating tab bar / minimize behavior をシステムに任せる構成ではなかった。Expo Router 6.0.23 には `expo-router/unstable-native-tabs` が同梱されており、内部的に `react-native-screens` の native bottom tabs を利用できるため、既存5タブを NativeTabs へ切り替える。
+
+### 変更内容
+
+#### `mobile/app/(tabs)/_layout.tsx`
+- `Tabs` / `StyleSheet` / `useSafeAreaInsets` ベースのJSタブバーを撤去した。
+- `expo-router/unstable-native-tabs` の `NativeTabs` / `NativeTabs.Trigger` へ切り替えた。
+- 各タブに SF Symbols を設定した。
+  - ホーム: `house` / `house.fill`
+  - 在庫: `shippingbox` / `shippingbox.fill`
+  - Wish: `heart` / `heart.fill`
+  - 取引: `arrow.left.arrow.right`
+  - プロフ: `person.crop.circle` / `person.crop.circle.fill`
+- `backgroundColor={null}` と `blurEffect="systemDefault"` を指定し、背景描画をiOS側に任せる方針にした。
+- iOS 26+ の `minimizeBehavior="onScrollDown"` を指定し、スクロール時の最小化挙動をネイティブ側へ任せるようにした。
+
+### 影響範囲
+
+- iOS版共通フッター
+- iOS版ホーム/在庫/Wish/取引/プロフのタブ遷移
+- development build / EAS build でのネイティブタブ表示
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- iOS development build で、フッターがJSカスタムではなく NativeTabs として表示されること
+- iOS 26環境で、システム側の floating tab bar / Liquid Glass / minimize behavior が有効になること
+- iOS 25以前では、OSが提供する通常の native tab bar として破綻なく表示されること
+
+### 関連ファイル
+
+- `mobile/app/(tabs)/_layout.tsx`
+
+### セルフレビュー結果
+
+- ✅ フッターをJSカスタムではなく NativeTabs へ切り替え
+- ✅ SF Symbols を利用し、テキスト記号アイコンを撤去
+- ✅ 状態遷移・用語・データモデル変更なしのため `notes/09` / `notes/10` / `notes/05` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.32：iOS待ち合わせカレンダーの週切り替え瞬間の表示崩れを抑制
 
 ### 背景・問題意識

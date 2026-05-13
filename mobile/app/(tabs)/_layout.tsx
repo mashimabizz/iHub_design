@@ -1,21 +1,37 @@
-import { Redirect, Tabs } from "expo-router";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Redirect } from "expo-router";
+import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
+import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "../../src/auth/AuthProvider";
 import { ihubColors } from "../../src/theme/tokens";
 
 const TAB_CONFIG = {
-  index: "ホーム",
-  inventory: "在庫",
-  wishes: "Wish",
-  transactions: "取引",
-  profile: "プロフ",
-};
+  index: {
+    label: "ホーム",
+    sf: { default: "house", selected: "house.fill" },
+  },
+  inventory: {
+    label: "在庫",
+    sf: { default: "shippingbox", selected: "shippingbox.fill" },
+  },
+  wishes: {
+    label: "Wish",
+    sf: { default: "heart", selected: "heart.fill" },
+  },
+  transactions: {
+    label: "取引",
+    sf: {
+      default: "arrow.left.arrow.right",
+      selected: "arrow.left.arrow.right",
+    },
+  },
+  profile: {
+    label: "プロフ",
+    sf: { default: "person.crop.circle", selected: "person.crop.circle.fill" },
+  },
+} as const;
 
 export default function TabLayout() {
   const { configured, loading, previewMode, session } = useAuth();
-  const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, 8);
 
   if (loading) {
     return (
@@ -37,52 +53,48 @@ export default function TabLayout() {
   }
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarHideOnKeyboard: true,
-        tabBarActiveTintColor: ihubColors.lavender,
-        tabBarInactiveTintColor: "rgba(58,50,74,0.46)",
-        tabBarLabelStyle: styles.tabLabel,
-        tabBarItemStyle: styles.tabItem,
-        tabBarStyle: [
-          styles.nativeTabBar,
-          {
-            height: 58 + bottomInset,
-            paddingBottom: bottomInset,
-          },
-        ],
+    <NativeTabs
+      backgroundColor={null}
+      blurEffect="systemDefault"
+      iconColor={{
+        default: "rgba(58,50,74,0.46)",
+        selected: ihubColors.lavender,
       }}
+      labelStyle={{
+        default: {
+          color: "rgba(58,50,74,0.56)",
+          fontSize: 11,
+          fontWeight: "700",
+        },
+        selected: {
+          color: ihubColors.lavender,
+          fontSize: 11,
+          fontWeight: "800",
+        },
+      }}
+      minimizeBehavior="onScrollDown"
+      tintColor={ihubColors.lavender}
     >
-      <Tabs.Screen name="index" options={{ title: TAB_CONFIG.index }} />
-      <Tabs.Screen
-        name="inventory"
-        options={{ title: TAB_CONFIG.inventory }}
-      />
-      <Tabs.Screen name="wishes" options={{ title: TAB_CONFIG.wishes }} />
-      <Tabs.Screen
-        name="transactions"
-        options={{ title: TAB_CONFIG.transactions }}
-      />
-      <Tabs.Screen name="profile" options={{ title: TAB_CONFIG.profile }} />
-    </Tabs>
+      <NativeTabs.Trigger name="index">
+        <Icon sf={TAB_CONFIG.index.sf} />
+        <Label>{TAB_CONFIG.index.label}</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="inventory">
+        <Icon sf={TAB_CONFIG.inventory.sf} />
+        <Label>{TAB_CONFIG.inventory.label}</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="wishes">
+        <Icon sf={TAB_CONFIG.wishes.sf} />
+        <Label>{TAB_CONFIG.wishes.label}</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="transactions">
+        <Icon sf={TAB_CONFIG.transactions.sf} />
+        <Label>{TAB_CONFIG.transactions.label}</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="profile">
+        <Icon sf={TAB_CONFIG.profile.sf} />
+        <Label>{TAB_CONFIG.profile.label}</Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }
-
-const styles = StyleSheet.create({
-  nativeTabBar: {
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderTopColor: "rgba(58,50,74,0.10)",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    elevation: 0,
-    shadowColor: "transparent",
-  },
-  tabItem: {
-    paddingTop: 8,
-  },
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0,
-  },
-});
