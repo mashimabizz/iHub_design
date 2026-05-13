@@ -43,6 +43,7 @@ type Transaction = {
   direction: "sent" | "received";
   status: TransactionStatus;
   needsAction: boolean;
+  latestMessageFrom?: "me" | "partner" | null;
   receive: TradeItem[];
   give: TradeItem[];
   place: string;
@@ -401,6 +402,12 @@ type InventoryRow = {
   goods_type: { name: string | null } | { name: string | null }[] | null;
 };
 
+type MessageSummaryRow = {
+  proposal_id: string;
+  sender_id: string;
+  created_at: string;
+};
+
 async function fetchTransactions(userId: string): Promise<Transaction[]> {
   if (!supabase) return TRANSACTIONS;
   const proposalFields = [
@@ -424,6 +431,7 @@ async function fetchTransactions(userId: string): Promise<Transaction[]> {
   ];
   const proposals = await fetchProposalRows(userId, proposalFields);
   if (proposals.length === 0) return [];
+  const proposalIds = proposals.map((row) => row.id);
 
   const partnerIds = Array.from(
     new Set(
@@ -441,7 +449,7 @@ async function fetchTransactions(userId: string): Promise<Transaction[]> {
     ),
   );
 
-  const [{ data: users }, { data: inventory }] = await Promise.all([
+  const [{ data: users }, { data: inventory }, latestMessageFromByProposalId] = await Promise.all([
     partnerIds.length > 0
       ? supabase.from("users").select("id, handle, display_name").in("id", partnerIds)
       : Promise.resolve({ data: [] }),
@@ -453,6 +461,7 @@ async function fetchTransactions(userId: string): Promise<Transaction[]> {
           )
           .in("id", itemIds)
       : Promise.resolve({ data: [] }),
+    fetchLatestMessageFromByProposalId(proposalIds, userId),
   ]);
 
   const usersById = new Map(
@@ -469,12 +478,14 @@ async function fetchTransactions(userId: string): Promise<Transaction[]> {
     const receiveIds = isSender
       ? row.receiver_have_ids ?? []
       : row.sender_have_ids ?? [];
+    const latestMessageFrom = latestMessageFromByProposalId.get(row.id) ?? null;
     return {
       id: row.id,
       partner: partner?.handle ?? partner?.display_name ?? "unknown",
       direction: isSender ? "sent" : "received",
       status: normalizeTransactionStatus(row.status),
-      needsAction: needsActionFor(row, userId),
+      needsAction: needsActionFor(row, userId, latestMessageFrom),
+      latestMessageFrom,
       receive: receiveIds.map((id) => toTradeItem(id, inventoryById.get(id))),
       give: giveIds.map((id) => toTradeItem(id, inventoryById.get(id))),
       place: row.meetup_place_name ?? "場所確認中",
@@ -513,6 +524,35 @@ async function fetchProposalRows(
   return [];
 }
 
+async function fetchLatestMessageFromByProposalId(
+  proposalIds: string[],
+  userId: string,
+) {
+  const result = new Map<string, "me" | "partner">();
+  if (!supabase || proposalIds.length === 0) return result;
+
+  const selectableFields = ["proposal_id", "sender_id", "created_at"];
+  for (let attempt = 0; attempt < selectableFields.length; attempt += 1) {
+    const { data, error } = await supabase
+      .from("messages")
+      .select(selectableFields.join(", "))
+      .in("proposal_id", proposalIds)
+      .order("created_at", { ascending: false });
+    const missingColumn = getMissingColumnName(error, "messages");
+    if (missingColumn && selectableFields.includes(missingColumn)) {
+      selectableFields.splice(selectableFields.indexOf(missingColumn), 1);
+      continue;
+    }
+    if (error) return result;
+    for (const row of ((data as unknown as MessageSummaryRow[] | null) ?? [])) {
+      if (result.has(row.proposal_id)) continue;
+      result.set(row.proposal_id, row.sender_id === userId ? "me" : "partner");
+    }
+    return result;
+  }
+  return result;
+}
+
 function getMissingProposalColumn(error: { code?: string; message?: string } | null) {
   const message = error?.message ?? "";
   if (
@@ -524,8 +564,18 @@ function getMissingProposalColumn(error: { code?: string; message?: string } | n
     return null;
   }
   return (
-    message.match(/Could not find the '([^']+)' column of 'proposals'/)?.[1] ??
-    message.match(/column proposals\.([a-zA-Z0-9_]+) does not exist/)?.[1] ??
+    getMissingColumnName(error, "proposals")
+  );
+}
+
+function getMissingColumnName(
+  error: { code?: string; message?: string } | null,
+  tableName: string,
+) {
+  const message = error?.message ?? "";
+  return (
+    message.match(new RegExp(`Could not find the '([^']+)' column of '${tableName}'`))?.[1] ??
+    message.match(new RegExp(`column ${tableName}\\.([a-zA-Z0-9_]+) does not exist`))?.[1] ??
     message.match(/column "([a-zA-Z0-9_]+)" does not exist/)?.[1] ??
     null
   );
@@ -555,10 +605,17 @@ function toTradeItem(id: string, row?: InventoryRow): TradeItem {
   };
 }
 
-function needsActionFor(row: ProposalRow, userId: string) {
+function needsActionFor(
+  row: ProposalRow,
+  userId: string,
+  latestMessageFrom: "me" | "partner" | null,
+) {
   const isSender = row.sender_id === userId;
   if (row.status === "sent") return !isSender;
-  if (row.status === "negotiating") return true;
+  if (row.status === "negotiating") {
+    if (latestMessageFrom) return latestMessageFrom === "partner";
+    return !isSender;
+  }
   if (row.status === "agreement_one_side") {
     return isSender ? !row.agreed_by_sender : !row.agreed_by_receiver;
   }
