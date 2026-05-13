@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
   Animated,
@@ -14,6 +13,7 @@ import {
 } from "react-native";
 import { Screen } from "../../src/components/Screen";
 import { useAuth } from "../../src/auth/AuthProvider";
+import { IconSymbol, type IconSymbolName } from "../../src/components/IconSymbol";
 import { hasSupabaseConfig, supabase } from "../../src/lib/supabase";
 import {
   MATCH_SECTIONS,
@@ -332,7 +332,7 @@ function CircleIconButton({
   badge,
   onPress,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconSymbolName;
   accessibilityLabel: string;
   badge?: string;
   onPress?: () => void;
@@ -344,7 +344,7 @@ function CircleIconButton({
       onPress={onPress}
       style={styles.circleButton}
     >
-      <Ionicons name={icon} size={20} color={ihubColors.ink} />
+      <IconSymbol name={icon} size={20} color={ihubColors.ink} />
       {badge ? (
         <View style={styles.notificationBadge}>
           <Text style={styles.notificationBadgeText}>{badge}</Text>
@@ -362,7 +362,7 @@ function FloatingSearchButton() {
       onPress={() => router.push("/search")}
       style={styles.floatingSearchButton}
     >
-      <Ionicons name="search" size={24} color={ihubColors.ink} />
+      <IconSymbol name="search" size={24} color={ihubColors.ink} />
     </Pressable>
   );
 }

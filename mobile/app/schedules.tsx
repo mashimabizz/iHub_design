@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { RouteHeader } from "../src/components/RouteHeader";
 import { Screen } from "../src/components/Screen";
 import { useAuth } from "../src/auth/AuthProvider";
+import { IconSymbol } from "../src/components/IconSymbol";
 import { supabase } from "../src/lib/supabase";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
@@ -95,7 +95,7 @@ export default function SchedulesScreen() {
             onPress={() => router.push("/schedule-editor")}
             style={styles.addButton}
           >
-            <Ionicons name="add" size={19} color="#fff" />
+            <IconSymbol name="add" size={19} color="#fff" />
           </Pressable>
         }
       />
@@ -173,7 +173,7 @@ function ScheduleCard({
   return (
     <View style={styles.card}>
       <View style={styles.cardIcon}>
-        <Ionicons name="calendar-outline" size={18} color="#fff" />
+        <IconSymbol name="calendar-outline" size={18} color="#fff" />
       </View>
       <View style={styles.cardCopy}>
         <Text numberOfLines={1} style={styles.cardTitle}>

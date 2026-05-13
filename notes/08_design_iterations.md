@@ -4,6 +4,77 @@
 
 ---
 
+## イテレーション155.28：iOSアイコンhookエラーを解消
+
+### 背景・問題意識
+
+iOSプレビューでホーム表示時に `Invalid hook call` / `Cannot read property 'useContext' of null` が発生し、`@expo/vector-icons` の `Ionicons` を描画した箇所でクラッシュしていた。ホーム以外にも通知・検索・予定・ヘルプ画面で同じライブラリを使っていたため、同系統の再発リスクがあった。
+
+### 変更内容
+
+#### `mobile/src/components/IconSymbol.tsx`
+- `@expo/vector-icons` に依存しない、軽量な自前アイコン表示コンポーネントを追加した。
+- 既存画面で使っている `Ionicons` 名に対応する記号をマップした。
+
+#### `mobile/app/(tabs)/index.tsx`
+- ホーム上部の通知アイコンと左下固定検索アイコンを `IconSymbol` に置き換えた。
+
+#### `mobile/app/notifications.tsx`
+- 通知種別アイコンを `IconSymbol` に置き換えた。
+
+#### `mobile/app/search.tsx`
+- 検索、クリア、詳細導線アイコンを `IconSymbol` に置き換えた。
+
+#### `mobile/app/schedules.tsx`
+- 予定追加・予定カードアイコンを `IconSymbol` に置き換えた。
+
+#### `mobile/app/help.tsx`
+- メール、FAQ開閉、法的ページ導線アイコンを `IconSymbol` に置き換えた。
+
+#### `mobile/app/notification-settings.tsx`
+- 通知設定の行アイコンを `IconSymbol` に置き換えた。
+
+#### `mobile/app/user-profile.tsx`
+- 打診CTAの矢印アイコンを `IconSymbol` に置き換えた。
+
+### 影響範囲
+
+- iOS版ホーム
+- iOS版通知一覧
+- iOS版検索
+- iOS版スケジュール
+- iOS版ヘルプ/法的ページ導線
+- iOS版通知設定
+- iOS版相手プロフィール
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- iOSプレビューでホームを開いて `Invalid hook call` が出ないこと
+- ホームの通知/検索、通知一覧、検索、予定、ヘルプ、通知設定、相手プロフィールを開けること
+
+### 関連ファイル
+
+- `mobile/src/components/IconSymbol.tsx`
+- `mobile/app/(tabs)/index.tsx`
+- `mobile/app/notifications.tsx`
+- `mobile/app/search.tsx`
+- `mobile/app/schedules.tsx`
+- `mobile/app/help.tsx`
+- `mobile/app/notification-settings.tsx`
+- `mobile/app/user-profile.tsx`
+
+### セルフレビュー結果
+
+- ✅ `@expo/vector-icons` 参照をiOS画面から削除し、hookエラー再発リスクを下げた
+- ✅ React重複は `npm ls react` で発生していないことを確認
+- ✅ 状態遷移・用語・データモデル変更なしのため `notes/09` / `notes/10` / `notes/05` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.27：iOSキャンセル同意を追加
 
 ### 背景・問題意識

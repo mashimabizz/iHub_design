@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { RouteHeader } from "../src/components/RouteHeader";
 import { Screen } from "../src/components/Screen";
+import { IconSymbol, type IconSymbolName } from "../src/components/IconSymbol";
 import { ihubColors, ihubRadii } from "../src/theme/tokens";
 
 const FAQ_SECTIONS = [
@@ -67,7 +67,7 @@ export default function HelpScreen() {
           onPress={() => Linking.openURL("mailto:support@ihub.tokyo")}
           style={styles.mailButton}
         >
-          <Ionicons name="mail-outline" size={15} color="#fff" />
+          <IconSymbol name="mail-outline" size={15} color="#fff" />
           <Text style={styles.mailText}>support@ihub.tokyo</Text>
         </Pressable>
       </View>
@@ -108,7 +108,7 @@ function FaqRow({ answer, question }: { answer: string; question: string }) {
           <Text style={styles.qBadgeText}>Q</Text>
         </View>
         <Text style={styles.question}>{question}</Text>
-        <Ionicons
+        <IconSymbol
           name={open ? "chevron-down" : "chevron-forward"}
           size={14}
           color={ihubColors.mutedInk}
@@ -125,14 +125,14 @@ function LinkRow({
   title,
 }: {
   href: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconSymbolName;
   title: string;
 }) {
   return (
     <Pressable accessibilityRole="button" onPress={() => router.push(href)} style={styles.linkRow}>
-      <Ionicons name={icon} size={17} color={ihubColors.lavender} />
+      <IconSymbol name={icon} size={17} color={ihubColors.lavender} />
       <Text style={styles.linkTitle}>{title}</Text>
-      <Ionicons name="chevron-forward" size={14} color={ihubColors.mutedInk} />
+      <IconSymbol name="chevron-forward" size={14} color={ihubColors.mutedInk} />
     </Pressable>
   );
 }

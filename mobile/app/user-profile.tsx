@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   Image,
@@ -11,6 +10,7 @@ import {
 import { RouteHeader } from "../src/components/RouteHeader";
 import { Screen } from "../src/components/Screen";
 import { useAuth } from "../src/auth/AuthProvider";
+import { IconSymbol } from "../src/components/IconSymbol";
 import { supabase } from "../src/lib/supabase";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
@@ -188,7 +188,7 @@ export default function UserProfileScreen() {
               style={styles.cta}
             >
               <Text style={styles.ctaText}>この人に打診する</Text>
-              <Ionicons name="arrow-forward" size={16} color="#fff" />
+              <IconSymbol name="arrow-forward" size={16} color="#fff" />
             </Pressable>
           ) : null}
         </>

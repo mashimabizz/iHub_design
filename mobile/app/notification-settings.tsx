@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Ionicons } from "@expo/vector-icons";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { RouteHeader } from "../src/components/RouteHeader";
 import { Screen } from "../src/components/Screen";
 import { useAuth } from "../src/auth/AuthProvider";
+import { IconSymbol, type IconSymbolName } from "../src/components/IconSymbol";
 import { supabase } from "../src/lib/supabase";
 import { ihubColors, ihubRadii } from "../src/theme/tokens";
 
@@ -139,14 +139,14 @@ function SettingsRow({
   title,
 }: {
   control: ReactNode;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconSymbolName;
   sub?: string;
   title: string;
 }) {
   return (
     <View style={styles.row}>
       <View style={styles.rowIcon}>
-        <Ionicons name={icon} size={19} color={ihubColors.lavender} />
+        <IconSymbol name={icon} size={19} color={ihubColors.lavender} />
       </View>
       <View style={styles.rowCopy}>
         <Text style={styles.rowTitle}>{title}</Text>

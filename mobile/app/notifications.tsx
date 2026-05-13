@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { RouteHeader } from "../src/components/RouteHeader";
 import { Screen } from "../src/components/Screen";
 import { useAuth } from "../src/auth/AuthProvider";
+import { IconSymbol, type IconSymbolName } from "../src/components/IconSymbol";
 import { supabase } from "../src/lib/supabase";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
@@ -34,7 +34,7 @@ type NotificationItem = {
 
 type Tone = "lavender" | "ok" | "warn" | "amber" | "mute";
 
-const KIND_ICON: Record<NotificationKind, keyof typeof Ionicons.glyphMap> = {
+const KIND_ICON: Record<NotificationKind, IconSymbolName> = {
   proposal_received: "mail-unread-outline",
   proposal_accepted: "checkmark-circle-outline",
   proposal_rejected: "close-circle-outline",
@@ -218,7 +218,7 @@ function NotificationCard({
       ]}
     >
       <View style={[styles.iconBox, toneStyle(tone)]}>
-        <Ionicons name={KIND_ICON[item.kind]} size={18} color={toneColor(tone)} />
+        <IconSymbol name={KIND_ICON[item.kind]} size={18} color={toneColor(tone)} />
       </View>
       <View style={styles.cardCopy}>
         <View style={styles.cardTop}>

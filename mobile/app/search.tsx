@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   Image,
@@ -13,6 +12,7 @@ import {
 import { RouteHeader } from "../src/components/RouteHeader";
 import { Screen } from "../src/components/Screen";
 import { useAuth } from "../src/auth/AuthProvider";
+import { IconSymbol } from "../src/components/IconSymbol";
 import { supabase } from "../src/lib/supabase";
 import { ihubColors, ihubRadii, ihubShadow } from "../src/theme/tokens";
 
@@ -189,7 +189,7 @@ export default function SearchScreen() {
       />
 
       <View style={styles.searchBox}>
-        <Ionicons name="search" size={17} color={ihubColors.mutedInk} />
+        <IconSymbol name="search" size={17} color={ihubColors.mutedInk} />
         <TextInput
           autoCapitalize="none"
           autoCorrect={false}
@@ -204,7 +204,7 @@ export default function SearchScreen() {
         />
         {draft ? (
           <Pressable accessibilityLabel="検索語を消す" onPress={clearQuery}>
-            <Ionicons name="close" size={18} color={ihubColors.mutedInk} />
+            <IconSymbol name="close" size={18} color={ihubColors.mutedInk} />
           </Pressable>
         ) : null}
       </View>
@@ -298,7 +298,7 @@ function HitCard({ hit }: { hit: SearchHit }) {
             {[hit.groupName, hit.characterName, hit.goodsTypeName].filter(Boolean).join(" ・ ")}
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color={ihubColors.lavender} />
+        <IconSymbol name="chevron-forward" size={16} color={ihubColors.lavender} />
       </View>
     </Pressable>
   );
