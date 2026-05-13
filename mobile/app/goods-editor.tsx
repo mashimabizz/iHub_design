@@ -903,13 +903,15 @@ function InventoryCreateFlow({
     const result =
       source === "camera"
         ? await ImagePicker.launchCameraAsync({
-            allowsEditing: false,
+            allowsEditing: true,
+            aspect: [1, 1],
             mediaTypes: ["images"],
             quality: 0.86,
           })
         : await ImagePicker.launchImageLibraryAsync({
-            allowsEditing: false,
-            allowsMultipleSelection: true,
+            allowsEditing: true,
+            aspect: [1, 1],
+            allowsMultipleSelection: false,
             mediaTypes: ["images"],
             quality: 0.86,
           });
@@ -1149,7 +1151,7 @@ function InventoryCreateFlow({
         <View style={styles.createHint}>
           <Text style={styles.createHintTitle}>写真を撮る / 選ぶ</Text>
           <Text style={styles.createHintText}>
-            複数枚選ぶと、写真ごとに1件ずつ登録できます。写真なし登録もできます。
+            1枚ずつ切り抜いて追加できます。複数ある場合は続けて選ぶと、写真ごとに1件ずつ登録できます。
           </Text>
         </View>
 
