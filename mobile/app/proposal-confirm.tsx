@@ -467,10 +467,10 @@ function one(value?: string | string[]) {
 }
 
 function parseMeetups(raw?: string): MeetupCandidate[] {
-  if (!raw) return MEETUP_CANDIDATES;
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return MEETUP_CANDIDATES;
+    if (!Array.isArray(parsed)) return [];
     const candidates = parsed
       .map((item, index): MeetupCandidate | null => {
         const latitude = Number(item?.latitude);
@@ -489,9 +489,9 @@ function parseMeetups(raw?: string): MeetupCandidate[] {
         };
       })
       .filter(Boolean) as MeetupCandidate[];
-    return candidates.length > 0 ? candidates : MEETUP_CANDIDATES;
+    return candidates;
   } catch {
-    return MEETUP_CANDIDATES;
+    return [];
   }
 }
 
