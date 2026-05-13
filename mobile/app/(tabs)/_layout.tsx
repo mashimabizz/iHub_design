@@ -31,9 +31,10 @@ const TAB_CONFIG = {
 } as const;
 
 export default function TabLayout() {
-  const { configured, loading, previewMode, session } = useAuth();
+  const { configured, loading, needsOnboarding, previewMode, profileLoading, session } =
+    useAuth();
 
-  if (loading) {
+  if (loading || profileLoading) {
     return (
       <View
         style={{
@@ -50,6 +51,10 @@ export default function TabLayout() {
 
   if ((!configured && !previewMode) || (configured && !session)) {
     return <Redirect href="/welcome" />;
+  }
+
+  if (configured && session && needsOnboarding) {
+    return <Redirect href="/auth/email-confirmed" />;
   }
 
   return (

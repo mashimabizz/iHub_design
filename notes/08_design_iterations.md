@@ -4,6 +4,79 @@
 
 ---
 
+## イテレーション155.37：iOS取引詳細取得とオンボーディング導線を補正
+
+### 背景・問題意識
+
+オーナーから「取引一覧でパネルをタップしてもまだ『読み込みに失敗しました』と出る」「新規登録しても、そのままホーム画面にいってしまう」と指摘があった。取引詳細側は `proposals` の新旧カラム差分を吸収する fallback が `PGRST204` / schema cache 形式に偏っており、PostgREST が `42703` や `column ... does not exist` 形式で返した場合に復旧できなかった。また、Supabase Auth でサインアップ直後に session が返る設定だと、iOS版は `account_status` を見ずにタブ画面へ通していた。
+
+### 変更内容
+
+#### `mobile/app/(tabs)/transactions.tsx`
+- `proposals` 取得時の欠損カラム検出を `PGRST204` だけでなく `42703` / `column proposals.xxx does not exist` 形式にも対応させた。
+- PostgREST の plain object エラーでも実際の `message` を表示できるようにした。
+
+#### `mobile/app/transaction-detail.tsx`
+- 取引詳細の `proposals` 取得 fallback も同様に拡張し、`meetup_candidates` / `evidence_*` / `approved_by_*` などのDB差分で画面全体が落ちないようにした。
+- 取得失敗時に generic な「読み込みに失敗しました」だけでなく、Supabase の実エラー文を表示できるようにした。
+
+#### `mobile/src/auth/AuthProvider.tsx`
+- ログイン中ユーザーの `users.account_status` / `gender` / `primary_area` を AuthProvider で保持するようにした。
+- `needsOnboarding` を追加し、`registered` / `verified` / `onboarding` または gender 未設定のユーザーをオンボーディング未完了として判定するようにした。
+- `refreshProfile()` を追加し、オンボーディング完了後にAuthProvider側の状態も更新できるようにした。
+
+#### `mobile/app/(auth)/_layout.tsx`
+- session があってもオンボーディング未完了ならホームへ飛ばさず `/auth/email-confirmed` へ誘導するようにした。
+
+#### `mobile/app/(tabs)/_layout.tsx`
+- タブ画面もオンボーディング未完了ユーザーを `/auth/email-confirmed` へ戻すようにした。
+
+#### `mobile/app/auth/email-confirmed.tsx`
+- メール認証コード交換後、Web版と同様に `account_status: registered` を `verified` へ同期し、AuthProvider のプロフィール状態を再読込するようにした。
+
+#### `mobile/app/onboarding/area.tsx`
+- オンボーディング完了で `account_status: active` にした後、AuthProvider のプロフィール状態を再読込してから完了画面へ進むようにした。
+
+### 影響範囲
+
+- iOS版 取引一覧
+- iOS版 取引詳細 / 取引チャット
+- iOS版 認証後ルーティング
+- iOS版 新規登録後オンボーディング
+- iOS版 オンボーディング完了後のホーム遷移
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- 取引一覧のパネルをタップして、対象 proposal の詳細画面が開くこと
+- 新規登録直後に session が存在しても、ホームではなく認証完了 / プロフィール設定へ誘導されること
+- オンボーディング4/4完了後に `account_status` が `active` になり、ホームへ進めること
+
+### 関連ファイル
+
+- `mobile/app/(tabs)/transactions.tsx`
+- `mobile/app/transaction-detail.tsx`
+- `mobile/src/auth/AuthProvider.tsx`
+- `mobile/app/(auth)/_layout.tsx`
+- `mobile/app/(tabs)/_layout.tsx`
+- `mobile/app/auth/email-confirmed.tsx`
+- `mobile/app/onboarding/area.tsx`
+
+### セルフレビュー結果
+
+- ✅ 取引詳細取得のDBカラム差分 fallback を拡張
+- ✅ PostgREST plain object エラーでも message を表示
+- ✅ 新規登録/Apple認証などで session が即時発行されてもオンボーディング未完了ならホームに入れない
+- ✅ Web版と同じ `registered → verified → onboarding → active` の大枠に合わせた
+- ✅ 既存ステータス値の利用のみで新状態名なしのため `notes/09_state_machines.md` 更新不要
+- ✅ 新用語追加なしのため `notes/10_glossary.md` 更新不要
+- ✅ 既存 `users.account_status` 利用のみでデータモデル変更なしのため `notes/05_data_model.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.36：iOSホームの現地ON状態と表示モードを分離
 
 ### 背景・問題意識

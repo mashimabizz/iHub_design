@@ -190,7 +190,7 @@ export default function TransactionDetailScreen() {
       })
       .catch((loadError: unknown) => {
         if (!active) return;
-        setError(loadError instanceof Error ? loadError.message : "読み込みに失敗しました");
+        setError(toErrorMessage(loadError, "読み込みに失敗しました"));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -562,8 +562,33 @@ async function fetchProposalRow(
 
 function getMissingProposalColumn(error: { code?: string; message?: string } | null) {
   const message = error?.message ?? "";
-  if (error?.code !== "PGRST204" && !message.includes("schema cache")) return null;
-  return message.match(/Could not find the '([^']+)' column of 'proposals'/)?.[1] ?? null;
+  if (
+    error?.code !== "PGRST204" &&
+    error?.code !== "42703" &&
+    !message.includes("schema cache") &&
+    !message.includes("does not exist")
+  ) {
+    return null;
+  }
+  return (
+    message.match(/Could not find the '([^']+)' column of 'proposals'/)?.[1] ??
+    message.match(/column proposals\.([a-zA-Z0-9_]+) does not exist/)?.[1] ??
+    message.match(/column "([a-zA-Z0-9_]+)" does not exist/)?.[1] ??
+    null
+  );
+}
+
+function toErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (
+    typeof error === "object" &&
+    error &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return fallback;
 }
 
 async function buildDetail(

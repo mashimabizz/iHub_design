@@ -4,9 +4,10 @@ import { useAuth } from "../../src/auth/AuthProvider";
 import { ihubColors } from "../../src/theme/tokens";
 
 export default function AuthLayout() {
-  const { configured, loading, session } = useAuth();
+  const { configured, loading, needsOnboarding, profileLoading, session } =
+    useAuth();
 
-  if (loading) {
+  if (loading || profileLoading) {
     return (
       <View
         style={{
@@ -22,6 +23,9 @@ export default function AuthLayout() {
   }
 
   if (configured && session) {
+    if (needsOnboarding) {
+      return <Redirect href="/auth/email-confirmed" />;
+    }
     return <Redirect href="/" />;
   }
 

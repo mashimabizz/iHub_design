@@ -19,7 +19,7 @@ const PREFECTURE_GROUPS = [
 ];
 
 export default function OnboardingAreaScreen() {
-  const { user } = useAuth();
+  const { refreshProfile, user } = useAuth();
   const [selected, setSelected] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +63,7 @@ export default function OnboardingAreaScreen() {
       setError(updateError.message);
       return;
     }
+    await refreshProfile();
     router.replace("/onboarding/done");
   }
 

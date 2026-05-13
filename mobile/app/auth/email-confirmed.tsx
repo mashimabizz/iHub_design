@@ -8,7 +8,7 @@ import { supabase } from "../../src/lib/supabase";
 import { ihubColors, ihubShadow } from "../../src/theme/tokens";
 
 export default function EmailConfirmedScreen() {
-  const { user } = useAuth();
+  const { refreshProfile, user } = useAuth();
   const { code, error_description } = useLocalSearchParams<{
     code?: string | string[];
     error_description?: string | string[];
@@ -21,15 +21,27 @@ export default function EmailConfirmedScreen() {
 
   useEffect(() => {
     if (!authCode || !supabase) return;
+    const client = supabase;
     let active = true;
-    supabase.auth.exchangeCodeForSession(authCode).then(({ error }) => {
+    client.auth.exchangeCodeForSession(authCode).then(async ({ data, error }) => {
       if (!active) return;
       setExchangeError(error?.message ?? null);
+      if (!error && data.user) {
+        await client
+          .from("users")
+          .update({
+            account_status: "verified",
+            email_verified_at: new Date().toISOString(),
+          })
+          .eq("id", data.user.id)
+          .eq("account_status", "registered");
+        await refreshProfile();
+      }
     });
     return () => {
       active = false;
     };
-  }, [authCode]);
+  }, [authCode, refreshProfile]);
 
   return (
     <Screen contentStyle={styles.screen}>
