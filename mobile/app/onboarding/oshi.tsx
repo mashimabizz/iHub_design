@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { router } from "expo-router";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -30,6 +31,14 @@ type OshiOption = {
   mine?: boolean;
 };
 
+type OshiRequestKind = "group" | "work" | "solo";
+
+const REQUEST_KINDS: { value: OshiRequestKind; label: string }[] = [
+  { value: "group", label: "グループ" },
+  { value: "work", label: "作品" },
+  { value: "solo", label: "ソロ" },
+];
+
 export default function OnboardingOshiScreen() {
   const { user } = useAuth();
   const [genres, setGenres] = useState<GenreOption[]>([]);
@@ -41,6 +50,12 @@ export default function OnboardingOshiScreen() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestName, setRequestName] = useState("");
+  const [requestKind, setRequestKind] = useState<OshiRequestKind>("group");
+  const [requestGenreId, setRequestGenreId] = useState<string | null>(null);
+  const [requestNote, setRequestNote] = useState("");
+  const [requestPending, setRequestPending] = useState(false);
 
   useEffect(() => {
     if (!user || !supabase) {
@@ -197,6 +212,54 @@ export default function OnboardingOshiScreen() {
     router.push("/onboarding/members");
   }
 
+  async function submitRequest() {
+    if (!user || !supabase) {
+      router.replace("/login");
+      return;
+    }
+    const name = requestName.trim();
+    if (!name) {
+      setError("追加したい推しの名前を入力してください");
+      return;
+    }
+    setRequestPending(true);
+    setError(null);
+    const { data, error: insertError } = await supabase
+      .from("oshi_requests")
+      .insert({
+        user_id: user.id,
+        requested_name: name,
+        requested_kind: requestKind,
+        requested_genre_id: requestGenreId,
+        note: requestNote.trim() || null,
+      })
+      .select("id, requested_name, user_id, genre:genres_master(id, name)")
+      .single();
+    setRequestPending(false);
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+    const row = data as Record<string, unknown>;
+    const genre = pickRelation(row.genre as RelationName | undefined);
+    const next: OshiOption = {
+      id: String(row.id),
+      name: String(row.requested_name ?? name),
+      aliases: [],
+      genreId: genre?.id ?? requestGenreId,
+      genreName: genre?.name ?? genres.find((item) => item.id === requestGenreId)?.name ?? null,
+      pending: true,
+      mine: true,
+    };
+    setOptions((current) => [next, ...current]);
+    setSelectedRequests((current) => [...new Set([next.id, ...current])]);
+    setRequestOpen(false);
+    setRequestName("");
+    setRequestNote("");
+    setRequestGenreId(null);
+    setRequestKind("group");
+  }
+
   return (
     <Screen contentStyle={styles.screen}>
       <Header title="プロフィール設定" sub="あなたの推し（複数選択可）" progress="2/4" backTo="/onboarding/gender" />
@@ -250,7 +313,18 @@ export default function OnboardingOshiScreen() {
         })}
       </View>
       {!loading && filtered.length === 0 ? (
-        <Text style={styles.empty}>該当する推しが見つかりません</Text>
+        <View style={styles.emptyBox}>
+          <Text style={styles.empty}>該当する推しが見つかりません</Text>
+          <PrimaryButton
+            variant="secondary"
+            onPress={() => {
+              setRequestName(query.trim());
+              setRequestOpen(true);
+            }}
+          >
+            追加リクエストを送る
+          </PrimaryButton>
+        </View>
       ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.footer}>
@@ -262,6 +336,75 @@ export default function OnboardingOshiScreen() {
           次へ
         </PrimaryButton>
       </View>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={requestOpen}
+        onRequestClose={() => setRequestOpen(false)}
+      >
+        <View style={styles.modalLayer}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setRequestOpen(false)} />
+          <View style={styles.requestModal}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleCopy}>
+                <Text style={styles.modalTitle}>推し追加リクエスト</Text>
+                <Text style={styles.modalSub}>送信後、この画面で選択済みにします</Text>
+              </View>
+              <Pressable onPress={() => setRequestOpen(false)} style={styles.modalCloseButton}>
+                <Text style={styles.modalCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              value={requestName}
+              onChangeText={setRequestName}
+              placeholder="グループ・作品名"
+              placeholderTextColor="rgba(58,50,74,0.38)"
+              style={styles.requestInput}
+            />
+            <View style={styles.genreWrap}>
+              {REQUEST_KINDS.map((kind) => (
+                <Chip
+                  key={kind.value}
+                  label={kind.label}
+                  active={requestKind === kind.value}
+                  onPress={() => setRequestKind(kind.value)}
+                />
+              ))}
+            </View>
+            <View style={styles.genreWrap}>
+              <Chip
+                label="ジャンル未選択"
+                active={!requestGenreId}
+                onPress={() => setRequestGenreId(null)}
+              />
+              {genres.map((genre) => (
+                <Chip
+                  key={genre.id}
+                  label={genre.name}
+                  active={requestGenreId === genre.id}
+                  onPress={() => setRequestGenreId(genre.id)}
+                />
+              ))}
+            </View>
+            <TextInput
+              value={requestNote}
+              onChangeText={setRequestNote}
+              multiline
+              placeholder="補足（任意）"
+              placeholderTextColor="rgba(58,50,74,0.38)"
+              style={[styles.requestInput, styles.requestNoteInput]}
+              textAlignVertical="top"
+            />
+            <PrimaryButton
+              loading={requestPending}
+              disabled={!requestName.trim()}
+              onPress={submitRequest}
+            >
+              送信して選択する
+            </PrimaryButton>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -476,6 +619,9 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
+  emptyBox: {
+    gap: 10,
+  },
   error: {
     color: ihubColors.warn,
     fontSize: 12,
@@ -484,5 +630,72 @@ const styles = StyleSheet.create({
   footer: {
     marginTop: "auto",
     paddingTop: 16,
+  },
+  modalLayer: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    padding: 18,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(20,18,28,0.44)",
+  },
+  requestModal: {
+    backgroundColor: ihubColors.background,
+    borderColor: "rgba(255,255,255,0.72)",
+    borderRadius: 28,
+    borderWidth: 1,
+    gap: 12,
+    padding: 16,
+    width: "100%",
+  },
+  modalHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  modalTitleCopy: {
+    flex: 1,
+  },
+  modalTitle: {
+    color: ihubColors.ink,
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  modalSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  modalCloseButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: ihubRadii.pill,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  modalCloseText: {
+    color: ihubColors.mutedInk,
+    fontSize: 20,
+    fontWeight: "900",
+    lineHeight: 22,
+  },
+  requestInput: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.10)",
+    borderRadius: ihubRadii.md,
+    borderWidth: 1,
+    color: ihubColors.ink,
+    fontSize: 14,
+    fontWeight: "800",
+    minHeight: 48,
+    paddingHorizontal: 14,
+  },
+  requestNoteInput: {
+    minHeight: 88,
+    paddingTop: 12,
   },
 });
