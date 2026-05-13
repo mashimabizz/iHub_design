@@ -667,29 +667,23 @@ function MeetupPane({
     }).start();
   }
 
-  function changeWeek(direction: 1 | -1, animated = false) {
+  function commitWeekSwipe(direction: 1 | -1, dx: number) {
+    const maxCarry = calendarWidth * 0.42;
+    const carriedDx = Math.max(-maxCarry, Math.min(maxCarry, dx));
     onSelectCandidate(null);
     clearCandidateTouch();
     setDragDraft(null);
-    if (!animated) {
-      setWeekOffset((current) => current + direction);
-      resetWeekDrag(false);
-      return;
-    }
-    Animated.timing(weekDragX, {
-      toValue: direction > 0 ? -calendarWidth : calendarWidth,
-      duration: 170,
-      useNativeDriver: true,
-    }).start(() => {
-      setWeekOffset((current) => current + direction);
-      weekDragX.setValue(0);
+    weekDragX.setValue(carriedDx);
+    setWeekOffset((current) => current + direction);
+    requestAnimationFrame(() => {
+      resetWeekDrag(true);
     });
   }
 
   function settleWeekSwipe(dx: number) {
     const threshold = Math.min(96, calendarWidth * 0.22);
     if (Math.abs(dx) > threshold) {
-      changeWeek(dx < 0 ? 1 : -1, true);
+      commitWeekSwipe(dx < 0 ? 1 : -1, dx);
       return;
     }
     resetWeekDrag(true);
