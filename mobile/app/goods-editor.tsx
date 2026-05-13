@@ -373,7 +373,6 @@ export default function GoodsEditorScreen() {
           condition: payload.condition,
           quantity: payload.quantity,
           photo_urls: payload.photo_urls,
-          carrying: payload.carrying,
         })
         .eq("id", id)
         .eq("user_id", input.userId)
@@ -722,21 +721,7 @@ export default function GoodsEditorScreen() {
               onRemove={handleRemoveWishPhoto}
             />
           </Section>
-        ) : (
-          <Pressable
-            disabled={itemIsReadOnly}
-            onPress={() => setStartCarrying((current) => !current)}
-            style={styles.carryToggle}
-          >
-            <View style={[styles.checkbox, startCarrying ? styles.checkboxActive : null]}>
-              {startCarrying ? <Text style={styles.checkboxText}>✓</Text> : null}
-            </View>
-            <View style={styles.carryCopy}>
-              <Text style={styles.carryTitle}>今日から持参中にする</Text>
-              <Text style={styles.carryText}>会場で交換可能な状態にする</Text>
-            </View>
-          </Pressable>
-        )}
+        ) : null}
 
         <Section label="タグ" hint="マッチ優先度に使用">
           <TagEditor
