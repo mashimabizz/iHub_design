@@ -45,6 +45,7 @@ export default function ProfileEditScreen() {
     () => (form.displayName || form.handle || "?").slice(0, 1).toUpperCase(),
     [form.displayName, form.handle],
   );
+  const shouldHoldFormForLoad = loading && !!supabase && !!user && !previewMode;
 
   useEffect(() => {
     if (!supabase || !user || previewMode) {
@@ -140,6 +141,10 @@ export default function ProfileEditScreen() {
         </View>
       </View>
 
+      {shouldHoldFormForLoad ? (
+        <Text style={styles.inlineNotice}>プロフィールを読み込み中…</Text>
+      ) : (
+        <>
       <View style={styles.avatarPanel}>
         <View style={styles.avatar}>
           {form.avatarUrl ? (
@@ -230,6 +235,8 @@ export default function ProfileEditScreen() {
       <PrimaryButton loading={saving} onPress={handleSave}>
         保存する
       </PrimaryButton>
+        </>
+      )}
     </Screen>
   );
 }

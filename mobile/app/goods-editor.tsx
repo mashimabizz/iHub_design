@@ -559,12 +559,14 @@ export default function GoodsEditorScreen() {
 
         {loadError ? <Notice tone="danger">{loadError}</Notice> : null}
 
-        <InventoryCreateFlow
-          data={data}
-          previewMode={previewMode}
-          userId={user?.id ?? null}
-          onSaved={navigateBackToList}
-        />
+        {!loading ? (
+          <InventoryCreateFlow
+            data={data}
+            previewMode={previewMode}
+            userId={user?.id ?? null}
+            onSaved={navigateBackToList}
+          />
+        ) : null}
       </Screen>
     );
   }
@@ -599,6 +601,8 @@ export default function GoodsEditorScreen() {
 
       {loadError ? <Notice tone="danger">{loadError}</Notice> : null}
 
+      {!loading ? (
+        <>
       {itemIsReadOnly && !isWish ? (
         <Notice>
           <Text style={styles.noticeStrong}>過去に譲った履歴</Text>
@@ -763,6 +767,8 @@ export default function GoodsEditorScreen() {
           </>
         )}
       </View>
+        </>
+      ) : null}
     </Screen>
   );
 }
