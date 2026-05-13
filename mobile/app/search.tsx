@@ -135,8 +135,15 @@ export default function SearchScreen() {
       return next;
     });
 
-    if (!supabase || !user || previewMode) {
+    if (!supabase || previewMode) {
       setHits(PREVIEW_HITS.filter((hit) => matchPreviewHit(hit, q)));
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    if (!user) {
+      setHits([]);
+      setLoading(false);
       setError(null);
       return;
     }

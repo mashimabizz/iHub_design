@@ -174,16 +174,25 @@ export default function TransactionsScreen() {
   const [tab, setTab] = useState<TopTab>("pending");
   const [pendingSub, setPendingSub] = useState<PendingSubTab>("action");
   const [pastFilter, setPastFilter] = useState<PastFilter>("all");
-  const [transactions, setTransactions] = useState<Transaction[]>(TRANSACTIONS);
-  const [loading, setLoading] = useState(false);
+  const [transactions, setTransactions] = useState<Transaction[]>(() =>
+    !supabase || previewMode ? TRANSACTIONS : [],
+  );
+  const [loading, setLoading] = useState(!!supabase && !previewMode);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [animatedTabs, setAnimatedTabs] = useState<Set<TopTab>>(
     () => new Set(),
   );
 
   useEffect(() => {
-    if (!supabase || !user || previewMode) {
+    if (!supabase || previewMode) {
       setTransactions(TRANSACTIONS);
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
+    if (!user) {
+      setTransactions([]);
+      setLoading(false);
       setLoadError(null);
       return;
     }

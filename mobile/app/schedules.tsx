@@ -30,13 +30,22 @@ const PREVIEW_SCHEDULES: ScheduleItem[] = [
 
 export default function SchedulesScreen() {
   const { previewMode, user } = useAuth();
-  const [items, setItems] = useState<ScheduleItem[]>(PREVIEW_SCHEDULES);
-  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<ScheduleItem[]>(() =>
+    !supabase || previewMode ? PREVIEW_SCHEDULES : [],
+  );
+  const [loading, setLoading] = useState(!!supabase && !previewMode);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!supabase || !user || previewMode) {
+    if (!supabase || previewMode) {
       setItems(PREVIEW_SCHEDULES);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    if (!user) {
+      setItems([]);
+      setLoading(false);
       setError(null);
       return;
     }

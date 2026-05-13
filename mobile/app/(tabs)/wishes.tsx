@@ -164,13 +164,17 @@ export default function WishesScreen() {
   const { user, previewMode } = useAuth();
   const [tab, setTab] = useState<Tab>("wish");
   const [columns, setColumns] = useState<ColumnCount>(3);
-  const [wishes, setWishes] = useState<WishItem[]>(INITIAL_WISHES);
-  const [listings, setListings] = useState<ListingItem[]>(INITIAL_LISTINGS);
+  const [wishes, setWishes] = useState<WishItem[]>(() =>
+    !supabase || previewMode ? INITIAL_WISHES : [],
+  );
+  const [listings, setListings] = useState<ListingItem[]>(() =>
+    !supabase || previewMode ? INITIAL_LISTINGS : [],
+  );
   const [selectedWish, setSelectedWish] = useState<WishItem | null>(null);
   const [selectedListing, setSelectedListing] = useState<ListingItem | null>(
     null,
   );
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!supabase && !previewMode);
   const [loadError, setLoadError] = useState<string | null>(null);
   const tabSwipeRef = useRef<{
     startX: number;
@@ -180,9 +184,17 @@ export default function WishesScreen() {
   } | null>(null);
 
   useEffect(() => {
-    if (!supabase || !user || previewMode) {
+    if (!supabase || previewMode) {
       setWishes(INITIAL_WISHES);
       setListings(INITIAL_LISTINGS);
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
+    if (!user) {
+      setWishes([]);
+      setListings([]);
+      setLoading(false);
       setLoadError(null);
       return;
     }
@@ -198,8 +210,8 @@ export default function WishesScreen() {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setWishes(INITIAL_WISHES);
-        setListings(INITIAL_LISTINGS);
+        setWishes([]);
+        setListings([]);
         setLoadError(error instanceof Error ? error.message : "読み込みに失敗しました");
       })
       .finally(() => {

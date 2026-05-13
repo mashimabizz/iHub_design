@@ -28,11 +28,16 @@ import { ihubColors, ihubRadii, ihubShadow } from "../../src/theme/tokens";
 
 export default function HomeScreen() {
   const { previewMode, user } = useAuth();
-  const [localMode, setLocalMode] = useState(true);
-  const [sections, setSections] = useState<ShelfSection[]>(MATCH_SECTIONS);
-  const [placeName, setPlaceName] = useState("守口市地区 豊秀町一丁目");
+  const usePreviewData = previewMode || !hasSupabaseConfig;
+  const [localMode, setLocalMode] = useState(usePreviewData);
+  const [sections, setSections] = useState<ShelfSection[]>(() =>
+    usePreviewData ? MATCH_SECTIONS : [],
+  );
+  const [placeName, setPlaceName] = useState(
+    usePreviewData ? "守口市地区 豊秀町一丁目" : "",
+  );
   const [unreadCount, setUnreadCount] = useState(0);
-  const [homeLoading, setHomeLoading] = useState(false);
+  const [homeLoading, setHomeLoading] = useState(!usePreviewData);
   const [homeError, setHomeError] = useState<string | null>(null);
   const { width } = useWindowDimensions();
   const tileWidth = Math.max(128, Math.min(148, (width - 54) / 2.55));
@@ -41,10 +46,19 @@ export default function HomeScreen() {
     : "現地交換OFF";
 
   useEffect(() => {
-    if (!hasSupabaseConfig || !user) {
+    if (previewMode || !hasSupabaseConfig) {
       setSections(MATCH_SECTIONS);
       setPlaceName("守口市地区 豊秀町一丁目");
       setUnreadCount(0);
+      setHomeLoading(false);
+      setHomeError(null);
+      return;
+    }
+    if (!user) {
+      setSections([]);
+      setPlaceName("");
+      setUnreadCount(0);
+      setHomeLoading(false);
       setHomeError(null);
       return;
     }
@@ -62,7 +76,7 @@ export default function HomeScreen() {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setSections(MATCH_SECTIONS);
+        setSections([]);
         setHomeError(error instanceof Error ? error.message : "読み込みに失敗しました");
       })
       .finally(() => {
@@ -72,7 +86,7 @@ export default function HomeScreen() {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [previewMode, user]);
 
   function handleLocalModeChange(next: boolean) {
     setLocalMode(next);

@@ -82,21 +82,31 @@ const SUPPORT_ROWS: ProfileSheet[] = [
 
 export default function ProfileScreen() {
   const { previewMode, user, signOut, exitPreview } = useAuth();
-  const [profile, setProfile] = useState<ProfileData>(() =>
-    fallbackProfile(user?.email, previewMode),
+  const [profile, setProfile] = useState<ProfileData | null>(() =>
+    !supabase || previewMode ? fallbackProfile(user?.email, previewMode) : null,
   );
+  const [loading, setLoading] = useState(!!supabase && !previewMode);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    setProfile(fallbackProfile(user?.email, previewMode));
-    if (!supabase || !user || previewMode) {
+    if (!supabase || previewMode) {
+      setProfile(fallbackProfile(user?.email, previewMode));
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
+    if (!user) {
+      setProfile(null);
+      setLoading(false);
       setLoadError(null);
       return;
     }
 
     let active = true;
+    setProfile(null);
+    setLoading(true);
     setLoadError(null);
     fetchProfileData(user.id, user.email)
       .then((next) => {
@@ -105,6 +115,9 @@ export default function ProfileScreen() {
       .catch((error: unknown) => {
         if (!active) return;
         setLoadError(error instanceof Error ? error.message : "読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
 
     return () => {
@@ -112,7 +125,7 @@ export default function ProfileScreen() {
     };
   }, [previewMode, user]);
 
-  const oshiSummary = formatOshiSummary(profile.oshiGroups);
+  const oshiSummary = formatOshiSummary(profile?.oshiGroups ?? []);
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -134,6 +147,11 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {loading ? <Text style={styles.inlineNotice}>プロフィールを読み込み中…</Text> : null}
+      {loadError ? <Text style={styles.inlineError}>{loadError}</Text> : null}
+
+      {profile ? (
+        <>
       <View style={styles.hero}>
         <View style={styles.heroGlowPink} />
         <View style={styles.heroGlowSky} />
@@ -175,8 +193,6 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {loadError ? <Text style={styles.inlineError}>{loadError}</Text> : null}
-
       <ProfileSection title="アイデンティティ">
         {IDENTITY_ROWS.map((row) => (
           <ProfileRow key={row.title} {...row} onPress={() => openProfileDetail(row)} />
@@ -184,7 +200,14 @@ export default function ProfileScreen() {
       </ProfileSection>
 
       <ProfileSection title="推し">
-        <View style={styles.oshiCard}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/oshi-settings")}
+          style={({ pressed }) => [
+            styles.oshiCard,
+            pressed ? styles.rowPressed : null,
+          ]}
+        >
           <View style={styles.oshiBubble}>
             <Text style={styles.oshiBubbleText}>
               {profile.oshiGroups[0]?.groupName.slice(0, 1) ?? "推"}
@@ -203,7 +226,8 @@ export default function ProfileScreen() {
               {oshiSummary.meta}
             </Text>
           </View>
-        </View>
+          <Text style={styles.rowChevron}>›</Text>
+        </Pressable>
       </ProfileSection>
 
       <ProfileSection title="通知・サポート">
@@ -240,6 +264,8 @@ export default function ProfileScreen() {
           </PrimaryButton>
         </View>
       )}
+        </>
+      ) : null}
     </Screen>
   );
 }
@@ -575,6 +601,12 @@ const styles = StyleSheet.create({
   },
   inlineError: {
     color: ihubColors.warn,
+    fontSize: 11.5,
+    fontWeight: "800",
+    lineHeight: 17,
+  },
+  inlineNotice: {
+    color: ihubColors.mutedInk,
     fontSize: 11.5,
     fontWeight: "800",
     lineHeight: 17,

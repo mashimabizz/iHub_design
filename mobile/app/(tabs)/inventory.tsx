@@ -147,21 +147,30 @@ const STATUS_ORDER: InventoryStatus[] = ["active", "keep", "traded"];
 
 export default function InventoryScreen() {
   const { user, previewMode } = useAuth();
-  const [items, setItems] = useState<InventoryItem[]>(INITIAL_ITEMS);
+  const [items, setItems] = useState<InventoryItem[]>(() =>
+    !supabase || previewMode ? INITIAL_ITEMS : [],
+  );
   const [status, setStatus] = useState<InventoryStatus>("active");
   const [columns, setColumns] = useState<ColumnCount>(3);
   const [selected, setSelected] = useState<InventoryItem | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!supabase && !previewMode);
   const [loadError, setLoadError] = useState<string | null>(null);
   const pagerRef = useRef<ScrollView>(null);
   const { width: windowWidth } = useWindowDimensions();
   const pageWidth = Math.max(1, windowWidth - 36);
 
   useEffect(() => {
-    if (!supabase || !user || previewMode) {
+    if (!supabase || previewMode) {
       setItems(INITIAL_ITEMS);
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
+    if (!user) {
+      setItems([]);
+      setLoading(false);
       setLoadError(null);
       return;
     }
@@ -175,7 +184,7 @@ export default function InventoryScreen() {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setItems(INITIAL_ITEMS);
+        setItems([]);
         setLoadError(error instanceof Error ? error.message : "読み込みに失敗しました");
       })
       .finally(() => {

@@ -87,14 +87,23 @@ const PREVIEW_NOTIFICATIONS: NotificationItem[] = [
 
 export default function NotificationsScreen() {
   const { previewMode, user } = useAuth();
-  const [items, setItems] = useState<NotificationItem[]>(PREVIEW_NOTIFICATIONS);
-  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<NotificationItem[]>(() =>
+    !supabase || previewMode ? PREVIEW_NOTIFICATIONS : [],
+  );
+  const [loading, setLoading] = useState(!!supabase && !previewMode);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    if (!supabase || !user || previewMode) {
+    if (!supabase || previewMode) {
       setItems(PREVIEW_NOTIFICATIONS);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    if (!user) {
+      setItems([]);
+      setLoading(false);
       setError(null);
       return;
     }
