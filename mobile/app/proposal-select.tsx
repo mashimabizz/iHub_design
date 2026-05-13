@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import type { LocationGeocodedAddress } from "expo-location";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   Image,
   Modal,
   Pressable,
@@ -524,12 +525,14 @@ function MeetupPane({
   const scrollRef = useRef<ScrollView>(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const days = useMemo(() => buildMeetupDays(weekOffset), [weekOffset]);
-  const weekHeaderTouchRef = useRef<{ startX: number; startY: number } | null>(
-    null,
-  );
+  const weekHeaderTouchRef = useRef<{
+    startX: number;
+    startY: number;
+    swiping: boolean;
+  } | null>(null);
   const touchPressRef = useRef<{
     timer: ReturnType<typeof setTimeout>;
-    mode: "pending" | "scrolling" | "dragging";
+    mode: "pending" | "scrolling" | "dragging" | "swiping";
     dayIndex: number;
     dateId: string;
     startSlot: number;
@@ -541,12 +544,21 @@ function MeetupPane({
   const calendarFrameRef = useRef<CalendarFrame | null>(null);
   const calendarGridRef = useRef<View>(null);
   const dragDraftRef = useRef<DragDraft | null>(null);
-  const weekSwipeConsumedRef = useRef(false);
+  const weekDragX = useRef(new Animated.Value(0)).current;
+  const weekDragValueRef = useRef(0);
   const [dragDraft, setDragDraftState] = useState<DragDraft | null>(null);
   const [candidateEdit, setCandidateEditState] =
     useState<CandidateEdit | null>(null);
   const calendarWidth = width - 36;
   const dayWidth = (calendarWidth - TIME_LABEL_WIDTH) / days.length;
+  const pagerWeeks = useMemo(
+    () =>
+      [-1, 0, 1].map((relative) => ({
+        relative,
+        days: buildMeetupDays(weekOffset + relative),
+      })),
+    [weekOffset],
+  );
   const contentHeight =
     CALENDAR_TOP_PADDING + SLOT_COUNT * SLOT_HEIGHT + CALENDAR_BOTTOM_PADDING;
   const activeCandidate =
@@ -567,6 +579,15 @@ function MeetupPane({
     }, 60);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    const listenerId = weekDragX.addListener(({ value }) => {
+      weekDragValueRef.current = value;
+    });
+    return () => {
+      weekDragX.removeListener(listenerId);
+    };
+  }, [weekDragX]);
 
   useEffect(
     () => () => {
@@ -627,17 +648,72 @@ function MeetupPane({
     };
   }
 
-  function changeWeek(direction: 1 | -1) {
-    setWeekOffset((current) => current + direction);
+  function setWeekDrag(dx: number) {
+    const maxDrag = Math.max(1, calendarWidth);
+    weekDragX.setValue(Math.max(-maxDrag, Math.min(maxDrag, dx)));
+  }
+
+  function resetWeekDrag(animated = true) {
+    if (!animated) {
+      weekDragX.setValue(0);
+      return;
+    }
+    Animated.spring(weekDragX, {
+      toValue: 0,
+      damping: 18,
+      stiffness: 220,
+      mass: 0.72,
+      useNativeDriver: true,
+    }).start();
+  }
+
+  function changeWeek(direction: 1 | -1, animated = false) {
     onSelectCandidate(null);
-    clearTouchPress();
     clearCandidateTouch();
     setDragDraft(null);
+    if (!animated) {
+      setWeekOffset((current) => current + direction);
+      resetWeekDrag(false);
+      return;
+    }
+    Animated.timing(weekDragX, {
+      toValue: direction > 0 ? -calendarWidth : calendarWidth,
+      duration: 170,
+      useNativeDriver: true,
+    }).start(() => {
+      setWeekOffset((current) => current + direction);
+      weekDragX.setValue(0);
+    });
+  }
+
+  function settleWeekSwipe(dx: number) {
+    const threshold = Math.min(96, calendarWidth * 0.22);
+    if (Math.abs(dx) > threshold) {
+      changeWeek(dx < 0 ? 1 : -1, true);
+      return;
+    }
+    resetWeekDrag(true);
   }
 
   function handleWeekSwipeStart(event: GestureResponderEvent) {
     const { pageX, pageY } = event.nativeEvent;
-    weekHeaderTouchRef.current = { startX: pageX, startY: pageY };
+    weekHeaderTouchRef.current = { startX: pageX, startY: pageY, swiping: false };
+  }
+
+  function handleWeekSwipeMove(event: GestureResponderEvent) {
+    const start = weekHeaderTouchRef.current;
+    if (!start) return;
+    const { pageX, pageY } = event.nativeEvent;
+    const dx = pageX - start.startX;
+    const dy = pageY - start.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (!start.swiping && absX > 10 && absX > absY * 1.08) {
+      start.swiping = true;
+    }
+    if (start.swiping) {
+      setWeekDrag(dx);
+    }
   }
 
   function handleWeekSwipeEnd(event: GestureResponderEvent) {
@@ -647,9 +723,11 @@ function MeetupPane({
     const { pageX, pageY } = event.nativeEvent;
     const dx = pageX - start.startX;
     const dy = pageY - start.startY;
-    if (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.25) {
-      changeWeek(dx < 0 ? 1 : -1);
+    if (start.swiping || (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.25)) {
+      settleWeekSwipe(dx);
+      return;
     }
+    resetWeekDrag(true);
   }
 
   function beginCandidateEdit(state: CandidateTouchState) {
@@ -794,7 +872,6 @@ function MeetupPane({
     const { locationY, pageX, pageY } = e.nativeEvent;
     const startSlot = slotFromLocationY(locationY);
     const dateId = days[dayIndex]?.id ?? DAYS[0].id;
-    weekSwipeConsumedRef.current = false;
     const timer = setTimeout(() => {
       const press = touchPressRef.current;
       if (!press || press.mode !== "pending") return;
@@ -827,14 +904,14 @@ function MeetupPane({
     const dy = pageY - press.startY;
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
-    if (
-      press.mode === "pending" &&
-      !weekSwipeConsumedRef.current &&
-      absX > 58 &&
-      absX > absY * 1.25
-    ) {
-      weekSwipeConsumedRef.current = true;
-      changeWeek(dx < 0 ? 1 : -1);
+    if (press.mode === "swiping") {
+      setWeekDrag(dx);
+      return;
+    }
+    if (press.mode === "pending" && absX > 10 && absX > absY * 1.08) {
+      clearTimeout(press.timer);
+      press.mode = "swiping";
+      setWeekDrag(dx);
       return;
     }
     if (press.mode === "pending" && Math.hypot(dx, dy) > TOUCH_CANCEL_PX) {
@@ -855,6 +932,13 @@ function MeetupPane({
     e.stopPropagation();
     const draft = dragDraftRef.current;
     const press = touchPressRef.current;
+    if (press?.mode === "swiping") {
+      const dx = e.nativeEvent.pageX - press.startX;
+      clearTouchPress();
+      setDragDraft(null);
+      settleWeekSwipe(dx || weekDragValueRef.current);
+      return;
+    }
     clearTouchPress();
     if (!draft) {
       setDragDraft(null);
@@ -889,6 +973,7 @@ function MeetupPane({
     clearTouchPress();
     clearCandidateTouch();
     setDragDraft(null);
+    resetWeekDrag(true);
   }
 
   const preview = dragDraft
@@ -901,31 +986,59 @@ function MeetupPane({
   return (
     <View style={styles.meetupRoot}>
       <View
-        style={styles.days}
+        style={styles.daysViewport}
         onTouchStart={handleWeekSwipeStart}
+        onTouchMove={handleWeekSwipeMove}
         onTouchEnd={handleWeekSwipeEnd}
         onTouchCancel={() => {
           weekHeaderTouchRef.current = null;
+          resetWeekDrag(true);
         }}
       >
-        <View style={styles.dayTimeSpacer} />
-        {days.map((day) => (
-          <View
-            key={day.id}
-            style={[styles.dayCell, day.isToday ? styles.dayCellToday : null]}
-          >
-            <Text
-              style={[styles.dayName, day.isToday ? styles.dayNameToday : null]}
+        <Animated.View
+          style={[
+            styles.weekPager,
+            {
+              width: calendarWidth * 3,
+              transform: [{ translateX: -calendarWidth }, { translateX: weekDragX }],
+            },
+          ]}
+        >
+          {pagerWeeks.map((week) => (
+            <View
+              key={`header-${week.relative}-${week.days[0]?.id ?? "week"}`}
+              style={[styles.weekPage, { width: calendarWidth }]}
             >
-              {day.day}
-            </Text>
-            <Text
-              style={[styles.dayDate, day.isToday ? styles.dayDateToday : null]}
-            >
-              {day.date}
-            </Text>
-          </View>
-        ))}
+              <View style={styles.dayTimeSpacer} />
+              {week.days.map((day) => (
+                <View
+                  key={day.id}
+                  style={[
+                    styles.dayCell,
+                    day.isToday ? styles.dayCellToday : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dayName,
+                      day.isToday ? styles.dayNameToday : null,
+                    ]}
+                  >
+                    {day.day}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.dayDate,
+                      day.isToday ? styles.dayDateToday : null,
+                    ]}
+                  >
+                    {day.date}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ))}
+        </Animated.View>
       </View>
 
       <ScrollView
@@ -937,164 +1050,212 @@ function MeetupPane({
           { height: contentHeight },
         ]}
       >
-        <View
-          ref={calendarGridRef}
-          collapsable={false}
-          onLayout={measureCalendarFrame}
-          style={[styles.calendarGrid, { height: contentHeight }]}
+        <Animated.View
+          style={[
+            styles.weekPager,
+            {
+              height: contentHeight,
+              width: calendarWidth * 3,
+              transform: [{ translateX: -calendarWidth }, { translateX: weekDragX }],
+            },
+          ]}
         >
-          <View style={[styles.timeAxis, { width: TIME_LABEL_WIDTH }]}>
-            {HOURS.map((hour) => (
-              <Text
-                key={hour}
-                  style={[
-                    styles.hourLabel,
-                    {
-                    top: calendarSlotTop(hour * 4) - 7,
-                  },
-                ]}
-              >
-                {formatSlot(hour * 4)}
-              </Text>
-            ))}
-          </View>
-
-          {days.map((day, dayIndex) => (
-            <View
-              key={day.id}
-              style={[
-                styles.dayColumn,
-                {
-                  left: TIME_LABEL_WIDTH + dayIndex * dayWidth,
-                  width: dayWidth,
-                },
-              ]}
-              onTouchStart={(event) => handleDayTouchStart(event, dayIndex)}
-              onTouchMove={handleDayTouchMove}
-              onTouchEnd={handleDayTouchEnd}
-              onTouchCancel={handleDayTouchCancel}
-            >
-              {HOURS.map((hour) => (
-                <View
-                  key={`${day.id}-${hour}`}
-                  pointerEvents="none"
-                  style={[
-                    styles.calendarCell,
-                    {
-                      top: calendarSlotTop(hour * 4),
-                      height: HOUR_HEIGHT,
-                    },
-                  ]}
-                />
-              ))}
-            </View>
-          ))}
-
-          {candidates.map((candidate, index) => {
-            const visibleDayIndex = days.findIndex(
-              (day) => day.id === candidate.dateId,
-            );
-            if (visibleDayIndex < 0) return null;
-            const visibleCandidate = {
-              ...candidate,
-              dayIndex: visibleDayIndex,
-            };
-            const active = candidate.id === activeCandidateId;
-            const placeMissing = !candidate.place.trim();
-            const edit = candidateEdit?.id === candidate.id ? candidateEdit : null;
-            const effective = edit ?? visibleCandidate;
-            const editing = !!edit;
+          {pagerWeeks.map((week) => {
+            const isCurrentWeek = week.relative === 0;
             return (
-              <Pressable
-                key={candidate.id}
-                delayLongPress={LONG_PRESS_MS}
-                onTouchStart={(event) =>
-                  handleCandidateTouchStart(event, visibleCandidate, "move")
-                }
-                onTouchMove={handleCandidateTouchMove}
-                onTouchEnd={handleCandidateTouchEnd}
-                onTouchCancel={clearCandidateTouch}
-                style={[
-                  styles.candidateBlock,
-                  active ? styles.candidateBlockActive : null,
-                  placeMissing ? styles.candidateBlockMissing : null,
-                  editing ? styles.candidateBlockEditing : null,
-                  {
-                    left: TIME_LABEL_WIDTH + effective.dayIndex * dayWidth + 4,
-                    top: calendarSlotTop(effective.startSlot) + 3,
-                    width: dayWidth - 8,
-                    height:
-                      Math.max(1, effective.endSlot - effective.startSlot) *
-                        SLOT_HEIGHT -
-                      6,
-                  },
-                ]}
+              <View
+                key={`grid-${week.relative}-${week.days[0]?.id ?? "week"}`}
+                pointerEvents={isCurrentWeek ? "auto" : "none"}
+                style={[styles.calendarPage, { width: calendarWidth }]}
               >
-                {placeMissing ? (
-                  <View style={styles.candidateAlert}>
-                    <Text style={styles.candidateAlertText}>!</Text>
-                  </View>
-                ) : (
-                  <Text numberOfLines={2} style={styles.candidatePlace}>
-                    {candidate.place}
-                  </Text>
-                )}
-                <Pressable
-                  accessibilityLabel={`候補${index + 1}を削除`}
-                  onPress={(event) => {
-                    event.stopPropagation();
-                    onDeleteCandidate(candidate.id);
-                  }}
-                  style={[
-                    styles.candidateDelete,
-                    placeMissing ? styles.candidateDeleteMissing : null,
-                  ]}
+                <View
+                  ref={isCurrentWeek ? calendarGridRef : undefined}
+                  collapsable={false}
+                  onLayout={isCurrentWeek ? measureCalendarFrame : undefined}
+                  style={[styles.calendarGrid, { height: contentHeight }]}
                 >
-                  <Text
-                    style={[
-                      styles.candidateDeleteText,
-                      placeMissing ? styles.candidateDeleteTextMissing : null,
-                    ]}
-                  >
-                    ×
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityLabel={`候補${index + 1}の終了時間を変更`}
-                  onTouchStart={(event) =>
-                    handleCandidateTouchStart(event, visibleCandidate, "resize-end")
-                  }
-                  onTouchMove={handleCandidateTouchMove}
-                  onTouchEnd={handleCandidateTouchEnd}
-                  onTouchCancel={clearCandidateTouch}
-                  style={[
-                    styles.candidateResizeHandle,
-                    placeMissing ? styles.candidateResizeHandleMissing : null,
-                  ]}
-                />
-              </Pressable>
+                  <View style={[styles.timeAxis, { width: TIME_LABEL_WIDTH }]}>
+                    {HOURS.map((hour) => (
+                      <Text
+                        key={hour}
+                        style={[
+                          styles.hourLabel,
+                          {
+                            top: calendarSlotTop(hour * 4) - 7,
+                          },
+                        ]}
+                      >
+                        {formatSlot(hour * 4)}
+                      </Text>
+                    ))}
+                  </View>
+
+                  {week.days.map((day, dayIndex) => (
+                    <View
+                      key={day.id}
+                      style={[
+                        styles.dayColumn,
+                        {
+                          left: TIME_LABEL_WIDTH + dayIndex * dayWidth,
+                          width: dayWidth,
+                        },
+                      ]}
+                      onTouchStart={
+                        isCurrentWeek
+                          ? (event) => handleDayTouchStart(event, dayIndex)
+                          : undefined
+                      }
+                      onTouchMove={isCurrentWeek ? handleDayTouchMove : undefined}
+                      onTouchEnd={isCurrentWeek ? handleDayTouchEnd : undefined}
+                      onTouchCancel={
+                        isCurrentWeek ? handleDayTouchCancel : undefined
+                      }
+                    >
+                      {HOURS.map((hour) => (
+                        <View
+                          key={`${day.id}-${hour}`}
+                          pointerEvents="none"
+                          style={[
+                            styles.calendarCell,
+                            {
+                              top: calendarSlotTop(hour * 4),
+                              height: HOUR_HEIGHT,
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  ))}
+
+                  {isCurrentWeek
+                    ? candidates.map((candidate, index) => {
+                        const visibleDayIndex = days.findIndex(
+                          (day) => day.id === candidate.dateId,
+                        );
+                        if (visibleDayIndex < 0) return null;
+                        const visibleCandidate = {
+                          ...candidate,
+                          dayIndex: visibleDayIndex,
+                        };
+                        const active = candidate.id === activeCandidateId;
+                        const placeMissing = !candidate.place.trim();
+                        const edit =
+                          candidateEdit?.id === candidate.id ? candidateEdit : null;
+                        const effective = edit ?? visibleCandidate;
+                        const editing = !!edit;
+                        return (
+                          <Pressable
+                            key={candidate.id}
+                            delayLongPress={LONG_PRESS_MS}
+                            onTouchStart={(event) =>
+                              handleCandidateTouchStart(
+                                event,
+                                visibleCandidate,
+                                "move",
+                              )
+                            }
+                            onTouchMove={handleCandidateTouchMove}
+                            onTouchEnd={handleCandidateTouchEnd}
+                            onTouchCancel={clearCandidateTouch}
+                            style={[
+                              styles.candidateBlock,
+                              active ? styles.candidateBlockActive : null,
+                              placeMissing ? styles.candidateBlockMissing : null,
+                              editing ? styles.candidateBlockEditing : null,
+                              {
+                                left:
+                                  TIME_LABEL_WIDTH +
+                                  effective.dayIndex * dayWidth +
+                                  4,
+                                top: calendarSlotTop(effective.startSlot) + 3,
+                                width: dayWidth - 8,
+                                height:
+                                  Math.max(
+                                    1,
+                                    effective.endSlot - effective.startSlot,
+                                  ) *
+                                    SLOT_HEIGHT -
+                                  6,
+                              },
+                            ]}
+                          >
+                            {placeMissing ? (
+                              <View style={styles.candidateAlert}>
+                                <Text style={styles.candidateAlertText}>!</Text>
+                              </View>
+                            ) : (
+                              <Text numberOfLines={2} style={styles.candidatePlace}>
+                                {candidate.place}
+                              </Text>
+                            )}
+                            <Pressable
+                              accessibilityLabel={`候補${index + 1}を削除`}
+                              onPress={(event) => {
+                                event.stopPropagation();
+                                onDeleteCandidate(candidate.id);
+                              }}
+                              style={[
+                                styles.candidateDelete,
+                                placeMissing ? styles.candidateDeleteMissing : null,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.candidateDeleteText,
+                                  placeMissing
+                                    ? styles.candidateDeleteTextMissing
+                                    : null,
+                                ]}
+                              >
+                                ×
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              accessibilityLabel={`候補${index + 1}の終了時間を変更`}
+                              onTouchStart={(event) =>
+                                handleCandidateTouchStart(
+                                  event,
+                                  visibleCandidate,
+                                  "resize-end",
+                                )
+                              }
+                              onTouchMove={handleCandidateTouchMove}
+                              onTouchEnd={handleCandidateTouchEnd}
+                              onTouchCancel={clearCandidateTouch}
+                              style={[
+                                styles.candidateResizeHandle,
+                                placeMissing
+                                  ? styles.candidateResizeHandleMissing
+                                  : null,
+                              ]}
+                            />
+                          </Pressable>
+                        );
+                      })
+                    : null}
+
+                  {isCurrentWeek && preview ? (
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.dragPreview,
+                        {
+                          left: TIME_LABEL_WIDTH + preview.dayIndex * dayWidth + 4,
+                          top: calendarSlotTop(preview.startSlot) + 3,
+                          width: dayWidth - 8,
+                          height:
+                            Math.max(1, preview.endSlot - preview.startSlot) *
+                              SLOT_HEIGHT -
+                            6,
+                        },
+                      ]}
+                    />
+                  ) : null}
+                </View>
+              </View>
             );
           })}
-
-          {preview ? (
-            <View
-              pointerEvents="none"
-              style={[
-                styles.dragPreview,
-                {
-                  left: TIME_LABEL_WIDTH + preview.dayIndex * dayWidth + 4,
-                  top: calendarSlotTop(preview.startSlot) + 3,
-                  width: dayWidth - 8,
-                  height:
-                    Math.max(1, preview.endSlot - preview.startSlot) *
-                      SLOT_HEIGHT -
-                    6,
-                },
-              ]}
-            />
-          ) : null}
-
-        </View>
+        </Animated.View>
       </ScrollView>
 
       {candidates.length === 0 && !preview ? (
@@ -1648,9 +1809,15 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     position: "relative",
   },
-  days: {
+  daysViewport: {
     borderBottomColor: "rgba(58,50,74,0.08)",
     borderBottomWidth: 1,
+    overflow: "hidden",
+  },
+  weekPager: {
+    flexDirection: "row",
+  },
+  weekPage: {
     flexDirection: "row",
   },
   dayTimeSpacer: {
@@ -1686,6 +1853,9 @@ const styles = StyleSheet.create({
     paddingBottom: 36,
   },
   calendarGrid: {
+    position: "relative",
+  },
+  calendarPage: {
     position: "relative",
   },
   timeAxis: {
