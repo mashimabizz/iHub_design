@@ -44,11 +44,16 @@ const LOCAL_DURATION_OPTIONS = [
   { label: "6時間", value: 360 },
 ];
 const LOCAL_RADIUS_OPTIONS = [300, 500, 1000, 2000];
+type HomeModeView = "national" | "local";
 
 export default function HomeScreen() {
   const { previewMode, user } = useAuth();
   const usePreviewData = previewMode || !hasSupabaseConfig;
   const [localMode, setLocalMode] = useState(usePreviewData);
+  const [viewMode, setViewMode] = useState<HomeModeView>(
+    usePreviewData ? "local" : "national",
+  );
+  const viewModeTouchedRef = useRef(usePreviewData);
   const [sections, setSections] = useState<ShelfSection[]>(() =>
     usePreviewData ? MATCH_SECTIONS : [],
   );
@@ -65,10 +70,28 @@ export default function HomeScreen() {
   const placeLabel = localMode
     ? truncateLocation(placeName || "場所未設定")
     : "現地交換OFF";
+  const visibleSections = useMemo(() => {
+    if (viewMode !== "local") return sections;
+    return sections
+      .map((section) => ({
+        ...section,
+        rows: section.rows
+          .map((row) => ({
+            ...row,
+            candidates: row.candidates.filter((candidate) => candidate.local),
+          }))
+          .filter((row) => row.candidates.length > 0),
+      }))
+      .filter((section) => section.rows.length > 0);
+  }, [sections, viewMode]);
 
   function refreshHomeData() {
     if (previewMode || !hasSupabaseConfig) {
       setSections(MATCH_SECTIONS);
+      setLocalMode(usePreviewData);
+      if (!viewModeTouchedRef.current) {
+        setViewMode(usePreviewData ? "local" : "national");
+      }
       setPlaceName("守口市地区 豊秀町一丁目");
       setUnreadCount(0);
       setHomeLoading(false);
@@ -77,6 +100,9 @@ export default function HomeScreen() {
     }
     if (!user) {
       setSections([]);
+      setLocalMode(false);
+      setViewMode("national");
+      viewModeTouchedRef.current = false;
       setPlaceName("");
       setUnreadCount(0);
       setHomeLoading(false);
@@ -91,7 +117,14 @@ export default function HomeScreen() {
       .then((result) => {
         if (!active) return;
         setSections(result.sections.length > 0 ? result.sections : []);
-        setLocalMode(result.localModeEnabled);
+        const nextLocalMode = result.localModeEnabled;
+        setLocalMode(nextLocalMode);
+        if (!nextLocalMode) {
+          setViewMode("national");
+          viewModeTouchedRef.current = false;
+        } else if (!viewModeTouchedRef.current) {
+          setViewMode("local");
+        }
         setPlaceName(result.placeLabel ?? "場所未設定");
         setUnreadCount(result.unreadNotificationCount);
       })
@@ -113,15 +146,25 @@ export default function HomeScreen() {
     return refreshHomeData();
   }, [previewMode, user]);
 
-  async function handleLocalModeChange(next: boolean) {
+  function openLocalModeSheetForEnable() {
+    setLocalMode(true);
+    setViewMode("local");
+    viewModeTouchedRef.current = true;
+    setHomeError(null);
+    setRevertLocalOnSheetClose(true);
+    setLocalSheetOpen(true);
+  }
+
+  async function handleLocalEnabledChange(next: boolean) {
     setLocalMode(next);
     setHomeError(null);
     if (next) {
-      setRevertLocalOnSheetClose(true);
-      setLocalSheetOpen(true);
+      openLocalModeSheetForEnable();
       return;
     }
 
+    setViewMode("national");
+    viewModeTouchedRef.current = false;
     setLocalSheetOpen(false);
     setRevertLocalOnSheetClose(false);
     if (!supabase || !user || usePreviewData) return;
@@ -129,6 +172,19 @@ export default function HomeScreen() {
       .from("user_local_mode_settings")
       .upsert({ user_id: user.id, enabled: false }, { onConflict: "user_id" });
     if (error) setHomeError(error.message);
+  }
+
+  function handleViewModeChange(next: HomeModeView) {
+    viewModeTouchedRef.current = true;
+    if (next === "national") {
+      setViewMode("national");
+      return;
+    }
+    if (localMode) {
+      setViewMode("local");
+      return;
+    }
+    openLocalModeSheetForEnable();
   }
 
   return (
@@ -155,7 +211,7 @@ export default function HomeScreen() {
                   setRevertLocalOnSheetClose(false);
                   setLocalSheetOpen(true);
                 } else {
-                  handleLocalModeChange(true);
+                  handleLocalEnabledChange(true);
                 }
               }}
               style={styles.placeButton}
@@ -166,7 +222,7 @@ export default function HomeScreen() {
             </Pressable>
             <Switch
               value={localMode}
-              onValueChange={handleLocalModeChange}
+              onValueChange={handleLocalEnabledChange}
               ios_backgroundColor="rgba(58,50,74,0.14)"
               thumbColor={ihubColors.surface}
               trackColor={{
@@ -178,22 +234,22 @@ export default function HomeScreen() {
         </View>
 
         <ModeSwitch
-          localMode={localMode}
+          viewMode={viewMode}
           width={width}
-          onChange={handleLocalModeChange}
+          onChange={handleViewModeChange}
         />
 
         <View style={styles.sections}>
           {homeError ? <Text style={styles.inlineError}>{homeError}</Text> : null}
           {homeLoading ? <Text style={styles.loadingText}>マッチを読み込み中…</Text> : null}
-          {sections.length > 0 ? (
-            sections.map((section, sectionIndex) => (
+          {visibleSections.length > 0 ? (
+            visibleSections.map((section, sectionIndex) => (
               <ShelfSectionView
                 key={section.id}
                 section={section}
                 sectionIndex={sectionIndex}
                 tileWidth={tileWidth}
-                localMode={localMode}
+                localMode={viewMode === "local"}
                 onCandidatePress={openMatchDetail}
               />
             ))
@@ -217,13 +273,15 @@ export default function HomeScreen() {
           setLocalSheetOpen(false);
           if (revertLocalOnSheetClose) {
             setRevertLocalOnSheetClose(false);
-            handleLocalModeChange(false);
+            handleLocalEnabledChange(false);
           }
         }}
         onApplied={(nextPlace) => {
           setRevertLocalOnSheetClose(false);
           setLocalSheetOpen(false);
           setLocalMode(true);
+          setViewMode("local");
+          viewModeTouchedRef.current = true;
           setPlaceName(nextPlace);
           refreshHomeData();
         }}
@@ -571,15 +629,15 @@ function LocalModeSheet({
 }
 
 function ModeSwitch({
-  localMode,
+  viewMode,
   width,
   onChange,
 }: {
-  localMode: boolean;
+  viewMode: HomeModeView;
   width: number;
-  onChange: (next: boolean) => void;
+  onChange: (next: HomeModeView) => void;
 }) {
-  const progress = useRef(new Animated.Value(localMode ? 1 : 0)).current;
+  const progress = useRef(new Animated.Value(viewMode === "local" ? 1 : 0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
   const switchWidth = Math.max(280, width - 36);
   const thumbWidth = (switchWidth - 8) / 2;
@@ -588,28 +646,28 @@ function ModeSwitch({
     pulse.setValue(0);
     Animated.parallel([
       Animated.spring(progress, {
-        toValue: localMode ? 1 : 0,
-        damping: 19,
-        stiffness: 176,
-        mass: 0.76,
+        toValue: viewMode === "local" ? 1 : 0,
+        damping: 22,
+        stiffness: 190,
+        mass: 0.72,
         useNativeDriver: true,
       }),
       Animated.sequence([
         Animated.timing(pulse, {
           toValue: 1,
-          duration: 170,
+          duration: 130,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(pulse, {
           toValue: 0,
-          duration: 260,
+          duration: 210,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
       ]),
     ]).start();
-  }, [localMode, progress, pulse]);
+  }, [progress, pulse, viewMode]);
 
   const translateX = progress.interpolate({
     inputRange: [0, 1],
@@ -617,16 +675,14 @@ function ModeSwitch({
   });
   const stretch = pulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.09],
+    outputRange: [1, 1.035],
   });
   const glossOpacity = pulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.26, 0.64],
+    outputRange: [0.32, 0.55],
   });
-  const blobScale = pulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.86, 1.18],
-  });
+  const nationalActive = viewMode === "national";
+  const localActive = viewMode === "local";
 
   return (
     <View style={styles.modeSwitch}>
@@ -648,45 +704,25 @@ function ModeSwitch({
             },
           ]}
         />
-        <Animated.View
-          style={[
-            styles.modeThumbBlob,
-            styles.modeThumbBlobLeft,
-            {
-              opacity: glossOpacity,
-              transform: [{ scale: blobScale }],
-            },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.modeThumbBlob,
-            styles.modeThumbBlobRight,
-            {
-              opacity: glossOpacity,
-              transform: [{ scale: blobScale }],
-            },
-          ]}
-        />
       </Animated.View>
       <Pressable
         style={styles.modeButton}
-        onPress={() => onChange(false)}
+        onPress={() => onChange("national")}
       >
         <Text
           style={[
             styles.modeText,
-            !localMode ? styles.modeTextActive : styles.modeTextInactive,
+            nationalActive ? styles.modeTextActive : styles.modeTextInactive,
           ]}
         >
           全国交換モード
         </Text>
       </Pressable>
-      <Pressable style={styles.modeButton} onPress={() => onChange(true)}>
+      <Pressable style={styles.modeButton} onPress={() => onChange("local")}>
         <Text
           style={[
             styles.modeText,
-            localMode ? styles.modeTextActive : styles.modeTextInactive,
+            localActive ? styles.modeTextActive : styles.modeTextInactive,
           ]}
         >
           今すぐ現地交換
@@ -1479,8 +1515,8 @@ const styles = StyleSheet.create({
     lineHeight: 29,
   },
   modeSwitch: {
-    backgroundColor: "rgba(255,255,255,0.62)",
-    borderColor: "rgba(255,255,255,0.90)",
+    backgroundColor: "rgba(118,112,134,0.12)",
+    borderColor: "rgba(255,255,255,0.72)",
     borderRadius: ihubRadii.pill,
     borderWidth: 1,
     flexDirection: "row",
@@ -1489,13 +1525,13 @@ const styles = StyleSheet.create({
     padding: 4,
     position: "relative",
     shadowColor: ihubColors.ink,
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.09,
-    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
   },
   modeThumb: {
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderColor: "rgba(255,255,255,0.92)",
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderColor: "rgba(255,255,255,0.88)",
     borderRadius: ihubRadii.pill,
     borderWidth: 1,
     bottom: 4,
@@ -1504,42 +1540,31 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 4,
     shadowColor: ihubColors.ink,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.13,
-    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
   },
   modeThumbGloss: {
-    backgroundColor: "rgba(255,255,255,0.74)",
+    backgroundColor: "rgba(255,255,255,0.62)",
     borderRadius: 999,
-    height: "68%",
-    left: 10,
+    height: "54%",
+    left: 12,
     position: "absolute",
-    right: 10,
-    top: 4,
-  },
-  modeThumbBlob: {
-    backgroundColor: "rgba(166,149,216,0.14)",
-    borderRadius: 999,
-    height: 56,
-    position: "absolute",
-    top: -13,
-    width: 56,
-  },
-  modeThumbBlobLeft: {
-    left: -16,
-  },
-  modeThumbBlobRight: {
-    right: -16,
+    right: 12,
+    top: 5,
   },
   modeButton: {
     alignItems: "center",
     flex: 1,
-    paddingVertical: 9,
+    justifyContent: "center",
+    minHeight: 38,
+    paddingVertical: 8,
     zIndex: 1,
   },
   modeText: {
     fontSize: 12,
     fontWeight: "900",
+    lineHeight: 16,
   },
   modeTextActive: {
     color: ihubColors.ink,
