@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { router } from "expo-router";
 import {
   Animated,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +26,7 @@ type TradeItem = {
   glyph: string;
   hue: string;
   label: string;
+  photoUrl?: string | null;
 };
 
 type TransactionStatus =
@@ -396,6 +398,7 @@ type UserRow = {
 type InventoryRow = {
   id: string;
   title: string;
+  photo_urls: string[] | null;
   hue?: number | string | null;
   group: { name: string | null } | { name: string | null }[] | null;
   character: { name: string | null } | { name: string | null }[] | null;
@@ -457,7 +460,7 @@ async function fetchTransactions(userId: string): Promise<Transaction[]> {
       ? supabase
           .from("goods_inventory")
           .select(
-            "id, title, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
+            "id, title, photo_urls, hue, group:groups_master(name), character:characters_master(name), goods_type:goods_types_master(name)",
           )
           .in("id", itemIds)
       : Promise.resolve({ data: [] }),
@@ -602,6 +605,7 @@ function toTradeItem(id: string, row?: InventoryRow): TradeItem {
     glyph: label.slice(0, 1),
     hue: normalizeHue(row?.hue, label),
     label,
+    photoUrl: row?.photo_urls?.[0] ?? null,
   };
 }
 
@@ -928,7 +932,11 @@ function TradePreview({
             key={item.id}
             style={[styles.tradeItem, { backgroundColor: item.hue }]}
           >
-            <Text style={styles.tradeItemText}>{item.glyph}</Text>
+            {item.photoUrl ? (
+              <Image source={{ uri: item.photoUrl }} style={styles.tradeItemImage} />
+            ) : (
+              <Text style={styles.tradeItemText}>{item.glyph}</Text>
+            )}
           </View>
         ))}
       </View>
@@ -1204,7 +1212,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     height: 42,
     justifyContent: "center",
+    overflow: "hidden",
     width: 32,
+  },
+  tradeItemImage: {
+    height: "100%",
+    width: "100%",
   },
   tradeItemText: {
     color: ihubColors.surface,
