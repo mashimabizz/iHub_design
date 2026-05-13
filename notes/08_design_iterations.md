@@ -4,6 +4,51 @@
 
 ---
 
+## イテレーション155.44：iOSオンボーディング推しメンバー追加リクエストを実装
+
+### 背景・問題意識
+
+Web版のオンボーディング推しメンバー選択は、マスタに存在しないメンバーを `character_requests` として追加リクエストし、その場で選択状態に反映できる。一方iOS版は承認待ち推しに対して「承認後にメンバー選択できます」と表示するだけで、通常グループでも承認待ちメンバーの選択・仮登録ができなかった。
+
+### 変更内容
+
+#### `mobile/app/onboarding/members.tsx`
+- `user_oshi.character_request_id` を読み込み、承認待ちメンバーの既存選択を復元するようにした。
+- `character_requests` の pending レコードを取得し、通常グループ・承認待ち推しごとに審査中メンバーとして表示するようにした。
+- 箱推し、マスタメンバー、承認待ちメンバーを同じ選択状態で扱い、保存時に `character_id` / `character_request_id` をそれぞれ `user_oshi` に保存するようにした。
+- 画面内モーダルでメンバー追加リクエストを送信できるようにし、送信後は作成された審査中メンバーを即時リストへ追加して選択済みにするようにした。
+- 承認待ち推しでも、メンバー追加リクエストによる仮登録ができるようにした。
+
+### 影響範囲
+
+- iOS版 新規登録オンボーディング > 推しメンバー選択
+- iOS版 `character_requests` 追加リクエスト
+- iOS版 `user_oshi.character_request_id` 保存・復元
+
+### 確認方法
+
+- `npm --prefix mobile run typecheck`
+- `git diff --check`
+- iOS版オンボーディング推しメンバー画面で、マスタメンバー・審査中メンバーを選択できること
+- 「メンバーが見つからない場合は追加リクエスト」から送信すると、チップが追加され選択済みになること
+- 次へ進むと `user_oshi.character_request_id` として保存されること
+
+### 関連ファイル
+
+- `mobile/app/onboarding/members.tsx`
+
+### セルフレビュー結果
+
+- ✅ Web版の承認待ちメンバー表示・追加リクエスト導線をiOS版へ同期
+- ✅ 既存 `character_requests` / `user_oshi.character_request_id` スキーマ内で実装
+- ✅ 新用語追加なしのため `notes/10_glossary.md` 更新不要
+- ✅ DBスキーマ変更なしのため `notes/05_data_model.md` 更新不要
+- ✅ 状態遷移追加なしのため `notes/09_state_machines.md` 更新不要
+- ✅ `npm --prefix mobile run typecheck` 通過
+- ✅ `git diff --check` 通過
+
+---
+
 ## イテレーション155.43：iOSオンボーディング推し追加リクエストを実装
 
 ### 背景・問題意識

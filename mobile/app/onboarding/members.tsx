@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { router } from "expo-router";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
@@ -18,6 +20,12 @@ type Member = {
   name: string;
 };
 
+type PendingMember = {
+  id: string;
+  name: string;
+  mine: boolean;
+};
+
 type Section = {
   key: string;
   groupId: string | null;
@@ -25,13 +33,16 @@ type Section = {
   groupName: string;
   isPending: boolean;
   members: Member[];
+  pendingMembers: PendingMember[];
   initialMemberIds: string[];
+  initialRequestIds: string[];
   initialBox: boolean;
 };
 
 type Selection = {
   box: boolean;
   memberIds: string[];
+  requestIds: string[];
 };
 
 export default function OnboardingMembersScreen() {
@@ -41,6 +52,10 @@ export default function OnboardingMembersScreen() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requestTarget, setRequestTarget] = useState<Section | null>(null);
+  const [requestName, setRequestName] = useState("");
+  const [requestNote, setRequestNote] = useState("");
+  const [requestPending, setRequestPending] = useState(false);
 
   useEffect(() => {
     if (!user || !supabase) {
@@ -52,15 +67,20 @@ export default function OnboardingMembersScreen() {
     Promise.all([
       supabase
         .from("user_oshi")
-        .select("id, group_id, oshi_request_id, character_id, kind, priority, group:groups_master(id, name), oshi_request:oshi_requests(id, requested_name)")
+        .select("id, group_id, oshi_request_id, character_id, character_request_id, kind, priority, group:groups_master(id, name), oshi_request:oshi_requests(id, requested_name)")
         .eq("user_id", user.id)
         .order("priority", { ascending: true }),
       supabase
         .from("characters_master")
         .select("id, group_id, name, display_order")
         .order("display_order", { ascending: true }),
+      supabase
+        .from("character_requests")
+        .select("id, group_id, oshi_request_id, requested_name, user_id, created_at")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false }),
     ])
-      .then(([oshiRes, charsRes]) => {
+      .then(([oshiRes, charsRes, requestRes]) => {
         if (!active) return;
         const rows = (oshiRes.data as Record<string, unknown>[] | null) ?? [];
         if (rows.length === 0) {
@@ -76,6 +96,28 @@ export default function OnboardingMembersScreen() {
           charsByGroup.set(groupId, arr);
         }
 
+        const pendingByGroup = new Map<string, PendingMember[]>();
+        const pendingByOshiRequest = new Map<string, PendingMember[]>();
+        for (const request of (requestRes.data as Record<string, unknown>[] | null) ?? []) {
+          const item: PendingMember = {
+            id: String(request.id),
+            name: String(request.requested_name ?? ""),
+            mine: request.user_id === user.id,
+          };
+          const groupId = typeof request.group_id === "string" ? request.group_id : null;
+          const oshiRequestId =
+            typeof request.oshi_request_id === "string" ? request.oshi_request_id : null;
+          if (groupId) {
+            const arr = pendingByGroup.get(groupId) ?? [];
+            arr.push(item);
+            pendingByGroup.set(groupId, arr);
+          } else if (oshiRequestId) {
+            const arr = pendingByOshiRequest.get(oshiRequestId) ?? [];
+            arr.push(item);
+            pendingByOshiRequest.set(oshiRequestId, arr);
+          }
+        }
+
         const sectionMap = new Map<string, Section>();
         for (const row of rows) {
           const key = String(row.group_id ?? row.oshi_request_id ?? "");
@@ -88,18 +130,33 @@ export default function OnboardingMembersScreen() {
               existing.initialMemberIds.push(row.character_id);
               existing.initialBox = false;
             }
+            if (typeof row.character_request_id === "string") {
+              existing.initialRequestIds.push(row.character_request_id);
+              existing.initialBox = false;
+            }
             continue;
           }
           const groupId = typeof row.group_id === "string" ? row.group_id : null;
+          const requestId =
+            typeof row.oshi_request_id === "string" ? row.oshi_request_id : null;
           sectionMap.set(key, {
             key,
             groupId,
-            requestId: typeof row.oshi_request_id === "string" ? row.oshi_request_id : null,
+            requestId,
             groupName: group?.name ?? request?.requested_name ?? "推し",
-            isPending: !!row.oshi_request_id,
+            isPending: !!requestId,
             members: groupId ? charsByGroup.get(groupId) ?? [] : [],
+            pendingMembers: groupId
+              ? pendingByGroup.get(groupId) ?? []
+              : requestId
+                ? pendingByOshiRequest.get(requestId) ?? []
+                : [],
             initialMemberIds:
               typeof row.character_id === "string" ? [row.character_id] : [],
+            initialRequestIds:
+              typeof row.character_request_id === "string"
+                ? [row.character_request_id]
+                : [],
             initialBox: row.kind !== "specific" && row.kind !== "multi",
           });
         }
@@ -108,8 +165,12 @@ export default function OnboardingMembersScreen() {
         const nextSelection: Record<string, Selection> = {};
         for (const section of nextSections) {
           nextSelection[section.key] = {
-            box: section.initialBox || section.initialMemberIds.length === 0,
+            box:
+              section.initialBox &&
+              section.initialMemberIds.length === 0 &&
+              section.initialRequestIds.length === 0,
             memberIds: section.initialMemberIds,
+            requestIds: section.initialRequestIds,
           };
         }
         setSections(nextSections);
@@ -130,24 +191,116 @@ export default function OnboardingMembersScreen() {
   function setBox(sectionKey: string) {
     setSelection((prev) => ({
       ...prev,
-      [sectionKey]: { box: true, memberIds: [] },
+      [sectionKey]: { box: true, memberIds: [], requestIds: [] },
     }));
   }
 
   function toggleMember(sectionKey: string, memberId: string) {
     setSelection((prev) => {
-      const current = prev[sectionKey] ?? { box: true, memberIds: [] };
+      const current = prev[sectionKey] ?? { box: true, memberIds: [], requestIds: [] };
       const nextIds = current.memberIds.includes(memberId)
         ? current.memberIds.filter((id) => id !== memberId)
         : [...current.memberIds, memberId];
       return {
         ...prev,
         [sectionKey]: {
-          box: nextIds.length === 0,
+          box: nextIds.length === 0 && current.requestIds.length === 0,
           memberIds: nextIds,
+          requestIds: current.requestIds,
         },
       };
     });
+  }
+
+  function toggleRequest(sectionKey: string, requestId: string) {
+    setSelection((prev) => {
+      const current = prev[sectionKey] ?? { box: true, memberIds: [], requestIds: [] };
+      const nextIds = current.requestIds.includes(requestId)
+        ? current.requestIds.filter((id) => id !== requestId)
+        : [...current.requestIds, requestId];
+      return {
+        ...prev,
+        [sectionKey]: {
+          box: current.memberIds.length === 0 && nextIds.length === 0,
+          memberIds: current.memberIds,
+          requestIds: nextIds,
+        },
+      };
+    });
+  }
+
+  function openRequest(section: Section) {
+    setRequestTarget(section);
+    setRequestName("");
+    setRequestNote("");
+    setError(null);
+  }
+
+  function closeRequest() {
+    if (requestPending) return;
+    setRequestTarget(null);
+    setRequestName("");
+    setRequestNote("");
+  }
+
+  async function submitRequest() {
+    if (!user || !supabase) {
+      router.replace("/login");
+      return;
+    }
+    if (!requestTarget) return;
+    const name = requestName.trim();
+    if (!name) {
+      setError("メンバー名を入力してください");
+      return;
+    }
+    setRequestPending(true);
+    setError(null);
+    const { data, error: insertError } = await supabase
+      .from("character_requests")
+      .insert({
+        user_id: user.id,
+        group_id: requestTarget.groupId,
+        oshi_request_id: requestTarget.groupId ? null : requestTarget.requestId,
+        requested_name: name,
+        note: requestNote.trim() || null,
+      })
+      .select("id, requested_name, user_id")
+      .single();
+    setRequestPending(false);
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+    const row = data as Record<string, unknown>;
+    const next: PendingMember = {
+      id: String(row.id),
+      name: String(row.requested_name ?? name),
+      mine: true,
+    };
+    setSections((current) =>
+      current.map((section) =>
+        section.key === requestTarget.key
+          ? { ...section, pendingMembers: [next, ...section.pendingMembers] }
+          : section,
+      ),
+    );
+    setSelection((current) => {
+      const prev = current[requestTarget.key] ?? {
+        box: true,
+        memberIds: [],
+        requestIds: [],
+      };
+      return {
+        ...current,
+        [requestTarget.key]: {
+          box: false,
+          memberIds: prev.memberIds,
+          requestIds: [...new Set([next.id, ...prev.requestIds])],
+        },
+      };
+    });
+    closeRequest();
   }
 
   async function save() {
@@ -170,8 +323,9 @@ export default function OnboardingMembersScreen() {
     const rows: Record<string, unknown>[] = [];
     let priority = 1;
     for (const section of sections) {
-      const current = selection[section.key] ?? { box: true, memberIds: [] };
-      if (section.isPending || current.box || current.memberIds.length === 0) {
+      const current = selection[section.key] ?? { box: true, memberIds: [], requestIds: [] };
+      const totalSelections = current.memberIds.length + current.requestIds.length;
+      if (current.box || totalSelections === 0) {
         rows.push({
           user_id: user.id,
           group_id: section.groupId,
@@ -180,12 +334,22 @@ export default function OnboardingMembersScreen() {
           priority: priority++,
         });
       } else {
-        const kind = current.memberIds.length > 1 ? "multi" : "specific";
+        const kind = totalSelections > 1 ? "multi" : "specific";
         for (const character_id of current.memberIds) {
           rows.push({
             user_id: user.id,
             group_id: section.groupId,
             character_id,
+            kind,
+            priority: priority++,
+          });
+        }
+        for (const character_request_id of current.requestIds) {
+          rows.push({
+            user_id: user.id,
+            group_id: section.groupId,
+            oshi_request_id: section.requestId,
+            character_request_id,
             kind,
             priority: priority++,
           });
@@ -211,7 +375,7 @@ export default function OnboardingMembersScreen() {
       {loading ? <ActivityIndicator color={ihubColors.lavender} /> : null}
       <View style={styles.sections}>
         {sections.map((section) => {
-          const current = selection[section.key] ?? { box: true, memberIds: [] };
+          const current = selection[section.key] ?? { box: true, memberIds: [], requestIds: [] };
           return (
             <View key={section.key} style={styles.sectionCard}>
               <View style={styles.sectionHeader}>
@@ -222,7 +386,7 @@ export default function OnboardingMembersScreen() {
                   <Text style={styles.groupName}>{section.groupName}</Text>
                   <Text style={styles.groupMeta}>
                     {section.isPending
-                      ? "承認後にメンバー選択できます"
+                      ? "承認待ち・メンバーは追加リクエストで仮登録"
                       : section.members.length > 0
                         ? `${section.members.length}人から選択`
                         : "メンバーデータ準備中"}
@@ -239,7 +403,21 @@ export default function OnboardingMembersScreen() {
                     onPress={() => toggleMember(section.key, member.id)}
                   />
                 ))}
+                {section.pendingMembers.map((member) => (
+                  <Chip
+                    key={member.id}
+                    label={`🕐 ${member.name}${member.mine ? "（自分）" : ""}`}
+                    active={current.requestIds.includes(member.id)}
+                    pending
+                    onPress={() => toggleRequest(section.key, member.id)}
+                  />
+                ))}
               </View>
+              <Pressable onPress={() => openRequest(section)} style={styles.requestButton}>
+                <Text style={styles.requestButtonText}>
+                  + メンバーが見つからない場合は追加リクエスト
+                </Text>
+              </Pressable>
             </View>
           );
         })}
@@ -250,6 +428,52 @@ export default function OnboardingMembersScreen() {
           次へ
         </PrimaryButton>
       </View>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={!!requestTarget}
+        onRequestClose={closeRequest}
+      >
+        <View style={styles.modalLayer}>
+          <Pressable style={styles.modalBackdrop} onPress={closeRequest} />
+          <View style={styles.requestModal}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleCopy}>
+                <Text style={styles.modalTitle}>メンバー追加リクエスト</Text>
+                <Text style={styles.modalSub}>
+                  {requestTarget?.groupName ?? "推し"}に仮登録します
+                </Text>
+              </View>
+              <Pressable onPress={closeRequest} style={styles.modalCloseButton}>
+                <Text style={styles.modalCloseText}>×</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              value={requestName}
+              onChangeText={setRequestName}
+              placeholder="メンバー / キャラクター名"
+              placeholderTextColor="rgba(58,50,74,0.38)"
+              style={styles.requestInput}
+            />
+            <TextInput
+              value={requestNote}
+              onChangeText={setRequestNote}
+              multiline
+              placeholder="補足（任意）"
+              placeholderTextColor="rgba(58,50,74,0.38)"
+              style={[styles.requestInput, styles.requestNoteInput]}
+              textAlignVertical="top"
+            />
+            <PrimaryButton
+              loading={requestPending}
+              disabled={!requestName.trim()}
+              onPress={submitRequest}
+            >
+              送信して選択する
+            </PrimaryButton>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -292,9 +516,26 @@ function ProgressDots({ current }: { current: number }) {
   );
 }
 
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function Chip({
+  label,
+  active,
+  pending,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  pending?: boolean;
+  onPress: () => void;
+}) {
   return (
-    <Pressable onPress={onPress} style={[styles.chip, active ? styles.chipActive : null]}>
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.chip,
+        pending ? styles.chipPending : null,
+        active ? styles.chipActive : null,
+      ]}
+    >
       <Text style={[styles.chipText, active ? styles.chipTextActive : null]}>{label}</Text>
     </Pressable>
   );
@@ -431,6 +672,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+  chipPending: {
+    borderColor: "rgba(166,149,216,0.52)",
+    borderStyle: "dashed",
+  },
   chipActive: {
     backgroundColor: "rgba(166,149,216,0.12)",
     borderColor: ihubColors.lavender,
@@ -443,6 +688,20 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: ihubColors.lavender,
   },
+  requestButton: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(166,149,216,0.10)",
+    borderColor: "rgba(166,149,216,0.28)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  requestButtonText: {
+    color: ihubColors.lavender,
+    fontSize: 11,
+    fontWeight: "900",
+  },
   error: {
     color: ihubColors.warn,
     fontSize: 12,
@@ -451,5 +710,72 @@ const styles = StyleSheet.create({
   footer: {
     marginTop: "auto",
     paddingTop: 16,
+  },
+  modalLayer: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    padding: 18,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(20,18,28,0.44)",
+  },
+  requestModal: {
+    backgroundColor: ihubColors.background,
+    borderColor: "rgba(255,255,255,0.72)",
+    borderRadius: 28,
+    borderWidth: 1,
+    gap: 12,
+    padding: 16,
+    width: "100%",
+  },
+  modalHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  modalTitleCopy: {
+    flex: 1,
+  },
+  modalTitle: {
+    color: ihubColors.ink,
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  modalSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  modalCloseButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: ihubRadii.pill,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  modalCloseText: {
+    color: ihubColors.mutedInk,
+    fontSize: 20,
+    fontWeight: "900",
+    lineHeight: 22,
+  },
+  requestInput: {
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.10)",
+    borderRadius: ihubRadii.md,
+    borderWidth: 1,
+    color: ihubColors.ink,
+    fontSize: 14,
+    fontWeight: "800",
+    minHeight: 48,
+    paddingHorizontal: 14,
+  },
+  requestNoteInput: {
+    minHeight: 88,
+    paddingTop: 12,
   },
 });
