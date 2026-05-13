@@ -1,6 +1,8 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Image,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -155,6 +157,8 @@ export default function InventoryScreen() {
   const [status, setStatus] = useState<InventoryStatus>("active");
   const [columns, setColumns] = useState<ColumnCount>(3);
   const [selected, setSelected] = useState<InventoryItem | null>(null);
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState<InventoryItem | null>(null);
+  const [deletingItemIds, setDeletingItemIds] = useState<string[]>([]);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!supabase && !previewMode);
@@ -275,24 +279,46 @@ export default function InventoryScreen() {
           }
         },
         onDelete: () => {
-          const itemId = selected.id;
-          setItems((current) =>
-            current.filter((item) => item.id !== itemId),
-          );
+          const item = selected;
           setSelected(null);
-          if (supabase && user && !previewMode) {
-            supabase
-              .from("goods_inventory")
-              .delete()
-              .eq("id", itemId)
-              .eq("user_id", user.id)
-              .then(({ error }) => {
-                if (error) setLoadError(error.message);
-              });
-          }
+          setDeleteConfirmItem(item);
         },
       })
     : [];
+
+  function confirmInventoryDelete() {
+    if (!deleteConfirmItem) return;
+    const target = deleteConfirmItem;
+    setDeleteConfirmItem(null);
+    setDeletingItemIds((current) =>
+      current.includes(target.id) ? current : [...current, target.id],
+    );
+  }
+
+  function completeInventoryDelete(id: string) {
+    const target = items.find((item) => item.id === id);
+    setDeletingItemIds((current) => current.filter((itemId) => itemId !== id));
+    setItems((current) => current.filter((item) => item.id !== id));
+    if (supabase && user && !previewMode) {
+      supabase
+        .from("goods_inventory")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .eq("kind", "for_trade")
+        .then(({ error }) => {
+          if (!error) return;
+          setLoadError(error.message);
+          if (target) {
+            setItems((current) =>
+              current.some((item) => item.id === target.id)
+                ? current
+                : [target, ...current],
+            );
+          }
+        });
+    }
+  }
 
   return (
     <Screen scroll={false} contentStyle={styles.screenContent}>
@@ -363,6 +389,11 @@ export default function InventoryScreen() {
         actions={selectedActions}
         onClose={() => setSelected(null)}
       />
+      <InventoryDeleteConfirmModal
+        item={deleteConfirmItem}
+        onCancel={() => setDeleteConfirmItem(null)}
+        onConfirm={confirmInventoryDelete}
+      />
     </Screen>
   );
 
@@ -398,6 +429,8 @@ export default function InventoryScreen() {
           <GoodsGrid
             items={itemsByStatus[pageStatus]}
             columns={columns}
+            deletingIds={deletingItemIds}
+            onItemFadeOutEnd={completeInventoryDelete}
             addTileLabel={pageStatus === "active" ? "追加" : undefined}
             onPressAddTile={
               pageStatus === "active"
@@ -412,6 +445,7 @@ export default function InventoryScreen() {
                   : "過去に譲ったグッズはまだありません"
             }
             onPressItem={(gridItem) => {
+              if (deletingItemIds.includes(gridItem.id)) return;
               const item = items.find((current) => current.id === gridItem.id);
               if (!item) return;
               if (item.status === "traded") {
@@ -671,6 +705,73 @@ function buildActions({
   ];
 }
 
+function InventoryDeleteConfirmModal({
+  item,
+  onCancel,
+  onConfirm,
+}: {
+  item: InventoryItem | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      visible={!!item}
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <View style={styles.deleteModalRoot}>
+        <Pressable style={styles.deleteModalBackdrop} onPress={onCancel} />
+        <View style={styles.deleteModalPanel}>
+          <Text style={styles.deleteModalTitle}>在庫を削除しますか？</Text>
+          {item ? (
+            <View style={styles.deleteModalPreview}>
+              {item.photoUrl ? (
+                <Image
+                  source={{ uri: item.photoUrl }}
+                  resizeMode="cover"
+                  style={styles.deleteModalImage}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.deleteModalFallback,
+                    { backgroundColor: item.hue },
+                  ]}
+                >
+                  <Text style={styles.deleteModalFallbackText}>
+                    {item.glyph}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.deleteModalCopy}>
+                <Text numberOfLines={1} style={styles.deleteModalItemTitle}>
+                  {item.title}
+                </Text>
+                <Text numberOfLines={1} style={styles.deleteModalItemSub}>
+                  {item.subtitle}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+          <Text style={styles.deleteModalBody}>
+            削除後はマッチング候補や打診の対象から外れます。
+          </Text>
+          <View style={styles.deleteModalActions}>
+            <Pressable onPress={onCancel} style={styles.deleteModalCancel}>
+              <Text style={styles.deleteModalCancelText}>閉じる</Text>
+            </Pressable>
+            <Pressable onPress={onConfirm} style={styles.deleteModalDanger}>
+              <Text style={styles.deleteModalDangerText}>削除する</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function one(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -679,6 +780,109 @@ const styles = StyleSheet.create({
   screenContent: {
     gap: 12,
     paddingHorizontal: 18,
+  },
+  deleteModalRoot: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    padding: 20,
+  },
+  deleteModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(20,18,28,0.50)",
+  },
+  deleteModalPanel: {
+    backgroundColor: ihubColors.surface,
+    borderRadius: 20,
+    gap: 13,
+    padding: 18,
+    shadowColor: ihubColors.ink,
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.24,
+    shadowRadius: 34,
+    width: "100%",
+  },
+  deleteModalTitle: {
+    color: ihubColors.ink,
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  deleteModalPreview: {
+    alignItems: "center",
+    backgroundColor: ihubColors.background,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 11,
+    padding: 10,
+  },
+  deleteModalImage: {
+    borderRadius: 8,
+    height: 54,
+    width: 40,
+  },
+  deleteModalFallback: {
+    alignItems: "center",
+    borderRadius: 8,
+    height: 54,
+    justifyContent: "center",
+    width: 40,
+  },
+  deleteModalFallbackText: {
+    color: ihubColors.surface,
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  deleteModalCopy: {
+    flex: 1,
+  },
+  deleteModalItemTitle: {
+    color: ihubColors.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  deleteModalItemSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  deleteModalBody: {
+    color: ihubColors.mutedInk,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  deleteModalActions: {
+    flexDirection: "row",
+    gap: 9,
+  },
+  deleteModalCancel: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: 13,
+    flex: 1,
+    paddingVertical: 12,
+  },
+  deleteModalCancelText: {
+    color: ihubColors.mutedInk,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  deleteModalDanger: {
+    alignItems: "center",
+    backgroundColor: "rgba(239,68,68,0.12)",
+    borderColor: "rgba(239,68,68,0.24)",
+    borderRadius: 13,
+    borderWidth: 1,
+    flex: 1,
+    paddingVertical: 12,
+  },
+  deleteModalDangerText: {
+    color: "#dc2626",
+    fontSize: 13,
+    fontWeight: "900",
   },
   header: {
     alignItems: "center",
