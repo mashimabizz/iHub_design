@@ -772,10 +772,10 @@ function PastFilterChips({
   onChange: (filter: PastFilter) => void;
 }) {
   const chips = [
-    { id: "all" as const, label: `すべて ${counts.all}` },
-    { id: "completed" as const, label: `完了 ${counts.completed}` },
-    { id: "cancelled" as const, label: `キャンセル ${counts.cancelled}` },
-    { id: "ended" as const, label: `終了 ${counts.ended}` },
+    { id: "all" as const, label: "すべて", count: counts.all },
+    { id: "completed" as const, label: "完了", count: counts.completed },
+    { id: "cancelled" as const, label: "キャンセル", count: counts.cancelled },
+    { id: "ended" as const, label: "終了", count: counts.ended },
   ];
   return (
     <ScrollView
@@ -801,6 +801,16 @@ function PastFilterChips({
             >
               {chip.label}
             </Text>
+            <View style={[styles.filterCountBadge, active ? styles.filterCountBadgeActive : null]}>
+              <Text
+                style={[
+                  styles.filterCountText,
+                  active ? styles.filterCountTextActive : null,
+                ]}
+              >
+                {chip.count}
+              </Text>
+            </View>
           </Pressable>
         );
       })}
@@ -1013,8 +1023,8 @@ const styles = StyleSheet.create({
   },
   filterScroller: {
     flexGrow: 0,
-    maxHeight: 44,
-    minHeight: 38,
+    maxHeight: 52,
+    minHeight: 44,
   },
   filterChip: {
     alignItems: "center",
@@ -1022,11 +1032,14 @@ const styles = StyleSheet.create({
     borderColor: "rgba(58,50,74,0.08)",
     borderRadius: ihubRadii.pill,
     borderWidth: 1,
+    flexDirection: "row",
     flexShrink: 0,
+    gap: 7,
     justifyContent: "center",
-    minHeight: 34,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    minHeight: 38,
+    minWidth: 68,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
   },
   filterChipActive: {
     backgroundColor: ihubColors.ink,
@@ -1034,12 +1047,34 @@ const styles = StyleSheet.create({
   },
   filterChipText: {
     color: ihubColors.ink,
-    fontSize: 11,
-    fontWeight: "800",
+    fontSize: 11.5,
+    fontWeight: "900",
     includeFontPadding: false,
-    lineHeight: 14,
+    lineHeight: 15,
   },
   filterChipTextActive: {
+    color: ihubColors.surface,
+  },
+  filterCountBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(58,50,74,0.06)",
+    borderRadius: ihubRadii.pill,
+    height: 20,
+    justifyContent: "center",
+    minWidth: 24,
+    paddingHorizontal: 7,
+  },
+  filterCountBadgeActive: {
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  filterCountText: {
+    color: ihubColors.mutedInk,
+    fontSize: 10,
+    fontWeight: "900",
+    includeFontPadding: false,
+    lineHeight: 12,
+  },
+  filterCountTextActive: {
     color: ihubColors.surface,
   },
   emptyBox: {
