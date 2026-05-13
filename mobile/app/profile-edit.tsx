@@ -4,7 +4,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -42,12 +44,63 @@ const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: "no_answer", label: "回答しない" },
 ];
 
+const PREFECTURES = [
+  "北海道",
+  "青森県",
+  "岩手県",
+  "宮城県",
+  "秋田県",
+  "山形県",
+  "福島県",
+  "茨城県",
+  "栃木県",
+  "群馬県",
+  "埼玉県",
+  "千葉県",
+  "東京都",
+  "神奈川県",
+  "新潟県",
+  "富山県",
+  "石川県",
+  "福井県",
+  "山梨県",
+  "長野県",
+  "岐阜県",
+  "静岡県",
+  "愛知県",
+  "三重県",
+  "滋賀県",
+  "京都府",
+  "大阪府",
+  "兵庫県",
+  "奈良県",
+  "和歌山県",
+  "鳥取県",
+  "島根県",
+  "岡山県",
+  "広島県",
+  "山口県",
+  "徳島県",
+  "香川県",
+  "愛媛県",
+  "高知県",
+  "福岡県",
+  "佐賀県",
+  "長崎県",
+  "熊本県",
+  "大分県",
+  "宮崎県",
+  "鹿児島県",
+  "沖縄県",
+] as const;
+
 export default function ProfileEditScreen() {
   const { user, previewMode } = useAuth();
   const [form, setForm] = useState<ProfileForm>(() => fallbackForm(user?.email));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [areaPickerOpen, setAreaPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -283,18 +336,15 @@ export default function ProfileEditScreen() {
             setForm((current) => ({ ...current, displayName }))
           }
         />
-        <TextField
-          label="活動エリア"
-          value={form.primaryArea}
-          placeholder="東京都"
-          onChangeText={(primaryArea) =>
-            setForm((current) => ({ ...current, primaryArea }))
-          }
-        />
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>性別</Text>
+        <View style={styles.sectionHeadingRow}>
+          <Text style={styles.sectionTitle}>公開情報</Text>
+          <Text style={styles.sectionHint}>マッチング前に表示</Text>
+        </View>
+        <View style={styles.fieldBlock}>
+          <Text style={styles.fieldLabel}>性別</Text>
         <View style={styles.genderGrid}>
           {GENDER_OPTIONS.map((option) => {
             const active = form.gender === option.value;
@@ -302,7 +352,10 @@ export default function ProfileEditScreen() {
               <Pressable
                 key={option.value}
                 onPress={() =>
-                  setForm((current) => ({ ...current, gender: option.value }))
+                  setForm((current) => ({
+                    ...current,
+                    gender: active ? null : option.value,
+                  }))
                 }
                 style={[styles.genderChip, active ? styles.genderChipActive : null]}
               >
@@ -318,6 +371,29 @@ export default function ProfileEditScreen() {
             );
           })}
         </View>
+        </View>
+        <View style={styles.fieldBlock}>
+          <View style={styles.fieldLabelRow}>
+            <Text style={styles.fieldLabel}>主な活動エリア（都道府県）</Text>
+            <Text style={styles.fieldHint}>任意</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="主な活動エリアを選択"
+            onPress={() => setAreaPickerOpen(true)}
+            style={styles.areaSelect}
+          >
+            <Text
+              style={[
+                styles.areaSelectText,
+                !form.primaryArea ? styles.areaSelectPlaceholder : null,
+              ]}
+            >
+              {form.primaryArea || "指定なし"}
+            </Text>
+            <Text style={styles.areaSelectIcon}>⌄</Text>
+          </Pressable>
+        </View>
       </View>
 
       {loading ? <Text style={styles.inlineNotice}>プロフィールを読み込み中…</Text> : null}
@@ -327,9 +403,81 @@ export default function ProfileEditScreen() {
       <PrimaryButton loading={saving} onPress={handleSave}>
         保存する
       </PrimaryButton>
+
+      <AreaPickerModal
+        visible={areaPickerOpen}
+        selected={form.primaryArea}
+        onClose={() => setAreaPickerOpen(false)}
+        onSelect={(primaryArea) => {
+          setForm((current) => ({ ...current, primaryArea }));
+          setAreaPickerOpen(false);
+        }}
+      />
         </>
       )}
     </Screen>
+  );
+}
+
+function AreaPickerModal({
+  visible,
+  selected,
+  onClose,
+  onSelect,
+}: {
+  visible: boolean;
+  selected: string;
+  onClose: () => void;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.modalBackdropPressArea} onPress={onClose} />
+        <View style={styles.areaSheet}>
+          <View style={styles.sheetGrabber} />
+          <View style={styles.sheetHeader}>
+            <View>
+              <Text style={styles.sheetTitle}>主な活動エリア</Text>
+              <Text style={styles.sheetSub}>都道府県を選択してください</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={onClose} style={styles.sheetClose}>
+              <Text style={styles.sheetCloseText}>×</Text>
+            </Pressable>
+          </View>
+          <ScrollView style={styles.areaList} contentContainerStyle={styles.areaListContent}>
+            <AreaOption label="指定なし" active={!selected} onPress={() => onSelect("")} />
+            {PREFECTURES.map((prefecture) => (
+              <AreaOption
+                key={prefecture}
+                label={prefecture}
+                active={selected === prefecture}
+                onPress={() => onSelect(prefecture)}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function AreaOption({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={[styles.areaOption, active ? styles.areaOptionActive : null]}>
+      <Text style={[styles.areaOptionText, active ? styles.areaOptionTextActive : null]}>
+        {label}
+      </Text>
+      {active ? <Text style={styles.areaOptionCheck}>✓</Text> : null}
+    </Pressable>
   );
 }
 
@@ -398,8 +546,9 @@ function validateForm(form: ProfileForm) {
   if (!displayName || displayName.length > 50) {
     return "表示名は1〜50文字で入力してください";
   }
-  if (form.primaryArea.trim().length > 50) {
-    return "活動エリアは50文字以内で入力してください";
+  const primaryArea = form.primaryArea.trim();
+  if (primaryArea && !PREFECTURES.includes(primaryArea as (typeof PREFECTURES)[number])) {
+    return "活動エリアは都道府県から選択してください";
   }
   return null;
 }
@@ -535,6 +684,34 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 0.4,
   },
+  sectionHeadingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  sectionHint: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  fieldBlock: {
+    gap: 8,
+  },
+  fieldLabelRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  fieldLabel: {
+    color: ihubColors.ink,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  fieldHint: {
+    color: ihubColors.mutedInk,
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
   handleField: {
     gap: 7,
   },
@@ -573,6 +750,126 @@ const styles = StyleSheet.create({
   },
   genderChipTextActive: {
     color: ihubColors.surface,
+  },
+  areaSelect: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 48,
+    paddingHorizontal: 14,
+  },
+  areaSelectText: {
+    color: ihubColors.ink,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  areaSelectPlaceholder: {
+    color: ihubColors.mutedInk,
+  },
+  areaSelectIcon: {
+    color: ihubColors.lavender,
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  modalRoot: {
+    backgroundColor: "rgba(18,16,24,0.34)",
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  modalBackdropPressArea: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  areaSheet: {
+    backgroundColor: ihubColors.background,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: "78%",
+    paddingBottom: 20,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    ...ihubShadow,
+  },
+  sheetGrabber: {
+    alignSelf: "center",
+    backgroundColor: "rgba(58,50,74,0.16)",
+    borderRadius: ihubRadii.pill,
+    height: 4,
+    marginBottom: 14,
+    width: 42,
+  },
+  sheetHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  sheetTitle: {
+    color: ihubColors.ink,
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  sheetSub: {
+    color: ihubColors.mutedInk,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  sheetClose: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.pill,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  sheetCloseText: {
+    color: ihubColors.ink,
+    fontSize: 20,
+    fontWeight: "800",
+    marginTop: -2,
+  },
+  areaList: {
+    marginHorizontal: -2,
+  },
+  areaListContent: {
+    gap: 8,
+    paddingBottom: 12,
+    paddingHorizontal: 2,
+  },
+  areaOption: {
+    alignItems: "center",
+    backgroundColor: ihubColors.surface,
+    borderColor: "rgba(58,50,74,0.08)",
+    borderRadius: ihubRadii.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 46,
+    paddingHorizontal: 14,
+  },
+  areaOptionActive: {
+    backgroundColor: "rgba(166,149,216,0.12)",
+    borderColor: "rgba(166,149,216,0.42)",
+  },
+  areaOptionText: {
+    color: ihubColors.ink,
+    fontSize: 13.5,
+    fontWeight: "800",
+  },
+  areaOptionTextActive: {
+    color: ihubColors.lavender,
+    fontWeight: "900",
+  },
+  areaOptionCheck: {
+    color: ihubColors.lavender,
+    fontSize: 16,
+    fontWeight: "900",
   },
   inlineNotice: {
     color: ihubColors.mutedInk,
