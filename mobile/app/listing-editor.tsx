@@ -780,18 +780,23 @@ function PreviewSide({
             ? item.characterName ?? item.groupName ?? item.title
             : item.title;
           const hue = "hue" in item ? item.hue : nameToHue(title);
+          const photoUrl = "photoUrl" in item ? item.photoUrl : null;
           return (
             <View
               key={`${title}-${index}`}
               style={[
                 styles.previewBubble,
                 {
-                  backgroundColor: `hsl(${hue}, 55%, 78%)`,
+                  backgroundColor: photoUrl ? ihubColors.ink : `hsl(${hue}, 55%, 78%)`,
                   marginTop: index === 1 ? -8 : index === 2 ? 6 : 0,
                 },
               ]}
             >
-              <Text style={styles.previewBubbleText}>{title.slice(0, 1)}</Text>
+              {photoUrl ? (
+                <Image source={{ uri: photoUrl }} style={styles.previewBubbleImage} />
+              ) : (
+                <Text style={styles.previewBubbleText}>{title.slice(0, 1)}</Text>
+              )}
             </View>
           );
         })}
@@ -1891,6 +1896,10 @@ const styles = StyleSheet.create({
     color: ihubColors.surface,
     fontSize: 23,
     fontWeight: "900",
+  },
+  previewBubbleImage: {
+    height: "100%",
+    width: "100%",
   },
   previewMore: {
     alignItems: "center",
