@@ -1092,6 +1092,22 @@ function CandidateTile({
 }
 
 function openMatchDetail(row: ShelfRow, candidate: Candidate) {
+  if (!candidate.listingIds?.length && (candidate.giveIds?.length || candidate.receiveIds?.length)) {
+    router.push({
+      pathname: "/proposal-select",
+      params: {
+        tab: "meetup",
+        candidateId: candidate.id,
+        partnerId: candidate.partnerId ?? "",
+        partnerHandle: candidate.partnerHandle ?? "",
+        matchType: candidate.matchType ?? "",
+        gives: candidate.giveIds?.join(",") ?? "",
+        receives: candidate.receiveIds?.join(",") ?? "",
+      },
+    });
+    return;
+  }
+
   router.push({
     pathname: "/match-detail",
     params: buildMatchDetailParams(row, candidate),
