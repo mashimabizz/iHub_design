@@ -502,7 +502,7 @@ async function fetchTransactionDetail(
   userId: string,
 ): Promise<TransactionDetail> {
   if (!supabase) throw new Error("Supabaseが未設定です");
-  const proposalFields = [
+  const coreProposalFields = [
     "id",
     "sender_id",
     "receiver_id",
@@ -518,19 +518,28 @@ async function fetchTransactionDetail(
     "meetup_start_at",
     "meetup_end_at",
     "meetup_place_name",
-    "meetup_lat",
-    "meetup_lng",
-      "meetup_candidates",
-      "evidence_photo_url",
-      "evidence_taken_at",
-      "approved_by_sender",
-      "approved_by_receiver",
-      "message",
+    "message",
     "created_at",
-    "last_action_at",
     "expires_at",
   ];
-  const data = await fetchProposalRow(proposalId, proposalFields);
+  const optionalProposalFields = [
+    "meetup_lat",
+    "meetup_lng",
+    "meetup_candidates",
+    "evidence_photo_url",
+    "evidence_taken_at",
+    "approved_by_sender",
+    "approved_by_receiver",
+    "last_action_at",
+  ];
+  const proposalFields = [...coreProposalFields, ...optionalProposalFields];
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = await fetchProposalRow(proposalId, proposalFields);
+  } catch (richFetchError) {
+    console.warn("transaction detail rich fetch failed; falling back to core fields", richFetchError);
+    data = await fetchProposalRow(proposalId, coreProposalFields);
+  }
   if (!data) throw new Error("打診が見つかりません");
 
   return buildDetail(
